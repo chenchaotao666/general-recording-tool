@@ -1,0 +1,217 @@
+"""动态 CRUD 引擎：运行时按元数据反射业务表，动态拼 SQL（字段名全部来自服务端元数据）。"""
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+
+from fastapi import HTTPException
+from sqlalchemy import MetaData, Table, and_, func, select
+from sqlalchemy.orm import Session
+
+from ..database import engine
+from ..models import AuditLog, MetaField, MetaTable
+from .meta_service import get_meta_fields
+from .typemap import coerce_value
+
+FILTER_OPS = {
+    "eq", "ne", "gt", "gte", "lt", "lte", "contains", "startswith", "in", "null", "not_null",
+    "older_than_days",   # 日期字段早于 N 天前（如：超过30天未跟进）
+    "within_days",       # 日期字段在未来 N 天内（如：7天内到期）
+}
+MAX_PAGE_SIZE = 200
+
+
+def serialize_value(v):
+    if isinstance(v, datetime):
+        return v.isoformat(sep=" ")
+    if isinstance(v, date):
+        return v.isoformat()
+    if isinstance(v, Decimal):
+        return float(v)
+    return v
+
+
+def row_to_dict(row) -> dict:
+    return {k: serialize_value(v) for k, v in dict(row).items()}
+
+
+def load_business(db: Session, table_id: int) -> tuple[MetaTable, list[MetaField], Table]:
+    mt = db.get(MetaTable, table_id)
+    if not mt:
+        raise HTTPException(404, "数据表不存在")
+    fields = get_meta_fields(db, table_id)
+    try:
+        table = Table(mt.name, MetaData(), autoload_with=engine)
+    except Exception:
+        raise HTTPException(500, f"物理表 {mt.name} 加载失败")
+    return mt, fields, table
+
+
+def log_audit(db: Session, action: str, table_id: int | None, record_id: int | None = None,
+              before: dict | None = None, after: dict | None = None) -> None:
+    db.add(AuditLog(action=action, table_id=table_id, record_id=record_id,
+                    before_json=before, after_json=after))
+
+
+def build_condition(table: Table, fields_by_name: dict, flt: dict):
+    name = flt.get("field")
+    op = flt.get("op")
+    value = flt.get("value")
+    if name not in fields_by_name and name not in ("id", "created_at", "updated_at"):
+        raise HTTPException(400, f"未知筛选字段：{name}")
+    if op not in FILTER_OPS:
+        raise HTTPException(400, f"不支持的筛选操作符：{op}")
+    col = table.c[name]
+    if op == "null":
+        return col.is_(None)
+    if op == "not_null":
+        return col.isnot(None)
+
+    f = fields_by_name.get(name)
+
+    # 相对日期操作符（任务条件常用）
+    if op in ("older_than_days", "within_days"):
+        try:
+            days = int(value)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "天数必须是整数")
+        is_date = f is not None and f.data_type == "date"
+        now = datetime.now()
+        if op == "older_than_days":
+            threshold = now - timedelta(days=days)
+            return col < (threshold.date() if is_date else threshold)
+        lo = now.date() if is_date else now
+        hi = now + timedelta(days=days)
+        return and_(col >= lo, col <= (hi.date() if is_date else hi))
+
+    def coerce(v):
+        if f is None:
+            return v
+        ok, cv, err = coerce_value(v, f.data_type, True)
+        if not ok:
+            raise HTTPException(400, f"筛选值无效（{f.label}）：{err}")
+        return cv
+
+    if op == "contains":
+        return col.like(f"%{value}%")
+    if op == "startswith":
+        return col.like(f"{value}%")
+    if op == "in":
+        values = value if isinstance(value, list) else [v.strip() for v in str(value).split(",")]
+        return col.in_([coerce(v) for v in values])
+    value = coerce(value)
+    if op == "eq":
+        return col == value
+    if op == "ne":
+        return col != value
+    if op == "gt":
+        return col > value
+    if op == "gte":
+        return col >= value
+    if op == "lt":
+        return col < value
+    return col <= value  # lte
+
+
+def combine_conditions(conds: list, logic: str):
+    """按 AND/OR 组合条件列表（供列表筛选和任务引擎共用）。"""
+    from sqlalchemy import or_
+    if not conds:
+        return []
+    if logic == "OR":
+        return [or_(*conds)]
+    return conds
+
+
+def list_records(db: Session, table_id: int, page: int, page_size: int,
+                 filters: list[dict] | None, sort_by: str | None, sort_order: str | None) -> dict:
+    _, fields, table = load_business(db, table_id)
+    fields_by_name = {f.field_name: f for f in fields}
+    conds = [build_condition(table, fields_by_name, f) for f in (filters or [])]
+
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), MAX_PAGE_SIZE)
+    total = db.execute(select(func.count()).select_from(table).where(*conds)).scalar() or 0
+
+    sortable = set(fields_by_name) | {"id", "created_at", "updated_at"}
+    if sort_by in sortable:
+        order_col = table.c[sort_by]
+        order = order_col.asc() if sort_order == "asc" else order_col.desc()
+    else:
+        order = table.c.id.desc()
+
+    rows = db.execute(
+        select(table).where(*conds).order_by(order)
+        .offset((page - 1) * page_size).limit(page_size)
+    ).mappings().all()
+    return {"total": total, "items": [row_to_dict(r) for r in rows]}
+
+
+def coerce_payload(fields: list[MetaField], data: dict, partial: bool = False):
+    """按字段元数据校验并转换提交的数据。返回 (cleaned, errors)。"""
+    by_name = {f.field_name: f for f in fields}
+    cleaned, errors = {}, {}
+    for key, v in (data or {}).items():
+        if key not in by_name:
+            continue  # 忽略未知字段，防注入
+        f = by_name[key]
+        ok, cv, err = coerce_value(v, f.data_type, f.nullable)
+        if ok:
+            cleaned[key] = cv
+        else:
+            errors[key] = f"{f.label}：{err}"
+    if not partial:
+        for f in fields:
+            if not f.nullable and cleaned.get(f.field_name) is None and not f.default_value:
+                errors.setdefault(f.field_name, f"{f.label}不能为空")
+    return cleaned, errors
+
+
+def get_record(db: Session, table_id: int, record_id: int) -> dict:
+    _, _, table = load_business(db, table_id)
+    row = db.execute(select(table).where(table.c.id == record_id)).mappings().first()
+    if not row:
+        raise HTTPException(404, "记录不存在")
+    return row_to_dict(row)
+
+
+def create_record(db: Session, table_id: int, data: dict) -> dict:
+    _, fields, table = load_business(db, table_id)
+    cleaned, errors = coerce_payload(fields, data)
+    if errors:
+        raise HTTPException(422, detail=errors)
+    for f in fields:
+        if cleaned.get(f.field_name) is None and f.default_value is not None:
+            ok, cv, _ = coerce_value(f.default_value, f.data_type, True)
+            if ok:
+                cleaned[f.field_name] = cv
+    now = datetime.now()
+    cleaned["created_at"] = now
+    cleaned["updated_at"] = now
+    result = db.execute(table.insert().values(**cleaned))
+    db.commit()
+    record = get_record(db, table_id, result.inserted_primary_key[0])
+    log_audit(db, "create", table_id, record["id"], after=record)
+    db.commit()
+    return record
+
+
+def update_record(db: Session, table_id: int, record_id: int, data: dict) -> dict:
+    _, fields, table = load_business(db, table_id)
+    before = get_record(db, table_id, record_id)
+    cleaned, errors = coerce_payload(fields, data, partial=True)
+    if errors:
+        raise HTTPException(422, detail=errors)
+    cleaned["updated_at"] = datetime.now()
+    db.execute(table.update().where(table.c.id == record_id).values(**cleaned))
+    db.commit()
+    after = get_record(db, table_id, record_id)
+    log_audit(db, "update", table_id, record_id, before=before, after=after)
+    db.commit()
+    return after
+
+
+def delete_record(db: Session, table_id: int, record_id: int) -> None:
+    _, _, table = load_business(db, table_id)
+    before = get_record(db, table_id, record_id)
+    db.execute(table.delete().where(table.c.id == record_id))
+    log_audit(db, "delete", table_id, record_id, before=before)
+    db.commit()

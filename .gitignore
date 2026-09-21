@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 运行时数据
+backend/grt.db
+backend/smoke_test.db
+backend/server.log
+backend/uploads/
+backend/.secret_key
+backend/.env
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+
+# 测试数据文件（不上传）
+docs/*.xlsx
+docs/*.jpg
+docs/*.png
