@@ -1,13 +1,10 @@
 <script>
 export default {
   onLaunch: function () {
-    console.log('App Launch')
-  },
-  onShow: function () {
-    console.log('App Show')
-  },
-  onHide: function () {
-    console.log('App Hide')
+    // 未登录先跳登录页（登录页 reLaunch 回数据表）
+    if (!uni.getStorageSync('grt_token')) {
+      uni.reLaunch({ url: '/pages/login/index' })
+    }
   },
 }
 </script>

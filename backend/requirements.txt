@@ -12,3 +12,4 @@ python-multipart>=0.0.9
 pypinyin>=0.51
 pillow>=10.0
 apscheduler>=3.10,<4.0
+pyjwt>=2.8
