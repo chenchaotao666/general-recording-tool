@@ -151,6 +151,10 @@ async function loadGeneral() {
   try {
     const res = await getGeneralSettings()
     general.smtp = res.smtp || {}
+    // SSL 开关未设置过时按端口给默认值，避免 465 端口却显示关闭
+    if (general.smtp.use_ssl === undefined) {
+      general.smtp.use_ssl = Number(general.smtp.port) === 465
+    }
     general.sms_gateway = res.sms_gateway || {}
   } catch (e) {
     ElMessage.error(e.message)

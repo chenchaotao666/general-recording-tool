@@ -53,6 +53,23 @@ export const toggleTask = (id) => http.post(`/tasks/${id}/toggle`)
 export const testTask = (id) => http.post(`/tasks/${id}/test`)
 export const runTask = (id) => http.post(`/tasks/${id}/run`)
 export const taskRuns = (id) => http.get(`/tasks/${id}/runs`)
+export const aiAssistTask = (tableId, description) => http.post('/tasks/ai-assist', { table_id: tableId, description })
+
+// 报表
+export const listReports = () => http.get('/reports')
+export const getReport = (id) => http.get(`/reports/${id}`)
+export const createReport = (p) => http.post('/reports', p)
+export const updateReport = (id, p) => http.put(`/reports/${id}`, p)
+export const deleteReport = (id) => http.delete(`/reports/${id}`)
+export const toggleReport = (id) => http.post(`/reports/${id}/toggle`)
+export const runReport = (id, range) => http.post(`/reports/${id}/run`, { range })
+export const aiAssistReport = (tableId, description) => http.post('/reports/ai-assist', { table_id: tableId, description })
+export const testPushReport = (id) => http.post(`/reports/${id}/test-push`)
+export const reportRuns = (id) => http.get(`/reports/${id}/runs`)
+export const reportExportUrl = (id, params) => {
+  const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v != null && v !== ''))
+  return `/api/reports/${id}/export?${qs}`
+}
 
 // 站内通知
 export const listNotifications = () => http.get('/notify')

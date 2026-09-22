@@ -12,6 +12,9 @@
         <el-menu-item index="/tasks">
           <el-icon><AlarmClock /></el-icon><span>任务规则</span>
         </el-menu-item>
+        <el-menu-item index="/reports">
+          <el-icon><DataAnalysis /></el-icon><span>报表</span>
+        </el-menu-item>
         <el-menu-item index="/settings">
           <el-icon><Setting /></el-icon><span>模型设置</span>
         </el-menu-item>
@@ -52,7 +55,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { AlarmClock, Bell, Grid, Setting, Upload } from '@element-plus/icons-vue'
+import { AlarmClock, Bell, DataAnalysis, Grid, Setting, Upload } from '@element-plus/icons-vue'
 import { listNotifications, markRead, unreadCount } from './api'
 
 const router = useRouter()

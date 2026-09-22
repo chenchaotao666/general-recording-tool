@@ -60,6 +60,10 @@
 
     <!-- 任务编辑器 -->
     <el-dialog v-model="editorVisible" :title="editing ? '编辑任务' : '新建任务'" width="820px" destroy-on-close>
+      <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 10px">
+        <el-button size="small" type="warning" plain :icon="MagicStick" @click="openAiAssist">AI 辅助生成</el-button>
+        <span style="font-size: 12px; color: #909399">用自然语言描述需求，AI 自动生成条件、周期和动作配置</span>
+      </div>
       <el-form label-width="100px">
         <el-form-item label="任务名称" required>
           <el-input v-model="form.name" placeholder="如：超过30天未跟进提醒" style="width: 400px" />
@@ -159,12 +163,17 @@
         </el-form-item>
 
         <el-form-item label="动作" required>
-          <el-radio-group v-model="form.action.type">
-            <el-radio value="notify">站内通知</el-radio>
-            <el-radio value="email">邮件</el-radio>
-            <el-radio value="sms">短信</el-radio>
-            <el-radio value="webhook">Webhook</el-radio>
-          </el-radio-group>
+          <div style="width: 100%">
+            <el-radio-group v-model="form.action.type">
+              <el-radio value="notify">站内通知</el-radio>
+              <el-radio value="email">邮件</el-radio>
+              <el-radio value="sms">短信</el-radio>
+              <el-radio value="webhook">Webhook</el-radio>
+            </el-radio-group>
+            <div style="font-size: 12px; color: #909399; margin-top: 4px">
+              邮件/短信：每次执行只发送一条，汇总所有命中记录；站内通知/Webhook：每条命中记录触发一次
+            </div>
+          </div>
         </el-form-item>
 
         <el-form-item v-if="form.action.type === 'webhook'" label="Webhook URL" required>
@@ -262,26 +271,59 @@
         </el-table-column>
       </el-table>
     </el-dialog>
+
+    <!-- AI 辅助对话框 -->
+    <el-dialog v-model="aiVisible" title="AI 辅助生成任务" width="640px" append-to-body destroy-on-close>
+      <el-input
+        v-model="aiDescription" type="textarea" :rows="4"
+        placeholder="用自然语言描述你想要的任务，如：&#10;每天早上9点检查超过30天没跟进的客户，发邮件提醒经理，内容里带上客户名称和分级"
+      />
+      <div style="margin: 10px 0">
+        <el-button type="primary" :loading="aiGenerating" :disabled="!aiDescription.trim()" @click="aiGenerate">
+          {{ aiResult ? '重新生成' : '生成' }}
+        </el-button>
+        <span v-if="aiGenerating" style="margin-left: 10px; font-size: 12px; color: #909399">AI 设计中，可能需要十几秒…</span>
+      </div>
+      <template v-if="aiResult">
+        <el-alert type="success" :closable="false" style="margin-bottom: 10px">
+          <template #title>已生成「{{ aiResult.name }}」</template>
+        </el-alert>
+        <div class="ai-summary">
+          <div><b>判断方式：</b>{{ aiResult.condition_mode === 'llm' ? 'LLM 智能判断' : '结构化条件' }}</div>
+          <div v-if="aiResult.condition_mode === 'llm'"><b>条件描述：</b>{{ aiResult.condition.description }}</div>
+          <div v-else><b>条件：</b>{{ aiConditionSummary }}</div>
+          <div><b>周期：</b>{{ aiScheduleDesc }}</div>
+          <div><b>动作：</b>{{ ACTION_LABELS[aiResult.action.type] || aiResult.action.type }}</div>
+          <div><b>内容：</b>{{ aiResult.action.template }}</div>
+          <div><b>冷却期：</b>{{ aiResult.cooldown_hours }} 小时</div>
+        </div>
+        <el-alert v-if="aiResult.notes" type="warning" :closable="false" :title="aiResult.notes" style="margin-top: 10px" />
+      </template>
+      <template #footer>
+        <el-button @click="aiVisible = false">取消</el-button>
+        <el-button v-if="aiResult" type="primary" @click="applyAiResult">应用到表单</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { MagicStick, Plus } from '@element-plus/icons-vue'
 import {
-  createTask, deleteTask, getTable, listTables, listTasks,
+  aiAssistTask, createTask, deleteTask, getTable, listTables, listTasks,
   runTask, taskRuns, testTask, toggleTask, updateTask,
 } from '../api'
 
 const ACTION_LABELS = { notify: '站内通知', email: '邮件', sms: '短信', webhook: 'Webhook' }
-const NO_VALUE_OPS = ['null', 'not_null']
-const DAY_OPS = ['older_than_days', 'within_days']
+const NO_VALUE_OPS = ['null', 'not_null', 'today']
+const DAY_OPS = ['older_than_days', 'within_days', 'past_days']
 
 const OPS = {
   text: [['eq', '等于'], ['ne', '不等于'], ['contains', '包含'], ['startswith', '开头是'], ['null', '为空'], ['not_null', '不为空']],
   number: [['eq', '等于'], ['ne', '不等于'], ['gt', '大于'], ['gte', '至少'], ['lt', '小于'], ['lte', '至多'], ['null', '为空'], ['not_null', '不为空']],
-  date: [['eq', '等于'], ['gte', '不早于'], ['lte', '不晚于'], ['older_than_days', '早于 N 天前'], ['within_days', 'N 天内'], ['null', '为空'], ['not_null', '不为空']],
+  date: [['eq', '等于'], ['gte', '不早于'], ['lte', '不晚于'], ['today', '当天'], ['past_days', '过去 N 天'], ['older_than_days', '早于 N 天前'], ['within_days', '未来 N 天内'], ['null', '为空'], ['not_null', '不为空']],
   bool: [['eq', '等于'], ['null', '为空'], ['not_null', '不为空']],
   select: [['eq', '等于'], ['ne', '不等于'], ['in', '属于（多选）'], ['null', '为空'], ['not_null', '不为空']],
 }
@@ -386,6 +428,8 @@ function openCreate() {
 async function openEdit(row) {
   editing.value = row
   const c = row.condition || {}
+  // 先加载字段（onTableChange 会清空 rules），再回填表单，避免条件被清空
+  await onTableChange(row.table_id)
   Object.assign(form, {
     name: row.name, table_id: row.table_id, enabled: row.enabled,
     condition_mode: row.condition_mode,
@@ -400,7 +444,6 @@ async function openEdit(row) {
     },
     cooldown_hours: row.cooldown_hours ?? 24, max_per_run: row.max_per_run || 100,
   })
-  await onTableChange(row.table_id)
   editorVisible.value = true
 }
 
@@ -506,10 +549,73 @@ async function del(row) {
 }
 
 onMounted(load)
+
+// ---------- AI 辅助 ----------
+
+const aiVisible = ref(false)
+const aiDescription = ref('')
+const aiGenerating = ref(false)
+const aiResult = ref(null)
+
+const aiConditionSummary = computed(() => {
+  const rules = aiResult.value?.condition?.rules || []
+  if (!rules.length) return '（无条件）'
+  const logic = aiResult.value.condition.logic === 'OR' ? ' 或 ' : ' 且 '
+  return rules.map((r) => {
+    const f = fieldOf(r.field)?.label || r.field
+    const opLabel = Object.values(OPS).flat().find(([v]) => v === r.op)?.[1] || r.op
+    const val = NO_VALUE_OPS.includes(r.op) ? '' : ` ${r.value}${DAY_OPS.includes(r.op) ? ' 天' : ''}`
+    return `${f} ${opLabel}${val}`
+  }).join(logic)
+})
+
+const aiScheduleDesc = computed(() => scheduleDesc(aiResult.value?.schedule))
+
+function openAiAssist() {
+  if (!form.table_id) return ElMessage.warning('请先选择数据表')
+  aiResult.value = null
+  aiVisible.value = true
+}
+
+async function aiGenerate() {
+  aiGenerating.value = true
+  try {
+    aiResult.value = await aiAssistTask(form.table_id, aiDescription.value.trim())
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    aiGenerating.value = false
+  }
+}
+
+async function applyAiResult() {
+  if (form.condition.rules.length || form.condition.description) {
+    try {
+      await ElMessageBox.confirm('应用将覆盖当前的条件、周期和动作配置，确定继续？', 'AI 辅助', { type: 'warning' })
+    } catch { return }
+  }
+  const r = aiResult.value
+  if (!form.name.trim()) form.name = r.name
+  form.condition_mode = r.condition_mode
+  form.condition = r.condition_mode === 'llm'
+    ? { description: r.condition.description || '' }
+    : { logic: r.condition.logic, rules: r.condition.rules.map((x) => ({ ...x })) }
+  form.schedule = { type: r.schedule.type, minutes: r.schedule.minutes || 60, expr: r.schedule.expr || '0 9 * * *' }
+  form.action = {
+    type: r.action.type,
+    template: r.action.template,
+    webhook_url: r.action.webhook_url || '',
+    recipients: { type: 'fixed', value: '', field: '', ...(r.action.recipients || {}) },
+  }
+  form.cooldown_hours = r.cooldown_hours
+  aiVisible.value = false
+  ElMessage.success('已应用，可在下方继续调整')
+}
 </script>
 
 <style scoped>
 .cond-box { width: 100%; }
 .cond-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .detail-pre { margin: 0; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+.ai-summary { font-size: 13px; line-height: 2; color: #606266; }
 </style>
