@@ -1,4 +1,5 @@
 """任务引擎：规则求值（结构化条件 / LLM 判断）、冷却去重、动作执行。"""
+import time
 from datetime import datetime, timedelta
 
 from sqlalchemy import or_, select
@@ -7,11 +8,20 @@ from sqlalchemy.orm import Session
 from ..database import SessionLocal
 from ..models import MetaTable, TaskRule, TaskRunLog, TaskTriggerLog
 from . import dyn_engine
-from .actions import ACTION_FUNCS, ActionError, render_template
+from .actions import ACTION_FUNCS, BATCH_ACTION_FUNCS, ActionError, render_batch_body, render_template
 from .llm import judge_records
 from .llm.base import LLMError
 
 HARD_CANDIDATE_CAP = 200   # LLM 判断模式的候选记录硬上限，控制成本
+
+
+def _log_sql(tag: str, stmt, elapsed_ms: float) -> None:
+    """打印执行的 SQL 语句和耗时（结构化条件求值调试用）。"""
+    try:
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    except Exception:  # 个别类型无法字面量渲染时退化为参数形式
+        sql = str(stmt)
+    print(f"[task] {tag} 耗时 {elapsed_ms:.0f}ms | {sql}", flush=True)
 
 
 class TaskError(Exception):
@@ -33,9 +43,10 @@ def evaluate_rule(db: Session, rule: TaskRule) -> list[dict]:
         conds = [dyn_engine.build_condition(table, fields_by_name, f) for f in pre_rules]
         if pre.get("logic") == "OR" and conds:
             conds = [or_(*conds)]
-        rows = db.execute(
-            select(table).where(*conds).limit(HARD_CANDIDATE_CAP)
-        ).mappings().all()
+        stmt = select(table).where(*conds).limit(HARD_CANDIDATE_CAP)
+        t0 = time.perf_counter()
+        rows = db.execute(stmt).mappings().all()
+        _log_sql("LLM 预筛", stmt, (time.perf_counter() - t0) * 1000)
         candidates = [dyn_engine.row_to_dict(r) for r in rows]
         if not candidates:
             return []
@@ -43,14 +54,17 @@ def evaluate_rule(db: Session, rule: TaskRule) -> list[dict]:
         matched_ids = judge_records(db, description, field_dicts, candidates)
         return [r for r in candidates if r["id"] in matched_ids]
 
-    # 结构化条件
+    # 结构化条件：SQL 层过滤，不设条数上限
     rules = cond.get("rules") or []
     if not rules:
         raise TaskError("未配置条件规则")
     conds = [dyn_engine.build_condition(table, fields_by_name, f) for f in rules]
     if (cond.get("logic") or "AND") == "OR" and len(conds) > 1:
         conds = [or_(*conds)]
-    rows = db.execute(select(table).where(*conds).limit(HARD_CANDIDATE_CAP)).mappings().all()
+    stmt = select(table).where(*conds)
+    t0 = time.perf_counter()
+    rows = db.execute(stmt).mappings().all()
+    _log_sql("结构化条件", stmt, (time.perf_counter() - t0) * 1000)
     return [dyn_engine.row_to_dict(r) for r in rows]
 
 
@@ -93,32 +107,57 @@ def execute_rule(rule_id: int, trigger: str = "schedule") -> dict | None:
         matched, targets = [], []
         try:
             matched = evaluate_rule(db, rule)
-            targets, log_map = filter_cooldown(db, rule, matched)
+            cooldown_targets, log_map = filter_cooldown(db, rule, matched)
+            # 手动执行跳过冷却过滤，便于立即验证效果；定时调度仍遵守冷却窗口
+            targets = matched if trigger == "manual" else cooldown_targets
             targets = targets[: (rule.max_per_run or 100)]
 
             action = rule.action_json or {}
-            func = ACTION_FUNCS.get(action.get("type"))
+            action_type = action.get("type")
+            func = ACTION_FUNCS.get(action_type)
+            batch_func = BATCH_ACTION_FUNCS.get(action_type)
             sent = fail = 0
             details = []
-            for rec in targets:
-                content = render_template(action.get("template", ""), rec)
+
+            if batch_func is not None and targets:
+                # 邮件/短信：每次执行只发一次，汇总所有命中记录；触发日志仍逐条写（冷却语义不变）
                 try:
-                    if func is None:
-                        raise ActionError(f"未知动作类型：{action.get('type')}")
-                    func(db, rule, rec, content)
-                    # 更新触发去重记录
-                    log = log_map.get(rec["id"])
-                    if log:
-                        log.fired_at = datetime.now()
-                    else:
-                        db.add(TaskTriggerLog(rule_id=rule.id, record_id=rec["id"], fired_at=datetime.now()))
-                    db.commit()   # 每条成功立即提交，避免后续失败回滚丢掉触发记录
-                    sent += 1
-                    details.append({"record_id": rec["id"], "ok": True, "content": content[:200]})
+                    batch_func(db, rule, targets)
+                    now = datetime.now()
+                    for rec in targets:
+                        log = log_map.get(rec["id"])
+                        if log:
+                            log.fired_at = now
+                        else:
+                            db.add(TaskTriggerLog(rule_id=rule.id, record_id=rec["id"], fired_at=now))
+                    db.commit()
+                    sent = len(targets)
+                    details.append({"batch": len(targets), "ok": True,
+                                    "content": render_batch_body(action, targets)[:200]})
                 except Exception as e:
                     db.rollback()
-                    fail += 1
-                    details.append({"record_id": rec["id"], "ok": False, "error": str(e)[:200]})
+                    fail = len(targets)
+                    details.append({"batch": len(targets), "ok": False, "error": str(e)[:200]})
+            else:
+                for rec in targets:
+                    content = render_template(action.get("template", ""), rec)
+                    try:
+                        if func is None:
+                            raise ActionError(f"未知动作类型：{action_type}")
+                        func(db, rule, rec, content)
+                        # 更新触发去重记录
+                        log = log_map.get(rec["id"])
+                        if log:
+                            log.fired_at = datetime.now()
+                        else:
+                            db.add(TaskTriggerLog(rule_id=rule.id, record_id=rec["id"], fired_at=datetime.now()))
+                        db.commit()   # 每条成功立即提交，避免后续失败回滚丢掉触发记录
+                        sent += 1
+                        details.append({"record_id": rec["id"], "ok": True, "content": content[:200]})
+                    except Exception as e:
+                        db.rollback()
+                        fail += 1
+                        details.append({"record_id": rec["id"], "ok": False, "error": str(e)[:200]})
 
             run.matched_count = len(matched)
             run.sent_count = sent

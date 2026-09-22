@@ -29,7 +29,7 @@ def trigger_of(schedule: dict):
 
 
 def reload_jobs() -> None:
-    """全量重载任务（规则增删改后调用）。单进程部署下足够简单可靠。"""
+    """全量重载任务（规则/报表模板增删改后调用）。单进程部署下足够简单可靠。"""
     scheduler.remove_all_jobs()
     db = SessionLocal()
     try:
@@ -40,6 +40,17 @@ def reload_jobs() -> None:
                 scheduler.add_job(
                     execute_rule, trigger, args=[rule.id, "schedule"],
                     id=f"rule_{rule.id}", replace_existing=True, misfire_grace_time=300,
+                )
+        # 报表定时推送
+        from ..models import ReportTemplate
+        from .report_engine import push_template
+        templates = db.query(ReportTemplate).filter_by(enabled=True).all()
+        for tpl in templates:
+            trigger = trigger_of(tpl.schedule_json or {})
+            if trigger is not None:
+                scheduler.add_job(
+                    push_template, trigger, args=[tpl.id, "schedule"],
+                    id=f"report_{tpl.id}", replace_existing=True, misfire_grace_time=300,
                 )
     finally:
         db.close()

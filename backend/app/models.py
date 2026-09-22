@@ -124,6 +124,38 @@ class TaskRunLog(Base):
     error = Column(Text)
 
 
+class ReportTemplate(Base):
+    """报表模板：目标表 + 默认时间口径 + 区块列表 + (可选)定时推送"""
+    __tablename__ = "report_templates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(128), nullable=False)
+    description = Column(String(256))
+    table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
+    enabled = Column(Boolean, default=False)               # 控制定时推送是否生效
+    range_json = Column(JSON, default=dict)
+    # {mode: this_week|last_week|this_month|last_month|custom, date_field, start?, end?}
+    blocks_json = Column(JSON, default=list)
+    # [{id, type: stat|chart|table|text, title, filters: {logic, rules}, ...}]
+    schedule_json = Column(JSON, default=dict)   # {type: interval, minutes} | {type: cron, expr}
+    push_json = Column(JSON, default=dict)       # {recipients, formats: [html_inline, xlsx], subject}
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class ReportRunLog(Base):
+    """报表推送日志（定时/手动）"""
+    __tablename__ = "report_run_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    template_id = Column(Integer, ForeignKey("report_templates.id"), index=True, nullable=False)
+    trigger = Column(String(16), default="schedule")   # schedule / manual
+    run_at = Column(DateTime, default=datetime.now)
+    range_label = Column(String(64))
+    sent_count = Column(Integer, default=0)
+    error = Column(Text)
+
+
 class Notification(Base):
     """站内通知"""
     __tablename__ = "notifications"

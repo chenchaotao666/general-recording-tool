@@ -13,6 +13,8 @@ from .typemap import coerce_value
 
 FILTER_OPS = {
     "eq", "ne", "gt", "gte", "lt", "lte", "contains", "startswith", "in", "null", "not_null",
+    "today",             # 当天（日期=今天 / 日期时间在今天 00:00~24:00 内）
+    "past_days",         # 过去 N 天（含今天）
     "older_than_days",   # 日期字段早于 N 天前（如：超过30天未跟进）
     "within_days",       # 日期字段在未来 N 天内（如：7天内到期）
 }
@@ -66,21 +68,37 @@ def build_condition(table: Table, fields_by_name: dict, flt: dict):
         return col.isnot(None)
 
     f = fields_by_name.get(name)
+    is_date = f is not None and f.data_type == "date"
+    now = datetime.now()
+    today = now.date()
+
+    # 无需值的相对日期操作符
+    if op == "today":
+        if is_date:
+            return col == today
+        return and_(col >= now.replace(hour=0, minute=0, second=0, microsecond=0),
+                    col < now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
 
     # 相对日期操作符（任务条件常用）
-    if op in ("older_than_days", "within_days"):
+    if op in ("older_than_days", "within_days", "past_days"):
         try:
             days = int(value)
         except (TypeError, ValueError):
             raise HTTPException(400, "天数必须是整数")
-        is_date = f is not None and f.data_type == "date"
-        now = datetime.now()
         if op == "older_than_days":
             threshold = now - timedelta(days=days)
             return col < (threshold.date() if is_date else threshold)
-        lo = now.date() if is_date else now
-        hi = now + timedelta(days=days)
-        return and_(col >= lo, col <= (hi.date() if is_date else hi))
+        if op == "within_days":
+            lo = today if is_date else now
+            hi = now + timedelta(days=days)
+            return and_(col >= lo, col <= (hi.date() if is_date else hi))
+        # past_days：过去 N 天（含今天），N=1 即当天
+        start_date = today - timedelta(days=max(days - 1, 0))
+        if is_date:
+            return and_(col >= start_date, col <= today)
+        start_dt = datetime.combine(start_date, datetime.min.time())
+        end_dt = datetime.combine(today + timedelta(days=1), datetime.min.time())
+        return and_(col >= start_dt, col < end_dt)
 
     def coerce(v):
         if f is None:
@@ -119,6 +137,27 @@ def combine_conditions(conds: list, logic: str):
     if logic == "OR":
         return [or_(*conds)]
     return conds
+
+
+def rule_value_ok(f: MetaField | None, op: str, value) -> bool:
+    """校验筛选值能否按字段类型转换（保存任务/报表前把关，拦截 today 之类的字面量）。"""
+    if op in ("null", "not_null", "today") or f is None:
+        return True
+    if op in ("older_than_days", "within_days", "past_days"):
+        try:
+            int(value)
+            return True
+        except (TypeError, ValueError):
+            return False
+    if op == "in":
+        values = value if isinstance(value, list) else [v.strip() for v in str(value).split(",")]
+    else:
+        values = [value]
+    for v in values:
+        ok, _, _ = coerce_value(v, f.data_type, True)
+        if not ok:
+            return False
+    return True
 
 
 def list_records(db: Session, table_id: int, page: int, page_size: int,

@@ -2,6 +2,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -9,7 +10,9 @@ from ..models import TaskRule, TaskRunLog
 from ..schemas import TaskRuleIn
 from ..services import scheduler as sched
 from ..services.actions import ACTION_FUNCS
-from ..services.dyn_engine import FILTER_OPS
+from ..services.dyn_engine import FILTER_OPS, rule_value_ok
+from ..services.llm import LLMError
+from ..services.llm.gateway import assist_task
 from ..services.meta_service import get_meta_fields, get_meta_table
 from ..services.task_engine import evaluate_rule, execute_rule, filter_cooldown
 
@@ -53,10 +56,14 @@ def _check_rules(db: Session, table_id: int, rules: list[dict]) -> None:
     fields = {f.field_name: f for f in get_meta_fields(db, table_id)}
     system_fields = {"id", "created_at", "updated_at"}
     for r in rules:
-        if r.get("field") not in fields and r.get("field") not in system_fields:
-            raise HTTPException(400, f"条件字段不存在：{r.get('field')}")
+        name = r.get("field")
+        if name not in fields and name not in system_fields:
+            raise HTTPException(400, f"条件字段不存在：{name}")
         if r.get("op") not in FILTER_OPS:
             raise HTTPException(400, f"不支持的条件操作符：{r.get('op')}")
+        if not rule_value_ok(fields.get(name), r.get("op"), r.get("value")):
+            label = fields[name].label if name in fields else name
+            raise HTTPException(400, f"筛选值无效（{label}）：无法按字段类型转换（日期请选具体日期或相对时间操作符）")
 
 
 def _out(db: Session, rule: TaskRule) -> dict:
@@ -87,6 +94,25 @@ def _out(db: Session, rule: TaskRule) -> dict:
 def list_rules(db: Session = Depends(get_db)):
     rows = db.query(TaskRule).order_by(TaskRule.id.desc()).all()
     return [_out(db, r) for r in rows]
+
+
+class AiAssistIn(BaseModel):
+    table_id: int
+    description: str
+
+
+@router.post("/ai-assist")
+def ai_assist(payload: AiAssistIn, db: Session = Depends(get_db)):
+    """自然语言描述 → LLM 生成任务规则配置（条件/周期/动作），不落库。"""
+    if not payload.description.strip():
+        raise HTTPException(400, "请填写任务需求描述")
+    if not get_meta_table(db, payload.table_id):
+        raise HTTPException(400, "目标数据表不存在")
+    fields = get_meta_fields(db, payload.table_id)
+    try:
+        return assist_task(db, fields, payload.description.strip())
+    except LLMError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.post("")

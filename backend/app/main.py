@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, engine
-from .routers import dyn, excel, notify, settings as settings_router, tables, tasks, vision
+from .routers import dyn, excel, notify, reports, settings as settings_router, tables, tasks, vision
 from .services import scheduler
 
 
@@ -35,6 +35,7 @@ app.include_router(tables.router)
 app.include_router(dyn.router)
 app.include_router(vision.router)
 app.include_router(tasks.router)
+app.include_router(reports.router)
 app.include_router(notify.router)
 app.include_router(settings_router.router)
 

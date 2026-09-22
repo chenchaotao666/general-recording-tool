@@ -117,3 +117,14 @@ class TaskRuleIn(BaseModel):
         if v < 0:
             raise ValueError("不能为负数")
         return v
+
+
+class ReportTemplateIn(BaseModel):
+    name: str
+    description: str | None = None
+    table_id: int
+    enabled: bool = False
+    range: dict = {}       # {mode, date_field, start?, end?}
+    blocks: list[dict] = []
+    schedule: dict = {}    # {type: interval, minutes} | {type: cron, expr}
+    push: dict = {}        # {recipients, formats, subject}
