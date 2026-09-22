@@ -35,6 +35,14 @@ def row_to_dict(row) -> dict:
     return {k: serialize_value(v) for k, v in dict(row).items()}
 
 
+def load_meta(db: Session, table_id: int) -> tuple[MetaTable, list[MetaField]]:
+    """只取元数据（不反射物理表）：json 模式与分流判断用。"""
+    mt = db.get(MetaTable, table_id)
+    if not mt:
+        raise HTTPException(404, "数据表不存在")
+    return mt, get_meta_fields(db, table_id)
+
+
 def load_business(db: Session, table_id: int) -> tuple[MetaTable, list[MetaField], Table]:
     mt = db.get(MetaTable, table_id)
     if not mt:
@@ -48,9 +56,9 @@ def load_business(db: Session, table_id: int) -> tuple[MetaTable, list[MetaField
 
 
 def log_audit(db: Session, action: str, table_id: int | None, record_id: int | None = None,
-              before: dict | None = None, after: dict | None = None) -> None:
+              before: dict | None = None, after: dict | None = None, user: str | None = None) -> None:
     db.add(AuditLog(action=action, table_id=table_id, record_id=record_id,
-                    before_json=before, after_json=after))
+                    before_json=before, after_json=after, user=user or "system"))
 
 
 def build_condition(table: Table, fields_by_name: dict, flt: dict):
@@ -162,6 +170,10 @@ def rule_value_ok(f: MetaField | None, op: str, value) -> bool:
 
 def list_records(db: Session, table_id: int, page: int, page_size: int,
                  filters: list[dict] | None, sort_by: str | None, sort_order: str | None) -> dict:
+    mt, fields = load_meta(db, table_id)
+    if mt.storage_mode == "json":
+        from . import json_store
+        return json_store.list_records(db, mt, fields, page, page_size, filters, sort_by, sort_order)
     _, fields, table = load_business(db, table_id)
     fields_by_name = {f.field_name: f for f in fields}
     conds = [build_condition(table, fields_by_name, f) for f in (filters or [])]
@@ -205,6 +217,10 @@ def coerce_payload(fields: list[MetaField], data: dict, partial: bool = False):
 
 
 def get_record(db: Session, table_id: int, record_id: int) -> dict:
+    mt, fields = load_meta(db, table_id)
+    if mt.storage_mode == "json":
+        from . import json_store
+        return json_store.get_record(db, table_id, record_id, fields)
     _, _, table = load_business(db, table_id)
     row = db.execute(select(table).where(table.c.id == record_id)).mappings().first()
     if not row:
@@ -212,7 +228,11 @@ def get_record(db: Session, table_id: int, record_id: int) -> dict:
     return row_to_dict(row)
 
 
-def create_record(db: Session, table_id: int, data: dict) -> dict:
+def create_record(db: Session, table_id: int, data: dict, user: str | None = None) -> dict:
+    mt, fields = load_meta(db, table_id)
+    if mt.storage_mode == "json":
+        from . import json_store
+        return json_store.create_record(db, mt, fields, data, user=user)
     _, fields, table = load_business(db, table_id)
     cleaned, errors = coerce_payload(fields, data)
     if errors:
@@ -228,12 +248,16 @@ def create_record(db: Session, table_id: int, data: dict) -> dict:
     result = db.execute(table.insert().values(**cleaned))
     db.commit()
     record = get_record(db, table_id, result.inserted_primary_key[0])
-    log_audit(db, "create", table_id, record["id"], after=record)
+    log_audit(db, "create", table_id, record["id"], after=record, user=user)
     db.commit()
     return record
 
 
-def update_record(db: Session, table_id: int, record_id: int, data: dict) -> dict:
+def update_record(db: Session, table_id: int, record_id: int, data: dict, user: str | None = None) -> dict:
+    mt, fields = load_meta(db, table_id)
+    if mt.storage_mode == "json":
+        from . import json_store
+        return json_store.update_record(db, mt, fields, record_id, data, user=user)
     _, fields, table = load_business(db, table_id)
     before = get_record(db, table_id, record_id)
     cleaned, errors = coerce_payload(fields, data, partial=True)
@@ -243,14 +267,19 @@ def update_record(db: Session, table_id: int, record_id: int, data: dict) -> dic
     db.execute(table.update().where(table.c.id == record_id).values(**cleaned))
     db.commit()
     after = get_record(db, table_id, record_id)
-    log_audit(db, "update", table_id, record_id, before=before, after=after)
+    log_audit(db, "update", table_id, record_id, before=before, after=after, user=user)
     db.commit()
     return after
 
 
-def delete_record(db: Session, table_id: int, record_id: int) -> None:
+def delete_record(db: Session, table_id: int, record_id: int, user: str | None = None) -> None:
+    mt, fields = load_meta(db, table_id)
+    if mt.storage_mode == "json":
+        from . import json_store
+        json_store.delete_record(db, table_id, record_id, fields=fields, user=user)
+        return
     _, _, table = load_business(db, table_id)
     before = get_record(db, table_id, record_id)
     db.execute(table.delete().where(table.c.id == record_id))
-    log_audit(db, "delete", table_id, record_id, before=before)
+    log_audit(db, "delete", table_id, record_id, before=before, user=user)
     db.commit()

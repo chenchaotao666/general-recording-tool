@@ -133,29 +133,31 @@
           </picker>
           <text class="bc-op del" @click="b.filters.rules.splice(ri, 1)">删</text>
         </view>
-        <view v-for="(r, ri) in b.filters.rules" :key="'v' + ri" class="fc-row" v-if="!NO_VALUE_OPS.includes(r.op)">
-          <input
-            v-if="DAY_OPS.includes(r.op)" v-model="r.value" type="number" class="fc-input" placeholder="天数"
-          />
-          <picker
-            v-else-if="fieldOf(r.field)?.widget === 'select'"
-            :range="selectOptions(fieldOf(r.field))"
-            @change="(e) => (r.value = selectOptions(fieldOf(r.field))[Number(e.detail.value)])"
-          >
-            <view class="fc-picker wide">{{ r.value || '选择值' }} ›</view>
-          </picker>
-          <picker
-            v-else-if="['date', 'datetime'].includes(fieldOf(r.field)?.data_type)" mode="date"
-            :value="r.value || ''" @change="(e) => (r.value = e.detail.value)"
-          >
-            <view class="fc-picker wide">{{ r.value || '选择日期' }} ›</view>
-          </picker>
-          <input
-            v-else-if="['int', 'decimal'].includes(fieldOf(r.field)?.data_type)"
-            v-model="r.value" type="digit" class="fc-input" placeholder="数值"
-          />
-          <input v-else v-model="r.value" class="fc-input" placeholder="筛选值" />
-        </view>
+        <template v-for="(r, ri) in b.filters.rules" :key="'v' + ri">
+          <view v-if="!NO_VALUE_OPS.includes(r.op)" class="fc-row">
+            <input
+              v-if="DAY_OPS.includes(r.op)" v-model="r.value" type="number" class="fc-input" placeholder="天数"
+            />
+            <picker
+              v-else-if="fieldOf(r.field)?.widget === 'select'"
+              :range="selectOptions(fieldOf(r.field))"
+              @change="(e) => (r.value = selectOptions(fieldOf(r.field))[Number(e.detail.value)])"
+            >
+              <view class="fc-picker wide">{{ r.value || '选择值' }} ›</view>
+            </picker>
+            <picker
+              v-else-if="['date', 'datetime'].includes(fieldOf(r.field)?.data_type)" mode="date"
+              :value="r.value || ''" @change="(e) => (r.value = e.detail.value)"
+            >
+              <view class="fc-picker wide">{{ r.value || '选择日期' }} ›</view>
+            </picker>
+            <input
+              v-else-if="['int', 'decimal'].includes(fieldOf(r.field)?.data_type)"
+              v-model="r.value" type="digit" class="fc-input" placeholder="数值"
+            />
+            <input v-else v-model="r.value" class="fc-input" placeholder="筛选值" />
+          </view>
+        </template>
         <view class="add-field sm" @click="b.filters.rules.push({ field: '', op: 'eq', value: null })">+ 添加筛选</view>
       </view>
     </view>

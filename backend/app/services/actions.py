@@ -149,7 +149,8 @@ def send_smtp_html(cfg: dict, recipients: list[str], subject: str, html: str,
 
 
 def act_notify(db: Session, rule, record: dict, content: str) -> None:
-    db.add(Notification(title=f"【{rule.name}】", content=content, link=f"/t/{rule.table_id}"))
+    db.add(Notification(title=f"【{rule.name}】", content=content, link=f"/t/{rule.table_id}",
+                        user_id=rule.user_id))  # 接收人 = 规则归属人
 
 
 def act_email(db: Session, rule, record: dict, content: str) -> None:

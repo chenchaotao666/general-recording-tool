@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import ReportRunLog, ReportTemplate
+from ..models import ReportRunLog, ReportTemplate, User
 from ..schemas import ReportTemplateIn
 from ..services import scheduler as sched
 from ..services.llm import LLMError
@@ -16,6 +16,8 @@ from ..services.llm.gateway import assist_report
 from ..services.meta_service import get_meta_fields, get_meta_table
 from ..services.report_engine import push_template, run_template, validate_template
 from ..services.report_export import DEFAULT_ECHARTS_CDN, export_html, export_xlsx
+from ..utils.access import check_owner_or_admin, get_table_access
+from ..utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -65,16 +67,20 @@ def _apply(rule: ReportTemplate, payload: ReportTemplateIn) -> None:
 
 
 @router.get("")
-def list_templates(db: Session = Depends(get_db)):
-    rows = db.query(ReportTemplate).order_by(ReportTemplate.id.desc()).all()
+def list_templates(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    q = db.query(ReportTemplate)
+    if user.role != "admin":
+        q = q.filter(ReportTemplate.user_id == user.id)
+    rows = q.order_by(ReportTemplate.id.desc()).all()
     return [_out(db, t) for t in rows]
 
 
 @router.get("/{tpl_id}")
-def get_template(tpl_id: int, db: Session = Depends(get_db)):
+def get_template(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
+    check_owner_or_admin(tpl.user_id, user)
     return _out(db, tpl)
 
 
@@ -84,12 +90,11 @@ class AiAssistIn(BaseModel):
 
 
 @router.post("/ai-assist")
-def ai_assist(payload: AiAssistIn, db: Session = Depends(get_db)):
+def ai_assist(payload: AiAssistIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """自然语言描述 → LLM 生成报表配置（名称/时间口径/区块），不落库。"""
     if not payload.description.strip():
         raise HTTPException(400, "请填写报表需求描述")
-    if not get_meta_table(db, payload.table_id):
-        raise HTTPException(400, "目标数据表不存在")
+    get_table_access(db, payload.table_id, user)
     fields = get_meta_fields(db, payload.table_id)
     try:
         return assist_report(db, fields, payload.description.strip())
@@ -98,9 +103,10 @@ def ai_assist(payload: AiAssistIn, db: Session = Depends(get_db)):
 
 
 @router.post("")
-def create_template(payload: ReportTemplateIn, db: Session = Depends(get_db)):
+def create_template(payload: ReportTemplateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    get_table_access(db, payload.table_id, user)
     validate_template(db, payload)
-    tpl = ReportTemplate()
+    tpl = ReportTemplate(user_id=user.id)
     _apply(tpl, payload)
     db.add(tpl)
     db.commit()
@@ -109,10 +115,12 @@ def create_template(payload: ReportTemplateIn, db: Session = Depends(get_db)):
 
 
 @router.put("/{tpl_id}")
-def update_template(tpl_id: int, payload: ReportTemplateIn, db: Session = Depends(get_db)):
+def update_template(tpl_id: int, payload: ReportTemplateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
+    check_owner_or_admin(tpl.user_id, user)
+    get_table_access(db, payload.table_id, user)
     validate_template(db, payload)
     _apply(tpl, payload)
     db.commit()
@@ -121,10 +129,13 @@ def update_template(tpl_id: int, payload: ReportTemplateIn, db: Session = Depend
 
 
 @router.delete("/{tpl_id}")
-def delete_template(tpl_id: int, db: Session = Depends(get_db)):
+def delete_template(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
+    check_owner_or_admin(tpl.user_id, user)
+    from ..models import SharedLink
+    db.query(SharedLink).filter(SharedLink.resource_type == "report", SharedLink.resource_id == tpl.id).delete()
     db.delete(tpl)
     db.commit()
     sched.reload_jobs()
@@ -132,10 +143,11 @@ def delete_template(tpl_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{tpl_id}/toggle")
-def toggle_template(tpl_id: int, db: Session = Depends(get_db)):
+def toggle_template(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
+    check_owner_or_admin(tpl.user_id, user)
     tpl.enabled = not tpl.enabled
     db.commit()
     sched.reload_jobs()
@@ -155,19 +167,24 @@ def _range_override(range_cfg: dict | None, mode: str | None, start: str | None,
 
 
 @router.post("/{tpl_id}/run")
-def run_report(tpl_id: int, payload: dict | None = None, db: Session = Depends(get_db)):
+def run_report(tpl_id: int, payload: dict | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
+    check_owner_or_admin(tpl.user_id, user)
+    get_table_access(db, tpl.table_id, user)  # 数据权限跟随表的分享权限（被撤权后不可再跑）
     return run_template(db, tpl, _range_override((payload or {}).get("range"), None, None, None))
 
 
 @router.get("/{tpl_id}/export")
 def export_report(tpl_id: int, format: str = "xlsx", mode: str | None = None,
-                  start: str | None = None, end: str | None = None, db: Session = Depends(get_db)):
+                  start: str | None = None, end: str | None = None, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
+    check_owner_or_admin(tpl.user_id, user)
+    get_table_access(db, tpl.table_id, user)
     result = run_template(db, tpl, _range_override(None, mode, start, end))
     base = f"{tpl.name}-{result['range']['label'].split('（')[0]}"
 
@@ -191,7 +208,12 @@ def export_report(tpl_id: int, format: str = "xlsx", mode: str | None = None,
 
 
 @router.post("/{tpl_id}/test-push")
-def test_push(tpl_id: int):
+def test_push(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    tpl = db.get(ReportTemplate, tpl_id)
+    if not tpl:
+        raise HTTPException(404, "报表模板不存在")
+    check_owner_or_admin(tpl.user_id, user)
+    get_table_access(db, tpl.table_id, user)
     result = push_template(tpl_id, trigger="manual")
     if result is None:
         raise HTTPException(404, "报表模板不存在")
@@ -201,7 +223,11 @@ def test_push(tpl_id: int):
 
 
 @router.get("/{tpl_id}/runs")
-def list_runs(tpl_id: int, db: Session = Depends(get_db)):
+def list_runs(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    tpl = db.get(ReportTemplate, tpl_id)
+    if not tpl:
+        raise HTTPException(404, "报表模板不存在")
+    check_owner_or_admin(tpl.user_id, user)
     rows = (
         db.query(ReportRunLog)
         .filter_by(template_id=tpl_id)

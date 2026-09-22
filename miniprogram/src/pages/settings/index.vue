@@ -76,6 +76,16 @@
         <text class="act primary" @click="saveSms">保存</text>
       </view>
     </view>
+
+    <!-- 账号 -->
+    <view class="sec-head"><text class="sec-title">账号</text></view>
+    <view class="card">
+      <view class="fc-row">
+        <text class="card-sub" style="flex: 1">当前用户：{{ user?.username || '-' }}（{{ roleLabel }}）</text>
+        <text class="act" @click="openPassword">修改密码</text>
+        <text class="act danger" @click="logout">退出登录</text>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -92,6 +102,25 @@ const providerForm = ref(null)
 const smtp = ref({})
 const smsGateway = ref({})
 const testEmailTo = ref('')
+const user = uni.getStorageSync('grt_user')
+const roleLabel = { admin: '管理员', vip: 'VIP', user: '普通用户' }[user?.role] || '普通用户'
+
+function openPassword() {
+  uni.navigateTo({ url: '/pages/settings/password' })
+}
+
+function logout() {
+  uni.showModal({
+    title: '退出登录',
+    content: '确定退出当前账号？',
+    success: (res) => {
+      if (!res.confirm) return
+      uni.removeStorageSync('grt_token')
+      uni.removeStorageSync('grt_user')
+      uni.reLaunch({ url: '/pages/login/index' })
+    },
+  })
+}
 
 async function load() {
   try {

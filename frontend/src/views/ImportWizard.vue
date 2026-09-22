@@ -61,8 +61,16 @@
         <el-form-item label="表名称">
           <el-input v-model="confirm.label" style="width: 240px" placeholder="如：客户跟进记录" />
         </el-form-item>
-        <el-form-item label="物理表名">
+        <el-form-item label="表名">
           <el-input v-model="confirm.name" style="width: 240px" placeholder="留空自动生成 dyn_xxx" />
+        </el-form-item>
+        <el-form-item label="存储方式">
+          <el-radio-group v-model="confirm.storage_mode">
+            <el-radio value="json">JSON 存储（推荐）</el-radio>
+            <el-radio value="physical" :disabled="!canUsePhysical">
+              独立物理表{{ canUsePhysical ? '（VIP）' : '（VIP 功能）' }}
+            </el-radio>
+          </el-radio-group>
         </el-form-item>
       </el-form>
 
@@ -180,10 +188,13 @@ const sheetName = ref('')
 const headerRow = ref(1)
 const analyzing = ref(false)
 const analysis = ref(null)
-const confirm = reactive({ label: '', name: '', fields: [] })
+const confirm = reactive({ label: '', name: '', fields: [], storage_mode: 'json' })
 const creating = ref(false)
 const report = ref(null)
 const createdTableId = ref(null)
+
+const myRole = JSON.parse(localStorage.getItem('grt_user') || '{}').role
+const canUsePhysical = ['vip', 'admin'].includes(myRole)
 
 const currentSheet = computed(() => fileInfo.value?.sheets.find((s) => s.name === sheetName.value))
 const previewRows = computed(() =>
@@ -263,6 +274,7 @@ async function doCreate() {
       label: confirm.label.trim(),
       name: confirm.name.trim() || null,
       fields: confirm.fields.map(({ confidence, ...f }) => f),
+      storage_mode: confirm.storage_mode,
       source: { file_id: fileInfo.value.file_id, sheet_name: sheetName.value, header_row: headerRow.value },
     })
     report.value = res.import_report
@@ -285,5 +297,6 @@ function reset() {
   confirm.label = ''
   confirm.name = ''
   confirm.fields = []
+  confirm.storage_mode = 'json'
 }
 </script>

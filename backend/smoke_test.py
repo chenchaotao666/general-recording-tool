@@ -12,7 +12,61 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 cm = TestClient(app)
-client = cm.__enter__()  # 进入上下文以触发 lifespan（建元数据表）
+client = cm.__enter__()  # 进入上下文以触发 lifespan（建元数据表 + 种子管理员）
+
+# 0. 登录：未带 token 一律 401；错误密码 401；默认管理员 admin/admin123 可登录
+r = client.get("/api/tables")
+assert r.status_code == 401, r.text
+r = client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
+assert r.status_code == 401, r.text
+r = client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
+assert r.status_code == 200, r.text
+token = r.json()["token"]
+assert r.json()["user"]["role"] == "admin"
+client.headers.update({"Authorization": f"Bearer {token}"})
+print("登录成功，token 已注入请求头")
+
+# 注册：新用户可注册并直接登录；重名/弱密码被拒绝
+r = client.post("/api/auth/register", json={"username": "zhangsan", "password": "secret123"})
+assert r.status_code == 200 and r.json()["user"]["role"] == "user", r.text
+r = client.post("/api/auth/register", json={"username": "zhangsan", "password": "secret123"})
+assert r.status_code == 400, r.text
+r = client.post("/api/auth/register", json={"username": "lisi", "password": "123"})
+assert r.status_code == 400, r.text
+r = client.post("/api/auth/login", json={"username": "zhangsan", "password": "secret123"})
+assert r.status_code == 200, r.text
+print("注册/重名校验/弱密码校验通过")
+
+# 修改密码：原密码错误 400，弱密码 400，改后旧密码失效、新密码可登录（以 zhangsan 身份操作）
+r = client.post("/api/auth/login", json={"username": "zhangsan", "password": "secret123"})
+zs_headers = {"Authorization": f"Bearer {r.json()['token']}"}
+saved_headers = dict(client.headers)
+client.headers = zs_headers
+r = client.put("/api/auth/password", json={"old_password": "wrong", "new_password": "newpass123"})
+assert r.status_code == 400, r.text
+r = client.put("/api/auth/password", json={"old_password": "secret123", "new_password": "123"})
+assert r.status_code == 400, r.text
+r = client.put("/api/auth/password", json={"old_password": "secret123", "new_password": "newpass123"})
+assert r.status_code == 200, r.text
+client.headers = saved_headers
+r = client.post("/api/auth/login", json={"username": "zhangsan", "password": "secret123"})
+assert r.status_code == 401, r.text
+r = client.post("/api/auth/login", json={"username": "zhangsan", "password": "newpass123"})
+assert r.status_code == 200, r.text
+print("修改密码通过")
+
+# Excel 序列日期：单元格未设日期格式时读出为数字（45200 → 2023-10-01）
+from app.services.typemap import coerce_value
+
+ok, val, err = coerce_value(45200, "date")
+assert ok and str(val) == "2023-10-01", (val, err)
+ok, val, err = coerce_value("45200", "date")
+assert ok and str(val) == "2023-10-01", (val, err)
+ok, val, err = coerce_value(45200.5, "datetime")
+assert ok and val.hour == 12, (val, err)
+ok, _, _ = coerce_value("2026", "date")   # 年份不当作序列日期
+assert not ok
+print("Excel 序列日期转换通过")
 
 # 1. 构造测试 Excel
 wb = openpyxl.Workbook()
@@ -159,9 +213,12 @@ assert r.json()["count"] == 1, r.text
 r = client.get("/api/notify")
 assert "李四" in r.json()[0]["content"] and "2026-10-05" in r.json()[0]["content"], r.text
 
-# 冷却期内再次执行：不再重复触发
+# 冷却语义：手动执行跳过冷却（设计如此，便于立即验证）；定时调度路径遵守冷却窗口
 r = client.post(f"/api/tasks/{rule['id']}/run")
-assert r.json()["matched"] == 1 and r.json()["fired"] == 0, r.text
+assert r.json()["matched"] == 1 and r.json()["fired"] == 1, r.text
+from app.services.task_engine import execute_rule as _exec_rule
+r2 = _exec_rule(rule["id"], trigger="schedule")  # 冷却期内 → 不再触发
+assert r2["matched"] == 1 and r2["fired"] == 0, r2
 
 # 时间操作符：within_days（跟进日期在未来 60 天内 → 两条都命中）
 r = client.post("/api/tasks", json={
@@ -222,9 +279,9 @@ r = client.put("/api/settings/general", json={"smtp": {"host": "smtp2.example.co
 r = client.get("/api/settings/general")
 assert r.json()["smtp"]["host"] == "smtp2.example.com" and r.json()["smtp"]["has_password"]  # 密码保留
 
-# 运行日志
+# 运行日志（2 次手动 + 1 次定时）
 r = client.get(f"/api/tasks/{rule['id']}/runs")
-assert r.status_code == 200 and len(r.json()) == 2 and r.json()[0]["trigger"] == "manual", r.text
+assert r.status_code == 200 and len(r.json()) == 3 and r.json()[0]["trigger"] == "schedule", r.text
 
 # 通知已读
 r = client.post("/api/notify/read", json={"all": True})
@@ -241,6 +298,306 @@ r = client.delete(f"/api/tables/{tid}")
 assert r.status_code == 200, r.text
 r = client.get(f"/api/dyn/{tid}/records")
 assert r.status_code == 404
+
+# ========== 混合存储 + 多租户 + 分享权限 ==========
+
+PFIELDS = [
+    {"field_name": "customer_name", "label": "客户姓名", "data_type": "varchar", "length": 64, "nullable": False, "widget": "input"},
+    {"field_name": "next_follow_date", "label": "下次跟进日期", "data_type": "date", "widget": "date-picker"},
+    {"field_name": "amount", "label": "意向金额", "data_type": "decimal", "widget": "number"},
+    {"field_name": "is_deal", "label": "已成交", "data_type": "bool", "widget": "switch"},
+]
+PRECS = [
+    {"customer_name": "张三", "next_follow_date": "2026-10-01", "amount": 15000.5, "is_deal": True},
+    {"customer_name": "李四", "next_follow_date": "2026-10-05", "amount": 8000, "is_deal": False},
+    {"customer_name": "王五", "next_follow_date": "2026-09-15", "amount": 20000.25, "is_deal": True},
+    {"customer_name": "赵六", "amount": 500, "is_deal": False},
+]
+
+
+def make_table(label, storage_mode):
+    r = client.post("/api/tables", json={"label": label, "storage_mode": storage_mode, "fields": PFIELDS})
+    assert r.status_code == 200, r.text
+    return r.json()["table"]["id"]
+
+
+def fill(t):
+    for rec in PRECS:
+        r = client.post(f"/api/dyn/{t}/records", json=rec)
+        assert r.status_code == 200, r.text
+
+
+# 10. 双模式 parity：同数据集 json vs physical，筛选/排序/报表逐项一致
+tj = make_table("parity-json", "json")
+tp = make_table("parity-physical", "physical")
+fill(tj)
+fill(tp)
+
+FILTERS = [
+    '[{"field":"customer_name","op":"contains","value":"张"}]',
+    '[{"field":"amount","op":"gt","value":9000}]',
+    '[{"field":"next_follow_date","op":"gte","value":"2026-10-01"}]',
+    '[{"field":"is_deal","op":"eq","value":true}]',
+    '[{"field":"next_follow_date","op":"null"}]',
+    '[{"field":"customer_name","op":"startswith","value":"李"}]',
+    '[{"field":"amount","op":"in","value":"8000,500"}]',
+    '[{"field":"next_follow_date","op":"older_than_days","value":3}]',
+]
+def _strip_ts(items):
+    # json/physical 是两次独立插入，created_at/updated_at 必然不同，比较时剔除
+    return [{k: v for k, v in r.items() if k not in ("created_at", "updated_at")} for r in items]
+
+
+for flt in FILTERS:
+    a = client.get(f"/api/dyn/{tj}/records", params={"filters": flt}).json()
+    b = client.get(f"/api/dyn/{tp}/records", params={"filters": flt}).json()
+    assert a["total"] == b["total"] and _strip_ts(a["items"]) == _strip_ts(b["items"]), (flt, a, b)
+print("parity 筛选一致:", len(FILTERS), "组")
+
+for params in ({"sort_by": "amount", "sort_order": "asc"}, {"sort_by": "amount", "sort_order": "desc"},
+               {"sort_by": "next_follow_date", "sort_order": "desc"}, {}):
+    a = client.get(f"/api/dyn/{tj}/records", params=params).json()
+    b = client.get(f"/api/dyn/{tp}/records", params=params).json()
+    assert _strip_ts(a["items"]) == _strip_ts(b["items"]), params
+print("parity 排序一致")
+
+BLOCKS = [
+    {"id": "b1", "type": "stat", "title": "总额", "agg": "sum", "field": "amount", "filters": {"logic": "AND", "rules": []}},
+    {"id": "b2", "type": "chart", "title": "成交对比", "chart_type": "bar", "group": {"kind": "field", "field": "is_deal"}, "agg": "sum", "field": "amount", "top_n": 8, "filters": {"logic": "AND", "rules": []}},
+    {"id": "b3", "type": "chart", "title": "按月", "chart_type": "line", "group": {"kind": "month", "field": "next_follow_date"}, "agg": "count", "filters": {"logic": "AND", "rules": []}},
+    {"id": "b4", "type": "table", "title": "明细", "columns": ["customer_name", "amount", "next_follow_date"], "sort_by": "amount", "sort_order": "desc", "limit": 10, "filters": {"logic": "AND", "rules": []}},
+]
+rep_ids = []
+for t in (tj, tp):
+    r = client.post("/api/reports", json={
+        "name": "parity", "table_id": t, "enabled": False,
+        "range": {"mode": "this_month", "date_field": "created_at"},
+        "blocks": BLOCKS, "schedule": {}, "push": {},
+    })
+    assert r.status_code == 200, r.text
+    rep_ids.append(r.json()["id"])
+ra = client.post(f"/api/reports/{rep_ids[0]}/run").json()
+rb = client.post(f"/api/reports/{rep_ids[1]}/run").json()
+for ba, bb in zip(ra["blocks"], rb["blocks"]):
+    ba.pop("id", None)
+    bb.pop("id", None)
+    assert ba == bb, (ba, bb)
+print("parity 报表四区块一致")
+for rid_ in rep_ids:
+    client.delete(f"/api/reports/{rid_}")
+
+# 11. 权限矩阵：未分享 404 / 分享者按开关 / 主人与 admin 全权
+admin_headers = dict(client.headers)
+r = client.post("/api/auth/register", json={"username": "worker", "password": "secret123"})
+worker_headers = {"Authorization": f"Bearer {r.json()['token']}"}
+r = client.post("/api/auth/register", json={"username": "outsider", "password": "secret123"})
+outsider_headers = {"Authorization": f"Bearer {r.json()['token']}"}
+
+
+def as_user(h):
+    client.headers = h
+
+
+as_user(worker_headers)
+assert client.get(f"/api/tables/{tj}").status_code == 404
+assert client.get(f"/api/dyn/{tj}/records").status_code == 404
+as_user(admin_headers)
+r = client.post(f"/api/tables/{tj}/shares", json={"username": "worker", "can_view": True})
+assert r.status_code == 200, r.text
+as_user(worker_headers)
+r = client.get(f"/api/tables/{tj}")
+assert r.status_code == 200 and r.json()["my_perms"]["can_create"] is False, r.text
+assert client.get(f"/api/dyn/{tj}/records").json()["total"] == 4
+assert client.post(f"/api/dyn/{tj}/records", json={"customer_name": "x"}).status_code == 404  # 无新增权
+assert client.put(f"/api/tables/{tj}", json={"label": "x"}).status_code == 404  # 非主人不能改结构
+assert client.delete(f"/api/tables/{tj}").status_code == 404  # 非主人不能删表
+assert client.post(f"/api/tables/{tj}/shares", json={"username": "outsider"}).status_code == 404  # 非主人不能分享
+assert any(t["id"] == tj and t["owner_label"] == "admin" for t in client.get("/api/tables").json())  # 分享表可见
+as_user(admin_headers)
+r = client.post(f"/api/tables/{tj}/shares", json={"username": "worker", "can_view": True, "can_create": True})
+assert r.status_code == 200
+as_user(worker_headers)
+assert client.post(f"/api/dyn/{tj}/records", json={"customer_name": "worker新增", "amount": 1}).status_code == 200
+as_user(outsider_headers)
+assert client.get(f"/api/tables/{tj}").status_code == 404  # 未分享不可见
+assert all(t["table_id"] != tj for t in client.get("/api/tasks").json())
+print("权限矩阵通过")
+
+# 12. VIP 门槛与角色管理
+as_user(worker_headers)
+r = client.post("/api/tables", json={"label": "vip表", "storage_mode": "physical", "fields": PFIELDS})
+assert r.status_code == 403  # user 不能建独立表
+r = client.post("/api/tables", json={"label": "worker的表", "fields": PFIELDS})
+worker_tid = r.json()["table"]["id"]
+assert client.post(f"/api/tables/{worker_tid}/shares", json={"username": "outsider"}).status_code == 403  # user 不能分享
+as_user(admin_headers)
+r = client.get("/api/users")
+worker_id = next(u["id"] for u in r.json() if u["username"] == "worker")
+assert client.put(f"/api/users/{worker_id}/role", json={"role": "vip"}).status_code == 200
+me_id = next(u["id"] for u in client.get("/api/users").json() if u["role"] == "admin")
+assert client.put(f"/api/users/{me_id}/role", json={"role": "user"}).status_code == 400  # 不能改自己
+as_user(worker_headers)
+assert client.post(f"/api/tables/{worker_tid}/shares", json={"username": "outsider", "can_view": True}).status_code == 200  # vip 可分享
+r = client.post("/api/tables", json={"label": "vip物理表", "storage_mode": "physical", "fields": PFIELDS})
+assert r.status_code == 200  # vip 可建独立表
+vip_tid = r.json()["table"]["id"]
+print("VIP 门槛通过")
+
+# 13. 归属隔离：规则/报表/通知按 user_id 隔离
+r = client.post("/api/dyn/{}/records".format(worker_tid), json={"customer_name": "worker客户", "amount": 100, "is_deal": False})
+assert r.status_code == 200, r.text
+r = client.post("/api/tasks", json={
+    "name": "worker规则", "table_id": worker_tid, "enabled": False,
+    "condition_mode": "structured",
+    "condition": {"logic": "AND", "rules": [{"field": "customer_name", "op": "contains", "value": "worker"}]},
+    "schedule": {"type": "interval", "minutes": 60},
+    "action": {"type": "notify", "template": "客户【{customer_name}】", "recipients": {"type": "fixed", "value": ""}},
+})
+assert r.status_code == 200, r.text
+worker_rule = r.json()["id"]
+assert any(t["id"] == worker_rule for t in client.get("/api/tasks").json())
+as_user(outsider_headers)
+assert all(t["id"] != worker_rule for t in client.get("/api/tasks").json())
+assert all(t["id"] != rep_ids[0] for t in client.get("/api/reports").json())
+as_user(outsider_headers)
+assert client.post(f"/api/tasks/{worker_rule}/run").status_code == 404  # 他人规则不可操作
+as_user(worker_headers)
+client.post("/api/notify/read", json={"all": True})
+r = client.post(f"/api/tasks/{worker_rule}/run")
+assert r.status_code == 200 and r.json()["fired"] == 1, r.text
+assert client.get("/api/notify/unread_count").json()["count"] >= 1  # worker 收到自己的通知
+as_user(outsider_headers)
+assert client.get("/api/notify/unread_count").json()["count"] == 0  # 别人收不到
+as_user(admin_headers)
+assert client.get("/api/notify/unread_count").status_code == 200  # admin 可见全部（不报错）
+print("归属隔离通过")
+
+# 14. 迁移幂等：重复执行不报错、列不重复加
+from app.database import engine as _engine
+from app.services.migrate import run_migrations
+run_migrations(_engine)
+run_migrations(_engine)
+print("迁移幂等通过")
+
+# 15. RBAC：自定义权限/角色/授权，数值型权限（数据表上限）生效
+role_codes = {x["code"] for x in client.get("/api/roles").json()}
+assert {"admin", "vip", "user"} <= role_codes
+perm_ids = {p["code"]: p["id"] for p in client.get("/api/permissions").json()}
+assert {"share", "create_physical_table", "max_tables"} <= set(perm_ids)
+
+r = client.post("/api/permissions", json={"code": "custom_perm", "name": "自定义权限"})
+assert r.status_code == 200, r.text
+custom_pid = r.json()["id"]
+r = client.post("/api/roles", json={"code": "limited", "name": "受限角色"})
+assert r.status_code == 200, r.text
+limited_id = r.json()["id"]
+# 授权：share + max_tables=1（不给 create_physical_table）
+r = client.put(f"/api/roles/{limited_id}/permissions", json={"grants": [
+    {"permission_id": perm_ids["share"]},
+    {"permission_id": perm_ids["max_tables"], "value": 1},
+]})
+assert r.status_code == 200, r.text
+
+r = client.post("/api/auth/register", json={"username": "limited_user", "password": "secret123"})
+lu_headers = {"Authorization": f"Bearer {r.json()['token']}"}
+lu_id = r.json()["user"]["id"]
+assert client.put(f"/api/users/{lu_id}/role", json={"role": "limited"}).status_code == 200
+assert client.put(f"/api/users/{lu_id}/role", json={"role": "ghost"}).status_code == 400  # 角色不存在
+
+client.headers = lu_headers
+r = client.post("/api/tables", json={"label": "限额表1", "fields": PFIELDS})
+assert r.status_code == 200, r.text
+lu_tid = r.json()["table"]["id"]
+r = client.post("/api/tables", json={"label": "限额表2", "fields": PFIELDS})
+assert r.status_code == 403, r.text  # 上限 1 张
+assert client.post(f"/api/tables/{lu_tid}/shares", json={"username": "outsider", "can_view": True}).status_code == 200  # 有 share
+r = client.post("/api/tables", json={"label": "限额物理表", "storage_mode": "physical", "fields": PFIELDS})
+assert r.status_code == 403, r.text  # 无 create_physical_table
+client.headers = admin_headers
+assert client.delete(f"/api/roles/{limited_id}").status_code == 400  # 角色使用中
+assert client.delete(f"/api/permissions/{perm_ids['share']}").status_code == 400  # 内置权限
+client.headers = lu_headers
+client.delete(f"/api/tables/{lu_tid}")  # 清掉唯一一张表
+client.headers = admin_headers
+assert client.delete(f"/api/roles/{limited_id}").status_code == 400  # 用户仍挂着该角色
+assert client.put(f"/api/users/{lu_id}/role", json={"role": "user"}).status_code == 200  # 改回默认角色
+assert client.delete(f"/api/roles/{limited_id}").status_code == 200
+assert client.delete(f"/api/permissions/{custom_pid}").status_code == 200
+print("RBAC 通过")
+
+# 16. 链接分享 + 用户组
+# 用户组
+r = client.post("/api/groups", json={"name": "生产部", "description": "生产组成员"})
+assert r.status_code == 200, r.text
+gid = r.json()["id"]
+assert client.post(f"/api/groups/{gid}/members", json={"username": "worker"}).status_code == 200
+assert client.post(f"/api/groups/{gid}/members", json={"username": "worker"}).status_code == 400  # 重复入组
+
+# 分享给组
+tj2 = make_table("组分享表", "json")
+fill(tj2)
+r = client.post(f"/api/tables/{tj2}/shares", json={"group_id": gid, "can_view": True, "can_create": True})
+assert r.status_code == 200 and r.json()["target_type"] == "group", r.text
+as_user(outsider_headers)
+assert client.get(f"/api/tables/{tj2}").status_code == 404  # outsider 不在组
+as_user(admin_headers)
+assert client.post(f"/api/groups/{gid}/members", json={"username": "outsider"}).status_code == 200
+as_user(outsider_headers)
+assert client.get(f"/api/tables/{tj2}").status_code == 200  # 入组后可见
+r = client.post(f"/api/dyn/{tj2}/records", json={"customer_name": "组新增", "amount": 1})
+assert r.status_code == 200, r.text  # 组分享的 can_create 生效
+rid2 = r.json()["id"]
+assert client.delete(f"/api/dyn/{tj2}/records/{rid2}").status_code == 404  # 组分享未给 delete
+as_user(admin_headers)
+
+# 链接分享（表，无密码）
+r = client.post(f"/api/tables/{tj2}/share-links", json={})
+assert r.status_code == 200, r.text
+token = r.json()["token"]
+saved_h = dict(client.headers)
+client.headers = {}
+r = client.get(f"/api/share/{token}")
+assert r.status_code == 200 and r.json()["total"] >= 4 and r.json()["fields"], r.text
+# 带密码 + 有效期
+client.headers = saved_h
+r = client.post(f"/api/tables/{tj2}/share-links", json={"password": "abcd", "expires_in_days": 7})
+token2, lid2 = r.json()["token"], r.json()["id"]
+client.headers = {}
+assert client.get(f"/api/share/{token2}").status_code == 401  # 需要密码
+assert client.get(f"/api/share/{token2}", params={"password": "wrong"}).status_code == 401
+assert client.get(f"/api/share/{token2}", params={"password": "abcd"}).status_code == 200
+client.headers = saved_h
+client.delete(f"/api/tables/{tj2}/share-links/{lid2}")  # 撤销
+client.headers = {}
+assert client.get(f"/api/share/{token2}", params={"password": "abcd"}).status_code == 404
+client.headers = saved_h
+
+# 报表链接分享
+r = client.post("/api/reports", json={
+    "name": "分享报表", "table_id": tj2, "enabled": False,
+    "range": {"mode": "this_month", "date_field": "created_at"},
+    "blocks": [{"id": "b1", "type": "stat", "title": "总额", "agg": "sum", "field": "amount", "filters": {"logic": "AND", "rules": []}}],
+    "schedule": {}, "push": {},
+})
+tpl_id2 = r.json()["id"]
+r = client.post(f"/api/reports/{tpl_id2}/share-links", json={})
+rtoken = r.json()["token"]
+client.headers = {}
+r = client.get(f"/api/share/{rtoken}")
+assert r.status_code == 200 and r.json()["resource_type"] == "report" and r.json()["report"]["blocks"][0]["value"] > 0, r.text
+client.headers = saved_h
+
+# 删除组 → 组分享失效
+client.delete(f"/api/groups/{gid}")
+as_user(outsider_headers)
+assert client.get(f"/api/tables/{tj2}").status_code == 404
+as_user(admin_headers)
+print("链接分享 + 用户组通过")
+
+# 清理测试表
+as_user(admin_headers)
+for t_ in (tj, tp, worker_tid, vip_tid, tj2):
+    client.delete(f"/api/tables/{t_}")
 
 print("\nALL SMOKE TESTS PASSED")
 cm.__exit__(None, None, None)

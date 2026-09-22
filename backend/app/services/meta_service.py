@@ -50,25 +50,30 @@ def validate_fields(fields) -> None:
         seen.add(f.field_name)
 
 
-def create_business_table(db: Session, payload: TableCreate) -> MetaTable:
+def create_business_table(db: Session, payload: TableCreate, owner_id: int) -> MetaTable:
     validate_fields(payload.fields)
     base = payload.name or slugify(payload.label)
     name = unique_physical_name(db, base)
+    storage_mode = getattr(payload, "storage_mode", None) or "json"
 
-    md = MetaData()
-    id_col = Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
-    cols = [id_col] + [sa_column(f) for f in payload.fields]
-    cols += [
-        Column("created_at", DateTime, default=datetime.now),
-        Column("updated_at", DateTime, default=datetime.now, onupdate=datetime.now),
-    ]
-    Table(name, md, *cols)
-    md.create_all(engine)
+    if storage_mode == "physical":
+        md = MetaData()
+        id_col = Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+        cols = [id_col] + [sa_column(f) for f in payload.fields]
+        cols += [
+            Column("created_at", DateTime, default=datetime.now),
+            Column("updated_at", DateTime, default=datetime.now, onupdate=datetime.now),
+        ]
+        Table(name, md, *cols)
+        md.create_all(engine)
+    # json 模式不建物理表，name 仅作唯一逻辑标识
 
     mt = MetaTable(
         name=name,
         label=payload.label,
         source_file=payload.source.file_id if payload.source else None,
+        owner_id=owner_id,
+        storage_mode=storage_mode,
     )
     db.add(mt)
     db.flush()
@@ -103,11 +108,15 @@ def reflect_table(name: str) -> Table:
     return Table(name, MetaData(), autoload_with=engine)
 
 
-def record_count(name: str) -> int:
-    if not _physical_exists(name):
+def record_count(db: Session, mt: MetaTable) -> int:
+    """physical 模式反射物理表计数；json 模式走 records 单表。"""
+    if mt.storage_mode == "json":
+        from . import json_store
+        return json_store.count(db, mt.id)
+    if not _physical_exists(mt.name):
         return 0
     with engine.connect() as conn:
-        return conn.execute(select(func.count()).select_from(reflect_table(name))).scalar() or 0
+        return conn.execute(select(func.count()).select_from(reflect_table(mt.name))).scalar() or 0
 
 
 def field_out(f: MetaField) -> dict:
@@ -119,22 +128,46 @@ def field_out(f: MetaField) -> dict:
     }
 
 
-def table_out(db: Session, mt: MetaTable, with_fields: bool = True) -> dict:
+def table_out(db: Session, mt: MetaTable, with_fields: bool = True, access: dict | None = None) -> dict:
     out = {
         "id": mt.id, "name": mt.name, "label": mt.label,
         "source_file": mt.source_file, "status": mt.status,
-        "record_count": record_count(mt.name),
+        "owner_id": mt.owner_id, "storage_mode": mt.storage_mode or "json",
+        "record_count": record_count(db, mt),
         "created_at": mt.created_at.isoformat(sep=" ") if mt.created_at else None,
     }
+    if access:
+        out.update(access)  # is_owner / my_perms 等
     if with_fields:
         out["fields"] = [field_out(f) for f in get_meta_fields(db, mt.id)]
     return out
 
 
 def drop_business_table(db: Session, mt: MetaTable) -> None:
-    if _physical_exists(mt.name):
+    """删表：物理表（如有）+ 元数据 + 全部关联数据（记录/分享/规则/报表/识别留痕/导入批次）。"""
+    from ..models import (Record, ReportRunLog, ReportTemplate, SharedLink, TableShare, TaskRule, TaskRunLog,
+                          TaskTriggerLog, VisionLog)
+
+    if mt.storage_mode == "physical" and _physical_exists(mt.name):
         reflect_table(mt.name).drop(engine)
-    db.query(MetaField).filter_by(table_id=mt.id).delete()
-    db.query(ImportBatch).filter_by(table_id=mt.id).delete()
+    rule_ids = [r.id for r in db.query(TaskRule).filter_by(table_id=mt.id).all()]
+    if rule_ids:
+        db.query(TaskTriggerLog).filter(TaskTriggerLog.rule_id.in_(rule_ids)).delete(synchronize_session=False)
+        db.query(TaskRunLog).filter(TaskRunLog.rule_id.in_(rule_ids)).delete(synchronize_session=False)
+        db.query(TaskRule).filter(TaskRule.id.in_(rule_ids)).delete(synchronize_session=False)
+    tpl_ids = [t.id for t in db.query(ReportTemplate).filter_by(table_id=mt.id).all()]
+    if tpl_ids:
+        db.query(ReportRunLog).filter(ReportRunLog.template_id.in_(tpl_ids)).delete(synchronize_session=False)
+        db.query(SharedLink).filter(SharedLink.resource_type == "report", SharedLink.resource_id.in_(tpl_ids)).delete(synchronize_session=False)
+        db.query(ReportTemplate).filter(ReportTemplate.id.in_(tpl_ids)).delete(synchronize_session=False)
+    db.query(SharedLink).filter(SharedLink.resource_type == "table", SharedLink.resource_id == mt.id).delete(synchronize_session=False)
+    db.query(VisionLog).filter_by(table_id=mt.id).delete(synchronize_session=False)
+    db.query(Record).filter_by(table_id=mt.id).delete(synchronize_session=False)
+    db.query(TableShare).filter_by(table_id=mt.id).delete(synchronize_session=False)
+    db.query(MetaField).filter_by(table_id=mt.id).delete(synchronize_session=False)
+    db.query(ImportBatch).filter_by(table_id=mt.id).delete(synchronize_session=False)
     db.delete(mt)
     db.commit()
+
+    from . import scheduler
+    scheduler.reload_jobs()

@@ -2,14 +2,31 @@ import axios from 'axios'
 
 const http = axios.create({ baseURL: '/api', timeout: 180000 })
 
+http.interceptors.request.use((config) => {
+  const token = localStorage.getItem('grt_token')
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
+
 http.interceptors.response.use(
   (r) => r.data,
   (e) => {
+    if (e.response?.status === 401) {
+      localStorage.removeItem('grt_token')
+      localStorage.removeItem('grt_user')
+      if (location.pathname !== '/login') location.href = '/login'
+    }
     const d = e.response?.data?.detail
     const msg = typeof d === 'string' ? d : d ? JSON.stringify(d) : e.message
     return Promise.reject(new Error(msg))
   }
 )
+
+// 登录 / 注册
+export const login = (username, password) => http.post('/auth/login', { username, password })
+export const register = (username, password) => http.post('/auth/register', { username, password })
+export const changePassword = (oldPassword, newPassword) =>
+  http.put('/auth/password', { old_password: oldPassword, new_password: newPassword })
 
 // Excel 导入
 export const uploadExcel = (file) => {
@@ -25,6 +42,41 @@ export const getTable = (id) => http.get(`/tables/${id}`)
 export const createTable = (payload) => http.post('/tables', payload)
 export const updateTable = (id, payload) => http.put(`/tables/${id}`, payload)
 export const deleteTable = (id) => http.delete(`/tables/${id}`)
+
+// 表分享（vip/admin）
+export const listShares = (tid) => http.get(`/tables/${tid}/shares`)
+export const putShare = (tid, payload) => http.post(`/tables/${tid}/shares`, payload)
+export const deleteShare = (tid, sid) => http.delete(`/tables/${tid}/shares/${sid}`)
+
+// 链接分享
+export const listShareLinks = (tid) => http.get(`/tables/${tid}/share-links`)
+export const createShareLink = (tid, payload) => http.post(`/tables/${tid}/share-links`, payload)
+export const deleteShareLink = (tid, lid) => http.delete(`/tables/${tid}/share-links/${lid}`)
+export const listReportShareLinks = (id) => http.get(`/reports/${id}/share-links`)
+export const createReportShareLink = (id, payload) => http.post(`/reports/${id}/share-links`, payload)
+export const deleteReportShareLink = (id, lid) => http.delete(`/reports/${id}/share-links/${lid}`)
+
+// 用户组（admin）
+export const listGroups = () => http.get('/groups')
+export const createGroup = (p) => http.post('/groups', p)
+export const updateGroup = (id, p) => http.put(`/groups/${id}`, p)
+export const deleteGroup = (id) => http.delete(`/groups/${id}`)
+export const addGroupMember = (id, username) => http.post(`/groups/${id}/members`, { username })
+export const removeGroupMember = (id, uid) => http.delete(`/groups/${id}/members/${uid}`)
+
+// 用户管理（admin）
+export const listUsers = () => http.get('/users')
+export const setUserRole = (id, role) => http.put(`/users/${id}/role`, { role })
+
+// 角色与权限管理（admin）
+export const listRoles = () => http.get('/roles')
+export const createRole = (p) => http.post('/roles', p)
+export const updateRole = (id, p) => http.put(`/roles/${id}`, p)
+export const deleteRole = (id) => http.delete(`/roles/${id}`)
+export const setRolePermissions = (id, grants) => http.put(`/roles/${id}/permissions`, { grants })
+export const listPermissions = () => http.get('/permissions')
+export const createPermission = (p) => http.post('/permissions', p)
+export const deletePermission = (id) => http.delete(`/permissions/${id}`)
 
 // 动态记录
 export const listRecords = (tid, params) => http.get(`/dyn/${tid}/records`, { params })
@@ -68,7 +120,8 @@ export const testPushReport = (id) => http.post(`/reports/${id}/test-push`)
 export const reportRuns = (id) => http.get(`/reports/${id}/runs`)
 export const reportExportUrl = (id, params) => {
   const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v != null && v !== ''))
-  return `/api/reports/${id}/export?${qs}`
+  const token = localStorage.getItem('grt_token') || ''
+  return `/api/reports/${id}/export?${qs}&token=${encodeURIComponent(token)}`
 }
 
 // 站内通知

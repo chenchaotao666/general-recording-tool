@@ -300,10 +300,154 @@ def _eval_text(block: dict, context: dict) -> dict:
     return {"id": block["id"], "type": "text", "title": block.get("title") or "", "content": content}
 
 
+# ---------- json 模式：Python 侧求值（输出结构与 SQL 路径一致） ----------
+
+def _py_agg(rows: list[dict], agg: str, field: str | None):
+    """对齐 _agg_expr：count=len（count(*) 语义）；sum/avg/max/min 跳过 None，空集 → 0。"""
+    if agg == "count":
+        return len(rows)
+    vals = [r.get(field) for r in rows if r.get(field) is not None]
+    if not vals:
+        return 0
+    if agg == "sum":
+        return sum(vals)
+    if agg == "avg":
+        return sum(vals) / len(vals)
+    if agg == "max":
+        return max(vals)
+    return min(vals)
+
+
+def _run_py(db, mt, fields, tpl, date_field, start, end, label) -> dict:
+    from . import json_store
+    from .pyquery import match_filters, sort_records
+
+    fields_by_name = {f.field_name: f for f in fields}
+    recs = json_store.all_dicts(db, mt.id, fields, normalized=True)
+
+    def base_recs(block) -> list[dict]:
+        out = [r for r in recs if match_filters(r, fields_by_name, block.get("filters") or {})]
+        f = fields_by_name.get(date_field)
+
+        def in_range(r):
+            v = r.get(date_field)
+            if v is None:
+                return False  # SQL 三值逻辑：NULL 比较即排除
+            try:
+                if f is not None and f.data_type == "date":
+                    return start.date() <= v < end.date()
+                return start <= v < end
+            except TypeError:
+                return False
+
+        return [r for r in out if in_range(r)]
+
+    def eval_stat(block):
+        v = _py_agg(base_recs(block), block["agg"], block.get("field"))
+        return {"id": block["id"], "type": "stat", "title": block.get("title") or "", "value": _round_num(v)}
+
+    def eval_chart(block):
+        rows = base_recs(block)
+        group = block.get("group") or {}
+        gkind, gfield = group.get("kind") or "field", group.get("field")
+        agg = block.get("agg") or "count"
+        gf = fields_by_name.get(gfield)
+        if gkind == "field":
+            buckets: dict = {}
+            for r in rows:
+                buckets.setdefault(r.get(gfield), []).append(r)
+            ordered = sorted(
+                buckets.items(),
+                key=lambda kv: len(kv[1]) if agg == "count" else (_py_agg(kv[1], agg, block.get("field")) or 0),
+                reverse=True,
+            )
+            top_n = int(block.get("top_n") or CHART_TOP_N_DEFAULT.get(block.get("chart_type"), 30))
+            labels, values, other = [], [], 0
+            for i, (k, rs) in enumerate(ordered):
+                v = _py_agg(rs, agg, block.get("field")) or 0
+                if i < top_n:
+                    labels.append(_option_label(gf, k))
+                    values.append(_round_num(v))
+                else:
+                    other += v
+            if other:
+                labels.append("其他")
+                values.append(_round_num(other))
+        else:
+            # Python strftime('%Y-%W') 与 SQLite strftime('%Y-%W') 同为 C 库 %W 语义（周一为周首），结果等价
+            fmt = {"day": "%Y-%m-%d", "week": "%Y-%W", "month": "%Y-%m"}[gkind]
+            buckets = {}
+            for r in rows:
+                v = r.get(gfield)
+                key = v.strftime(fmt) if isinstance(v, (date, datetime)) else None
+                buckets.setdefault(key, []).append(r)
+            ordered = sorted(buckets.items(), key=lambda kv: (kv[0] is not None, kv[0] or ""))
+            labels = [k if k is not None else "（空）" for k, _ in ordered]
+            values = [_round_num(_py_agg(rs, agg, block.get("field")) or 0) for _, rs in ordered]
+        return {
+            "id": block["id"], "type": "chart", "title": block.get("title") or "",
+            "chart_type": block.get("chart_type"), "labels": labels, "values": values,
+            "agg": agg,
+        }
+
+    def eval_table(block):
+        rows = base_recs(block)
+        cols = block.get("columns") or []
+        limit = min(max(int(block.get("limit") or 100), 1), TABLE_LIMIT_MAX)
+        total = len(rows)
+        sort_by = block.get("sort_by")
+        rows = sort_records(rows, sort_by if sort_by in (set(fields_by_name) | SYSTEM_FIELDS) else None,
+                            block.get("sort_order"), fields_by_name)
+
+        def col_label(c):
+            f = fields_by_name.get(c)
+            return f.label if f else {"id": "ID", "created_at": "创建时间", "updated_at": "更新时间"}[c]
+
+        select_fields = {c: fields_by_name[c] for c in cols
+                         if c in fields_by_name and fields_by_name[c].widget == "select"}
+        out_rows = []
+        for r in rows[:limit]:
+            d = {c: dyn_engine.serialize_value(r.get(c)) for c in cols}
+            d["id"] = r["id"]
+            for c, f in select_fields.items():
+                if d.get(c) is not None:
+                    d[c] = _option_label(f, d.get(c))
+            out_rows.append(d)
+        return {
+            "id": block["id"], "type": "table", "title": block.get("title") or "",
+            "columns": [{"prop": c, "label": col_label(c)} for c in cols],
+            "rows": out_rows, "total": total, "truncated": total > limit,
+        }
+
+    blocks = tpl.blocks_json or []
+    results_by_id, stat_values = {}, {}
+    for b in blocks:
+        t = b.get("type")
+        if t == "stat":
+            r = eval_stat(b)
+            stat_values[b["id"]] = r["value"]
+            results_by_id[b["id"]] = r
+        elif t == "chart":
+            results_by_id[b["id"]] = eval_chart(b)
+        elif t == "table":
+            results_by_id[b["id"]] = eval_table(b)
+    context = {"range_label": label, "start": f"{start:%Y-%m-%d}", "end": f"{end:%Y-%m-%d}", **stat_values}
+    for b in blocks:
+        if b.get("type") == "text":
+            results_by_id[b["id"]] = _eval_text(b, context)
+    blocks_out = [results_by_id[b["id"]] for b in blocks if b.get("id") in results_by_id]
+
+    return {
+        "template_id": tpl.id, "name": tpl.name, "table_label": mt.label,
+        "range": {"start": f"{start:%Y-%m-%d}", "end": f"{end:%Y-%m-%d}", "label": label},
+        "generated_at": datetime.now().isoformat(sep=" ", timespec="seconds"),
+        "blocks": blocks_out,
+    }
+
+
 def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None = None) -> dict:
     """执行报表模板，返回结构化结果（前端渲染 / 导出共用）。"""
-    mt, fields, table = dyn_engine.load_business(db, tpl.table_id)
-    fields_by_name = {f.field_name: f for f in fields}
+    mt, fields = dyn_engine.load_meta(db, tpl.table_id)
     rng = dict(tpl.range_json or {})
     if range_override:
         rng.update({k: v for k, v in range_override.items() if v is not None})
@@ -312,6 +456,12 @@ def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None =
         start, end, label = resolve_time_range(rng)
     except ReportError as e:
         raise HTTPException(400, str(e))
+
+    if mt.storage_mode == "json":
+        return _run_py(db, mt, fields, tpl, date_field, start, end, label)
+
+    _, fields, table = dyn_engine.load_business(db, tpl.table_id)
+    fields_by_name = {f.field_name: f for f in fields}
 
     blocks = tpl.blocks_json or []
     results_by_id, stat_values = {}, {}

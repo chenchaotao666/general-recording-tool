@@ -40,13 +40,14 @@
           <span v-else style="color: #c0c4cc">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="330">
+      <el-table-column label="操作" width="380">
         <template #default="{ row }">
           <el-button text type="primary" size="small" @click="$router.push(`/reports/${row.id}/view`)">查看</el-button>
           <el-button text size="small" @click="exportFile(row, 'xlsx')">导出Excel</el-button>
           <el-button text size="small" @click="exportFile(row, 'html')">导出HTML</el-button>
           <el-button v-if="row.schedule?.type" text size="small" :loading="pushingId === row.id" @click="push(row)">推送</el-button>
           <el-button v-if="row.schedule?.type" text size="small" @click="showRuns(row)">日志</el-button>
+          <el-button text size="small" @click="openShare(row)">分享</el-button>
           <el-button text type="primary" size="small" @click="openEdit(row)">编辑</el-button>
           <el-popconfirm title="确定删除该报表模板？" @confirm="del(row)">
             <template #reference><el-button text type="danger" size="small">删除</el-button></template>
@@ -79,6 +80,42 @@
         </el-table-column>
       </el-table>
     </el-dialog>
+
+    <!-- 链接分享 -->
+    <el-dialog v-model="shareVisible" :title="`分享「${shareTpl?.name}」`" width="680px">
+      <el-form inline @submit.prevent>
+        <el-form-item>
+          <el-input v-model="linkForm.password" placeholder="访问密码（可选）" style="width: 160px" show-password />
+        </el-form-item>
+        <el-form-item>
+          <el-input-number v-model="linkForm.expires_in_days" :min="1" :max="365" placeholder="有效期" style="width: 130px" />
+          <span style="margin-left: 6px; color: #909399">天（留空永久）</span>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="linkSaving" @click="createLink">生成链接</el-button>
+        </el-form-item>
+      </el-form>
+      <el-table :data="links" size="small" border>
+        <el-table-column label="链接" min-width="280">
+          <template #default="{ row }"><span style="font-size: 12px; color: #409eff; word-break: break-all">{{ linkUrl(row.token) }}</span></template>
+        </el-table-column>
+        <el-table-column label="密码" width="70" align="center">
+          <template #default="{ row }">{{ row.has_password ? '有' : '—' }}</template>
+        </el-table-column>
+        <el-table-column label="有效期至" width="150">
+          <template #default="{ row }">{{ row.expires_at || '永久' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="150" align="center">
+          <template #default="{ row }">
+            <el-button text type="primary" size="small" @click="copyLink(row)">复制</el-button>
+            <el-button text type="danger" size="small" @click="removeLink(row)">撤销</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="!links.length" style="color: #c0c4cc; font-size: 13px; text-align: center; padding: 20px 0">
+        还没有分享链接，生成后任何人凭链接可只读查看此报表
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -87,8 +124,8 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
-  createReport, deleteReport, listReports, listTables,
-  reportExportUrl, reportRuns, testPushReport, toggleReport, updateReport,
+  createReport, createReportShareLink, deleteReport, deleteReportShareLink, listReportShareLinks,
+  listReports, listTables, reportExportUrl, reportRuns, testPushReport, toggleReport, updateReport,
 } from '../api'
 import ReportEditor from '../components/ReportEditor.vue'
 
@@ -232,6 +269,70 @@ async function del(row) {
     await deleteReport(row.id)
     ElMessage.success('已删除')
     load()
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+// ---------- 链接分享 ----------
+const shareVisible = ref(false)
+const shareTpl = ref(null)
+const links = ref([])
+const linkSaving = ref(false)
+const linkForm = reactive({ password: '', expires_in_days: null })
+
+function linkUrl(token) {
+  return `${location.origin}/share/${token}`
+}
+
+async function openShare(row) {
+  shareTpl.value = row
+  shareVisible.value = true
+  linkForm.password = ''
+  linkForm.expires_in_days = null
+  await loadLinks()
+}
+
+async function loadLinks() {
+  try {
+    links.value = await listReportShareLinks(shareTpl.value.id)
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+async function createLink() {
+  linkSaving.value = true
+  try {
+    await createReportShareLink(shareTpl.value.id, {
+      password: linkForm.password || null,
+      expires_in_days: linkForm.expires_in_days || null,
+    })
+    ElMessage.success('链接已生成')
+    linkForm.password = ''
+    linkForm.expires_in_days = null
+    await loadLinks()
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    linkSaving.value = false
+  }
+}
+
+async function copyLink(row) {
+  try {
+    await navigator.clipboard.writeText(linkUrl(row.token))
+    ElMessage.success('链接已复制')
+  } catch {
+    ElMessage.info(linkUrl(row.token))
+  }
+}
+
+async function removeLink(row) {
+  try {
+    await deleteReportShareLink(shareTpl.value.id, row.id)
+    ElMessage.success('已撤销')
+    await loadLinks()
   } catch (e) {
     ElMessage.error(e.message)
   }

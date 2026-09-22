@@ -9,11 +9,22 @@
     <view
       v-for="t in tables" :key="t.id" class="card"
       @click="openRecords(t)"
-      @longpress="del(t)"
     >
-      <view class="card-title">{{ t.label }}</view>
-      <view class="card-sub">{{ t.record_count ?? '-' }} 条记录</view>
-      <text class="arrow">›</text>
+      <view class="card-head">
+        <view class="card-title">
+          {{ t.label }}
+          <text v-if="t.storage_mode === 'physical'" class="tag">独立表</text>
+          <text v-if="!t.is_owner" class="tag share">来自 {{ t.owner_label }} 的分享</text>
+        </view>
+        <text class="arrow">›</text>
+      </view>
+      <view class="card-footer">
+        <text class="card-sub">{{ t.record_count ?? '-' }} 条记录</text>
+        <view>
+          <text v-if="canShare(t)" class="act" @click.stop="openShares(t)">分享</text>
+          <text v-if="t.is_owner || t.is_admin" class="del" @click.stop="del(t)">删除</text>
+        </view>
+      </view>
     </view>
   </view>
 </template>
@@ -39,6 +50,16 @@ async function load() {
 
 function openRecords(t) {
   uni.navigateTo({ url: `/pages/records/list?table_id=${t.id}&label=${encodeURIComponent(t.label)}` })
+}
+
+const myRole = uni.getStorageSync('grt_user')?.role || 'user'
+
+function canShare(t) {
+  return (t.is_owner && ['vip', 'admin'].includes(myRole)) || t.is_admin
+}
+
+function openShares(t) {
+  uni.navigateTo({ url: `/pages/tables/shares?table_id=${t.id}&label=${encodeURIComponent(t.label)}` })
 }
 
 function del(t) {
@@ -72,7 +93,13 @@ onShow(load)
   background: #fff; border-radius: 16rpx; padding: 28rpx; margin-bottom: 20rpx;
   box-shadow: 0 2rpx 8rpx rgba(0,0,0,.05); position: relative;
 }
+.card-head { display: flex; justify-content: space-between; align-items: center; }
 .card-title { font-size: 32rpx; font-weight: 600; color: #303133; }
-.card-sub { font-size: 24rpx; color: #909399; margin-top: 8rpx; }
-.arrow { position: absolute; right: 28rpx; top: 50%; transform: translateY(-50%); color: #c0c4cc; font-size: 40rpx; }
+.tag { font-size: 20rpx; color: #fff; background: #e6a23c; border-radius: 6rpx; padding: 2rpx 10rpx; margin-left: 10rpx; font-weight: 400; }
+.tag.share { background: #909399; }
+.act { font-size: 26rpx; color: #409eff; padding: 4rpx 12rpx; }
+.card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12rpx; }
+.card-sub { font-size: 24rpx; color: #909399; }
+.del { font-size: 26rpx; color: #f56c6c; padding: 4rpx 12rpx; }
+.arrow { color: #c0c4cc; font-size: 40rpx; }
 </style>

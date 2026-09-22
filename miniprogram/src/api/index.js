@@ -1,5 +1,20 @@
 import { BASE_URL } from '../config'
 
+// 登录态：token 存本地，所有请求带 Authorization；401 时清 token 回登录页
+function authHeader() {
+  const token = uni.getStorageSync('grt_token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+function toLogin() {
+  uni.removeStorageSync('grt_token')
+  uni.removeStorageSync('grt_user')
+  const pages = getCurrentPages()
+  const cur = pages[pages.length - 1]
+  if (cur && cur.route === 'pages/login/index') return  // 已在登录页（如密码错误）不再跳转
+  uni.reLaunch({ url: '/pages/login/index' })
+}
+
 // uni.request 封装：统一 baseURL、错误提示，resolve 业务数据
 function request(method, url, data) {
   return new Promise((resolve, reject) => {
@@ -7,9 +22,13 @@ function request(method, url, data) {
       url: BASE_URL + '/api' + url,
       method,
       data,
+      header: authHeader(),
       timeout: 180000,
       success: (res) => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
+        if (res.statusCode === 401) {
+          toLogin()
+          reject(new Error(res.data?.detail || '未登录或登录已过期'))
+        } else if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(res.data)
         } else {
           const d = res.data?.detail
@@ -29,11 +48,40 @@ const http = {
   del: (url) => request('DELETE', url),
 }
 
+// 登录/注册（不经过 request 的 401 跳转，失败时停留在登录页提示）
+function authPost(url, data) {
+  return new Promise((resolve, reject) => {
+    uni.request({
+      url: BASE_URL + url,
+      method: 'POST',
+      data,
+      timeout: 10000,
+      success: (res) => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(res.data)
+        } else {
+          reject(new Error(res.data?.detail || `请求失败（${res.statusCode}）`))
+        }
+      },
+      fail: () => reject(new Error('无法连接服务器，请检查网络')),
+    })
+  })
+}
+export const login = (username, password) => authPost('/api/auth/login', { username, password })
+export const register = (username, password) => authPost('/api/auth/register', { username, password })
+export const changePassword = (oldPassword, newPassword) =>
+  http.put('/auth/password', { old_password: oldPassword, new_password: newPassword })
+
 // 数据表
 export const listTables = () => http.get('/tables')
 export const getTable = (id) => http.get(`/tables/${id}`)
 export const createTable = (payload) => http.post('/tables', payload)
 export const deleteTable = (id) => http.del(`/tables/${id}`)
+
+// 表分享（vip/admin）
+export const listShares = (tid) => http.get(`/tables/${tid}/shares`)
+export const putShare = (tid, payload) => http.post(`/tables/${tid}/shares`, payload)
+export const deleteShare = (tid, sid) => http.del(`/tables/${tid}/shares/${sid}`)
 
 // Excel 导入
 export function uploadExcelFile(filePath, fileName) {
@@ -42,7 +90,13 @@ export function uploadExcelFile(filePath, fileName) {
       url: BASE_URL + '/api/excel/upload',
       filePath,
       name: 'file',
+      header: authHeader(),
       success: (res) => {
+        if (res.statusCode === 401) {
+          toLogin()
+          reject(new Error('未登录或登录已过期'))
+          return
+        }
         let data = res.data
         if (typeof data === 'string') {
           try { data = JSON.parse(data) } catch { data = {} }
@@ -83,19 +137,73 @@ export const listNotifications = () => http.get('/notify')
 export const unreadCount = () => http.get('/notify/unread_count')
 export const markRead = (payload) => http.post('/notify/read', payload)
 
-// 图片识别填表（上传走 uni.uploadFile，多图同名 images）
+// 微信小程序 wx.uploadFile 不支持 files 多文件参数（仅 App/H5 支持），
+// 这里手动拼接 multipart/form-data 二进制体，用 uni.request 一次上传多图
+function utf8Bytes(str) {
+  const encoded = encodeURIComponent(str)
+  const bytes = []
+  for (let i = 0; i < encoded.length; i++) {
+    if (encoded[i] === '%') {
+      bytes.push(parseInt(encoded.slice(i + 1, i + 3), 16))
+      i += 2
+    } else {
+      bytes.push(encoded.charCodeAt(i))
+    }
+  }
+  return new Uint8Array(bytes)
+}
+
+function buildMultipartBody(filePaths, fields) {
+  const boundary = '----formdata' + Date.now().toString(16) + Math.random().toString(16).slice(2)
+  const fsm = uni.getFileSystemManager()
+  const chunks = []
+  const push = (data) => chunks.push(typeof data === 'string' ? utf8Bytes(data) : new Uint8Array(data))
+  const NL = '\r\n'
+
+  for (const [k, v] of Object.entries(fields)) {
+    push(`--${boundary}${NL}Content-Disposition: form-data; name="${k}"${NL}${NL}${v}${NL}`)
+  }
+
+  let chain = Promise.resolve()
+  filePaths.forEach((p, i) => {
+    chain = chain.then(() => new Promise((res, rej) => {
+      push(`--${boundary}${NL}Content-Disposition: form-data; name="images"; filename="image_${i + 1}.jpg"${NL}Content-Type: image/jpeg${NL}${NL}`)
+      fsm.readFile({
+        filePath: p,
+        success: (r) => { push(r.data); push(NL); res() },
+        fail: rej,
+      })
+    }))
+  })
+
+  return chain.then(() => {
+    push(`--${boundary}--${NL}`)
+    const body = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0))
+    let offset = 0
+    for (const c of chunks) { body.set(c, offset); offset += c.length }
+    return { body: body.buffer, contentType: `multipart/form-data; boundary=${boundary}` }
+  })
+}
+
+// 图片识别填表（上传走 uni.request 手动拼 multipart，多图同名 images）
 export function recognizeVision(tableId, filePaths, current, recordId) {
-  return new Promise((resolve, reject) => {
-    uni.uploadFile({
+  return buildMultipartBody(filePaths, {
+    table_id: String(tableId),
+    current: JSON.stringify(current || {}),
+    ...(recordId ? { record_id: String(recordId) } : {}),
+  }).then(({ body, contentType }) => new Promise((resolve, reject) => {
+    uni.request({
       url: BASE_URL + '/api/vision/recognize',
-      files: filePaths.map((p) => ({ name: 'images', uri: p })),
-      formData: {
-        table_id: tableId,
-        current: JSON.stringify(current || {}),
-        ...(recordId ? { record_id: recordId } : {}),
-      },
+      method: 'POST',
+      header: { 'Content-Type': contentType, ...authHeader() },
+      data: body,
       timeout: 180000,
       success: (res) => {
+        if (res.statusCode === 401) {
+          toLogin()
+          reject(new Error('未登录或登录已过期'))
+          return
+        }
         let data = res.data
         if (typeof data === 'string') {
           try { data = JSON.parse(data) } catch { data = {} }
@@ -109,7 +217,7 @@ export function recognizeVision(tableId, filePaths, current, recordId) {
       },
       fail: () => reject(new Error('上传失败，请检查网络')),
     })
-  })
+  }))
 }
 export const adoptVision = (logId, adopted) => http.put(`/vision/logs/${logId}/adopt`, { adopted })
 

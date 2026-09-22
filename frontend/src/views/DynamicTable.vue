@@ -1,8 +1,11 @@
 <template>
   <div v-loading="metaLoading">
     <div class="page-header">
-      <h2>{{ meta?.label || '数据表' }}</h2>
-      <el-button type="primary" :icon="Plus" @click="openCreate">新增记录</el-button>
+      <h2>
+        {{ meta?.label || '数据表' }}
+        <el-tag v-if="meta && !meta.is_owner" size="small" style="margin-left: 8px">来自 {{ meta.owner_label }} 的分享</el-tag>
+      </h2>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">新增记录</el-button>
     </div>
 
     <!-- 动态筛选区 -->
@@ -46,10 +49,10 @@
         :prop="f.field_name" :label="f.label" sortable="custom"
         :formatter="(row) => fmt(f, row[f.field_name])" show-overflow-tooltip min-width="110"
       />
-      <el-table-column label="操作" width="130" fixed="right">
+      <el-table-column v-if="canEdit || canDelete" label="操作" width="130" fixed="right">
         <template #default="{ row }">
-          <el-button text type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-          <el-popconfirm title="确定删除该记录？" @confirm="del(row)">
+          <el-button v-if="canEdit" text type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+          <el-popconfirm v-if="canDelete" title="确定删除该记录？" @confirm="del(row)">
             <template #reference>
               <el-button text type="danger" size="small">删除</el-button>
             </template>
@@ -104,6 +107,9 @@ const editing = ref(null)
 const saving = ref(false)
 
 const fields = computed(() => meta.value?.fields || [])
+const canCreate = computed(() => meta.value?.my_perms?.can_create)
+const canEdit = computed(() => meta.value?.my_perms?.can_edit)
+const canDelete = computed(() => meta.value?.my_perms?.can_delete)
 const listFields = computed(() => fields.value.filter((f) => f.options?.show_in_list !== false))
 const filterable = computed(() =>
   fields.value.filter((f) =>

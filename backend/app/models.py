@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 
 from .database import Base
 
@@ -10,10 +10,12 @@ class MetaTable(Base):
     __tablename__ = "meta_tables"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(64), unique=True, nullable=False)   # 物理表名 dyn_xxx
+    name = Column(String(64), unique=True, nullable=False)   # 物理表名 dyn_xxx（json 模式下为逻辑名，不建物理表）
     label = Column(String(128), nullable=False)              # 显示名
     source_file = Column(String(256))                        # 来源上传文件 id
     status = Column(String(16), default="active")
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（多租户）
+    storage_mode = Column(String(16), default="json")        # json（单表存储）/ physical（独立物理表）
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -35,6 +37,109 @@ class MetaField(Base):
     sort_order = Column(Integer, default=0)
 
 
+class Permission(Base):
+    """权限点：内置 + 自定义。value 型权限（如数据表上限）通过 role_permissions.value 配置"""
+    __tablename__ = "permissions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(64), unique=True, nullable=False)     # 如 share / create_physical_table / max_tables
+    name = Column(String(64), nullable=False)                  # 显示名，如「分享」
+    description = Column(String(256))
+    is_system = Column(Boolean, default=False)                 # 内置权限不可删除
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class Role(Base):
+    """角色：权限的集合。admin 为代码级超级角色（直接放行，不查表）"""
+    __tablename__ = "roles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(64), unique=True, nullable=False)     # 如 admin / vip / user
+    name = Column(String(64), nullable=False)
+    description = Column(String(256))
+    is_system = Column(Boolean, default=False)                 # 内置角色不可删除
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class RolePermission(Base):
+    """角色-权限关联。value 用于数值型权限（如 max_tables=10），NULL 表示不限"""
+    __tablename__ = "role_permissions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    role_id = Column(Integer, ForeignKey("roles.id"), index=True, nullable=False)
+    permission_id = Column(Integer, ForeignKey("permissions.id"), index=True, nullable=False)
+    value = Column(Integer)
+
+    __table_args__ = (UniqueConstraint("role_id", "permission_id", name="uq_role_permissions"),)
+
+
+class Record(Base):
+    """JSON 模式业务数据：一张表存所有 json 业务表的数据（值已序列化为 ISO 字符串/数字/布尔）"""
+    __tablename__ = "records"
+
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
+    data = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (Index("ix_records_table_id_id", "table_id", "id"),)
+
+
+class TableShare(Base):
+    """表级分享授权：查看/新增/编辑/删除 四个开关。分享给用户（user_id）或用户组（group_id）"""
+    __tablename__ = "table_shares"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), index=True)
+    can_view = Column(Boolean, default=False)
+    can_create = Column(Boolean, default=False)
+    can_edit = Column(Boolean, default=False)
+    can_delete = Column(Boolean, default=False)
+    shared_by = Column(Integer, ForeignKey("users.id"))   # 分享操作者
+    created_at = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (UniqueConstraint("table_id", "user_id", "group_id", name="uq_table_shares_target"),)
+
+
+class Group(Base):
+    """用户组：分享授权的对象之一，组成员自动获得组被分享的权限"""
+    __tablename__ = "groups"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(64), unique=True, nullable=False)
+    description = Column(String(256))
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class GroupMember(Base):
+    __tablename__ = "group_members"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (UniqueConstraint("group_id", "user_id", name="uq_group_members"),)
+
+
+class SharedLink(Base):
+    """链接分享：免登录只读访问表/报表，可设密码和有效期"""
+    __tablename__ = "shared_links"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token = Column(String(64), unique=True, index=True, nullable=False)
+    resource_type = Column(String(16), default="table")   # table / report
+    resource_id = Column(Integer, nullable=False)         # table_id 或 report_template.id
+    password_hash = Column(String(256))
+    expires_at = Column(DateTime)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class ImportBatch(Base):
     """导入批次记录"""
     __tablename__ = "import_batches"
@@ -46,6 +151,18 @@ class ImportBatch(Base):
     success = Column(Integer, default=0)
     failed = Column(Integer, default=0)
     fail_detail = Column(JSON, default=list)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class User(Base):
+    """登录用户：账号密码登录；openid 预留给微信登录"""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(64), unique=True, index=True, nullable=False)
+    password_hash = Column(String(256))          # pbkdf2_sha256$iterations$salt$digest
+    openid = Column(String(64), unique=True, index=True)  # 微信登录用，可空
+    role = Column(String(16), default="user")    # admin / user
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -85,6 +202,7 @@ class TaskRule(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(128), nullable=False)
     table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（多租户）
     enabled = Column(Boolean, default=False)
     condition_mode = Column(String(16), default="structured")  # structured / llm
     condition_json = Column(JSON, default=dict)
@@ -132,6 +250,7 @@ class ReportTemplate(Base):
     name = Column(String(128), nullable=False)
     description = Column(String(256))
     table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（多租户）
     enabled = Column(Boolean, default=False)               # 控制定时推送是否生效
     range_json = Column(JSON, default=dict)
     # {mode: this_week|last_week|this_month|last_month|custom, date_field, start?, end?}
@@ -164,6 +283,7 @@ class Notification(Base):
     title = Column(String(256))
     content = Column(Text)
     link = Column(String(256))
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 接收人
     read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
 

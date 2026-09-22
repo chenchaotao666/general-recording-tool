@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from dateutil import parser as dtparser
@@ -22,6 +22,22 @@ BOOL_FALSE = {"否", "false", "0", "no", "n", "错", "×"}
 
 _INT_RE = re.compile(r"^-?\d{1,18}$")
 _NUM_RE = re.compile(r"^-?\d+(\.\d+)?$")
+
+# Excel 序列日期范围：数字 1~2958465 对应 1900-01-01~9999-12-31；
+# 纯数字字符串保守收窄到 20000~60000（1954~2064），避免把年份、数量误判成日期
+_EXCEL_EPOCH = datetime(1899, 12, 30)
+
+
+def _from_excel_serial(v) -> datetime | None:
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)) and 1 <= v <= 2958465:
+        return _EXCEL_EPOCH + timedelta(days=float(v))
+    if isinstance(v, str):
+        s = v.strip()
+        if s.isdigit() and 20000 <= int(s) <= 60000:
+            return _EXCEL_EPOCH + timedelta(days=int(s))
+    return None
 
 
 def default_widget(data_type: str) -> str:
@@ -58,10 +74,14 @@ def try_parse_datetime(v) -> datetime | None:
         return v
     if isinstance(v, date):
         return datetime(v.year, v.month, v.day)
+    # Excel 序列日期：单元格未设日期格式时，openpyxl 读出来是天数（1899-12-30 起）
+    serial = _from_excel_serial(v)
+    if serial is not None:
+        return serial
     if not isinstance(v, str):
         return None
     s = v.strip()
-    if not s or s.isdigit():   # 纯数字不当作日期
+    if not s or s.isdigit():   # 纯数字（超出序列日期范围）不当作日期
         return None
     for fmt in DATE_FORMATS:
         try:

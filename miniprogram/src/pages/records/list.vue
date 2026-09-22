@@ -2,11 +2,11 @@
   <view class="page">
     <view class="header">
       <view class="total">共 {{ total }} 条</view>
-      <view class="add-btn" @click="openEdit(null)">+ 新增</view>
+      <view v-if="canCreate" class="add-btn" @click="openEdit(null)">+ 新增</view>
     </view>
 
     <view v-if="loading && !records.length" class="hint">加载中…</view>
-    <view v-else-if="!records.length" class="hint">暂无记录，点右上角新增</view>
+    <view v-else-if="!records.length" class="hint">暂无记录</view>
 
     <view v-for="r in records" :key="r.id" class="card" @click="openEdit(r)">
       <view v-for="f in displayFields" :key="f.field_name" class="row">
@@ -15,7 +15,7 @@
       </view>
       <view class="card-footer">
         <text class="time">#{{ r.id }} · {{ fmtTime(r.created_at) }}</text>
-        <text class="del" @click.stop="del(r)">删除</text>
+        <text v-if="canDelete" class="del" @click.stop="del(r)">删除</text>
       </view>
     </view>
 
@@ -32,6 +32,8 @@ import { deleteRecord, getTable, listRecords } from '../../api'
 
 const tableId = ref(null)
 const fields = ref([])
+const canCreate = ref(false)
+const canDelete = ref(false)
 const records = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -50,7 +52,11 @@ onLoad(async (q) => {
     uni.showToast({ title: e.message, icon: 'none' })
     return null
   })
-  if (t) fields.value = t.fields
+  if (t) {
+    fields.value = t.fields
+    canCreate.value = !!t.my_perms?.can_create
+    canDelete.value = !!t.my_perms?.can_delete
+  }
 })
 
 onShow(() => {

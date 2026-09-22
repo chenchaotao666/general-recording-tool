@@ -61,6 +61,18 @@
       </view>
       <view class="add-field" @click="addField">+ 添加字段</view>
 
+      <view class="form-item" style="margin-top: 16rpx">
+        <view class="label">存储方式</view>
+        <view class="radio-row">
+          <view class="radio sm" :class="{ active: storageMode === 'json' }" @click="storageMode = 'json'">JSON 存储（推荐）</view>
+          <view
+            v-if="canPhysical" class="radio sm" :class="{ active: storageMode === 'physical' }"
+            @click="storageMode = 'physical'"
+          >独立物理表（VIP）</view>
+        </view>
+        <view v-if="!canPhysical" style="font-size: 22rpx; color: #c0c4cc; margin-top: 8rpx">独立物理表为 VIP 功能，默认 JSON 存储即可</view>
+      </view>
+
       <button class="save-btn" :disabled="saving" @click="save">{{ saving ? '创建中…' : (mode === 'excel' ? '创建并导入' : '创建数据表') }}</button>
     </template>
   </view>
@@ -76,6 +88,8 @@ const WIDGET_LABELS = ['单行文本', '多行文本', '数字', '日期', '日�
 
 const mode = ref('manual')
 const label = ref('')
+const storageMode = ref('json')
+const canPhysical = ['vip', 'admin'].includes(uni.getStorageSync('grt_user')?.role || 'user')
 const fields = ref([])
 const saving = ref(false)
 
@@ -161,6 +175,7 @@ async function save() {
   if (!valid.length) return uni.showToast({ title: '至少需要一个完整字段（英文名+显示名）', icon: 'none' })
   const payload = {
     label: label.value.trim(),
+    storage_mode: storageMode.value,
     fields: valid.map((f) => ({
       source_header: f.source_header || f.label,
       field_name: f.field_name.trim(),
@@ -202,6 +217,10 @@ async function save() {
 
 <style>
 .page { padding: 24rpx; padding-bottom: 60rpx; }
+.radio-row { display: flex; gap: 12rpx; flex-wrap: wrap; }
+.radio { font-size: 26rpx; color: #606266; border: 1rpx solid #dcdfe6; border-radius: 32rpx; padding: 12rpx 28rpx; }
+.radio.sm { font-size: 24rpx; padding: 8rpx 24rpx; }
+.radio.active { background: #409eff; border-color: #409eff; color: #fff; }
 .mode-tabs { display: flex; background: #fff; border-radius: 16rpx; padding: 8rpx; margin-bottom: 20rpx; }
 .mode-tab { flex: 1; text-align: center; font-size: 28rpx; color: #606266; padding: 16rpx 0; border-radius: 12rpx; }
 .mode-tab.active { background: #409eff; color: #fff; }

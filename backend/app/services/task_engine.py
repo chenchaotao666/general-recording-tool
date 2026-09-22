@@ -30,9 +30,14 @@ class TaskError(Exception):
 
 def evaluate_rule(db: Session, rule: TaskRule) -> list[dict]:
     """求值规则条件，返回命中的记录（不含冷却过滤）。"""
-    mt, fields, table = dyn_engine.load_business(db, rule.table_id)
+    mt, fields = dyn_engine.load_meta(db, rule.table_id)
     fields_by_name = {f.field_name: f for f in fields}
     cond = rule.condition_json or {}
+
+    if mt.storage_mode == "json":
+        return _evaluate_rule_py(db, rule, mt, fields, fields_by_name, cond)
+
+    _, fields, table = dyn_engine.load_business(db, rule.table_id)
 
     if rule.condition_mode == "llm":
         description = (cond.get("description") or "").strip()
@@ -66,6 +71,32 @@ def evaluate_rule(db: Session, rule: TaskRule) -> list[dict]:
     rows = db.execute(stmt).mappings().all()
     _log_sql("结构化条件", stmt, (time.perf_counter() - t0) * 1000)
     return [dyn_engine.row_to_dict(r) for r in rows]
+
+
+def _evaluate_rule_py(db: Session, rule: TaskRule, mt: MetaTable, fields: list, fields_by_name: dict, cond: dict) -> list[dict]:
+    """json 模式：全量记录拉回内存，pyquery 过滤（语义与 build_condition 对齐）。"""
+    from . import json_store
+    from .pyquery import match_filters
+
+    recs = json_store.all_dicts(db, mt.id, fields, normalized=True)
+
+    if rule.condition_mode == "llm":
+        description = (cond.get("description") or "").strip()
+        if not description:
+            raise TaskError("未配置 LLM 判断条件描述")
+        candidates = [r for r in recs if match_filters(r, fields_by_name, cond.get("prefilter") or {})]
+        candidates = [{k: dyn_engine.serialize_value(v) for k, v in r.items()} for r in candidates[:HARD_CANDIDATE_CAP]]
+        if not candidates:
+            return []
+        field_dicts = [{"field_name": f.field_name, "label": f.label, "data_type": f.data_type} for f in fields]
+        matched_ids = judge_records(db, description, field_dicts, candidates)
+        return [r for r in candidates if r["id"] in matched_ids]
+
+    rules = cond.get("rules") or []
+    if not rules:
+        raise TaskError("未配置条件规则")
+    matched = [r for r in recs if match_filters(r, fields_by_name, cond)]
+    return [{k: dyn_engine.serialize_value(v) for k, v in r.items()} for r in matched]
 
 
 def filter_cooldown(db: Session, rule: TaskRule, records: list[dict]) -> tuple[list[dict], dict[int, TaskTriggerLog]]:

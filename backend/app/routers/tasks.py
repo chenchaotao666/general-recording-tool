@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import TaskRule, TaskRunLog
+from ..models import TaskRule, TaskRunLog, User
 from ..schemas import TaskRuleIn
 from ..services import scheduler as sched
 from ..services.actions import ACTION_FUNCS
@@ -15,13 +15,14 @@ from ..services.llm import LLMError
 from ..services.llm.gateway import assist_task
 from ..services.meta_service import get_meta_fields, get_meta_table
 from ..services.task_engine import evaluate_rule, execute_rule, filter_cooldown
+from ..utils.access import check_owner_or_admin, get_table_access
+from ..utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 
-def _validate(db: Session, payload: TaskRuleIn) -> None:
-    if not get_meta_table(db, payload.table_id):
-        raise HTTPException(400, "目标数据表不存在")
+def _validate(db: Session, payload: TaskRuleIn, user: User) -> None:
+    get_table_access(db, payload.table_id, user)  # 无查看权 → 404
 
     cond = payload.condition or {}
     if payload.condition_mode == "llm":
@@ -91,8 +92,11 @@ def _out(db: Session, rule: TaskRule) -> dict:
 
 
 @router.get("")
-def list_rules(db: Session = Depends(get_db)):
-    rows = db.query(TaskRule).order_by(TaskRule.id.desc()).all()
+def list_rules(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    q = db.query(TaskRule)
+    if user.role != "admin":
+        q = q.filter(TaskRule.user_id == user.id)
+    rows = q.order_by(TaskRule.id.desc()).all()
     return [_out(db, r) for r in rows]
 
 
@@ -102,12 +106,11 @@ class AiAssistIn(BaseModel):
 
 
 @router.post("/ai-assist")
-def ai_assist(payload: AiAssistIn, db: Session = Depends(get_db)):
+def ai_assist(payload: AiAssistIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """自然语言描述 → LLM 生成任务规则配置（条件/周期/动作），不落库。"""
     if not payload.description.strip():
         raise HTTPException(400, "请填写任务需求描述")
-    if not get_meta_table(db, payload.table_id):
-        raise HTTPException(400, "目标数据表不存在")
+    get_table_access(db, payload.table_id, user)
     fields = get_meta_fields(db, payload.table_id)
     try:
         return assist_task(db, fields, payload.description.strip())
@@ -116,9 +119,10 @@ def ai_assist(payload: AiAssistIn, db: Session = Depends(get_db)):
 
 
 @router.post("")
-def create_rule(payload: TaskRuleIn, db: Session = Depends(get_db)):
-    _validate(db, payload)
+def create_rule(payload: TaskRuleIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _validate(db, payload, user)
     rule = TaskRule(
+        user_id=user.id,
         name=payload.name, table_id=payload.table_id, enabled=payload.enabled,
         condition_mode=payload.condition_mode, condition_json=payload.condition,
         schedule_json=payload.schedule, action_json=payload.action,
@@ -131,11 +135,12 @@ def create_rule(payload: TaskRuleIn, db: Session = Depends(get_db)):
 
 
 @router.put("/{rule_id}")
-def update_rule(rule_id: int, payload: TaskRuleIn, db: Session = Depends(get_db)):
+def update_rule(rule_id: int, payload: TaskRuleIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     rule = db.get(TaskRule, rule_id)
     if not rule:
         raise HTTPException(404, "任务不存在")
-    _validate(db, payload)
+    check_owner_or_admin(rule.user_id, user)
+    _validate(db, payload, user)
     rule.name, rule.table_id, rule.enabled = payload.name, payload.table_id, payload.enabled
     rule.condition_mode, rule.condition_json = payload.condition_mode, payload.condition
     rule.schedule_json, rule.action_json = payload.schedule, payload.action
@@ -147,10 +152,11 @@ def update_rule(rule_id: int, payload: TaskRuleIn, db: Session = Depends(get_db)
 
 
 @router.delete("/{rule_id}")
-def delete_rule(rule_id: int, db: Session = Depends(get_db)):
+def delete_rule(rule_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     rule = db.get(TaskRule, rule_id)
     if not rule:
         raise HTTPException(404, "任务不存在")
+    check_owner_or_admin(rule.user_id, user)
     db.delete(rule)
     db.commit()
     sched.reload_jobs()
@@ -158,10 +164,11 @@ def delete_rule(rule_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{rule_id}/toggle")
-def toggle_rule(rule_id: int, db: Session = Depends(get_db)):
+def toggle_rule(rule_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     rule = db.get(TaskRule, rule_id)
     if not rule:
         raise HTTPException(404, "任务不存在")
+    check_owner_or_admin(rule.user_id, user)
     rule.enabled = not rule.enabled
     db.commit()
     sched.reload_jobs()
@@ -169,11 +176,12 @@ def toggle_rule(rule_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{rule_id}/test")
-def test_rule(rule_id: int, db: Session = Depends(get_db)):
+def test_rule(rule_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """试运行：只求值和冷却过滤，不执行动作，返回命中样本。"""
     rule = db.get(TaskRule, rule_id)
     if not rule:
         raise HTTPException(404, "任务不存在")
+    check_owner_or_admin(rule.user_id, user)
     try:
         matched = evaluate_rule(db, rule)
         targets, _ = filter_cooldown(db, rule, matched)
@@ -187,17 +195,22 @@ def test_rule(rule_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{rule_id}/run")
-def run_rule(rule_id: int, db: Session = Depends(get_db)):
+def run_rule(rule_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """立即执行一次（执行动作，遵守冷却窗口）。"""
     rule = db.get(TaskRule, rule_id)
     if not rule:
         raise HTTPException(404, "任务不存在")
+    check_owner_or_admin(rule.user_id, user)
     result = execute_rule(rule_id, trigger="manual")
     return result or {"error": "执行失败"}
 
 
 @router.get("/{rule_id}/runs")
-def list_runs(rule_id: int, db: Session = Depends(get_db)):
+def list_runs(rule_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rule = db.get(TaskRule, rule_id)
+    if not rule:
+        raise HTTPException(404, "任务不存在")
+    check_owner_or_admin(rule.user_id, user)
     rows = (
         db.query(TaskRunLog)
         .filter_by(rule_id=rule_id)

@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
-from ..models import VisionLog
+from ..models import User, VisionLog
 from ..services.image import MAX_IMAGES, ImageError, compress_image
 from ..services.llm import LLMError, recognize_form
-from ..services.meta_service import get_meta_fields, get_meta_table
+from ..services.meta_service import get_meta_fields
+from ..utils.access import get_table_access
+from ..utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/vision", tags=["vision"])
 
@@ -28,9 +30,10 @@ async def recognize(
     record_id: int | None = Form(None),
     images: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    mt = get_meta_table(db, table_id)
-    if not mt:
+    access = get_table_access(db, table_id, user)  # 查看即可识别
+    if record_id is not None and not access.can_edit:
         raise HTTPException(404, "数据表不存在")
     if not images:
         raise HTTPException(400, "请至少上传一张图片")
@@ -76,11 +79,12 @@ async def recognize(
 
 
 @router.put("/logs/{log_id}/adopt")
-def adopt(log_id: int, payload: AdoptIn, db: Session = Depends(get_db)):
+def adopt(log_id: int, payload: AdoptIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """用户确认后回传采纳了哪些字段，补全留痕。"""
     log = db.get(VisionLog, log_id)
     if not log:
         raise HTTPException(404, "识别记录不存在")
+    get_table_access(db, log.table_id, user)
     log.adopted_fields = payload.adopted
     db.commit()
     return {"ok": True}

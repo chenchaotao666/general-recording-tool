@@ -3,7 +3,7 @@
     <view v-if="loading" class="hint">加载中…</view>
     <template v-else>
       <!-- 智能识别 -->
-      <view class="ai-btn" @click="recognize">
+      <view v-if="canEdit" class="ai-btn" @click="recognize">
         <text class="ai-icon">📷</text>
         <text>{{ recognizing ? '识别中…' : '拍照 / 相册智能识别' }}</text>
       </view>
@@ -85,7 +85,8 @@
         />
       </view>
 
-      <button class="save-btn" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
+      <button v-if="canEdit" class="save-btn" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
+      <view v-else class="hint" style="padding: 30rpx 0">只读权限，不可编辑</view>
     </template>
   </view>
 </template>
@@ -101,6 +102,7 @@ const fields = ref([])
 const form = ref({})
 const loading = ref(true)
 const saving = ref(false)
+const canEdit = ref(true)
 
 onLoad(async (q) => {
   tableId.value = Number(q.table_id)
@@ -109,6 +111,7 @@ onLoad(async (q) => {
   try {
     const t = await getTable(tableId.value)
     fields.value = [...t.fields].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    canEdit.value = !!t.my_perms?.can_edit
     const init = {}
     for (const f of fields.value) {
       init[f.field_name] = f.widget === 'switch' ? false : (f.default_value ?? (f.widget === 'number' ? null : ''))

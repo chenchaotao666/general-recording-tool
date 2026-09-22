@@ -55,9 +55,26 @@ class SourceIn(BaseModel):
 
 class TableCreate(BaseModel):
     label: str
-    name: str | None = None          # 物理表名，留空自动生成 dyn_xxx
+    name: str | None = None          # 表名，留空自动生成 dyn_xxx（json 模式下为逻辑名，不建物理表）
     fields: list[FieldIn]
     source: SourceIn | None = None   # 有 source 则建表后导入数据
+    storage_mode: str = "json"       # json（默认，单表存储）/ physical（独立物理表，仅 vip/admin）
+
+    @field_validator("storage_mode")
+    @classmethod
+    def _check_storage(cls, v: str) -> str:
+        if v not in ("json", "physical"):
+            raise ValueError("storage_mode 必须是 json 或 physical")
+        return v
+
+
+class TableShareIn(BaseModel):
+    username: str | None = None      # 分享给用户（二选一）
+    group_id: int | None = None      # 分享给用户组（二选一）
+    can_view: bool = True
+    can_create: bool = False
+    can_edit: bool = False
+    can_delete: bool = False
 
 
 class FieldUpdate(BaseModel):
