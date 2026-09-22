@@ -1,0 +1,33 @@
+{
+	"pages": [
+		{ "path": "pages/tables/index", "style": { "navigationBarTitleText": "数据表" } },
+		{ "path": "pages/reports/index", "style": { "navigationBarTitleText": "报表" } },
+		{ "path": "pages/tasks/index", "style": { "navigationBarTitleText": "任务" } },
+		{ "path": "pages/notify/index", "style": { "navigationBarTitleText": "通知" } },
+		{ "path": "pages/settings/index", "style": { "navigationBarTitleText": "设置" } },
+		{ "path": "pages/tables/create", "style": { "navigationBarTitleText": "新建数据表" } },
+		{ "path": "pages/records/list", "style": { "navigationBarTitleText": "记录" } },
+		{ "path": "pages/records/edit", "style": { "navigationBarTitleText": "编辑记录" } },
+		{ "path": "pages/reports/view", "style": { "navigationBarTitleText": "报表详情" } },
+		{ "path": "pages/reports/edit", "style": { "navigationBarTitleText": "编辑报表" } },
+		{ "path": "pages/tasks/edit", "style": { "navigationBarTitleText": "编辑任务" } }
+	],
+	"tabBar": {
+		"color": "#909399",
+		"selectedColor": "#409eff",
+		"backgroundColor": "#ffffff",
+		"list": [
+			{ "pagePath": "pages/tables/index", "text": "数据" },
+			{ "pagePath": "pages/reports/index", "text": "报表" },
+			{ "pagePath": "pages/tasks/index", "text": "任务" },
+			{ "pagePath": "pages/notify/index", "text": "通知" },
+			{ "pagePath": "pages/settings/index", "text": "设置" }
+		]
+	},
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "通用记录工具",
+		"navigationBarBackgroundColor": "#F8F8F8",
+		"backgroundColor": "#F5F7FA"
+	}
+}
