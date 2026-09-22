@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 
 # 运行时数据
+backend/grt.db
 backend/smoke_test.db
 backend/server.log
 backend/uploads/
