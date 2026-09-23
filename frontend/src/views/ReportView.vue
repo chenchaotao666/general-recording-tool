@@ -81,6 +81,17 @@
           <div :ref="(el) => chartRef(b.id, el)" class="chart" />
           <div class="drill-hint">点击图表可查看该分组明细</div>
         </template>
+        <template v-else-if="b.type === 'pivot'">
+          <el-table
+            :data="pivotRows(b)" size="small" border max-height="480"
+            @cell-click="(row, column) => onPivotCellClick(b, row, column)"
+          >
+            <el-table-column label="行＼列" prop="__label" fixed show-overflow-tooltip />
+            <el-table-column v-for="(cl, ci) in b.col_labels" :key="ci" :label="cl" :prop="'c' + ci" align="right" />
+            <el-table-column v-if="b.totals" label="合计" prop="__rt" align="right" />
+          </el-table>
+          <div class="drill-hint">点击数值单元格可查看明细</div>
+        </template>
         <template v-else-if="b.type === 'table'">
           <el-table :data="b.rows" size="small" border max-height="480">
             <el-table-column
@@ -198,19 +209,11 @@ function renderCharts() {
 // ---------- 图表下钻 ----------
 const drill = ref({ visible: false, loading: false, title: '', columns: [], rows: [], total: 0, truncated: false })
 
-async function onChartClick(b, p) {
-  if (p.componentType !== 'series' || p.dataIndex == null) return
-  const groupIndex = p.dataIndex
-  // 二级分组图的系列是筛选维度；多指标图的系列只是指标，不影响记录集
-  const seriesIndex = b.group2 && p.seriesIndex != null ? p.seriesIndex : null
-  const seriesName = b.group2 ? b.series?.[p.seriesIndex]?.name : null
-  drill.value = {
-    visible: true, loading: true, columns: [], rows: [], total: 0, truncated: false,
-    title: `${b.title} · ${b.labels[groupIndex]}${seriesName ? ` · ${seriesName}` : ''}`,
-  }
+async function openDrill(title, payload) {
+  drill.value = { visible: true, loading: true, columns: [], rows: [], total: 0, truncated: false, title }
   try {
     const res = await drillReport(tplId, {
-      block_id: b.id, group_index: groupIndex, series_index: seriesIndex,
+      ...payload,
       range: currentRange() || { mode: rangeMode.value }, filters: currentFilters(),
     })
     Object.assign(drill.value, { loading: false, ...res })
@@ -219,6 +222,48 @@ async function onChartClick(b, p) {
     drill.value.visible = false
     ElMessage.error(e.message)
   }
+}
+
+async function onChartClick(b, p) {
+  if (p.componentType !== 'series' || p.dataIndex == null) return
+  const groupIndex = p.dataIndex
+  // 二级分组图的系列是筛选维度；多指标图的系列只是指标，不影响记录集
+  const seriesIndex = b.group2 && p.seriesIndex != null ? p.seriesIndex : null
+  const seriesName = b.group2 ? b.series?.[p.seriesIndex]?.name : null
+  await openDrill(
+    `${b.title} · ${b.labels[groupIndex]}${seriesName ? ` · ${seriesName}` : ''}`,
+    { block_id: b.id, group_index: groupIndex, series_index: seriesIndex },
+  )
+}
+
+// ---------- 透视表 ----------
+function pivotRows(b) {
+  const rows = b.row_labels.map((rl, i) => {
+    const r = { __label: rl, __ri: i }
+    b.col_labels.forEach((_, ci) => { r['c' + ci] = b.cells[i]?.[ci] })
+    if (b.totals) r.__rt = b.row_totals[i]
+    return r
+  })
+  if (b.totals) {
+    const t = { __label: '合计', __ri: null }
+    b.col_labels.forEach((_, ci) => { t['c' + ci] = b.col_totals[ci] })
+    t.__rt = b.grand_total
+    rows.push(t)
+  }
+  return rows
+}
+
+// 点单元格下钻：数据格=行×列；合计列=整行；合计行=整列；总计格=全部
+async function onPivotCellClick(b, row, column) {
+  const prop = column?.property
+  if (!prop || prop === '__label') return
+  const seriesIndex = prop === '__rt' ? null : Number(prop.slice(1))
+  const groupIndex = row.__ri
+  const rl = groupIndex === null ? '合计行' : b.row_labels[groupIndex]
+  const cl = seriesIndex === null ? '合计' : b.col_labels[seriesIndex]
+  await openDrill(`${b.title} · ${rl} × ${cl}`, {
+    block_id: b.id, group_index: groupIndex, series_index: seriesIndex,
+  })
 }
 
 function onResize() {

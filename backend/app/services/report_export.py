@@ -65,6 +65,30 @@ def export_xlsx(result: dict) -> BytesIO:
                 chart.set_categories(cats)
                 chart.width, chart.height = 16, 9
                 ws.add_chart(chart, f"{get_column_letter(3 + len(series))}{data_start}")
+        elif t == "pivot":
+            row += 1
+            ws.cell(row=row, column=1, value=b["title"]).font = head_font
+            row += 1
+            totals = b.get("totals")
+            ws.cell(row=row, column=1, value="行＼列").font = head_font
+            for ci, cl in enumerate(b["col_labels"]):
+                ws.cell(row=row, column=2 + ci, value=cl).font = head_font
+            if totals:
+                ws.cell(row=row, column=2 + len(b["col_labels"]), value="合计").font = head_font
+            row += 1
+            for ri, rl in enumerate(b["row_labels"]):
+                ws.cell(row=row, column=1, value=rl)
+                for ci, v in enumerate(b["cells"][ri]):
+                    ws.cell(row=row, column=2 + ci, value=v)
+                if totals:
+                    ws.cell(row=row, column=2 + len(b["col_labels"]), value=b["row_totals"][ri]).font = head_font
+                row += 1
+            if totals:
+                ws.cell(row=row, column=1, value="合计").font = head_font
+                for ci, v in enumerate(b["col_totals"]):
+                    ws.cell(row=row, column=2 + ci, value=v).font = head_font
+                ws.cell(row=row, column=2 + len(b["col_labels"]), value=b["grand_total"]).font = head_font
+                row += 1
         elif t == "table":
             row += 1
             ws.cell(row=row, column=1, value=f"{b['title']}（共 {b['total']} 条" + ("，仅导出前 %d 条" % len(b["rows"]) if b["truncated"] else "）")).font = head_font
@@ -194,6 +218,25 @@ def export_html(result: dict, echarts_cdn: str | None = None) -> str:
                 f'<div class="chart" id="chart-{_esc(b["id"])}"></div>'
                 f'<details><summary class="note">数据明细</summary>'
                 f"<table>{head}{rows}</table></details></div>"
+            )
+        elif t == "pivot":
+            totals = b.get("totals")
+            head = "<th>行＼列</th>" + "".join(f"<th>{_esc(c)}</th>" for c in b["col_labels"])
+            if totals:
+                head += "<th>合计</th>"
+            rows = ""
+            for ri, rl in enumerate(b["row_labels"]):
+                cells = "".join(f"<td>{_esc(v)}</td>" for v in b["cells"][ri])
+                if totals:
+                    cells += f"<td><b>{_esc(b['row_totals'][ri])}</b></td>"
+                rows += f"<tr><td>{_esc(rl)}</td>{cells}</tr>"
+            if totals:
+                cells = "".join(f"<td><b>{_esc(v)}</b></td>" for v in b["col_totals"])
+                cells += f"<td><b>{_esc(b['grand_total'])}</b></td>"
+                rows += f'<tr><td><b>合计</b></td>{cells}</tr>'
+            parts.append(
+                f'<div class="block"><h3>{_esc(b["title"])}</h3>'
+                f"<table><tr>{head}</tr>{rows}</table></div>"
             )
         elif t == "table":
             head = "".join(f"<th>{_esc(c['label'])}</th>" for c in b["columns"])

@@ -183,6 +183,12 @@ function openEdit(row) {
       group: b.group ? { ...b.group } : undefined,
       filters: { logic: 'AND', ...(b.filters || {}), rules: (b.filters?.rules || []).map((r) => ({ ...r })) },
       ...(b.type === 'chart' ? { metrics: b.metrics || [], group2: b.group2 || { field: null }, stack: !!b.stack } : {}),
+      ...(b.type === 'pivot' ? {
+        row: { kind: 'field', field: null, ...(b.row || {}) },
+        col: { kind: 'field', field: null, ...(b.col || {}) },
+        row_top_n: b.row_top_n || 30, col_top_n: b.col_top_n || 8,
+        totals: b.totals !== false,
+      } : {}),
     })),
     filter_fields: [...(row.filter_fields || [])],
     schedule: { type: '', minutes: 60, expr: '0 9 * * 1', ...(row.schedule || {}) },

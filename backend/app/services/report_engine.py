@@ -12,7 +12,7 @@ from ..models import MetaField, ReportRunLog, ReportTemplate
 from . import dyn_engine
 from .actions import get_setting, send_smtp_html
 
-BLOCK_TYPES = {"stat", "chart", "table", "text"}
+BLOCK_TYPES = {"stat", "chart", "table", "text", "pivot"}
 AGG_TYPES = {"count", "count_distinct", "sum", "avg", "max", "min", "ratio"}
 CHART_AGG_TYPES = AGG_TYPES - {"ratio"}   # ratio（占比）仅统计卡：满足区块筛选数 / 口径内总数
 NUMERIC_TYPES = {"int", "decimal"}
@@ -28,6 +28,8 @@ GROUP2_TOP_N = 8        # 二级分组系列上限，其余合并为"其他"系�
 METRIC_AGG_LABELS = {"count": "记录数", "count_distinct": "去重计数", "sum": "求和",
                      "avg": "平均值", "max": "最大值", "min": "最小值"}
 WEBHOOK_TYPES = {"wecom": "企业微信", "dingtalk": "钉钉", "custom": "自定义"}
+PIVOT_ROW_TOP_N = (1, 100, 30)   # 透视表行维度 top_n（min, max, 默认）
+PIVOT_COL_TOP_N = (1, 20, 8)     # 透视表列维度 top_n（min, max, 默认）
 
 
 class ReportError(Exception):
@@ -123,6 +125,35 @@ def _check_numeric_field(fields_by_name: dict, agg: str, field: str | None) -> N
         raise HTTPException(400, f"聚合方式 {agg} 需要选择数值类型字段")
 
 
+def _check_group_dim(fields_by_name: dict, group: dict, axis: str = "") -> None:
+    """分组维度校验（chart group / pivot row/col 共用）：kind 合法、字段存在、时间型需日期字段。"""
+    gkind, gfield = (group or {}).get("kind") or "field", (group or {}).get("field")
+    prefix = f"{axis}维度" if axis else ""
+    if gkind not in GROUP_KINDS:
+        raise HTTPException(400, f"{prefix}不支持的分组方式：{gkind}")
+    if not gfield:
+        raise HTTPException(400, f"{prefix}需要选择分组字段")
+    gf = fields_by_name.get(gfield)
+    if gfield not in ("created_at", "updated_at") and gf is None:
+        raise HTTPException(400, f"{prefix}分组字段不存在：{gfield}")
+    if gkind in ("day", "week", "month"):
+        is_date_type = (gf is not None and gf.data_type in ("date", "datetime")) or gfield in ("created_at", "updated_at")
+        if not is_date_type:
+            raise HTTPException(400, f"{prefix}按日/周/月分组需要选择日期类型字段")
+
+
+def _check_top_n(block: dict, key: str, lo: int, hi: int) -> None:
+    v = block.get(key)
+    if v is None:
+        return
+    try:
+        iv = int(v)
+    except (TypeError, ValueError):
+        raise HTTPException(400, f"{key} 必须是整数")
+    if not (lo <= iv <= hi):
+        raise HTTPException(400, f"{key} 需在 {lo}~{hi} 之间")
+
+
 def validate_template(db: Session, payload) -> None:
     from .meta_service import get_meta_fields, get_meta_table
 
@@ -178,22 +209,25 @@ def validate_template(db: Session, payload) -> None:
                     raise HTTPException(400, f"图表不支持的聚合方式：{m.get('agg')}")
                 _check_numeric_field(fields_by_name, m.get("agg") or "count", m.get("field"))
             group = b.get("group") or {}
-            gkind, gfield = group.get("kind") or "field", group.get("field")
-            if gkind not in GROUP_KINDS:
-                raise HTTPException(400, f"不支持的分组方式：{gkind}")
-            gf = fields_by_name.get(gfield or "")
-            if gfield not in ("created_at", "updated_at") and gf is None:
-                raise HTTPException(400, f"分组字段不存在：{gfield}")
-            if gkind in ("day", "week", "month"):
-                is_date_type = (gf is not None and gf.data_type in ("date", "datetime")) or gfield in ("created_at", "updated_at")
-                if not is_date_type:
-                    raise HTTPException(400, "按日/周/月分组需要选择日期类型字段")
+            _check_group_dim(fields_by_name, group)
             if g2field:
                 g2f = fields_by_name.get(g2field)
                 if g2f is None:
                     raise HTTPException(400, f"二级分组字段不存在：{g2field}")
                 if g2f.data_type in ("date", "datetime"):
                     raise HTTPException(400, "二级分组不支持日期类型字段")
+        elif t == "pivot":
+            row, col = b.get("row") or {}, b.get("col") or {}
+            _check_group_dim(fields_by_name, row, "行")
+            _check_group_dim(fields_by_name, col, "列")
+            if (row.get("kind") or "field") == (col.get("kind") or "field") and row.get("field") == col.get("field"):
+                raise HTTPException(400, "行维度与列维度不能使用同一分组")
+            agg = b.get("agg")
+            if agg not in CHART_AGG_TYPES:
+                raise HTTPException(400, f"透视表不支持的聚合方式：{agg}")
+            _check_numeric_field(fields_by_name, agg, b.get("field"))
+            _check_top_n(b, "row_top_n", *PIVOT_ROW_TOP_N[:2])
+            _check_top_n(b, "col_top_n", *PIVOT_COL_TOP_N[:2])
         elif t == "table":
             cols = b.get("columns") or []
             if not cols:
@@ -238,6 +272,26 @@ def _round_num(v):
     if isinstance(v, float):
         return round(v, 2)
     return v
+
+
+def _group_expr(table, gkind: str, gfield: str):
+    """分组表达式：field 取原列；day/week/month 用 SQLite strftime（%W 周一为周首）。"""
+    col = table.c[gfield]
+    if gkind == "field":
+        return col
+    fmt = {"day": "%Y-%m-%d", "week": "%Y-%W", "month": "%Y-%m"}[gkind]
+    return func.strftime(fmt, col)
+
+
+def _rest_cond(expr, master_keys):
+    """"其他"桶条件：不在 master keys 内（含 NULL 处理）。master 为空时返回 None（不约束）。"""
+    in_master = []
+    nn = [k for k in master_keys if k is not None]
+    if nn:
+        in_master.append(expr.in_(nn))
+    if any(k is None for k in master_keys):
+        in_master.append(expr.is_(None))
+    return not_(or_(*in_master)) if in_master else None
 
 
 def _base_conds(table, fields_by_name: dict, block_filters: dict, date_field: str,
@@ -350,12 +404,8 @@ def _eval_chart(db, table, fields_by_name, block, date_field, start, end, viewer
     group = block.get("group") or {}
     gkind, gfield = group.get("kind") or "field", group.get("field")
     gcol = table.c[gfield]
-    if gkind == "field":
-        gexpr = gcol
-    else:
-        # SQLite strftime：%W 周一为周首（跨年边界第 0 周有坑，业务周报够用）
-        fmt = {"day": "%Y-%m-%d", "week": "%Y-%W", "month": "%Y-%m"}[gkind]
-        gexpr = func.strftime(fmt, gcol)
+    # SQLite strftime：%W 周一为周首（跨年边界第 0 周有坑，业务周报够用）
+    gexpr = _group_expr(table, gkind, gfield)
     gf = fields_by_name.get(gfield)
 
     def label_of(k):
@@ -389,13 +439,7 @@ def _eval_chart(db, table, fields_by_name, block, date_field, start, end, viewer
             cond = g2col.is_(None) if v is None else (g2col == v)
             series.append({"name": _option_label(g2f, v), "values": align(query_map(m0["agg"], m0["field"], cond))})
         if L["g2_has_rest"]:
-            in_top = []
-            non_null_top = [v for v in L["g2_top"] if v is not None]
-            if non_null_top:
-                in_top.append(g2col.in_(non_null_top))
-            if None in L["g2_top"]:
-                in_top.append(g2col.is_(None))
-            series.append({"name": "其他", "values": align(query_map(m0["agg"], m0["field"], not_(or_(*in_top))))})
+            series.append({"name": "其他", "values": align(query_map(m0["agg"], m0["field"], _rest_cond(g2col, L["g2_top"])))})
     else:
         series = [{"name": m["name"], "values": align(query_map(m["agg"], m["field"]))} for m in metrics]
 
@@ -406,6 +450,93 @@ def _eval_chart(db, table, fields_by_name, block, date_field, start, end, viewer
         "agg": metrics[0]["agg"], "stack": bool(block.get("stack")),
         "group2": bool(g2field),
     }
+
+
+# ---------- 透视表（行维度 × 列维度交叉聚合） ----------
+
+def _dim_keys_sql(db, table, conds, gexpr, gkind: str, top_n: int):
+    """透视表单维度 key 布局：field 型按记录数降序取 top_n、其余为 rest；时间型升序、空值最后、无 rest。"""
+    rows = db.execute(
+        select(gexpr.label("g"), func.count().label("c")).select_from(table)
+        .where(*conds).group_by(gexpr)
+    ).all()
+    counts = {r.g: r.c for r in rows}
+    if gkind == "field":
+        # 先按 key 升序打底再做计数降序稳定排序：计数并列时两引擎次序一致
+        ordered = sorted(counts, key=lambda k: (k is None, str(k or "")))
+        ordered = sorted(ordered, key=lambda k: counts[k], reverse=True)
+        return ordered[:top_n], ordered[top_n:]
+    return sorted(counts, key=lambda k: (k is None, str(k or ""))), []
+
+
+def _dim_label(f: MetaField | None, gkind: str, key) -> str:
+    """维度 key 的显示标签：field 型回显枚举 label，时间型原样，空值统一"（空）"。"""
+    if gkind == "field":
+        return _option_label(f, key)
+    return str(key) if key is not None else "（空）"
+
+
+def _eval_pivot(db, table, fields_by_name, block, date_field, start, end, viewer_rules=None) -> dict:
+    """透视表 SQL 求值。单元格按行/列布局对齐（含"其他"桶折叠）；合计独立聚合，不受折叠影响。"""
+    conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end, viewer_rules)
+    row, col = block.get("row") or {}, block.get("col") or {}
+    rkind, rfield = row.get("kind") or "field", row.get("field")
+    ckind, cfield = col.get("kind") or "field", col.get("field")
+    rexpr, cexpr = _group_expr(table, rkind, rfield), _group_expr(table, ckind, cfield)
+    agg, field = block["agg"], block.get("field")
+    agg_col = _agg_expr(table, agg, field)
+
+    r_master, r_rest = _dim_keys_sql(db, table, conds, rexpr, rkind,
+                                     int(block.get("row_top_n") or PIVOT_ROW_TOP_N[2]))
+    c_master, c_rest = _dim_keys_sql(db, table, conds, cexpr, ckind,
+                                     int(block.get("col_top_n") or PIVOT_COL_TOP_N[2]))
+    rf, cf = fields_by_name.get(rfield), fields_by_name.get(cfield)
+    row_labels = [_dim_label(rf, rkind, k) for k in r_master] + (["其他"] if r_rest else [])
+    col_labels = [_dim_label(cf, ckind, k) for k in c_master] + (["其他"] if c_rest else [])
+
+    # 单元格：一次二维聚合，"其他"桶按 key 折叠求和（count/sum 精确；avg/min/max 为近似，与图表一致）
+    cell_map = {}
+    q = (select(rexpr.label("r"), cexpr.label("c"), agg_col.label("v"))
+         .select_from(table).where(*conds).group_by(rexpr, cexpr))
+    for rr in db.execute(q).all():
+        cell_map[(rr.r, rr.c)] = rr.v or 0
+
+    def cell(rk, ck):
+        return cell_map.get((rk, ck), 0)
+
+    cells = []
+    for rk in r_master:
+        vals = [cell(rk, ck) for ck in c_master]
+        if c_rest:
+            vals.append(sum(cell(rk, ck) for ck in c_rest))
+        cells.append([_round_num(v) for v in vals])
+    if r_rest:
+        vals = [sum(cell(rk, ck) for rk in r_rest) for ck in c_master]
+        if c_rest:
+            vals.append(sum(cell(rk, ck) for rk in r_rest for ck in c_rest))
+        cells.append([_round_num(v) for v in vals])
+
+    out = {
+        "id": block["id"], "type": "pivot", "title": block.get("title") or "", "agg": agg,
+        "row_labels": row_labels, "col_labels": col_labels, "cells": cells,
+        "totals": bool(block.get("totals", True)),
+    }
+    if out["totals"]:
+        # 合计独立聚合：行合计含并入"其他"列的记录，列合计含"其他"行，总计为基准集全量
+        rmap = {r.g: (r.v or 0) for r in db.execute(
+            select(rexpr.label("g"), agg_col.label("v")).select_from(table).where(*conds).group_by(rexpr)).all()}
+        cmap = {r.g: (r.v or 0) for r in db.execute(
+            select(cexpr.label("g"), agg_col.label("v")).select_from(table).where(*conds).group_by(cexpr)).all()}
+
+        def rest_total(expr, master):
+            v = db.execute(select(agg_col).select_from(table).where(*conds, _rest_cond(expr, master))).scalar()
+            return _round_num(v if v is not None else 0)
+
+        out["row_totals"] = [_round_num(rmap.get(k, 0)) for k in r_master] + ([rest_total(rexpr, r_master)] if r_rest else [])
+        out["col_totals"] = [_round_num(cmap.get(k, 0)) for k in c_master] + ([rest_total(cexpr, c_master)] if c_rest else [])
+        grand = db.execute(select(agg_col).select_from(table).where(*conds)).scalar()
+        out["grand_total"] = _round_num(grand if grand is not None else 0)
+    return out
 
 
 def _eval_table(db, table, fields_by_name, block, date_field, start, end, viewer_rules=None) -> dict:
@@ -596,6 +727,82 @@ def _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules=Non
             "group2": bool(g2field),
         }
 
+    def eval_pivot(block):
+        """透视表 py 求值：与 _eval_pivot 逐项对齐（"其他"桶折叠求和 + 合计独立聚合）。"""
+        rows = base_recs(block)
+        row, col = block.get("row") or {}, block.get("col") or {}
+        rkind, rfield = row.get("kind") or "field", row.get("field")
+        ckind, cfield = col.get("kind") or "field", col.get("field")
+        rf, cf = fields_by_name.get(rfield), fields_by_name.get(cfield)
+        agg, field = block["agg"], block.get("field")
+
+        def dim_key(r, kind, f):
+            if kind == "field":
+                return r.get(f)
+            v = r.get(f)
+            fmt = {"day": "%Y-%m-%d", "week": "%Y-%W", "month": "%Y-%m"}[kind]
+            return v.strftime(fmt) if isinstance(v, (date, datetime)) else None
+
+        buckets: dict = {}
+        r_counts: dict = {}
+        c_counts: dict = {}
+        for r in rows:
+            rk, ck = dim_key(r, rkind, rfield), dim_key(r, ckind, cfield)
+            buckets.setdefault((rk, ck), []).append(r)
+            r_counts[rk] = r_counts.get(rk, 0) + 1
+            c_counts[ck] = c_counts.get(ck, 0) + 1
+
+        def dim_keys(counts, kind, top_n):
+            if kind == "field":
+                # 与 _dim_keys_sql 一致：key 升序打底 + 计数降序稳定排序，并列时两引擎次序一致
+                ordered = sorted(counts, key=lambda k: (k is None, str(k or "")))
+                ordered = sorted(ordered, key=lambda k: counts[k], reverse=True)
+                return ordered[:top_n], ordered[top_n:]
+            return sorted(counts, key=lambda k: (k is None, str(k or ""))), []
+
+        r_master, r_rest = dim_keys(r_counts, rkind, int(block.get("row_top_n") or PIVOT_ROW_TOP_N[2]))
+        c_master, c_rest = dim_keys(c_counts, ckind, int(block.get("col_top_n") or PIVOT_COL_TOP_N[2]))
+        row_labels = [_dim_label(rf, rkind, k) for k in r_master] + (["其他"] if r_rest else [])
+        col_labels = [_dim_label(cf, ckind, k) for k in c_master] + (["其他"] if c_rest else [])
+
+        def cell_val(rk, ck):
+            return _py_agg(buckets.get((rk, ck), []), agg, field) or 0
+
+        cells = []
+        for rk in r_master:
+            vals = [cell_val(rk, ck) for ck in c_master]
+            if c_rest:
+                vals.append(sum(cell_val(rk, ck) for ck in c_rest))
+            cells.append([_round_num(v) for v in vals])
+        if r_rest:
+            vals = [sum(cell_val(rk, ck) for rk in r_rest) for ck in c_master]
+            if c_rest:
+                vals.append(sum(cell_val(rk, ck) for rk in r_rest for ck in c_rest))
+            cells.append([_round_num(v) for v in vals])
+
+        out = {
+            "id": block["id"], "type": "pivot", "title": block.get("title") or "", "agg": agg,
+            "row_labels": row_labels, "col_labels": col_labels, "cells": cells,
+            "totals": bool(block.get("totals", True)),
+        }
+        if out["totals"]:
+            r_master_set, c_master_set = set(r_master), set(c_master)
+
+            def pick(rpred, cpred):
+                return [r for (rk, ck), rs in buckets.items() if rpred(rk) and cpred(ck) for r in rs]
+
+            def agg_of(rs):
+                return _round_num(_py_agg(rs, agg, field) or 0)
+
+            out["row_totals"] = [agg_of(pick(lambda rk, k=k: rk == k, lambda c: True)) for k in r_master]
+            if r_rest:
+                out["row_totals"].append(agg_of(pick(lambda rk: rk not in r_master_set, lambda c: True)))
+            out["col_totals"] = [agg_of(pick(lambda r: True, lambda ck, k=k: ck == k)) for k in c_master]
+            if c_rest:
+                out["col_totals"].append(agg_of(pick(lambda r: True, lambda ck: ck not in c_master_set)))
+            out["grand_total"] = agg_of(rows)
+        return out
+
     def eval_table(block):
         rows = base_recs(block)
         cols = block.get("columns") or []
@@ -635,6 +842,8 @@ def _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules=Non
             results_by_id[b["id"]] = r
         elif t == "chart":
             results_by_id[b["id"]] = eval_chart(b)
+        elif t == "pivot":
+            results_by_id[b["id"]] = eval_pivot(b)
         elif t == "table":
             results_by_id[b["id"]] = eval_table(b)
     context = {"range_label": label, "start": f"{start:%Y-%m-%d}", "end": f"{end:%Y-%m-%d}", **stat_values}
@@ -699,6 +908,8 @@ def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None =
             results_by_id[b["id"]] = r
         elif t == "chart":
             results_by_id[b["id"]] = _eval_chart(db, table, fields_by_name, b, date_field, start, end, viewer_rules)
+        elif t == "pivot":
+            results_by_id[b["id"]] = _eval_pivot(db, table, fields_by_name, b, date_field, start, end, viewer_rules)
         elif t == "table":
             results_by_id[b["id"]] = _eval_table(db, table, fields_by_name, b, date_field, start, end, viewer_rules)
     context = {"range_label": label, "start": f"{start:%Y-%m-%d}", "end": f"{end:%Y-%m-%d}", **stat_values}
@@ -730,61 +941,21 @@ def _drill_columns(fields: list) -> tuple[list, dict]:
     return columns, select_fields
 
 
-def _drill_sql(db, tpl, block, date_field, start, end, viewer_rules, group_index, series_index) -> dict:
-    _, fields, table = dyn_engine.load_business(db, tpl.table_id)
-    fields_by_name = {f.field_name: f for f in fields}
-    conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end, viewer_rules)
-    group = block.get("group") or {}
-    gkind, gfield = group.get("kind") or "field", group.get("field")
-    gcol = table.c[gfield]
-    if gkind == "field":
-        gexpr = gcol
+def _apply_dim_index(conds: list, expr, master_keys: list, rest_keys: list, index: int | None, axis: str) -> None:
+    """按维度下标追加筛选条件（下标与 labels 对齐，含末尾"其他"桶）；index 为 None 时不约束（透视表合计行/列）。"""
+    if index is None:
+        return
+    if index < 0 or index >= len(master_keys) + (1 if rest_keys else 0):
+        raise HTTPException(400, f"{axis}序号无效")
+    if index < len(master_keys):
+        k = master_keys[index]
+        conds.append(expr.is_(None) if k is None else expr == k)
     else:
-        fmt = {"day": "%Y-%m-%d", "week": "%Y-%W", "month": "%Y-%m"}[gkind]
-        gexpr = func.strftime(fmt, gcol)
+        conds.append(_rest_cond(expr, master_keys))
 
-    def query_map(agg, field, extra=None):
-        q = select(gexpr.label("g"), _agg_expr(table, agg, field).label("v")).select_from(table).where(*conds)
-        if extra is not None:
-            q = q.where(extra)
-        return {r.g: (r.v or 0) for r in db.execute(q.group_by(gexpr)).all()}
 
-    L = _chart_layout_sql(db, table, fields_by_name, block, conds, query_map)
-    master_keys, rest_keys = L["master_keys"], L["rest_keys"]
-
-    # 主分组条件：序号 = labels 下标（含末尾"其他"桶）
-    if group_index < 0 or group_index >= len(master_keys) + (1 if rest_keys else 0):
-        raise HTTPException(400, "分组序号无效")
-    if group_index < len(master_keys):
-        k = master_keys[group_index]
-        conds.append(gexpr.is_(None) if k is None else gexpr == k)
-    else:
-        in_master = []
-        nn = [k for k in master_keys if k is not None]
-        if nn:
-            in_master.append(gexpr.in_(nn))
-        if any(k is None for k in master_keys):
-            in_master.append(gexpr.is_(None))
-        conds.append(not_(or_(*in_master)))
-
-    # 二级分组条件：系列序号 = series 下标（含末尾"其他"系列）；多指标系列的指标不影响记录集
-    if L["g2field"] and series_index is not None:
-        g2col = table.c[L["g2field"]]
-        g2_top = L["g2_top"]
-        if series_index < 0 or series_index >= len(g2_top) + (1 if L["g2_has_rest"] else 0):
-            raise HTTPException(400, "系列序号无效")
-        if series_index < len(g2_top):
-            v = g2_top[series_index]
-            conds.append(g2col.is_(None) if v is None else g2col == v)
-        else:
-            in_top = []
-            nn = [v for v in g2_top if v is not None]
-            if nn:
-                in_top.append(g2col.in_(nn))
-            if None in g2_top:
-                in_top.append(g2col.is_(None))
-            conds.append(not_(or_(*in_top)))
-
+def _drill_rows_sql(db, table, fields, conds) -> dict:
+    """下钻明细查询尾部：计数 + id 倒序取行（上限 DRILL_LIMIT）+ 枚举值回显 label。"""
     columns, select_fields = _drill_columns(fields)
     cols = [f.field_name for f in fields]
     total = db.execute(select(func.count()).select_from(table).where(*conds)).scalar() or 0
@@ -801,7 +972,71 @@ def _drill_sql(db, tpl, block, date_field, start, end, viewer_rules, group_index
     return {"columns": columns, "rows": out_rows, "total": total, "truncated": total > DRILL_LIMIT}
 
 
-def _drill_py(db, mt, fields, block, date_field, start, end, viewer_rules, group_index, series_index) -> dict:
+def _drill_sql(db, tpl, block, date_field, start, end, viewer_rules, group_index, series_index) -> dict:
+    _, fields, table = dyn_engine.load_business(db, tpl.table_id)
+    fields_by_name = {f.field_name: f for f in fields}
+    conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end, viewer_rules)
+    group = block.get("group") or {}
+    gkind, gfield = group.get("kind") or "field", group.get("field")
+    gexpr = _group_expr(table, gkind, gfield)
+
+    def query_map(agg, field, extra=None):
+        q = select(gexpr.label("g"), _agg_expr(table, agg, field).label("v")).select_from(table).where(*conds)
+        if extra is not None:
+            q = q.where(extra)
+        return {r.g: (r.v or 0) for r in db.execute(q.group_by(gexpr)).all()}
+
+    L = _chart_layout_sql(db, table, fields_by_name, block, conds, query_map)
+
+    # 主分组条件：序号 = labels 下标（含末尾"其他"桶）
+    _apply_dim_index(conds, gexpr, L["master_keys"], L["rest_keys"], group_index, "分组")
+
+    # 二级分组条件：系列序号 = series 下标（含末尾"其他"系列）；多指标系列的指标不影响记录集
+    if L["g2field"] and series_index is not None:
+        g2col = table.c[L["g2field"]]
+        _apply_dim_index(conds, g2col, L["g2_top"], ["其他"] if L["g2_has_rest"] else [], series_index, "系列")
+
+    return _drill_rows_sql(db, table, fields, conds)
+
+
+def _drill_pivot_sql(db, tpl, block, date_field, start, end, viewer_rules, group_index, series_index) -> dict:
+    """透视表下钻：group_index=行下标、series_index=列下标（与 row_labels/col_labels 对齐），None 表示该维度不约束。"""
+    _, fields, table = dyn_engine.load_business(db, tpl.table_id)
+    fields_by_name = {f.field_name: f for f in fields}
+    conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end, viewer_rules)
+    row, col = block.get("row") or {}, block.get("col") or {}
+    rkind, rfield = row.get("kind") or "field", row.get("field")
+    ckind, cfield = col.get("kind") or "field", col.get("field")
+    rexpr, cexpr = _group_expr(table, rkind, rfield), _group_expr(table, ckind, cfield)
+    r_master, r_rest = _dim_keys_sql(db, table, conds, rexpr, rkind,
+                                     int(block.get("row_top_n") or PIVOT_ROW_TOP_N[2]))
+    c_master, c_rest = _dim_keys_sql(db, table, conds, cexpr, ckind,
+                                     int(block.get("col_top_n") or PIVOT_COL_TOP_N[2]))
+    _apply_dim_index(conds, rexpr, r_master, r_rest, group_index, "行")
+    _apply_dim_index(conds, cexpr, c_master, c_rest, series_index, "列")
+    return _drill_rows_sql(db, table, fields, conds)
+
+
+def _drill_rows_py(fields, rows: list) -> dict:
+    """下钻明细尾部（py 路径）：id 倒序、上限 DRILL_LIMIT、枚举值回显 label。"""
+    columns, select_fields = _drill_columns(fields)
+    cols = [f.field_name for f in fields]
+    total = len(rows)
+    rows = sorted(rows, key=lambda r: r.get("id") or 0, reverse=True)[:DRILL_LIMIT]
+    out_rows = []
+    for r in rows:
+        d = {c: dyn_engine.serialize_value(r.get(c)) for c in cols}
+        d["id"] = r["id"]
+        d["created_at"] = dyn_engine.serialize_value(r.get("created_at"))
+        for c, f in select_fields.items():
+            if d.get(c) is not None:
+                d[c] = _option_label(f, d.get(c))
+        out_rows.append(d)
+    return {"columns": columns, "rows": out_rows, "total": total, "truncated": total > DRILL_LIMIT}
+
+
+def _drill_base_py(db, mt, fields, block, date_field, start, end, viewer_rules) -> tuple[dict, list]:
+    """py 路径下钻公共前置：口径 + 查看端筛选（恒 AND）+ 区块筛选后的记录集。"""
     from . import json_store
     from .pyquery import match_filters
 
@@ -813,7 +1048,7 @@ def _drill_py(db, mt, fields, block, date_field, start, end, viewer_rules, group
     def in_range(r):
         v = r.get(date_field)
         if v is None:
-            return False
+            return False  # SQL 三值逻辑：NULL 比较即排除
         try:
             if date_f is not None and date_f.data_type == "date":
                 return start.date() <= v < end.date()
@@ -823,6 +1058,11 @@ def _drill_py(db, mt, fields, block, date_field, start, end, viewer_rules, group
 
     rows = [r for r in recs if match_filters(r, fields_by_name, viewer_filters) and in_range(r)]
     rows = [r for r in rows if match_filters(r, fields_by_name, block.get("filters") or {})]
+    return fields_by_name, rows
+
+
+def _drill_py(db, mt, fields, block, date_field, start, end, viewer_rules, group_index, series_index) -> dict:
+    fields_by_name, rows = _drill_base_py(db, mt, fields, block, date_field, start, end, viewer_rules)
 
     group = block.get("group") or {}
     gkind, gfield = group.get("kind") or "field", group.get("field")
@@ -874,30 +1114,69 @@ def _drill_py(db, mt, fields, block, date_field, start, end, viewer_rules, group
         else:
             rows = [r for r in rows if r.get(g2field) not in set(top_g2)]
 
-    columns, select_fields = _drill_columns(fields)
-    cols = [f.field_name for f in fields]
-    total = len(rows)
-    rows = sorted(rows, key=lambda r: r.get("id") or 0, reverse=True)[:DRILL_LIMIT]
-    out_rows = []
+    return _drill_rows_py(fields, rows)
+
+
+def _drill_pivot_py(db, mt, fields, block, date_field, start, end, viewer_rules, group_index, series_index) -> dict:
+    """透视表下钻（py 路径）：布局与 _drill_pivot_sql 一致；行/列下标为 None 表示该维度不约束。"""
+    _fields_by_name, rows = _drill_base_py(db, mt, fields, block, date_field, start, end, viewer_rules)
+
+    row, col = block.get("row") or {}, block.get("col") or {}
+    rkind, rfield = row.get("kind") or "field", row.get("field")
+    ckind, cfield = col.get("kind") or "field", col.get("field")
+
+    def dim_key(r, kind, f):
+        if kind == "field":
+            return r.get(f)
+        v = r.get(f)
+        fmt = {"day": "%Y-%m-%d", "week": "%Y-%W", "month": "%Y-%m"}[kind]
+        return v.strftime(fmt) if isinstance(v, (date, datetime)) else None
+
+    r_counts: dict = {}
+    c_counts: dict = {}
     for r in rows:
-        d = {c: dyn_engine.serialize_value(r.get(c)) for c in cols}
-        d["id"] = r["id"]
-        d["created_at"] = dyn_engine.serialize_value(r.get("created_at"))
-        for c, f in select_fields.items():
-            if d.get(c) is not None:
-                d[c] = _option_label(f, d.get(c))
-        out_rows.append(d)
-    return {"columns": columns, "rows": out_rows, "total": total, "truncated": total > DRILL_LIMIT}
+        rk, ck = dim_key(r, rkind, rfield), dim_key(r, ckind, cfield)
+        r_counts[rk] = r_counts.get(rk, 0) + 1
+        c_counts[ck] = c_counts.get(ck, 0) + 1
+
+    def dim_keys(counts, kind, top_n):
+        if kind == "field":
+            # 与 _dim_keys_sql 一致：key 升序打底 + 计数降序稳定排序，并列时两引擎次序一致
+            ordered = sorted(counts, key=lambda k: (k is None, str(k or "")))
+            ordered = sorted(ordered, key=lambda k: counts[k], reverse=True)
+            return ordered[:top_n], ordered[top_n:]
+        return sorted(counts, key=lambda k: (k is None, str(k or ""))), []
+
+    r_master, r_rest = dim_keys(r_counts, rkind, int(block.get("row_top_n") or PIVOT_ROW_TOP_N[2]))
+    c_master, c_rest = dim_keys(c_counts, ckind, int(block.get("col_top_n") or PIVOT_COL_TOP_N[2]))
+
+    def apply_py(cur_rows, master, rest, index, kind, field, axis):
+        if index is None:
+            return cur_rows
+        if index < 0 or index >= len(master) + (1 if rest else 0):
+            raise HTTPException(400, f"{axis}序号无效")
+        if index < len(master):
+            k = master[index]
+            return [r for r in cur_rows if dim_key(r, kind, field) == k]
+        mset = set(master)
+        return [r for r in cur_rows if dim_key(r, kind, field) not in mset]
+
+    rows = apply_py(rows, r_master, r_rest, group_index, rkind, rfield, "行")
+    rows = apply_py(rows, c_master, c_rest, series_index, ckind, cfield, "列")
+    return _drill_rows_py(fields, rows)
 
 
-def drill_chart(db: Session, tpl: ReportTemplate, block_id: str, group_index: int, series_index: int | None = None,
+def drill_chart(db: Session, tpl: ReportTemplate, block_id: str, group_index: int | None, series_index: int | None = None,
                 range_override: dict | None = None, viewer_filters: dict | None = None) -> dict:
-    """图表下钻：按分组/系列序号取该图表单元的明细记录。序号与图表结果 labels/series 下标一致。"""
+    """图表/透视表下钻：chart 按分组/系列序号（group_index 必填），pivot 按行/列序号（可为 None 表示合计行/列）。
+    序号与图表结果 labels/series 或透视表 row_labels/col_labels 下标一致。"""
     mt, fields = dyn_engine.load_meta(db, tpl.table_id)
     viewer_rules = _validate_viewer_filters(tpl, fields, viewer_filters)
     block = next((b for b in (tpl.blocks_json or []) if b.get("id") == block_id), None)
-    if not block or block.get("type") != "chart":
-        raise HTTPException(400, "图表区块不存在")
+    if not block or block.get("type") not in ("chart", "pivot"):
+        raise HTTPException(400, "图表/透视表区块不存在")
+    if block["type"] == "chart" and group_index is None:
+        raise HTTPException(400, "缺少有效的 group_index")
     rng = dict(tpl.range_json or {})
     if range_override:
         rng.update({k: v for k, v in range_override.items() if v is not None})
@@ -907,9 +1186,12 @@ def drill_chart(db: Session, tpl: ReportTemplate, block_id: str, group_index: in
     except ReportError as e:
         raise HTTPException(400, str(e))
 
+    is_pivot = block["type"] == "pivot"
     if mt.storage_mode == "json":
-        return _drill_py(db, mt, fields, block, date_field, start, end, viewer_rules, group_index, series_index)
-    return _drill_sql(db, tpl, block, date_field, start, end, viewer_rules, group_index, series_index)
+        fn = _drill_pivot_py if is_pivot else _drill_py
+        return fn(db, mt, fields, block, date_field, start, end, viewer_rules, group_index, series_index)
+    fn = _drill_pivot_sql if is_pivot else _drill_sql
+    return fn(db, tpl, block, date_field, start, end, viewer_rules, group_index, series_index)
 
 
 # ---------- 定时推送 ----------
@@ -958,6 +1240,26 @@ def render_email_html(result: dict) -> str:
                 )
             parts.append(f'<h3 style="margin:20px 0 8px">{esc(b["title"])}</h3>'
                          f'<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px">{rows}</table>')
+        elif b["type"] == "pivot":
+            th = 'padding:4px 12px;border:1px solid #e4e7ed;background:#f5f7fa'
+            td = 'padding:4px 12px;border:1px solid #e4e7ed'
+            tdn = td + ';text-align:right'
+            totals = b.get("totals")
+            head = f'<th style="{th}">行＼列</th>' + "".join(f'<th style="{th};text-align:right">{esc(c)}</th>' for c in b["col_labels"])
+            if totals:
+                head += f'<th style="{th};text-align:right">合计</th>'
+            rows_html = ""
+            for i, rl in enumerate(b["row_labels"]):
+                row_cells = "".join(f'<td style="{tdn}">{esc(v)}</td>' for v in b["cells"][i])
+                if totals:
+                    row_cells += f'<td style="{tdn};font-weight:600">{esc(b["row_totals"][i])}</td>'
+                rows_html += f'<tr><td style="{td}">{esc(rl)}</td>{row_cells}</tr>'
+            if totals:
+                total_cells = "".join(f'<td style="{tdn};font-weight:600">{esc(v)}</td>' for v in b["col_totals"])
+                total_cells += f'<td style="{tdn};font-weight:600">{esc(b["grand_total"])}</td>'
+                rows_html += f'<tr><td style="{td};font-weight:600">合计</td>{total_cells}</tr>'
+            parts.append(f'<h3 style="margin:20px 0 8px">{esc(b["title"])}</h3>'
+                         f'<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px"><tr>{head}</tr>{rows_html}</table>')
         elif b["type"] == "table":
             head = "".join(f'<th style="padding:4px 12px;border:1px solid #e4e7ed;background:#f5f7fa">{esc(c["label"])}</th>' for c in b["columns"])
             rows = "".join(
@@ -995,6 +1297,18 @@ def render_markdown(result: dict, max_rows: int = 10) -> str:
                     lines.append(f"- {l}：{parts}")
             else:
                 lines += [f"- {l}：{v}" for l, v in zip(b["labels"], series[0]["values"])]
+        elif b["type"] == "pivot":
+            lines.append(f"\n**{b['title']}**")
+            for i, rl in enumerate(b["row_labels"][:max_rows]):
+                line = f"- {rl}：" + "，".join(f"{cl} {v}" for cl, v in zip(b["col_labels"], b["cells"][i]))
+                if b.get("totals"):
+                    line += f"｜合计 {b['row_totals'][i]}"
+                lines.append(line)
+            if len(b["row_labels"]) > max_rows:
+                lines.append(f"- …（共 {len(b['row_labels'])} 行，仅显示前 {max_rows} 行）")
+            if b.get("totals"):
+                lines.append("- **合计**：" + "，".join(f"{cl} {v}" for cl, v in zip(b["col_labels"], b["col_totals"]))
+                             + f"｜总计 {b['grand_total']}")
         elif b["type"] == "table":
             note = f"（共 {b['total']} 条，仅显示前 {min(len(b['rows']), max_rows)} 条）" if b["total"] > max_rows else ""
             lines.append(f"\n**{b['title']}**{note}")

@@ -87,6 +87,35 @@
           </view>
         </template>
 
+        <template v-else-if="b.type === 'pivot'">
+          <scroll-view scroll-x class="table-scroll">
+            <view class="grid" :style="{ minWidth: (b.col_labels.length + (b.totals ? 2 : 1)) * 180 + 'rpx' }">
+              <view class="grid-row grid-head">
+                <text class="grid-cell">行＼列</text>
+                <text v-for="(cl, ci) in b.col_labels" :key="ci" class="grid-cell num">{{ cl }}</text>
+                <text v-if="b.totals" class="grid-cell num">合计</text>
+              </view>
+              <view v-for="(rl, ri) in b.row_labels" :key="ri" class="grid-row">
+                <text class="grid-cell">{{ rl }}</text>
+                <text
+                  v-for="(cl, ci) in b.col_labels" :key="ci" class="grid-cell num"
+                  @click="onPivotDrill(b, ri, ci)"
+                >{{ b.cells[ri]?.[ci] }}</text>
+                <text v-if="b.totals" class="grid-cell num bold" @click="onPivotDrill(b, ri, null)">{{ b.row_totals[ri] }}</text>
+              </view>
+              <view v-if="b.totals" class="grid-row grid-total">
+                <text class="grid-cell bold">合计</text>
+                <text
+                  v-for="(v, ci) in b.col_totals" :key="ci" class="grid-cell num bold"
+                  @click="onPivotDrill(b, null, ci)"
+                >{{ v }}</text>
+                <text class="grid-cell num bold" @click="onPivotDrill(b, null, null)">{{ b.grand_total }}</text>
+              </view>
+            </view>
+          </scroll-view>
+          <view class="truncated">点击数值可查看明细</view>
+        </template>
+
         <template v-else-if="b.type === 'table'">
           <scroll-view scroll-x class="table-scroll">
             <view class="grid" :style="{ minWidth: b.columns.length * 180 + 'rpx' }">
@@ -214,31 +243,39 @@ function maybeRun() {
   if (customStart.value && customEnd.value) run()
 }
 
-// ---------- 图表下钻 ----------
+// ---------- 图表/透视表下钻 ----------
 const drill = ref({ visible: false, loading: false, title: '', columns: [], rows: [], total: 0, truncated: false })
 
-async function onDrill(b, groupIndex) {
-  drill.value = {
-    visible: true, loading: true, columns: [], rows: [], total: 0, truncated: false,
-    title: `${b.title} · ${b.labels[groupIndex]}`,
+function currentRange() {
+  if (!mode.value) return undefined
+  const range = { mode: mode.value }
+  if (mode.value === 'custom') {
+    range.start = customStart.value
+    range.end = customEnd.value
   }
+  return range
+}
+
+async function openDrill(title, payload) {
+  drill.value = { visible: true, loading: true, columns: [], rows: [], total: 0, truncated: false, title }
   try {
-    let range
-    if (mode.value) {
-      range = { mode: mode.value }
-      if (mode.value === 'custom') {
-        range.start = customStart.value
-        range.end = customEnd.value
-      }
-    }
-    const res = await drillReport(tplId.value, {
-      block_id: b.id, group_index: groupIndex, range, filters: currentFilters(),
-    })
+    const res = await drillReport(tplId.value, { ...payload, range: currentRange(), filters: currentFilters() })
     drill.value = { ...drill.value, loading: false, ...res }
   } catch (e) {
     drill.value.visible = false
     uni.showToast({ title: e.message, icon: 'none' })
   }
+}
+
+async function onDrill(b, groupIndex) {
+  await openDrill(`${b.title} · ${b.labels[groupIndex]}`, { block_id: b.id, group_index: groupIndex })
+}
+
+// 透视表单元格下钻：数据格=行×列；合计列=整行；合计行=整列；总计格=全部
+async function onPivotDrill(b, ri, ci) {
+  const rl = ri === null ? '合计行' : b.row_labels[ri]
+  const cl = ci === null ? '合计' : b.col_labels[ci]
+  await openDrill(`${b.title} · ${rl} × ${cl}`, { block_id: b.id, group_index: ri, series_index: ci })
 }
 
 async function run() {
@@ -310,6 +347,9 @@ function changeMode(v) {
   width: 180rpx; flex-shrink: 0; padding: 12rpx 16rpx; font-size: 24rpx; color: #303133;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.grid-cell.num { text-align: right; }
+.grid-cell.bold { font-weight: 600; }
+.grid-total { background: #fafafa; }
 .truncated { font-size: 22rpx; color: #909399; margin-top: 12rpx; }
 .text-block { font-size: 28rpx; color: #606266; line-height: 1.7; }
 

@@ -181,16 +181,18 @@ def run_report(tpl_id: int, payload: dict | None = None, db: Session = Depends(g
 
 @router.post("/{tpl_id}/drill")
 def report_drill(tpl_id: int, payload: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """图表下钻：{block_id, group_index, series_index?, range?, filters?} → 该图表单元的明细记录。"""
+    """图表/透视表下钻：{block_id, group_index?, series_index?, range?, filters?} → 该图表单元的明细记录。
+    chart 区块 group_index 必填；pivot 区块 group_index=行下标、series_index=列下标，None 表示合计行/列。"""
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
     check_owner_or_admin(tpl.user_id, user)
     get_table_access(db, tpl.table_id, user)
+    gi = payload.get("group_index")
     try:
-        group_index = int(payload.get("group_index"))
+        group_index = int(gi) if gi is not None else None
     except (TypeError, ValueError):
-        raise HTTPException(400, "缺少有效的 group_index")
+        raise HTTPException(400, "group_index 无效")
     si = payload.get("series_index")
     try:
         series_index = int(si) if si is not None else None

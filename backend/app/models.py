@@ -270,7 +270,7 @@ class ReportTemplate(Base):
     range_json = Column(JSON, default=dict)
     # {mode: today|yesterday|past_7d|past_30d|this_week|last_week|this_month|last_month|this_quarter|this_year|custom, date_field, start?, end?}
     blocks_json = Column(JSON, default=list)
-    # [{id, type: stat|chart|table|text, title, filters: {logic, rules}, ...}]；stat 支持 agg: ratio（占比）与 compare: 环比
+    # [{id, type: stat|chart|table|text|pivot, title, filters: {logic, rules}, ...}]；stat 支持 agg: ratio（占比）与 compare: 环比；pivot 为行×列交叉聚合
     filters_json = Column(JSON, default=list)      # 查看端开放筛选的字段名列表
     schedule_json = Column(JSON, default=dict)   # {type: interval, minutes} | {type: cron, expr}
     push_json = Column(JSON, default=dict)       # {recipients, formats: [html_inline, xlsx], subject}

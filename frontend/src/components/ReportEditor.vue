@@ -138,6 +138,58 @@
             </div>
           </div>
 
+          <!-- 透视表：行维度 × 列维度交叉聚合 -->
+          <div v-else-if="b.type === 'pivot'" class="block-body">
+            <div style="display: flex; align-items: center; flex-wrap: wrap; row-gap: 6px">
+              <span style="font-size: 12px; color: #909399">行维度</span>
+              <el-select v-model="b.row.kind" size="small" style="width: 100px; margin-left: 6px" @change="b.row.field = null">
+                <el-option label="按字段" value="field" />
+                <el-option label="按日" value="day" />
+                <el-option label="按周" value="week" />
+                <el-option label="按月" value="month" />
+              </el-select>
+              <el-select v-model="b.row.field" size="small" placeholder="行维度字段" style="width: 140px; margin-left: 6px">
+                <el-option v-for="f in groupFields(b.row.kind)" :key="f.field_name" :label="f.label" :value="f.field_name" />
+              </el-select>
+              <span style="font-size: 12px; color: #909399; margin-left: 14px">列维度</span>
+              <el-select v-model="b.col.kind" size="small" style="width: 100px; margin-left: 6px" @change="b.col.field = null">
+                <el-option label="按字段" value="field" />
+                <el-option label="按日" value="day" />
+                <el-option label="按周" value="week" />
+                <el-option label="按月" value="month" />
+              </el-select>
+              <el-select v-model="b.col.field" size="small" placeholder="列维度字段" style="width: 140px; margin-left: 6px">
+                <el-option v-for="f in groupFields(b.col.kind)" :key="f.field_name" :label="f.label" :value="f.field_name" />
+              </el-select>
+            </div>
+            <div style="margin-top: 8px; display: flex; align-items: center; flex-wrap: wrap; row-gap: 6px">
+              <el-select v-model="b.agg" size="small" style="width: 100px" @change="onAggChange(b)">
+                <el-option v-for="[v, l] in CHART_AGGS" :key="v" :label="l" :value="v" />
+              </el-select>
+              <el-select
+                v-if="needsField(b.agg)" v-model="b.field" size="small"
+                :placeholder="b.agg === 'count_distinct' ? '统计字段' : '数值字段'"
+                style="width: 140px; margin-left: 8px"
+              >
+                <el-option v-for="f in aggFields(b.agg)" :key="f.field_name" :label="f.label" :value="f.field_name" />
+              </el-select>
+              <el-checkbox v-model="b.totals" style="margin-left: 12px">行列合计</el-checkbox>
+            </div>
+            <div v-if="b.row.kind === 'field' || b.col.kind === 'field'" style="margin-top: 8px; display: flex; align-items: center; flex-wrap: wrap; row-gap: 6px">
+              <template v-if="b.row.kind === 'field'">
+                <span style="font-size: 12px; color: #909399">行取前</span>
+                <el-input-number v-model="b.row_top_n" :min="1" :max="100" size="small" controls-position="right" style="width: 80px" />
+                <span style="font-size: 12px; color: #909399">项</span>
+              </template>
+              <template v-if="b.col.kind === 'field'">
+                <span style="font-size: 12px; color: #909399; margin-left: 12px">列取前</span>
+                <el-input-number v-model="b.col_top_n" :min="1" :max="20" size="small" controls-position="right" style="width: 80px" />
+                <span style="font-size: 12px; color: #909399">项</span>
+              </template>
+              <span style="font-size: 12px; color: #909399; margin-left: 8px">其余合并"其他"；点单元格可下钻明细</span>
+            </div>
+          </div>
+
           <!-- 明细表 -->
           <div v-else-if="b.type === 'table'" class="block-body">
             <el-select v-model="b.columns" multiple size="small" placeholder="选择列" style="width: 100%">
@@ -226,6 +278,7 @@
             <el-dropdown-menu>
               <el-dropdown-item command="stat">统计卡片</el-dropdown-item>
               <el-dropdown-item command="chart">图表</el-dropdown-item>
+              <el-dropdown-item command="pivot">透视表</el-dropdown-item>
               <el-dropdown-item command="table">明细表</el-dropdown-item>
               <el-dropdown-item command="text">文本说明</el-dropdown-item>
             </el-dropdown-menu>
@@ -337,8 +390,8 @@ import { aiAssistReport, getTable } from '../api'
 
 const props = defineProps({ form: { type: Object, required: true }, tables: { type: Array, default: () => [] } })
 
-const BLOCK_LABELS = { stat: '统计卡片', chart: '图表', table: '明细表', text: '文本' }
-const BLOCK_TAG = { stat: 'success', chart: 'primary', table: 'warning', text: 'info' }
+const BLOCK_LABELS = { stat: '统计卡片', chart: '图表', pivot: '透视表', table: '明细表', text: '文本' }
+const BLOCK_TAG = { stat: 'success', chart: 'primary', pivot: 'danger', table: 'warning', text: 'info' }
 const RANGE_MODES = [
   ['today', '今天'], ['yesterday', '昨天'], ['past_7d', '近7天'], ['past_30d', '近30天'],
   ['this_week', '本周'], ['last_week', '上周'], ['this_month', '本月'], ['last_month', '上月'],
@@ -455,6 +508,7 @@ function addBlock(type) {
   const base = { id: nextBlockId(), type, title: '', filters: { logic: 'AND', rules: [] } }
   if (type === 'stat') Object.assign(base, { agg: 'count', field: null })
   if (type === 'chart') Object.assign(base, { chart_type: 'bar', group: { kind: 'field', field: null }, agg: 'count', field: null, top_n: 8, metrics: [], group2: { field: null }, stack: false })
+  if (type === 'pivot') Object.assign(base, { row: { kind: 'field', field: null }, col: { kind: 'field', field: null }, agg: 'count', field: null, row_top_n: 30, col_top_n: 8, totals: true })
   if (type === 'table') Object.assign(base, { columns: [], sort_by: 'created_at', sort_order: 'desc', limit: 100 })
   if (type === 'text') Object.assign(base, { content: '' })
   props.form.blocks.push(base)
@@ -507,6 +561,10 @@ function blockDesc(b) {
     return s
   }
   if (b.type === 'table') return `${(b.columns || []).length} 列 · 上限 ${b.limit} 行`
+  if (b.type === 'pivot') {
+    const dim = (g) => (g?.kind === 'field' ? fieldOf(g.field)?.label || g.field : GROUP_TEXT[g?.kind])
+    return `${dim(b.row)} × ${dim(b.col)} · ${AGG_TEXT[b.agg]}${b.totals === false ? ' · 无合计' : ''}`
+  }
   return (b.content || '').slice(0, 40)
 }
 
@@ -535,7 +593,16 @@ async function applyAiResult() {
   }
   if (!props.form.name.trim()) props.form.name = aiResult.value.name
   props.form.range = { mode: aiResult.value.range.mode, date_field: aiResult.value.range.date_field, start: null, end: null }
-  props.form.blocks = aiResult.value.blocks.map((b) => ({ ...b, filters: b.filters || { logic: 'AND', rules: [] }, group: b.group ? { ...b.group } : undefined }))
+  props.form.blocks = aiResult.value.blocks.map((b) => ({
+    ...b,
+    filters: b.filters || { logic: 'AND', rules: [] },
+    group: b.group ? { ...b.group } : undefined,
+    ...(b.type === 'pivot' ? {
+      row: { kind: 'field', field: null, ...(b.row || {}) },
+      col: { kind: 'field', field: null, ...(b.col || {}) },
+      totals: b.totals !== false,
+    } : {}),
+  }))
   aiVisible.value = false
   ElMessage.success('已应用，可在下方继续调整')
 }

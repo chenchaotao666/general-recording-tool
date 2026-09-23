@@ -120,6 +120,48 @@
         </view>
       </template>
 
+      <!-- 透视表：行维度 × 列维度交叉聚合 -->
+      <template v-else-if="b.type === 'pivot'">
+        <view class="fc-row">
+          <text class="lbl-sm">行维度</text>
+          <picker :range="GROUP_KINDS" range-key="label" @change="(e) => onPivotKind(b.row, e)">
+            <view class="fc-picker">{{ GROUP_KINDS.find((g) => g.value === b.row.kind)?.label }} ›</view>
+          </picker>
+          <picker :range="groupFields(b.row.kind)" range-key="label" @change="(e) => (b.row.field = groupFields(b.row.kind)[Number(e.detail.value)].field_name)">
+            <view class="fc-picker wide">{{ fieldLabel(b.row.field) || '行维度字段' }} ›</view>
+          </picker>
+        </view>
+        <view class="fc-row">
+          <text class="lbl-sm">列维度</text>
+          <picker :range="GROUP_KINDS" range-key="label" @change="(e) => onPivotKind(b.col, e)">
+            <view class="fc-picker">{{ GROUP_KINDS.find((g) => g.value === b.col.kind)?.label }} ›</view>
+          </picker>
+          <picker :range="groupFields(b.col.kind)" range-key="label" @change="(e) => (b.col.field = groupFields(b.col.kind)[Number(e.detail.value)].field_name)">
+            <view class="fc-picker wide">{{ fieldLabel(b.col.field) || '列维度字段' }} ›</view>
+          </picker>
+        </view>
+        <view class="fc-row">
+          <picker :range="CHART_AGGS" range-key="label" @change="(e) => onAggChange(b, CHART_AGGS[Number(e.detail.value)].value)">
+            <view class="fc-picker">{{ aggLabel(b.agg) }} ›</view>
+          </picker>
+          <picker v-if="needsField(b.agg)" :range="aggFields(b.agg)" range-key="label" @change="(e) => (b.field = aggFields(b.agg)[Number(e.detail.value)].field_name)">
+            <view class="fc-picker wide">{{ fieldLabel(b.field) || (b.agg === 'count_distinct' ? '统计字段' : '数值字段') }} ›</view>
+          </picker>
+          <text class="chip" :class="{ on: b.totals !== false }" @click="b.totals = b.totals === false ? true : false">行列合计</text>
+        </view>
+        <view v-if="b.row.kind === 'field' || b.col.kind === 'field'" class="fc-row">
+          <template v-if="b.row.kind === 'field'">
+            <text class="lbl-sm">行前N</text>
+            <input v-model="b.row_top_n" type="number" class="fc-input" style="max-width: 110rpx" />
+          </template>
+          <template v-if="b.col.kind === 'field'">
+            <text class="lbl-sm">列前N</text>
+            <input v-model="b.col_top_n" type="number" class="fc-input" style="max-width: 110rpx" />
+          </template>
+          <text class="lbl-sm">其余合并"其他"，点单元格可下钻</text>
+        </view>
+      </template>
+
       <!-- 明细表 -->
       <template v-else-if="b.type === 'table'">
         <view class="lbl-sm" style="margin-bottom: 8rpx">列（点击切换）</view>
@@ -195,6 +237,7 @@
     <view class="add-blocks">
       <text class="ab" @click="addBlock('stat')">+ 统计卡片</text>
       <text class="ab" @click="addBlock('chart')">+ 图表</text>
+      <text class="ab" @click="addBlock('pivot')">+ 透视表</text>
       <text class="ab" @click="addBlock('table')">+ 明细表</text>
       <text class="ab" @click="addBlock('text')">+ 文本</text>
     </view>
@@ -255,7 +298,7 @@ import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { aiAssistReport, createReport, getReport, getTable, listTables, updateReport } from '../../api'
 
-const BLOCK_LABELS = { stat: '统计卡片', chart: '图表', table: '明细表', text: '文本' }
+const BLOCK_LABELS = { stat: '统计卡片', chart: '图表', pivot: '透视表', table: '明细表', text: '文本' }
 const WEBHOOK_LABELS = { wecom: '企业微信', dingtalk: '钉钉', custom: '自定义' }
 const RANGE_MODES = [
   ['today', '今天'], ['yesterday', '昨天'], ['past_7d', '近7天'], ['past_30d', '近30天'],
@@ -328,6 +371,12 @@ async function fillForm(t) {
       ...b,
       filters: { logic: 'AND', ...(b.filters || {}), rules: (b.filters?.rules || []).map((r) => ({ ...r })) },
       ...(b.type === 'chart' ? { metrics: b.metrics || [], group2: b.group2 || { field: null }, stack: !!b.stack } : {}),
+      ...(b.type === 'pivot' ? {
+        row: { kind: 'field', field: null, ...(b.row || {}) },
+        col: { kind: 'field', field: null, ...(b.col || {}) },
+        row_top_n: b.row_top_n ?? '30', col_top_n: b.col_top_n ?? '8',
+        totals: b.totals !== false,
+      } : {}),
     })),
     filter_fields: [...(t.filter_fields || [])],
     schedule: { type: '', minutes: '60', expr: '0 9 * * 1', ...(t.schedule || {}) },
@@ -444,6 +493,12 @@ function onGroupKind(b, e) {
   b.group.field = null
 }
 
+// 透视表行/列维度切换分组方式：重置字段避免残留非法值
+function onPivotKind(dim, e) {
+  dim.kind = GROUP_KINDS[Number(e.detail.value)].value
+  dim.field = null
+}
+
 function opsFor(fieldName) {
   const f = fieldOf(fieldName)
   const raw = !f ? OPS.text
@@ -474,6 +529,7 @@ function addBlock(type) {
   const base = { id: nextBlockId(), type, title: '', filters: { logic: 'AND', rules: [] } }
   if (type === 'stat') Object.assign(base, { agg: 'count', field: null })
   if (type === 'chart') Object.assign(base, { chart_type: 'bar', group: { kind: 'field', field: null }, agg: 'count', field: null, top_n: '8', metrics: [], group2: { field: null }, stack: false })
+  if (type === 'pivot') Object.assign(base, { row: { kind: 'field', field: null }, col: { kind: 'field', field: null }, agg: 'count', field: null, row_top_n: '30', col_top_n: '8', totals: true })
   if (type === 'table') Object.assign(base, { columns: [], sort_by: 'created_at', sort_order: 'desc', limit: '100' })
   if (type === 'text') Object.assign(base, { content: '' })
   form.value.blocks.push(base)
@@ -509,7 +565,15 @@ async function aiGenerate() {
     aiNotes.value = r.notes || ''
     if (!form.value.name.trim()) form.value.name = r.name
     form.value.range = { ...r.range, start: null, end: null }
-    form.value.blocks = r.blocks.map((b) => ({ ...b, filters: b.filters || { logic: 'AND', rules: [] } }))
+    form.value.blocks = r.blocks.map((b) => ({
+      ...b,
+      filters: b.filters || { logic: 'AND', rules: [] },
+      ...(b.type === 'pivot' ? {
+        row: { kind: 'field', field: null, ...(b.row || {}) },
+        col: { kind: 'field', field: null, ...(b.col || {}) },
+        row_top_n: '30', col_top_n: '8', totals: b.totals !== false,
+      } : {}),
+    }))
     uni.showToast({ title: '已生成，可继续调整', icon: 'none' })
   } catch (e) {
     uni.showToast({ title: e.message, icon: 'none', duration: 3000 })
@@ -539,6 +603,8 @@ async function save() {
         ...rest,
         top_n: b.top_n !== undefined ? Number(b.top_n) || 8 : undefined,
         limit: b.limit !== undefined ? Number(b.limit) || 100 : undefined,
+        row_top_n: b.row_top_n !== undefined ? Number(b.row_top_n) || 30 : undefined,
+        col_top_n: b.col_top_n !== undefined ? Number(b.col_top_n) || 8 : undefined,
         filters: { logic: b.filters.logic, rules: (b.filters.rules || []).filter((r) => r.field && r.op) },
       }
     }),
@@ -595,6 +661,7 @@ async function save() {
 .bc-tag { font-size: 22rpx; color: #fff; border-radius: 8rpx; padding: 4rpx 14rpx; background: #909399; flex-shrink: 0; }
 .tag-stat { background: #67c23a; }
 .tag-chart { background: #409eff; }
+.tag-pivot { background: #f56c6c; }
 .tag-table { background: #e6a23c; }
 .bc-title { flex: 1; font-size: 28rpx; font-weight: 600; color: #303133; }
 .bc-op { font-size: 26rpx; color: #409eff; padding: 4rpx 10rpx; }
