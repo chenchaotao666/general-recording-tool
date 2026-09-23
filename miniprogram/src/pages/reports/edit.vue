@@ -199,6 +199,15 @@
           <text class="preset" @click="form.schedule.expr = '0 9 1 * *'">每月1号9点</text>
         </view>
         <input v-model="form.push.recipients" class="fc-input" style="margin-top: 12rpx" placeholder="收件邮箱，多个用逗号分隔" />
+        <view v-for="(wh, i) in form.push.webhooks" :key="i" class="fc-row" style="margin-top: 12rpx">
+          <text
+            class="chip" :class="{ on: true }"
+            @click="wh.type = wh.type === 'wecom' ? 'dingtalk' : wh.type === 'dingtalk' ? 'custom' : 'wecom'"
+          >{{ WEBHOOK_LABELS[wh.type] || wh.type }}</text>
+          <input v-model="wh.url" class="fc-input" style="flex: 1" placeholder="机器人 Webhook 地址" />
+          <text class="bc-op del" @click="form.push.webhooks.splice(i, 1)">删</text>
+        </view>
+        <view class="add-field sm" @click="form.push.webhooks.push({ type: 'wecom', url: '' })">+ 添加群机器人（企微/钉钉，点标签切换）</view>
         <view class="fc-row" style="margin-top: 12rpx">
           <text class="chip" :class="{ on: form.push.formats.includes('html_inline') }" @click="toggleFormat('html_inline')">邮件正文</text>
           <text class="chip" :class="{ on: form.push.formats.includes('xlsx') }" @click="toggleFormat('xlsx')">Excel 附件</text>
@@ -218,6 +227,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import { aiAssistReport, createReport, getReport, getTable, listTables, updateReport } from '../../api'
 
 const BLOCK_LABELS = { stat: '统计卡片', chart: '图表', table: '明细表', text: '文本' }
+const WEBHOOK_LABELS = { wecom: '企业微信', dingtalk: '钉钉', custom: '自定义' }
 const RANGE_MODES = [
   ['today', '今天'], ['yesterday', '昨天'], ['past_7d', '近7天'], ['past_30d', '近30天'],
   ['this_week', '本周'], ['last_week', '上周'], ['this_month', '本月'], ['last_month', '上月'],
@@ -260,7 +270,7 @@ function blank() {
     blocks: [],
     filter_fields: [],
     schedule: { type: '', minutes: '60', expr: '0 9 * * 1' },
-    push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '' },
+    push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', webhooks: [] },
   }
 }
 
@@ -291,7 +301,7 @@ async function fillForm(t) {
     })),
     filter_fields: [...(t.filter_fields || [])],
     schedule: { type: '', minutes: '60', expr: '0 9 * * 1', ...(t.schedule || {}) },
-    push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', ...(t.push || {}) },
+    push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', webhooks: [], ...(t.push || {}) },
   }
   tableIndex.value = tables.value.findIndex((x) => x.id === t.table_id)
   await loadFields(t.table_id)
@@ -462,7 +472,10 @@ async function save() {
   if (!f.name.trim()) return uni.showToast({ title: '请填写报表名称', icon: 'none' })
   if (tableIndex.value < 0) return uni.showToast({ title: '请选择数据表', icon: 'none' })
   if (!f.blocks.length) return uni.showToast({ title: '请至少添加一个区块', icon: 'none' })
-  if (f.schedule.type && !f.push.recipients.trim()) return uni.showToast({ title: '定时推送需要填写收件邮箱', icon: 'none' })
+  if (f.schedule.type && !f.push.recipients.trim()
+      && !(f.push.webhooks || []).some((w) => (w.url || '').trim())) {
+    return uni.showToast({ title: '定时推送需要至少一个渠道（邮箱或群机器人）', icon: 'none' })
+  }
   const payload = {
     name: f.name.trim(),
     table_id: tables.value[tableIndex.value].id,
@@ -480,7 +493,9 @@ async function save() {
       : f.schedule.type === 'cron'
         ? { type: 'cron', expr: f.schedule.expr }
         : {},
-    push: f.schedule.type ? f.push : {},
+    push: f.schedule.type
+      ? { ...f.push, webhooks: (f.push.webhooks || []).filter((w) => (w.url || '').trim()) }
+      : {},
   }
   saving.value = true
   try {

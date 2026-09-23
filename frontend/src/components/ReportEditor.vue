@@ -227,8 +227,23 @@
       </template>
     </el-form-item>
     <template v-if="form.schedule.type">
-      <el-form-item label="收件邮箱" required>
+      <el-form-item label="收件邮箱">
         <el-input v-model="form.push.recipients" placeholder="多个用逗号分隔" style="width: 400px" />
+      </el-form-item>
+      <el-form-item label="群机器人">
+        <div style="width: 100%">
+          <div v-for="(wh, i) in form.push.webhooks" :key="i" style="display: flex; gap: 8px; margin-bottom: 8px">
+            <el-select v-model="wh.type" style="width: 110px">
+              <el-option label="企业微信" value="wecom" />
+              <el-option label="钉钉" value="dingtalk" />
+              <el-option label="自定义" value="custom" />
+            </el-select>
+            <el-input v-model="wh.url" placeholder="机器人 Webhook 地址" style="flex: 1" />
+            <el-button text type="danger" @click="form.push.webhooks.splice(i, 1)">删除</el-button>
+          </div>
+          <el-button text type="primary" @click="form.push.webhooks.push({ type: 'wecom', url: '' })">+ 添加机器人</el-button>
+          <div style="color: #909399; font-size: 12px">推送 Markdown 摘要（统计卡 + 图表/明细前 10 行），不带附件；与邮件可同时配置</div>
+        </div>
       </el-form-item>
       <el-form-item label="推送内容">
         <el-checkbox-group v-model="form.push.formats">

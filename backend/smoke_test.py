@@ -472,6 +472,94 @@ for rid_ in p0_ids:
     client.delete(f"/api/reports/{rid_}")
 print("报表 P0（口径/去重/占比/环比/查看端筛选）通过")
 
+# 10.6 报表 Webhook 推送：企微/钉钉机器人协议、渠道失败汇总、无渠道报错
+from app.services import report_engine as re_mod
+
+# 校验：不支持的类型 / 非 http(s) 地址
+for bad_wh in ([{"type": "slack", "url": "https://x"}], [{"type": "wecom", "url": "not-a-url"}]):
+    r = client.post("/api/reports", json={
+        "name": "bad", "table_id": tj, "range": {"mode": "today"},
+        "blocks": [{"id": "x", "type": "stat", "agg": "count"}], "push": {"webhooks": bad_wh},
+    })
+    assert r.status_code == 400, r.text
+
+r = client.post("/api/reports", json={
+    "name": "推送报表", "table_id": tj, "enabled": True,
+    "range": {"mode": "today", "date_field": "created_at"}, "blocks": BLOCKS_P0,
+    "schedule": {"type": "interval", "minutes": 60},
+    "push": {"webhooks": [
+        {"type": "wecom", "url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=ok1"},
+        {"type": "dingtalk", "url": "https://oapi.dingtalk.com/robot/send?access_token=ok2"},
+    ]},
+})
+assert r.status_code == 200, r.text
+wh_id = r.json()["id"]
+
+wh_calls = []
+
+
+class _FakeResp:
+    status_code = 200
+
+    def __init__(self, payload):
+        self._p = payload
+        self.text = str(payload)
+
+    def json(self):
+        return self._p
+
+
+def _fake_post(url, json=None, timeout=None, **kw):
+    wh_calls.append((url, json))
+    # key=bad 的机器人模拟业务报错；其余成功
+    return _FakeResp({"errcode": 93000 if "key=bad" in url else 0, "errmsg": "mock"})
+
+
+_orig_post = re_mod.httpx.post
+re_mod.httpx.post = _fake_post
+try:
+    r = client.post(f"/api/reports/{wh_id}/test-push")
+finally:
+    re_mod.httpx.post = _orig_post
+assert r.status_code == 200 and r.json()["sent"] == 2, r.text
+# 企微/钉钉各发一次 markdown 消息，内容含报表名与统计卡
+assert len(wh_calls) == 2
+wecom_payload = next(p for u, p in wh_calls if "qyapi" in u)
+ding_payload = next(p for u, p in wh_calls if "oapi" in u)
+assert wecom_payload["msgtype"] == "markdown" and "推送报表" in wecom_payload["markdown"]["content"]
+assert "记录数" in wecom_payload["markdown"]["content"] and "成交占比" in wecom_payload["markdown"]["content"]
+assert ding_payload["msgtype"] == "markdown" and ding_payload["markdown"]["title"].startswith("【推送报表】")
+
+# 机器人返回 errcode != 0 → test-push 400，错误落推送日志
+r = client.put(f"/api/reports/{wh_id}", json={
+    "name": "推送报表", "table_id": tj, "enabled": True,
+    "range": {"mode": "today", "date_field": "created_at"}, "blocks": BLOCKS_P0,
+    "schedule": {"type": "interval", "minutes": 60},
+    "push": {"webhooks": [{"type": "wecom", "url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bad"}]},
+})
+assert r.status_code == 200, r.text
+re_mod.httpx.post = _fake_post
+try:
+    r = client.post(f"/api/reports/{wh_id}/test-push")
+finally:
+    re_mod.httpx.post = _orig_post
+assert r.status_code == 400 and "93000" in r.json()["detail"], r.text
+runs = client.get(f"/api/reports/{wh_id}/runs").json()
+assert runs[0]["error"] and "93000" in runs[0]["error"] and runs[0]["sent_count"] == 0, runs[0]
+
+# 邮箱与 webhook 都没配 → 400 提示未配置渠道
+r = client.put(f"/api/reports/{wh_id}", json={
+    "name": "推送报表", "table_id": tj, "enabled": True,
+    "range": {"mode": "today", "date_field": "created_at"}, "blocks": BLOCKS_P0,
+    "schedule": {"type": "interval", "minutes": 60}, "push": {},
+})
+assert r.status_code == 200, r.text
+r = client.post(f"/api/reports/{wh_id}/test-push")
+assert r.status_code == 400 and "未配置推送渠道" in r.json()["detail"], r.text
+
+client.delete(f"/api/reports/{wh_id}")
+print("报表 Webhook 推送（协议/失败汇总/无渠道报错）通过")
+
 # 11. 权限矩阵：未分享 404 / 分享者按开关 / 主人与 admin 全权
 admin_headers = dict(client.headers)
 r = client.post("/api/auth/register", json={"username": "worker", "password": "secret123"})

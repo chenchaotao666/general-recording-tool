@@ -2,6 +2,7 @@
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
+import httpx
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -22,6 +23,7 @@ RANGE_MODES = {"today", "yesterday", "past_7d", "past_30d", "this_week", "last_w
 SYSTEM_FIELDS = {"id", "created_at", "updated_at"}
 TABLE_LIMIT_MAX = 500
 CHART_TOP_N_DEFAULT = {"pie": 8, "bar": 30, "line": 30}
+WEBHOOK_TYPES = {"wecom": "企业微信", "dingtalk": "钉钉", "custom": "自定义"}
 
 
 class ReportError(Exception):
@@ -189,6 +191,12 @@ def validate_template(db: Session, payload) -> None:
         from . import scheduler as sched
         if sched.trigger_of(s) is None:
             raise HTTPException(400, "执行周期配置无效")
+    for wh in (payload.push or {}).get("webhooks") or []:
+        wtype = wh.get("type") or "wecom"
+        if wtype not in WEBHOOK_TYPES:
+            raise HTTPException(400, f"不支持的 Webhook 类型：{wtype}")
+        if not (wh.get("url") or "").strip().startswith(("http://", "https://")):
+            raise HTTPException(400, "Webhook 地址必须是 http(s) URL")
 
 
 # ---------- 区块求值 ----------
@@ -629,8 +637,63 @@ def render_email_html(result: dict) -> str:
     return '<div style="font-family:Helvetica,Arial,sans-serif;max-width:720px">' + "".join(parts) + "</div>"
 
 
+# ---------- Webhook 推送（企业微信/钉钉群机器人） ----------
+
+def render_markdown(result: dict, max_rows: int = 10) -> str:
+    """报表结果的 Markdown 摘要，供群机器人推送。企微 markdown 不支持表格/图片，统一用列表行。"""
+    lines = [f"### 【{result['name']}】{result['range']['label']}"]
+    stats = [b for b in result["blocks"] if b["type"] == "stat"]
+    if stats:
+        for b in stats:
+            cell = f"**{b['title']}**：{b['value']}{'%' if b.get('agg') == 'ratio' else ''}"
+            cmp_ = b.get("compare")
+            if cmp_:
+                cell += f"（较上期 {'↑' if cmp_['delta'] >= 0 else '↓'}{abs(cmp_['delta_pct'])}%）" if cmp_["delta_pct"] is not None else "（上期无对比基数）"
+            lines.append(f"- {cell}")
+    for b in result["blocks"]:
+        if b["type"] == "chart":
+            lines.append(f"\n**{b['title']}**")
+            lines += [f"- {l}：{v}" for l, v in zip(b["labels"], b["values"])]
+        elif b["type"] == "table":
+            note = f"（共 {b['total']} 条，仅显示前 {min(len(b['rows']), max_rows)} 条）" if b["total"] > max_rows else ""
+            lines.append(f"\n**{b['title']}**{note}")
+            head = " | ".join(str(c["label"]) for c in b["columns"])
+            lines.append(f"`{head}`")
+            for r in b["rows"][:max_rows]:
+                lines.append("- " + " | ".join(str(r.get(c["prop"]) or "—") for c in b["columns"]))
+        elif b["type"] == "text":
+            lines.append(f"\n{b['content']}")
+    return "\n".join(lines)
+
+
+def _post_webhook(wh: dict, subject: str, md: str) -> None:
+    """按机器人协议 POST Markdown 消息，失败抛 ReportError。custom 类型直接 POST 原始 JSON。"""
+    url = (wh.get("url") or "").strip()
+    wtype = wh.get("type") or "wecom"
+    label = WEBHOOK_TYPES.get(wtype, wtype)
+    if wtype == "wecom":
+        payload = {"msgtype": "markdown", "markdown": {"content": md}}
+    elif wtype == "dingtalk":
+        payload = {"msgtype": "markdown", "markdown": {"title": subject, "text": md}}
+    else:
+        payload = {"title": subject, "markdown": md}
+    try:
+        resp = httpx.post(url, json=payload, timeout=15)
+    except httpx.HTTPError as e:
+        raise ReportError(f"{label} Webhook 请求失败：{e}")
+    if resp.status_code >= 400:
+        raise ReportError(f"{label} Webhook 返回 {resp.status_code}")
+    if wtype in ("wecom", "dingtalk"):
+        try:
+            errcode = resp.json().get("errcode", 0)
+        except ValueError:
+            return
+        if errcode:
+            raise ReportError(f"{label}机器人报错：{resp.text[:100]}")
+
+
 def push_template(template_id: int, trigger: str = "schedule") -> dict | None:
-    """生成报表并邮件推送，写 ReportRunLog。供调度器和手动调用。"""
+    """生成报表并推送（邮件 + 群机器人 Webhook），写 ReportRunLog。供调度器和手动调用。"""
     from .report_export import export_xlsx
 
     db = SessionLocal()
@@ -647,18 +710,37 @@ def push_template(template_id: int, trigger: str = "schedule") -> dict | None:
             run.range_label = result["range"]["label"]
             push = tpl.push_json or {}
             recipients = [s.strip() for s in str(push.get("recipients") or "").replace("，", ",").split(",") if s.strip()]
-            if not recipients:
-                raise ReportError("未配置推送收件人")
-            formats = push.get("formats") or ["html_inline"]
+            webhooks = [w for w in (push.get("webhooks") or []) if (w.get("url") or "").strip()]
+            if not recipients and not webhooks:
+                raise ReportError("未配置推送渠道（收件邮箱或群机器人 Webhook）")
             subject = (push.get("subject") or "【{name}】{range_label}").replace("{name}", tpl.name).replace("{range_label}", result["range"]["label"])
-            attachments = []
-            if "xlsx" in formats:
-                buf = export_xlsx(result)
-                attachments.append((f"{tpl.name}-{result['range']['label']}.xlsx", buf.getvalue(),
-                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-            body_html = render_email_html(result) if "html_inline" in formats else f"请查看附件报表。{result['range']['label']}"
-            send_smtp_html(get_setting(db, "smtp"), recipients, subject, body_html, attachments)
-            run.sent_count = len(recipients)
+
+            errors = []
+            sent = 0
+            if recipients:  # 邮件渠道
+                formats = push.get("formats") or ["html_inline"]
+                attachments = []
+                if "xlsx" in formats:
+                    buf = export_xlsx(result)
+                    attachments.append((f"{tpl.name}-{result['range']['label']}.xlsx", buf.getvalue(),
+                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                body_html = render_email_html(result) if "html_inline" in formats else f"请查看附件报表。{result['range']['label']}"
+                try:
+                    send_smtp_html(get_setting(db, "smtp"), recipients, subject, body_html, attachments)
+                    sent += len(recipients)
+                except Exception as e:  # noqa: BLE001 — 单渠道失败不阻塞其他渠道，错误汇总落日志
+                    errors.append(str(e))
+            if webhooks:  # 群机器人渠道
+                md = render_markdown(result)
+                for wh in webhooks:
+                    try:
+                        _post_webhook(wh, subject, md)
+                        sent += 1
+                    except Exception as e:  # noqa: BLE001
+                        errors.append(str(e))
+            run.sent_count = sent
+            if errors:
+                run.error = "；".join(errors)[:500]
         except Exception as e:  # noqa: BLE001 — 推送失败落日志
             db.rollback()
             run.error = str(e)[:500]

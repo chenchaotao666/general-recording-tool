@@ -146,7 +146,7 @@ const blankForm = () => ({
   blocks: [],
   filter_fields: [],
   schedule: { type: '', minutes: 60, expr: '0 9 * * 1' },
-  push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '' },
+  push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', webhooks: [] },
 })
 const form = reactive(blankForm())
 
@@ -185,7 +185,7 @@ function openEdit(row) {
     })),
     filter_fields: [...(row.filter_fields || [])],
     schedule: { type: '', minutes: 60, expr: '0 9 * * 1', ...(row.schedule || {}) },
-    push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', ...(row.push || {}) },
+    push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', webhooks: [], ...(row.push || {}) },
   })
   editorVisible.value = true
 }
@@ -194,7 +194,10 @@ async function save() {
   if (!form.name.trim()) return ElMessage.warning('请填写报表名称')
   if (!form.table_id) return ElMessage.warning('请选择数据表')
   if (!form.blocks.length) return ElMessage.warning('请至少添加一个区块')
-  if (form.schedule.type && !form.push.recipients.trim()) return ElMessage.warning('定时推送需要填写收件邮箱')
+  if (form.schedule.type && !form.push.recipients.trim()
+      && !(form.push.webhooks || []).some((w) => (w.url || '').trim())) {
+    return ElMessage.warning('定时推送需要至少一个推送渠道（收件邮箱或群机器人）')
+  }
   const payload = {
     name: form.name.trim(),
     description: form.description || null,
@@ -211,7 +214,9 @@ async function save() {
       : form.schedule.type === 'cron'
         ? { type: 'cron', expr: form.schedule.expr }
         : {},
-    push: form.schedule.type ? form.push : {},
+    push: form.schedule.type
+      ? { ...form.push, webhooks: (form.push.webhooks || []).filter((w) => (w.url || '').trim()) }
+      : {},
   }
   saving.value = true
   try {
