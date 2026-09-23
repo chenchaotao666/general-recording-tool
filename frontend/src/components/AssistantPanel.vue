@@ -258,10 +258,40 @@ async function scrollBottom() {
   if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight
 }
 
+// 历史消息的卡片摘要：让模型能看到自己之前查过什么、生成过什么预览（否则只有 reply 文本会"断片"）
+function cardDigest(card) {
+  if (!card) return ''
+  try {
+    if (card.type === 'search_answer') {
+      const titles = (card.payload?.results || []).slice(0, 5).map((r) => r.title).filter(Boolean).join('；')
+      return `[联网搜索：${(card.payload?.queries || []).join('、')}。来源：${titles}]`
+    }
+    if (card.type === 'fill_records') {
+      const recs = (card.payload?.records || []).map((r) => JSON.stringify(r)).join('；')
+      return `[填表预览 → ${card.table_label}：${recs}]`
+    }
+    if (card.type === 'create_table') {
+      return `[建表预览：${card.payload?.label}（${(card.payload?.fields || []).map((f) => f.label).join('、')}）]`
+    }
+    if (card.type === 'create_report') return `[报表预览：${card.payload?.name}，${(card.payload?.blocks || []).length} 个区块]`
+    if (card.type === 'create_task') return `[任务预览：${card.payload?.name}]`
+    if (card.type === 'gen_excel') return `[生成 Excel：${card.summary}]`
+    if (card.type === 'query_answer') {
+      const r = card.result || {}
+      const val = r.type === 'stat' ? r.value : r.type === 'chart' ? `分组 ${r.labels?.length} 项` : `清单 ${r.total} 条`
+      return `[数据查询 ${card.table_label}（${r.range_label}）：${val}]`
+    }
+  } catch { /* 摘要失败不阻塞 */ }
+  return ''
+}
+
 async function send() {
   const text = draft.value.trim()
   if (!text || thinking.value) return
-  const history = messages.value.slice(-10).map((m) => ({ role: m.role, content: m.content }))
+  const history = messages.value.slice(-20).map((m) => {
+    const digest = m.role === 'assistant' ? cardDigest(m.card) : ''
+    return { role: m.role, content: digest ? `${m.content}\n${digest}` : m.content }
+  })
   messages.value.push({ role: 'user', content: text })
   draft.value = ''
   thinking.value = true

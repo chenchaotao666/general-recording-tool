@@ -528,7 +528,8 @@ def judge_records(db: Session, description: str, field_dicts: list[dict], record
 # ---------- AI 助手（对话式） ----------
 
 _ASSISTANT_FILL_MAX = 50
-_ASSISTANT_HISTORY_MAX = 10
+_ASSISTANT_HISTORY_MAX = 20      # 历史窗口（约 10 轮对话）
+_ASSISTANT_HISTORY_CHARS = 2000  # 单条历史截断（联网搜索类长回答需保留）
 
 
 def field_dicts_of(fields: list) -> list[dict]:
@@ -810,7 +811,7 @@ def assist_chat(db: Session, user, message: str, history: list | None, context: 
             current = {"id": mt.id, "label": mt.label}
 
     history = [
-        {"role": "user" if h.get("role") == "user" else "assistant", "content": str(h.get("content") or "")[:500]}
+        {"role": "user" if h.get("role") == "user" else "assistant", "content": str(h.get("content") or "")[:_ASSISTANT_HISTORY_CHARS]}
         for h in (history or []) if isinstance(h, dict)
     ][-_ASSISTANT_HISTORY_MAX:]
     prompt = build_assistant_prompt(message, history, table_briefs, current, datetime.now().strftime("%Y-%m-%d"))
