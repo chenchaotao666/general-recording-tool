@@ -96,6 +96,7 @@
       <el-main class="main">
         <router-view />
       </el-main>
+      <AssistantPanel />
     </el-container>
   </el-container>
 </template>
@@ -106,6 +107,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { AlarmClock, Avatar, Bell, DataAnalysis, Grid, Key, Setting, Upload, User, UserFilled } from '@element-plus/icons-vue'
 import { changePassword as changePasswordApi, listNotifications, markRead, unreadCount } from './api'
+import AssistantPanel from './components/AssistantPanel.vue'
 
 const router = useRouter()
 const route = useRoute()

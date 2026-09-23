@@ -154,3 +154,12 @@ export const markRead = (payload) => http.post('/notify/read', payload)
 export const getGeneralSettings = () => http.get('/settings/general')
 export const saveGeneralSettings = (p) => http.put('/settings/general', p)
 export const testEmail = (to) => http.post('/settings/general/test-email', { to })
+
+// AI 助手
+export const assistantChat = (payload) => http.post('/assistant/chat', payload)
+export const assistantExecute = (payload) => http.post('/assistant/execute', payload)
+export const assistantDownloadUrl = (fileId) => {
+  const token = localStorage.getItem('grt_token') || ''
+  return `/api/assistant/download/${fileId}?token=${encodeURIComponent(token)}`
+}
+export const testSearchSettings = () => http.post('/settings/general/test-search')

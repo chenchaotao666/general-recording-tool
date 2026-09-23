@@ -33,6 +33,18 @@ async def save_upload(file: UploadFile) -> tuple[str, Path]:
     return file_id, path
 
 
+def save_generated(content: bytes, filename: str) -> str:
+    """保存 AI 生成的文件（与上传同目录布局，供下载接口按 file_id 取用）。"""
+    file_id = uuid.uuid4().hex
+    folder = settings.upload_dir / file_id
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "data.xlsx").write_bytes(content)
+    (folder / "meta.json").write_text(
+        json.dumps({"filename": filename}, ensure_ascii=False), encoding="utf-8"
+    )
+    return file_id
+
+
 def get_upload_path(file_id: str) -> Path:
     if not FILE_ID_RE.match(file_id or ""):
         raise UploadNotFound("非法的文件标识")

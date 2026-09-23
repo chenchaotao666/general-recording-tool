@@ -98,18 +98,20 @@ def test_provider(provider_id: int, db: Session = Depends(get_db)):
     return {"ok": True, "elapsed": round(time.time() - start, 1), "reply": reply[:100]}
 
 
-# ---------- 通用设置：SMTP / 短信网关 ----------
+# ---------- 通用设置：SMTP / 短信网关 / 联网搜索 ----------
 
-GENERAL_KEYS = ("smtp", "sms_gateway")
+GENERAL_KEYS = ("smtp", "sms_gateway", "web_search")
 
 
 @router.get("/general")
 def get_general(db: Session = Depends(get_db)):
     from ..services.actions import get_setting
     out = {k: get_setting(db, k) for k in GENERAL_KEYS}
-    # 密码不回传明文，只告知是否已配置
+    # 密码/密钥不回传明文，只告知是否已配置
     if out["smtp"].get("password"):
         out["smtp"] = {**out["smtp"], "password": None, "has_password": True}
+    if out["web_search"].get("api_key"):
+        out["web_search"] = {**out["web_search"], "api_key": None, "has_api_key": True}
     return out
 
 
@@ -126,10 +128,29 @@ def put_general(payload: dict, db: Session = Depends(get_db)):
             value.pop("password", None)
             if old:
                 value["password"] = old
+        if key == "web_search" and not value.get("api_key"):
+            # 留空表示保留原 API Key
+            old = get_setting(db, "web_search").get("api_key")
+            value.pop("api_key", None)
+            if old:
+                value["api_key"] = old
         value.pop("has_password", None)
+        value.pop("has_api_key", None)
         set_setting(db, key, value)
     db.commit()
     return {"ok": True}
+
+
+@router.post("/general/test-search")
+def test_search(db: Session = Depends(get_db)):
+    """测试联网搜索配置：用固定关键词真实调一次搜索 API。"""
+    from ..services.web_search import SearchError, web_search
+    try:
+        results = web_search(db, "通用记录工具 测试", count=3)
+    except SearchError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "count": len(results),
+            "sample": [r.get("title") for r in results[:3]]}
 
 
 class TestEmailIn(BaseModel):

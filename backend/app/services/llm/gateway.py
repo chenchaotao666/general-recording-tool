@@ -276,6 +276,32 @@ def align_report_config(data: dict, fields: list) -> dict:
                     out["top_n"] = min(max(int(b.get("top_n") or 8), 2), 30)
                 except (TypeError, ValueError):
                     out["top_n"] = 8
+        elif t == "pivot":
+            dims = {}
+            for axis, axis_label in (("row", "行"), ("col", "列")):
+                g = b.get(axis) or {}
+                gkind = g.get("kind") if g.get("kind") in _REPORT_GROUP_KINDS else "field"
+                gfield = g.get("field")
+                gf = fields_by_name.get(gfield or "")
+                if gkind == "field":
+                    if gfield not in fields_by_name and gfield not in _REPORT_SYSTEM_FIELDS:
+                        notes_extra.append(f"「{out['title'] or '透视表'}」的{axis_label}维度字段无效，已跳过该区块")
+                        dims = None
+                        break
+                else:
+                    is_date = (gf is not None and gf.data_type in ("date", "datetime")) or gfield in _REPORT_DATE_SYSTEM_FIELDS
+                    if not is_date:
+                        gfield = "created_at"
+                dims[axis] = {"kind": gkind, "field": gfield}
+            if not dims:
+                continue
+            if dims["row"] == dims["col"]:
+                notes_extra.append(f"「{out['title'] or '透视表'}」行列维度相同，已跳过该区块")
+                continue
+            numeric_or_count(b, out)
+            out.update({"row": dims["row"], "col": dims["col"], "filters": clean_filters(b.get("filters"))})
+            if b.get("totals") is False:
+                out["totals"] = False
         elif t == "table":
             cols = [c for c in (b.get("columns") or []) if c in fields_by_name or c in _REPORT_SYSTEM_FIELDS]
             if not cols:
@@ -497,3 +523,316 @@ def judge_records(db: Session, description: str, field_dicts: list[dict], record
         else:
             raise LLMError(f"LLM 条件判断结果解析失败：{last_err}")
     return matched
+
+
+# ---------- AI 助手（对话式） ----------
+
+_ASSISTANT_FILL_MAX = 50
+_ASSISTANT_HISTORY_MAX = 10
+
+
+def field_dicts_of(fields: list) -> list[dict]:
+    """字段元数据 → 提示词用四元组（与 assist_task/assist_report/recognize 一致）。"""
+    return [
+        {"field_name": f.field_name, "label": f.label, "data_type": f.data_type, "options": f.options or {}}
+        for f in fields
+    ]
+
+
+def _accessible_tables(db: Session, user) -> list:
+    """当前用户可访问（自有 + 已接受分享；admin 全部）的数据表清单。"""
+    from sqlalchemy import or_
+
+    from ...models import GroupMember, MetaTable, TableShare
+
+    q = db.query(MetaTable)
+    if user.role != "admin":
+        shared_ids = [
+            s.table_id
+            for s in db.query(TableShare)
+            .outerjoin(GroupMember, TableShare.group_id == GroupMember.group_id)
+            .filter(
+                TableShare.can_view.is_(True),
+                TableShare.status == "accepted",
+                or_(TableShare.user_id == user.id, GroupMember.user_id == user.id),
+            )
+            .all()
+        ]
+        q = q.filter(or_(MetaTable.owner_id == user.id, MetaTable.id.in_(shared_ids or [-1])))
+    return q.order_by(MetaTable.id.desc()).all()
+
+
+def _clean_assistant_fields(raw_fields, notes: list) -> list[dict]:
+    """清洗 create_table / gen_excel blank 的字段定义：非法类型降级、字段名合法化去重。"""
+    out, used = [], set()
+    for i, f in enumerate(raw_fields or []):
+        if not isinstance(f, dict):
+            continue
+        dt = f.get("data_type") if f.get("data_type") in DATA_TYPES else "varchar"
+        widget = f.get("widget") if f.get("widget") in WIDGETS else default_widget(dt)
+        label = str(f.get("label") or "").strip()[:64] or f"字段{i + 1}"
+        out.append({
+            "field_name": safe_field_name(str(f.get("field_name") or ""), used, i + 1),
+            "label": label,
+            "data_type": dt,
+            "length": int(f.get("length") or 255),
+            "nullable": bool(f.get("nullable", True)),
+            "widget": widget,
+            "options": f.get("options") if isinstance(f.get("options"), dict) else {},
+        })
+    if len(out) > 100:
+        notes.append("字段数超过 100，已截断")
+    return out[:100]
+
+
+def align_assistant_action(db: Session, user, action: dict | None, notes: list) -> dict | None:
+    """把 LLM 输出的动作清洗成可预览的卡片；query 动作顺带完成只读求值。非法动作返回 None。"""
+    from ..assistant_engine import clean_assistant_filters, clean_query_spec, run_query_spec
+    from ..meta_service import get_meta_fields
+    from ...utils.access import get_table_access
+
+    if not isinstance(action, dict):
+        return None
+    t = action.get("type")
+
+    def table_ctx(table_id, need_create=False):
+        try:
+            access = get_table_access(db, int(table_id), user)
+        except Exception:  # noqa: BLE001 — 表不存在/无权限统一按不可用处理（404 语义不泄露）
+            return None, None
+        if need_create and not access.can_create:
+            return None, None
+        return access.table, get_meta_fields(db, access.table.id)
+
+    if t == "fill_records":
+        mt, fields = table_ctx(action.get("table_id"), need_create=True)
+        if mt is None:
+            notes.append("目标表不存在或没有新增权限，已忽略填表动作")
+            return None
+        fbn = {f.field_name: f for f in fields}
+        records = []
+        for rec in (action.get("records") or [])[:_ASSISTANT_FILL_MAX]:
+            if not isinstance(rec, dict):
+                continue
+            cleaned = {}
+            for name, v in rec.items():
+                f = fbn.get(name)
+                if f is None:
+                    notes.append(f"字段 {name} 不存在，已忽略")
+                    continue
+                ok, cv, _ = coerce_value(v, f.data_type, True)
+                if not ok:
+                    notes.append(f"「{f.label}」的值 {str(v)[:30]} 无法转换为 {f.data_type}，已置空")
+                    cv = None
+                cleaned[name] = cv
+            if cleaned:
+                records.append(cleaned)
+        if not records:
+            notes.append("没有可填入的有效记录")
+            return None
+        return {
+            "type": "fill_records", "table_id": mt.id, "table_label": mt.label,
+            "summary": f"新增 {len(records)} 条记录",
+            "payload": {"records": records, "fields": field_dicts_of(fields)},
+            "warnings": notes,
+        }
+
+    if t == "create_table":
+        fields = _clean_assistant_fields(action.get("fields"), notes)
+        if not fields:
+            notes.append("没有有效字段，已忽略建表动作")
+            return None
+        label = str(action.get("label") or "").strip()[:64] or "新建数据表"
+        return {
+            "type": "create_table", "summary": f"创建表「{label}」（{len(fields)} 个字段）",
+            "payload": {"label": label, "fields": fields}, "warnings": notes,
+        }
+
+    if t == "gen_excel":
+        mode = action.get("mode")
+        if mode == "blank":
+            fields = _clean_assistant_fields(action.get("fields"), notes)
+            if not fields:
+                notes.append("没有有效字段，已忽略生成 Excel 动作")
+                return None
+            label = str(action.get("label") or "").strip()[:64] or "表格模板"
+            sample_rows = [r for r in (action.get("sample_rows") or [])[:20] if isinstance(r, list)]
+            return {
+                "type": "gen_excel", "summary": f"生成模板「{label}.xlsx」（{len(fields)} 列）",
+                "payload": {"mode": "blank", "label": label, "fields": fields, "sample_rows": sample_rows},
+                "warnings": notes,
+            }
+        if mode == "export":
+            mt, fields = table_ctx(action.get("table_id"))
+            if mt is None:
+                notes.append("目标表不存在或没有查看权限，已忽略导出动作")
+                return None
+            fbn = {f.field_name: f for f in fields}
+            filters = clean_assistant_filters(action.get("filters"), fbn, notes)
+            return {
+                "type": "gen_excel", "summary": f"导出「{mt.label}」记录（{len(filters['rules'])} 个筛选条件）",
+                "payload": {"mode": "export", "table_id": mt.id, "table_label": mt.label, "filters": filters},
+                "warnings": notes,
+            }
+        notes.append(f"不支持的 Excel 生成模式：{mode}")
+        return None
+
+    if t == "create_report":
+        mt, fields = table_ctx(action.get("table_id"))
+        if mt is None:
+            notes.append("目标表不存在或没有查看权限，已忽略创建报表动作")
+            return None
+        desc = str(action.get("description") or "").strip()
+        if not desc:
+            notes.append("缺少报表需求描述，已忽略")
+            return None
+        cfg = assist_report(db, fields, desc)   # 复用报表 AI 辅助管线（生成 + align 清洗）
+        notes.extend([cfg["notes"]] if cfg.get("notes") else [])
+        return {
+            "type": "create_report", "summary": f"创建报表「{cfg['name']}」（{len(cfg['blocks'])} 个区块）",
+            "payload": {"table_id": mt.id, "table_label": mt.label, **cfg},
+            "warnings": notes,
+        }
+
+    if t == "create_task":
+        mt, fields = table_ctx(action.get("table_id"))
+        if mt is None:
+            notes.append("目标表不存在或没有查看权限，已忽略创建任务动作")
+            return None
+        desc = str(action.get("description") or "").strip()
+        if not desc:
+            notes.append("缺少任务需求描述，已忽略")
+            return None
+        cfg = assist_task(db, fields, desc)   # 复用任务 AI 辅助管线
+        notes.extend([cfg["notes"]] if cfg.get("notes") else [])
+        return {
+            "type": "create_task", "summary": f"创建任务规则「{cfg['name']}」",
+            "payload": {"table_id": mt.id, "table_label": mt.label, **cfg},
+            "warnings": notes,
+        }
+
+    if t == "query":
+        mt, fields = table_ctx(action.get("table_id"))
+        if mt is None:
+            notes.append("目标表不存在或没有查看权限，已忽略问答动作")
+            return None
+        spec, spec_notes = clean_query_spec(fields, action.get("spec") or {})
+        notes += spec_notes
+        if spec is None:
+            return None
+        result = run_query_spec(db, mt, fields, spec)
+        return {
+            "type": "query_answer", "table_id": mt.id, "table_label": mt.label,
+            "summary": "数据查询结果", "result": result, "warnings": notes,
+        }
+
+    if t:
+        notes.append(f"不支持的动作类型：{t}")
+    return None
+
+
+def _chat_with_search(db: Session, provider, message: str, history: list, action: dict) -> dict:
+    """联网搜索动作：执行搜索 → 二次调用模型基于结果组织回答，附来源卡片（只读，无需确认）。"""
+    from datetime import datetime
+
+    from ..web_search import SearchError, web_search
+    from .prompts import SEARCH_ANSWER_SYSTEM, build_search_answer_prompt
+
+    queries = action.get("queries") or ([action.get("query")] if action.get("query") else [])
+    queries = [str(q).strip() for q in queries if str(q or "").strip()][:3]
+    if not queries:
+        return {"reply": "你想让我查什么呢？换个说法再试试。", "action_card": None}
+
+    results, errors = [], []
+    for q in queries:
+        try:
+            results += web_search(db, q)
+        except SearchError as e:
+            errors.append(str(e))
+    # 按 URL 去重
+    seen, deduped = set(), []
+    for r in results:
+        if r.get("url") and r["url"] not in seen:
+            seen.add(r["url"])
+            deduped.append(r)
+    results = deduped[:10]
+
+    if not results:
+        reason = errors[0] if errors else "没有搜到相关结果"
+        return {
+            "reply": f"我试着联网查了一下，但{reason}。你可以直接告诉我信息，我帮你整理、分析或录入系统。",
+            "action_card": None,
+        }
+
+    prompt = build_search_answer_prompt(message, history, queries, results, datetime.now().strftime("%Y-%m-%d"))
+    try:
+        reply = provider.complete(prompt, system=SEARCH_ANSWER_SYSTEM).strip()
+    except LLMError:
+        raise
+    return {
+        "reply": reply,
+        "action_card": {
+            "type": "search_answer",
+            "summary": f"联网搜索：{'、'.join(queries)}",
+            "payload": {"queries": queries, "results": results},
+        },
+    }
+
+
+def assist_chat(db: Session, user, message: str, history: list | None, context: dict | None) -> dict:
+    """AI 助手对话：输出 {reply, action_card}；query 动作在 align 阶段已完成只读求值。"""
+    from datetime import datetime
+
+    from ..meta_service import get_meta_fields
+    from .prompts import ASSISTANT_SYSTEM, build_assistant_prompt
+
+    provider = get_default_provider(db)
+    tables = _accessible_tables(db, user)
+    # 前 15 张表带字段简报（模型才能在任意页面正确填表/问答）；更多表只给 id+label
+    table_briefs = []
+    for t in tables[:15]:
+        fields = get_meta_fields(db, t.id)
+        table_briefs.append({
+            "id": t.id, "label": t.label,
+            "fields": [
+                {"field_name": f.field_name, "label": f.label, "data_type": f.data_type, "options": f.options or {}}
+                for f in fields[:40]
+            ],
+        })
+    for t in tables[15:]:
+        table_briefs.append({"id": t.id, "label": t.label})
+
+    current = None
+    ctx = context or {}
+    if ctx.get("table_id"):
+        mt = next((t for t in tables if t.id == ctx.get("table_id")), None)
+        if mt is not None:
+            current = {"id": mt.id, "label": mt.label}
+
+    history = [
+        {"role": "user" if h.get("role") == "user" else "assistant", "content": str(h.get("content") or "")[:500]}
+        for h in (history or []) if isinstance(h, dict)
+    ][-_ASSISTANT_HISTORY_MAX:]
+    prompt = build_assistant_prompt(message, history, table_briefs, current, datetime.now().strftime("%Y-%m-%d"))
+    last_err: Exception | None = None
+    for attempt in range(2):
+        current_prompt = prompt if attempt == 0 else (
+            f"你上次的输出无法解析为合法 JSON，错误：{last_err}。"
+            "请重新输出，只输出 JSON。\n\n原始任务：\n" + prompt
+        )
+        try:
+            raw = provider.complete(current_prompt, system=ASSISTANT_SYSTEM)
+            data = extract_json(raw)
+            action = data.get("action")
+            # 联网搜索：单独通道（执行搜索 + 二次调用组织回答）
+            if isinstance(action, dict) and action.get("type") == "web_search":
+                return _chat_with_search(db, provider, message, history, action)
+            reply = str(data.get("reply") or "")[:2000]
+            notes: list = []
+            card = align_assistant_action(db, user, action, notes)
+            return {"reply": reply, "action_card": card}
+        except LLMError:
+            raise
+        except Exception as e:
+            last_err = e
+    raise LLMError(f"模型输出解析失败：{last_err}")

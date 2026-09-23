@@ -707,6 +707,326 @@ for rid_ in drill_ids:
     client.delete(f"/api/reports/{rid_}")
 print("报表图表下钻（分组/系列/查看端筛选/非法参数）通过")
 
+# 10.9 透视表区块：行×列交叉聚合 + 行列合计 + 下钻
+# 校验：行/列字段不存在、行列同分组、ratio 不可用、top_n 越界、时间型维度需日期字段
+for bad in (
+    [{"id": "x", "type": "pivot", "row": {"kind": "field", "field": "ghost"},
+      "col": {"kind": "field", "field": "is_deal"}, "agg": "count"}],
+    [{"id": "x", "type": "pivot", "row": {"kind": "field", "field": "is_deal"},
+      "col": {"kind": "field", "field": "is_deal"}, "agg": "count"}],
+    [{"id": "x", "type": "pivot", "row": {"kind": "field", "field": "is_deal"},
+      "col": {"kind": "month", "field": "next_follow_date"}, "agg": "ratio"}],
+    [{"id": "x", "type": "pivot", "row": {"kind": "field", "field": "is_deal"},
+      "col": {"kind": "month", "field": "next_follow_date"}, "agg": "sum", "field": "customer_name"}],
+    [{"id": "x", "type": "pivot", "row": {"kind": "month", "field": "customer_name"},
+      "col": {"kind": "field", "field": "is_deal"}, "agg": "count"}],
+    [{"id": "x", "type": "pivot", "row": {"kind": "field", "field": "is_deal"},
+      "col": {"kind": "field", "field": "customer_name"}, "agg": "count", "row_top_n": 0}],
+    [{"id": "x", "type": "pivot", "row": {"kind": "field", "field": "is_deal"},
+      "col": {"kind": "field", "field": "customer_name"}, "agg": "count", "col_top_n": 99}],
+):
+    r = client.post("/api/reports", json={"name": "bad", "table_id": tj, "range": {"mode": "today"}, "blocks": bad})
+    assert r.status_code == 400, r.text
+
+PV_BLOCKS = [
+    {"id": "p1", "type": "pivot", "title": "成交×月份 金额",
+     "row": {"kind": "field", "field": "is_deal"},
+     "col": {"kind": "month", "field": "next_follow_date"},
+     "agg": "sum", "field": "amount"},
+    {"id": "p2", "type": "pivot", "title": "月份×成交 笔数（无合计）",
+     "row": {"kind": "month", "field": "next_follow_date"},
+     "col": {"kind": "field", "field": "is_deal"},
+     "agg": "count", "totals": False},
+    {"id": "p3", "type": "pivot", "title": "成交 top1 + 其他",
+     "row": {"kind": "field", "field": "is_deal"}, "row_top_n": 1,
+     "col": {"kind": "month", "field": "next_follow_date"},
+     "agg": "sum", "field": "amount"},
+    {"id": "c1", "type": "chart", "title": "成交对比", "chart_type": "bar",
+     "group": {"kind": "field", "field": "is_deal"}, "agg": "count"},
+]
+pv_ids = []
+for t in (tj, tp):
+    r = client.post("/api/reports", json={
+        "name": "透视表", "table_id": t, "range": {"mode": "today", "date_field": "created_at"},
+        "blocks": PV_BLOCKS,
+    })
+    assert r.status_code == 200, r.text
+    pv_ids.append(r.json()["id"])
+
+
+def _pivot_map(b):
+    """{行标签: {列标签: 值, "＃合计": 行合计}, "＃合计": {...}}，行列序不依赖实现，便于两引擎对比"""
+    m = {str(rl): {str(cl): v for cl, v in zip(b["col_labels"], b["cells"][i])}
+         for i, rl in enumerate(b["row_labels"])}
+    if b.get("totals"):
+        for i, rl in enumerate(b["row_labels"]):
+            m[str(rl)]["＃合计"] = b["row_totals"][i]
+        m["＃合计"] = {str(cl): v for cl, v in zip(b["col_labels"], b["col_totals"])}
+        m["＃合计"]["＃合计"] = b["grand_total"]
+    return m
+
+
+runs_pv = [client.post(f"/api/reports/{rid}/run").json() for rid in pv_ids]
+for res in runs_pv:
+    p1 = _blocks_by_id(res)["p1"]
+    # 时间型列维度确定性排序：升序 + 空值最后；行维度计数并列按 key 升序（False < True）
+    assert p1["col_labels"] == ["2026-09", "2026-10", "（空）"], p1["col_labels"]
+    assert p1["row_labels"] == ["False", "True"], p1["row_labels"]
+    assert _pivot_map(p1) == {
+        "True": {"2026-09": 20000.25, "2026-10": 15000.5, "（空）": 0, "＃合计": 35000.75},
+        "False": {"2026-09": 0, "2026-10": 8000, "（空）": 500, "＃合计": 8500},
+        "＃合计": {"2026-09": 20000.25, "2026-10": 23000.5, "（空）": 500, "＃合计": 43500.75},
+    }, p1
+
+    p2 = _blocks_by_id(res)["p2"]
+    assert p2["totals"] is False and "row_totals" not in p2 and "grand_total" not in p2
+    assert p2["row_labels"] == ["2026-09", "2026-10", "（空）"], p2["row_labels"]
+    assert _pivot_map(p2) == {
+        "2026-09": {"True": 1, "False": 0},
+        "2026-10": {"True": 1, "False": 1},
+        "（空）": {"True": 0, "False": 1},
+    }, p2
+
+    # p3：field 型行维度 top_n=1 折叠"其他"（并列次序确定性：False 在前，True 并入"其他"）
+    p3 = _blocks_by_id(res)["p3"]
+    assert p3["row_labels"] == ["False", "其他"], p3["row_labels"]
+    assert p3["row_totals"] == [8500, 35000.75]
+    assert p3["col_totals"] == [20000.25, 23000.5, 500] and p3["grand_total"] == 43500.75
+    assert p3["cells"][1] == [20000.25, 15000.5, 0], p3  # "其他"行 = True 组的折叠
+    for i in range(2):  # count/sum 语义下单元格之和 = 行合计
+        assert sum(p3["cells"][i]) == p3["row_totals"][i], p3
+
+# 两引擎透视表结果一致
+for bid in ("p1", "p2", "p3"):
+    a, b = _blocks_by_id(runs_pv[0])[bid], _blocks_by_id(runs_pv[1])[bid]
+    assert a["row_labels"] == b["row_labels"] and a["col_labels"] == b["col_labels"], bid
+    assert _pivot_map(a) == _pivot_map(b), bid
+
+# 透视表下钻：数据格 / 行合计 / 列合计 / 总计，两引擎一致
+for rid in pv_ids:
+    res = client.post(f"/api/reports/{rid}/run").json()
+    p1 = _blocks_by_id(res)["p1"]
+    ri_deal = p1["row_labels"].index("True")
+    ci_oct = p1["col_labels"].index("2026-10")
+    ci_sep = p1["col_labels"].index("2026-09")
+    # 数据格：成交 × 2026-10 → 张三
+    d = client.post(f"/api/reports/{rid}/drill",
+                    json={"block_id": "p1", "group_index": ri_deal, "series_index": ci_oct}).json()
+    assert d["total"] == 1 and d["rows"][0]["customer_name"] == "张三", (rid, d)
+    # 行合计列（series_index=None）：成交行全部 → 张三、王五
+    d = client.post(f"/api/reports/{rid}/drill", json={"block_id": "p1", "group_index": ri_deal}).json()
+    assert d["total"] == 2 and {r_["customer_name"] for r_ in d["rows"]} == {"张三", "王五"}, (rid, d)
+    # 列合计行（group_index=None）：2026-09 列全部 → 王五
+    d = client.post(f"/api/reports/{rid}/drill", json={"block_id": "p1", "series_index": ci_sep}).json()
+    assert d["total"] == 1 and d["rows"][0]["customer_name"] == "王五", (rid, d)
+    # 总计格（两个下标都 None）→ 全部 4 条
+    d = client.post(f"/api/reports/{rid}/drill", json={"block_id": "p1"}).json()
+    assert d["total"] == 4, (rid, d)
+    # 非法行/列序号
+    assert client.post(f"/api/reports/{rid}/drill", json={"block_id": "p1", "group_index": 99}).status_code == 400
+    assert client.post(f"/api/reports/{rid}/drill", json={"block_id": "p1", "series_index": 99}).status_code == 400
+
+# chart 区块下钻仍要求 group_index（为 None 时 400）
+r = client.post(f"/api/reports/{pv_ids[0]}/drill", json={"block_id": "c1"})
+assert r.status_code == 400, r.text
+
+# 导出兼容透视表：xlsx/html 均正常且含矩阵与合计
+r = client.get(f"/api/reports/{pv_ids[0]}/export?format=xlsx")
+assert r.status_code == 200, r.text
+r = client.get(f"/api/reports/{pv_ids[0]}/export?format=html")
+assert r.status_code == 200 and "成交×月份 金额" in r.text and "合计" in r.text, r.status_code
+
+for rid_ in pv_ids:
+    client.delete(f"/api/reports/{rid_}")
+print("报表透视表区块（交叉聚合/行列合计/其他桶/下钻/导出）通过")
+
+# 10.10 AI 助手：对话生成动作预览 + 执行落库（mock provider 顺序应答）
+class AssistantFakeProvider:
+    responses = []
+
+    def complete(self, prompt, system=None):
+        assert AssistantFakeProvider.responses, "没有预设的应答"
+        return AssistantFakeProvider.responses.pop(0)
+
+
+gw.get_default_provider = lambda db: AssistantFakeProvider()
+
+# 纯聊天：action 为 null
+AssistantFakeProvider.responses = ['{"reply": "你好，有什么可以帮你？", "action": null}']
+r = client.post("/api/assistant/chat", json={"message": "你好"})
+assert r.status_code == 200 and r.json()["reply"] and r.json()["action_card"] is None, r.text
+
+# 智能填表：未知字段丢弃 + 坏值置空 + 有效值转换
+AssistantFakeProvider.responses = [
+    '{"reply": "整理出 1 条记录", "action": {"type": "fill_records", "table_id": %d, "records": ['
+    '{"customer_name": "钱七", "amount": "3万", "is_deal": true, "ghost_field": "x", "next_follow_date": "2026-11-01"}]}}' % tj
+]
+r = client.post("/api/assistant/chat", json={"message": "记一笔：钱七，金额3万，已成交", "context": {"table_id": tj}})
+card = r.json()["action_card"]
+assert r.status_code == 200 and card["type"] == "fill_records" and card["table_id"] == tj, r.text
+rec = card["payload"]["records"][0]
+assert rec["customer_name"] == "钱七" and rec["is_deal"] is True and rec["next_follow_date"] == "2026-11-01", rec
+assert rec["amount"] is None and "ghost_field" not in rec, rec  # "3万"无法转 decimal 置空；未知字段丢弃
+assert any("ghost_field" in w for w in card["warnings"]) and any("amount" in w or "意向金额" in w for w in card["warnings"]), card
+
+# 执行填表：落库并可查
+r = client.post("/api/assistant/execute", json={
+    "type": "fill_records",
+    "payload": {"table_id": tj, "records": [{"customer_name": "钱七", "amount": 30000, "is_deal": True}]},
+})
+res = r.json()
+assert r.status_code == 200 and res["ok"] == 1 and not res["fail"], r.text
+items = client.get(f"/api/dyn/{tj}/records", params={"filters": '[{"field":"customer_name","op":"eq","value":"钱七"}]'}).json()
+assert items["total"] == 1 and items["items"][0]["amount"] == 30000, items
+# 执行入口重新鉴权：不存在的表 404；空记录 400；类型非法 400
+assert client.post("/api/assistant/execute", json={"type": "fill_records", "payload": {"table_id": 99999, "records": [{"a": 1}]}}).status_code == 404
+assert client.post("/api/assistant/execute", json={"type": "fill_records", "payload": {"table_id": tj, "records": []}}).status_code == 400
+assert client.post("/api/assistant/execute", json={"type": "hack", "payload": {}}).status_code == 400
+client.delete(f"/api/dyn/{tj}/records/{res['record_ids'][0]}")
+
+# AI 建表：非法类型降级 + 执行落库
+AssistantFakeProvider.responses = [
+    '{"reply": "设计了 2 个字段", "action": {"type": "create_table", "label": "供应商台账", "fields": ['
+    '{"field_name": "supplier_name", "label": "供应商", "data_type": "varchar", "nullable": false},'
+    '{"field_name": "level", "label": "等级", "data_type": "magic", "widget": "select", "options": {"options": ["A", "B"]}}]}}'
+]
+r = client.post("/api/assistant/chat", json={"message": "帮我建个供应商台账"})
+card = r.json()["action_card"]
+assert card["type"] == "create_table" and len(card["payload"]["fields"]) == 2, r.text
+assert card["payload"]["fields"][1]["data_type"] == "varchar", card  # 非法类型降级
+r = client.post("/api/assistant/execute", json={"type": "create_table", "payload": card["payload"]})
+new_tid = r.json()["table_id"]
+assert r.status_code == 200 and new_tid, r.text
+t_meta = client.get(f"/api/tables/{new_tid}").json()
+assert t_meta["label"] == "供应商台账" and len(t_meta["fields"]) == 2, t_meta
+
+# 数据问答：stat 受控聚合（全部时间 count = 4 条 PRECS）
+AssistantFakeProvider.responses = [
+    '{"reply": "查一下", "action": {"type": "query", "table_id": %d, "spec": {"kind": "stat", "agg": "sum", "field": "amount"}}}' % tj
+]
+r = client.post("/api/assistant/chat", json={"message": "意向金额一共多少", "context": {"table_id": tj}})
+card = r.json()["action_card"]
+assert card["type"] == "query_answer" and card["result"]["value"] == 43500.75, r.text
+assert card["result"]["range_label"] == "全部时间", card["result"]
+# 问答带筛选与时间口径（本月按 created_at：4 条都是今天创建）
+AssistantFakeProvider.responses = [
+    '{"reply": "查一下", "action": {"type": "query", "table_id": %d, "spec": {"kind": "stat", "agg": "count",'
+    ' "filters": {"rules": [{"field": "is_deal", "op": "eq", "value": true}]}, "range": {"mode": "this_month"}}}}' % tj
+]
+r = client.post("/api/assistant/chat", json={"message": "本月成交几笔", "context": {"table_id": tj}})
+assert r.json()["action_card"]["result"]["value"] == 2, r.text
+# 问答 spec 非法（sum 文本字段）→ 卡片被丢弃
+AssistantFakeProvider.responses = [
+    '{"reply": "试试", "action": {"type": "query", "table_id": %d, "spec": {"kind": "stat", "agg": "sum", "field": "customer_name"}}}' % tj
+]
+r = client.post("/api/assistant/chat", json={"message": "客户名求和", "context": {"table_id": tj}})
+assert r.json()["action_card"] is None, r.text
+
+# 生成 Excel：blank 模板 + export 导出，下载均 200
+AssistantFakeProvider.responses = [
+    '{"reply": "模板好了", "action": {"type": "gen_excel", "mode": "blank", "label": "客户登记模板", "fields": ['
+    '{"field_name": "customer_name", "label": "客户姓名", "data_type": "varchar"}], "sample_rows": [["张三"]]}}'
+]
+r = client.post("/api/assistant/chat", json={"message": "给我一个客户登记 Excel 模板"})
+card = r.json()["action_card"]
+assert card["type"] == "gen_excel" and card["payload"]["mode"] == "blank", r.text
+r = client.post("/api/assistant/execute", json={"type": "gen_excel", "payload": card["payload"]})
+fid = r.json()["file_id"]
+assert r.status_code == 200 and fid, r.text
+r = client.get(f"/api/assistant/download/{fid}")
+assert r.status_code == 200 and r.content[:2] == b"PK", r.status_code
+
+AssistantFakeProvider.responses = [
+    '{"reply": "导好了", "action": {"type": "gen_excel", "mode": "export", "table_id": %d,'
+    ' "filters": {"rules": [{"field": "is_deal", "op": "eq", "value": true}]}}}' % tj
+]
+r = client.post("/api/assistant/chat", json={"message": "把成交客户导成 Excel", "context": {"table_id": tj}})
+card = r.json()["action_card"]
+assert card["type"] == "gen_excel" and card["payload"]["mode"] == "export", r.text
+r = client.post("/api/assistant/execute", json={"type": "gen_excel", "payload": card["payload"]})
+fid = r.json()["file_id"]
+r = client.get(f"/api/assistant/download/{fid}")
+assert r.status_code == 200 and r.content[:2] == b"PK", r.status_code
+
+# 创建报表：chat 意图 → assist_report 生成配置 → 执行落库可直接运行
+AssistantFakeProvider.responses = [
+    '{"reply": "周报设计好了", "action": {"type": "create_report", "table_id": %d, "description": "本周客户跟进周报，含新增客户数"}}' % tj,
+    '{"name": "客户跟进周报", "range": {"mode": "this_week"}, "blocks": [{"type": "stat", "title": "新增客户数", "agg": "count"}], "notes": ""}',
+]
+r = client.post("/api/assistant/chat", json={"message": "帮我创建客户跟进表的周报", "context": {"table_id": tj}})
+card = r.json()["action_card"]
+assert card["type"] == "create_report" and card["payload"]["name"] == "客户跟进周报", r.text
+r = client.post("/api/assistant/execute", json={"type": "create_report", "payload": card["payload"]})
+rep_id = r.json()["report_id"]
+assert r.status_code == 200 and rep_id, r.text
+r = client.post(f"/api/reports/{rep_id}/run")
+assert r.status_code == 200 and r.json()["blocks"][0]["value"] == 4, r.text  # 本周 4 条 PRECS
+client.delete(f"/api/reports/{rep_id}")
+
+# 创建任务规则：chat 意图 → assist_task 生成配置 → 执行落库默认停用
+AssistantFakeProvider.responses = [
+    '{"reply": "任务设计好了", "action": {"type": "create_task", "table_id": %d, "description": "每天早上提醒已成交客户"}}' % tj,
+    '{"name": "成交客户提醒", "condition_mode": "structured",'
+    ' "condition": {"logic": "AND", "rules": [{"field": "is_deal", "op": "eq", "value": true}]},'
+    ' "schedule": {"type": "cron", "expr": "0 9 * * *"},'
+    ' "action": {"type": "notify", "template": "成交客户 {customer_name}", "recipients": {"type": "fixed", "value": ""}},'
+    ' "cooldown_hours": 24, "notes": ""}',
+]
+r = client.post("/api/assistant/chat", json={"message": "帮我创建成交提醒任务", "context": {"table_id": tj}})
+card = r.json()["action_card"]
+assert card["type"] == "create_task", r.text
+r = client.post("/api/assistant/execute", json={"type": "create_task", "payload": card["payload"]})
+task_id = r.json()["task_id"]
+assert r.status_code == 200 and task_id, r.text
+t = next(x for x in client.get("/api/tasks").json() if x["id"] == task_id)
+assert t["enabled"] is False and t["condition"]["rules"][0]["field"] == "is_deal", t
+client.delete(f"/api/tasks/{task_id}")
+
+# 恢复后续测试使用的 LLM mock（智能判断条件）
+gw.get_default_provider = lambda db: JudgeFakeProvider()
+
+client.delete(f"/api/tables/{new_tid}")
+print("AI 助手（聊天/填表/建表/问答/生成Excel/权限校验）通过")
+
+# 10.11 AI 助手联网搜索：搜索执行 → 二次调用组织回答 + 来源卡片；搜索不可用降级
+import app.services.web_search as ws_mod
+
+gw.get_default_provider = lambda db: AssistantFakeProvider()
+
+# 第一次调用输出 web_search 动作；第二次调用是基于搜索结果的纯文本回答
+AssistantFakeProvider.responses = [
+    '{"reply": "", "action": {"type": "web_search", "queries": ["珠海市人民医院 电话", "珠海市人民医院 骨科主任"]}}',
+    "珠海市人民医院总机电话是 0756-2222569（来源：医院官网），骨科主任为蒋煜文。",
+]
+_orig_search = ws_mod.web_search
+ws_mod.web_search = lambda db, q, count=8: [
+    {"title": f"结果-{q}", "url": f"https://example.com/{q}", "snippet": "摘要"},
+]
+try:
+    r = client.post("/api/assistant/chat", json={"message": "珠海市人民医院电话和骨科主任"})
+finally:
+    ws_mod.web_search = _orig_search
+out = r.json()
+assert r.status_code == 200 and out["reply"].startswith("珠海市人民医院总机电话"), r.text
+card = out["action_card"]
+assert card["type"] == "search_answer" and len(card["payload"]["results"]) == 2, card
+assert card["payload"]["queries"] == ["珠海市人民医院 电话", "珠海市人民医院 骨科主任"], card
+
+# 搜索服务未配置/失败 → 如实降级，不崩溃
+ws_mod.web_search = lambda db, q, count=8: (_ for _ in ()).throw(ws_mod.SearchError("尚未配置联网搜索服务"))
+AssistantFakeProvider.responses = [
+    '{"reply": "", "action": {"type": "web_search", "queries": ["今天天气"]}}',
+]
+try:
+    r = client.post("/api/assistant/chat", json={"message": "今天天气怎么样"})
+finally:
+    ws_mod.web_search = _orig_search
+out = r.json()
+assert r.status_code == 200 and "尚未配置联网搜索服务" in out["reply"] and out["action_card"] is None, r.text
+
+gw.get_default_provider = lambda db: JudgeFakeProvider()
+print("AI 助手联网搜索（二次调用/来源卡片/失败降级）通过")
+
 # 11. 权限矩阵：未分享 404 / 分享者按开关 / 主人与 admin 全权
 admin_headers = dict(client.headers)
 r = client.post("/api/auth/register", json={"username": "worker", "password": "secret123"})

@@ -86,6 +86,34 @@
       </el-form>
     </el-card>
 
+    <!-- 联网搜索配置（AI 助手使用） -->
+    <el-card style="margin-top: 20px">
+      <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span>联网搜索（AI 助手使用）</span>
+          <el-button type="primary" :loading="webSearchSaving" @click="saveWebSearch">保存</el-button>
+        </div>
+      </template>
+      <el-form label-width="120px" style="max-width: 720px">
+        <el-form-item label="搜索服务">
+          <el-select v-model="general.web_search.provider" style="width: 160px">
+            <el-option label="博查 Bocha" value="bocha" />
+            <el-option label="Tavily" value="tavily" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="API Key">
+          <el-input
+            v-model="general.web_search.api_key" type="password" show-password style="width: 360px"
+            :placeholder="general.web_search.has_api_key ? '已配置，留空则不修改' : '搜索服务的 API Key'"
+          />
+          <el-button :loading="testSearchSending" style="margin-left: 8px" @click="sendTestSearch">测试搜索</el-button>
+          <div style="font-size: 12px; color: #909399; margin-top: 4px">
+            配置后 AI 助手可以联网查询实时信息（电话、排班、招投标、新闻等）；保存后可点「测试搜索」验证
+          </div>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑模型服务' : '添加模型服务'" width="560px" destroy-on-close>
       <el-form label-width="110px">
         <el-form-item label="名称" required>
@@ -130,7 +158,7 @@ import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
   createProvider, deleteProvider, getGeneralSettings, listProviders,
-  saveGeneralSettings, setDefaultProvider, testEmail, testProvider, updateProvider,
+  saveGeneralSettings, setDefaultProvider, testEmail, testProvider, testSearchSettings, updateProvider,
 } from '../api'
 
 const providers = ref([])
@@ -142,10 +170,12 @@ const testingId = ref(null)
 const form = reactive({ name: '', type: 'openai_compat', base_url: '', api_key: '', model: '', vision_model: '', is_default: false })
 
 // 通知渠道
-const general = reactive({ smtp: {}, sms_gateway: {} })
+const general = reactive({ smtp: {}, sms_gateway: {}, web_search: {} })
 const generalSaving = ref(false)
 const testEmailTo = ref('')
 const testEmailSending = ref(false)
+const webSearchSaving = ref(false)
+const testSearchSending = ref(false)
 
 async function loadGeneral() {
   try {
@@ -156,6 +186,7 @@ async function loadGeneral() {
       general.smtp.use_ssl = Number(general.smtp.port) === 465
     }
     general.sms_gateway = res.sms_gateway || {}
+    general.web_search = { provider: 'bocha', ...(res.web_search || {}) }
   } catch (e) {
     ElMessage.error(e.message)
   }
@@ -171,6 +202,32 @@ async function saveGeneral() {
     ElMessage.error(e.message)
   } finally {
     generalSaving.value = false
+  }
+}
+
+// 联网搜索独立保存：只提交 web_search，避免和通知渠道互相影响
+async function saveWebSearch() {
+  webSearchSaving.value = true
+  try {
+    await saveGeneralSettings({ web_search: general.web_search })
+    ElMessage.success('已保存')
+    loadGeneral()
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    webSearchSaving.value = false
+  }
+}
+
+async function sendTestSearch() {
+  testSearchSending.value = true
+  try {
+    const r = await testSearchSettings()
+    ElMessage.success(`搜索正常，返回 ${r.count} 条结果${r.sample?.length ? '：' + r.sample[0] : ''}`)
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    testSearchSending.value = false
   }
 }
 
