@@ -33,6 +33,9 @@
             <el-icon><UserFilled /></el-icon><span>用户组</span>
           </el-menu-item>
         </template>
+        <el-menu-item index="/friends">
+          <el-icon><User /></el-icon><span>好友</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
@@ -115,7 +118,14 @@ function readUser() {
   return JSON.parse(localStorage.getItem('grt_user') || 'null')
 }
 const user = ref(readUser())
-watch(() => route.path, () => { user.value = readUser() })
+watch(() => route.path, () => {
+  user.value = readUser()
+  // 登录/切换账号后路由首次变化时立即拉取通知（否则要等下一个 30s 轮询周期）
+  if (localStorage.getItem('grt_token')) {
+    pollUnread()
+    loadNotifications()
+  }
+})
 const roleLabel = computed(() => ({ admin: '管理员', vip: 'VIP', user: '普通用户' }[user.value?.role] || '普通用户'))
 let timer = null
 
@@ -175,8 +185,11 @@ async function readAll() {
 }
 
 onMounted(() => {
-  pollUnread()
-  timer = setInterval(pollUnread, 30000)
+  // 未登录（停留在 /login）时不发请求，避免 401 触发拦截器的清理逻辑
+  if (localStorage.getItem('grt_token')) pollUnread()
+  timer = setInterval(() => {
+    if (localStorage.getItem('grt_token')) pollUnread()
+  }, 30000)
 })
 onUnmounted(() => clearInterval(timer))
 </script>
@@ -192,6 +205,8 @@ body { margin: 0; font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Micr
   display: flex; align-items: center; justify-content: space-between; height: 48px;
 }
 .topbar-right { display: flex; align-items: center; gap: 16px; }
+/* 角标默认向上探出 wrapper 一半高度，在 48px 顶栏里会被上沿裁掉，改为完全落在按钮内侧 */
+.bell .el-badge__content { top: 8px; right: 12px; transform: translateX(100%); }
 .user-name { cursor: pointer; font-size: 14px; color: #606266; outline: none; }
 .main { background: #f5f7fa; padding: 20px 24px; overflow-y: auto; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }

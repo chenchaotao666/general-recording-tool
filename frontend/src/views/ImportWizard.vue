@@ -193,8 +193,8 @@ const creating = ref(false)
 const report = ref(null)
 const createdTableId = ref(null)
 
-const myRole = JSON.parse(localStorage.getItem('grt_user') || '{}').role
-const canUsePhysical = ['vip', 'admin'].includes(myRole)
+const myPerms = JSON.parse(localStorage.getItem('grt_user') || '{}').perms || []
+const canUsePhysical = myPerms.includes('create_physical_table')
 
 const currentSheet = computed(() => fileInfo.value?.sheets.find((s) => s.name === sheetName.value))
 const previewRows = computed(() =>

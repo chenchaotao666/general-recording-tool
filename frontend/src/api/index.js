@@ -48,6 +48,23 @@ export const listShares = (tid) => http.get(`/tables/${tid}/shares`)
 export const putShare = (tid, payload) => http.post(`/tables/${tid}/shares`, payload)
 export const deleteShare = (tid, sid) => http.delete(`/tables/${tid}/shares/${sid}`)
 
+// 待接受分享（接收者侧）
+export const listPendingShares = () => http.get('/shares/pending')
+export const acceptShare = (id) => http.post(`/shares/${id}/accept`)
+export const rejectShare = (id) => http.post(`/shares/${id}/reject`)
+
+// 好友
+export const listFriends = () => http.get('/friends')
+export const requestFriend = (username) => http.post('/friends/request', { username })
+export const listFriendRequests = () => http.get('/friends/requests')
+export const acceptFriend = (id) => http.post(`/friends/${id}/accept`)
+export const rejectFriend = (id) => http.post(`/friends/${id}/reject`)
+export const deleteFriend = (id) => http.delete(`/friends/${id}`)
+
+// 用户搜索 / 我的组
+export const searchUsers = (q, scope) => http.get('/users/search', { params: { q, scope } })
+export const listMyGroups = () => http.get('/groups/mine')
+
 // 链接分享
 export const listShareLinks = (tid) => http.get(`/tables/${tid}/share-links`)
 export const createShareLink = (tid, payload) => http.post(`/tables/${tid}/share-links`, payload)

@@ -11,6 +11,7 @@ import UsersManage from '../views/UsersManage.vue'
 import RolesManage from '../views/RolesManage.vue'
 import PermissionsManage from '../views/PermissionsManage.vue'
 import GroupsManage from '../views/GroupsManage.vue'
+import Friends from '../views/Friends.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -19,6 +20,7 @@ const router = createRouter({
     { path: '/share/:token', component: ShareView },  // 公开链接分享，免登录
     { path: '/', redirect: '/tables' },
     { path: '/tables', component: TableList },
+    { path: '/friends', component: Friends },
     { path: '/import', component: ImportWizard },
     { path: '/t/:id', component: DynamicTable },
     { path: '/tasks', component: Tasks },

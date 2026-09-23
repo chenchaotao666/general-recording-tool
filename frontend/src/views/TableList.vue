@@ -2,7 +2,12 @@
   <div>
     <div class="page-header">
       <h2>数据表</h2>
-      <el-button type="primary" :icon="Upload" @click="$router.push('/import')">导入 Excel 建表</el-button>
+      <div>
+        <el-badge :value="pendingShares.length || ''" :hidden="!pendingShares.length" style="margin-right: 12px">
+          <el-button @click="pendingVisible = true">待接受分享</el-button>
+        </el-badge>
+        <el-button type="primary" :icon="Upload" @click="$router.push('/import')">导入 Excel 建表</el-button>
+      </div>
     </div>
 
     <el-empty v-if="!loading && tables.length === 0" description="还没有数据表，点击右上角导入 Excel 开始" />
@@ -30,6 +35,24 @@
       </el-col>
     </el-row>
 
+    <!-- 待接受的分享 -->
+    <el-dialog v-model="pendingVisible" title="待接受的分享" width="620px">
+      <el-table :data="pendingShares" size="small" border>
+        <el-table-column label="数据表" prop="table_label" min-width="140" />
+        <el-table-column label="分享者" prop="owner_label" width="110" />
+        <el-table-column label="权限" min-width="140">
+          <template #default="{ row }">{{ permsText(row) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="130" align="center">
+          <template #default="{ row }">
+            <el-button text type="primary" size="small" @click="respond(row, 'accept')">接受</el-button>
+            <el-button text type="danger" size="small" @click="respond(row, 'reject')">拒绝</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!pendingShares.length" description="暂无待接受的分享" :image-size="60" />
+    </el-dialog>
+
     <!-- 分享管理对话框 -->
     <el-dialog v-model="shareVisible" :title="`分享「${shareTable?.label}」`" width="680px">
       <el-tabs v-model="shareTab">
@@ -43,7 +66,12 @@
               </el-radio-group>
             </el-form-item>
             <el-form-item v-if="shareForm.target_type === 'user'">
-              <el-input v-model="shareForm.username" placeholder="对方用户名" style="width: 150px" />
+              <el-select
+                v-model="shareForm.user_id" filterable remote :remote-method="searchShareable"
+                :loading="searching" placeholder="搜索好友/同组用户" style="width: 200px"
+              >
+                <el-option v-for="u in userOptions" :key="u.id" :label="u.username" :value="u.id" />
+              </el-select>
             </el-form-item>
             <el-form-item v-else>
               <el-select v-model="shareForm.group_id" placeholder="选择用户组" style="width: 150px">
@@ -59,11 +87,21 @@
               <el-button type="primary" :loading="shareSaving" @click="saveShare">添加/更新</el-button>
             </el-form-item>
           </el-form>
+          <div style="color: #909399; font-size: 12px; margin-bottom: 10px">
+            只能分享给好友或同组用户（左侧「好友」页可添加好友）；直发分享需对方接受后生效
+          </div>
           <el-table :data="shares" size="small" border>
             <el-table-column label="对象" width="160">
               <template #default="{ row }">
                 {{ row.target }}
                 <el-tag v-if="row.target_type === 'group'" size="small" type="warning" style="margin-left: 4px">组</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="90" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="row.status === 'pending'" size="small" type="warning">待确认</el-tag>
+                <el-tag v-else-if="row.status === 'rejected'" size="small" type="danger">已拒绝</el-tag>
+                <span v-else style="color: #909399">已生效</span>
               </template>
             </el-table-column>
             <el-table-column label="查看" width="60" align="center"><template #default="{ row }">{{ row.can_view ? '✓' : '—' }}</template></el-table-column>
@@ -72,6 +110,7 @@
             <el-table-column label="删除" width="60" align="center"><template #default="{ row }">{{ row.can_delete ? '✓' : '—' }}</template></el-table-column>
             <el-table-column label="操作" align="center">
               <template #default="{ row }">
+                <el-button v-if="row.status === 'rejected'" text type="primary" size="small" @click="reShare(row)">重新发起</el-button>
                 <el-button text type="danger" size="small" @click="removeShare(row)">移除</el-button>
               </template>
             </el-table-column>
@@ -125,14 +164,15 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Upload } from '@element-plus/icons-vue'
 import {
-  createShareLink, deleteShare, deleteShareLink, deleteTable, listGroups,
-  listShareLinks, listShares, listTables, putShare,
+  acceptShare, createShareLink, deleteShare, deleteShareLink, deleteTable,
+  listMyGroups, listPendingShares, listShareLinks, listShares, listTables,
+  putShare, rejectShare, searchUsers,
 } from '../api'
 
 const tables = ref([])
 const loading = ref(false)
 
-const myRole = JSON.parse(localStorage.getItem('grt_user') || '{}').role
+const myPerms = JSON.parse(localStorage.getItem('grt_user') || '{}').perms || []
 
 async function load() {
   loading.value = true
@@ -146,7 +186,7 @@ async function load() {
 }
 
 function canShare(t) {
-  return (t.is_owner && ['vip', 'admin'].includes(myRole)) || t.is_admin
+  return (t.is_owner && myPerms.includes('share')) || t.is_admin
 }
 
 async function del(t) {
@@ -174,14 +214,27 @@ const ROLE_PRESETS = {
   manager: { label: '管理员', perms: { can_view: true, can_create: true, can_edit: true, can_delete: true } },
 }
 
-const shareForm = reactive({ target_type: 'user', username: '', group_id: null, preset: 'viewer' })
+const shareForm = reactive({ target_type: 'user', user_id: null, group_id: null, preset: 'viewer' })
+const userOptions = ref([])
+const searching = ref(false)
 
 async function openShare(t) {
   shareTable.value = t
   shareVisible.value = true
-  Object.assign(shareForm, { target_type: 'user', username: '', group_id: null, preset: 'viewer' })
-  await Promise.all([loadShares(), loadGroups()])
+  Object.assign(shareForm, { target_type: 'user', user_id: null, group_id: null, preset: 'viewer' })
+  await Promise.all([loadShares(), loadGroups(), searchShareable('')])
   loadLinks()
+}
+
+async function searchShareable(q) {
+  searching.value = true
+  try {
+    userOptions.value = await searchUsers(q, 'shareable')
+  } catch {
+    userOptions.value = []
+  } finally {
+    searching.value = false
+  }
 }
 
 async function loadShares() {
@@ -194,15 +247,15 @@ async function loadShares() {
 
 async function loadGroups() {
   try {
-    groups.value = await listGroups()
-  } catch { /* 非 admin 看不到组列表时忽略 */ }
+    groups.value = await listMyGroups()
+  } catch { /* 不在任何组时为空列表 */ }
 }
 
 async function saveShare() {
   const payload = { ...ROLE_PRESETS[shareForm.preset].perms }
   if (shareForm.target_type === 'user') {
-    if (!shareForm.username.trim()) return ElMessage.warning('请输入用户名')
-    payload.username = shareForm.username.trim()
+    if (!shareForm.user_id) return ElMessage.warning('请选择用户')
+    payload.user_id = shareForm.user_id
   } else {
     if (!shareForm.group_id) return ElMessage.warning('请选择用户组')
     payload.group_id = shareForm.group_id
@@ -211,12 +264,26 @@ async function saveShare() {
   try {
     await putShare(shareTable.value.id, payload)
     ElMessage.success('已保存')
-    shareForm.username = ''
+    shareForm.user_id = null
     await loadShares()
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
     shareSaving.value = false
+  }
+}
+
+async function reShare(row) {
+  try {
+    await putShare(shareTable.value.id, {
+      username: row.target,
+      can_view: row.can_view, can_create: row.can_create,
+      can_edit: row.can_edit, can_delete: row.can_delete,
+    })
+    ElMessage.success('已重新发起')
+    await loadShares()
+  } catch (e) {
+    ElMessage.error(e.message)
   }
 }
 
@@ -284,7 +351,37 @@ async function removeLink(row) {
   }
 }
 
-onMounted(load)
+// ---------- 待接受分享 ----------
+const pendingVisible = ref(false)
+const pendingShares = ref([])
+
+async function loadPending() {
+  try {
+    pendingShares.value = await listPendingShares()
+  } catch { /* 未登录等场景忽略 */ }
+}
+
+function permsText(row) {
+  return [
+    row.can_view && '查看', row.can_create && '新增',
+    row.can_edit && '编辑', row.can_delete && '删除',
+  ].filter(Boolean).join(' / ')
+}
+
+async function respond(row, action) {
+  try {
+    await (action === 'accept' ? acceptShare(row.id) : rejectShare(row.id))
+    ElMessage.success(action === 'accept' ? '已接受' : '已拒绝')
+    await Promise.all([loadPending(), load()])
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+onMounted(() => {
+  load()
+  loadPending()
+})
 </script>
 
 <style scoped>
