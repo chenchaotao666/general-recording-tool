@@ -19,3 +19,7 @@ frontend/dist/
 docs/*.xlsx
 docs/*.jpg
 docs/*.png
+
+# 小程序
+miniprogram/node_modules/
+miniprogram/dist/

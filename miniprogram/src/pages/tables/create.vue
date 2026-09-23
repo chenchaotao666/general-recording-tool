@@ -89,7 +89,7 @@ const WIDGET_LABELS = ['单行文本', '多行文本', '数字', '日期', '日�
 const mode = ref('manual')
 const label = ref('')
 const storageMode = ref('json')
-const canPhysical = ['vip', 'admin'].includes(uni.getStorageSync('grt_user')?.role || 'user')
+const canPhysical = (uni.getStorageSync('grt_user')?.perms || []).includes('create_physical_table')
 const fields = ref([])
 const saving = ref(false)
 

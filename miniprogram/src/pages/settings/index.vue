@@ -85,6 +85,10 @@
         <text class="act" @click="openPassword">修改密码</text>
         <text class="act danger" @click="logout">退出登录</text>
       </view>
+      <view class="fc-row" style="margin-top: 16rpx; border-top: 1rpx solid #f0f0f0; padding-top: 16rpx">
+        <text class="card-sub" style="flex: 1">好友管理（添加好友后才能互相分享数据表）</text>
+        <text class="act" @click="openFriends">我的好友</text>
+      </view>
     </view>
   </view>
 </template>
@@ -107,6 +111,10 @@ const roleLabel = { admin: '管理员', vip: 'VIP', user: '普通用户' }[user?
 
 function openPassword() {
   uni.navigateTo({ url: '/pages/settings/password' })
+}
+
+function openFriends() {
+  uni.navigateTo({ url: '/pages/friends/index' })
 }
 
 function logout() {

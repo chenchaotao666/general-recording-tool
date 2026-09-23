@@ -4,6 +4,19 @@
       <view class="total">共 {{ tables.length }} 张表</view>
       <view class="add-btn" @click="uni.navigateTo({ url: '/pages/tables/create' })">+ 新建数据表</view>
     </view>
+    <view v-if="pending.length" class="pending-card">
+      <view class="pending-title">待接受的分享（{{ pending.length }}）</view>
+      <view v-for="p in pending" :key="p.id" class="pending-row">
+        <view class="pending-info">
+          <text class="pending-label">{{ p.table_label }}</text>
+          <text class="pending-sub">{{ p.owner_label }} 分享给你</text>
+        </view>
+        <view>
+          <text class="act" @click="respond(p, 'accept')">接受</text>
+          <text class="del" @click="respond(p, 'reject')">拒绝</text>
+        </view>
+      </view>
+    </view>
     <view v-if="loading" class="hint">加载中…</view>
     <view v-else-if="!tables.length" class="hint">还没有数据表，点右上角新建</view>
     <view
@@ -32,10 +45,11 @@
 <script setup>
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { listTables, deleteTable } from '../../api'
+import { listTables, deleteTable, listPendingShares, acceptShare, rejectShare } from '../../api'
 
 const tables = ref([])
 const loading = ref(false)
+const pending = ref([])
 
 async function load() {
   loading.value = true
@@ -48,14 +62,30 @@ async function load() {
   }
 }
 
+async function loadPending() {
+  try {
+    pending.value = await listPendingShares()
+  } catch { /* 忽略 */ }
+}
+
+async function respond(p, action) {
+  try {
+    await (action === 'accept' ? acceptShare(p.id) : rejectShare(p.id))
+    uni.showToast({ title: action === 'accept' ? '已接受' : '已拒绝', icon: 'success' })
+    await Promise.all([load(), loadPending()])
+  } catch (e) {
+    uni.showToast({ title: e.message, icon: 'none' })
+  }
+}
+
 function openRecords(t) {
   uni.navigateTo({ url: `/pages/records/list?table_id=${t.id}&label=${encodeURIComponent(t.label)}` })
 }
 
-const myRole = uni.getStorageSync('grt_user')?.role || 'user'
+const myPerms = uni.getStorageSync('grt_user')?.perms || []
 
 function canShare(t) {
-  return (t.is_owner && ['vip', 'admin'].includes(myRole)) || t.is_admin
+  return (t.is_owner && myPerms.includes('share')) || t.is_admin
 }
 
 function openShares(t) {
@@ -80,7 +110,10 @@ function del(t) {
   })
 }
 
-onShow(load)
+onShow(() => {
+  load()
+  loadPending()
+})
 </script>
 
 <style>
@@ -102,4 +135,10 @@ onShow(load)
 .card-sub { font-size: 24rpx; color: #909399; }
 .del { font-size: 26rpx; color: #f56c6c; padding: 4rpx 12rpx; }
 .arrow { color: #c0c4cc; font-size: 40rpx; }
+.pending-card { background: #fdf6ec; border-radius: 16rpx; padding: 20rpx 28rpx; margin-bottom: 20rpx; }
+.pending-title { font-size: 26rpx; color: #e6a23c; margin-bottom: 8rpx; }
+.pending-row { display: flex; justify-content: space-between; align-items: center; padding: 10rpx 0; }
+.pending-info { display: flex; flex-direction: column; }
+.pending-label { font-size: 28rpx; color: #303133; }
+.pending-sub { font-size: 22rpx; color: #909399; margin-top: 4rpx; }
 </style>
