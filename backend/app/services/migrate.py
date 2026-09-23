@@ -17,6 +17,7 @@ _NEW_COLUMNS = [
     ("notifications", "user_id", "INTEGER"),
     ("table_shares", "group_id", "INTEGER"),
     ("table_shares", "status", "VARCHAR(16) DEFAULT 'accepted'"),
+    ("report_templates", "filters_json", "JSON"),
 ]
 
 

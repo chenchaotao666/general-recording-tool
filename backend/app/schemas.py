@@ -148,5 +148,6 @@ class ReportTemplateIn(BaseModel):
     enabled: bool = False
     range: dict = {}       # {mode, date_field, start?, end?}
     blocks: list[dict] = []
+    filter_fields: list[str] = []   # 查看端开放自助筛选的字段
     schedule: dict = {}    # {type: interval, minutes} | {type: cron, expr}
     push: dict = {}        # {recipients, formats, subject}

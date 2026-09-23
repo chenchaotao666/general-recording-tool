@@ -144,6 +144,7 @@ const blankForm = () => ({
   name: '', description: '', table_id: null, enabled: false,
   range: { mode: 'this_week', date_field: 'created_at', start: null, end: null },
   blocks: [],
+  filter_fields: [],
   schedule: { type: '', minutes: 60, expr: '0 9 * * 1' },
   push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '' },
 })
@@ -182,6 +183,7 @@ function openEdit(row) {
       group: b.group ? { ...b.group } : undefined,
       filters: { logic: 'AND', ...(b.filters || {}), rules: (b.filters?.rules || []).map((r) => ({ ...r })) },
     })),
+    filter_fields: [...(row.filter_fields || [])],
     schedule: { type: '', minutes: 60, expr: '0 9 * * 1', ...(row.schedule || {}) },
     push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', ...(row.push || {}) },
   })
@@ -203,6 +205,7 @@ async function save() {
       ...b,
       filters: { logic: b.filters.logic, rules: (b.filters.rules || []).filter((r) => r.field && r.op) },
     })),
+    filter_fields: form.filter_fields || [],
     schedule: form.schedule.type === 'interval'
       ? { type: 'interval', minutes: form.schedule.minutes }
       : form.schedule.type === 'cron'

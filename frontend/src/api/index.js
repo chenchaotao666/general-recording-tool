@@ -131,12 +131,15 @@ export const createReport = (p) => http.post('/reports', p)
 export const updateReport = (id, p) => http.put(`/reports/${id}`, p)
 export const deleteReport = (id) => http.delete(`/reports/${id}`)
 export const toggleReport = (id) => http.post(`/reports/${id}/toggle`)
-export const runReport = (id, range) => http.post(`/reports/${id}/run`, { range })
+export const runReport = (id, range, filters) => http.post(`/reports/${id}/run`, { range, filters })
 export const aiAssistReport = (tableId, description) => http.post('/reports/ai-assist', { table_id: tableId, description })
 export const testPushReport = (id) => http.post(`/reports/${id}/test-push`)
 export const reportRuns = (id) => http.get(`/reports/${id}/runs`)
 export const reportExportUrl = (id, params) => {
-  const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v != null && v !== ''))
+  // filters 是对象，JSON 序列化后作为查询参数
+  const flat = { ...(params || {}) }
+  if (flat.filters) flat.filters = JSON.stringify(flat.filters)
+  const qs = new URLSearchParams(Object.entries(flat).filter(([, v]) => v != null && v !== ''))
   const token = localStorage.getItem('grt_token') || ''
   return `/api/reports/${id}/export?${qs}&token=${encodeURIComponent(token)}`
 }

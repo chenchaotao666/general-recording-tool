@@ -1,4 +1,5 @@
 """报表模板管理 + 在线生成 + 导出 + 定时推送。"""
+import json
 from datetime import datetime
 from urllib.parse import quote
 
@@ -22,8 +23,9 @@ from ..utils.auth import get_current_user
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 RANGE_MODE_LABELS = {
+    "today": "今天", "yesterday": "昨天", "past_7d": "近7天", "past_30d": "近30天",
     "this_week": "本周", "last_week": "上周", "this_month": "本月",
-    "last_month": "上月", "custom": "自定义",
+    "last_month": "上月", "this_quarter": "本季度", "this_year": "今年", "custom": "自定义",
 }
 
 
@@ -41,6 +43,7 @@ def _out(db: Session, tpl: ReportTemplate) -> dict:
         "table_id": tpl.table_id, "table_label": mt.label if mt else f"表#{tpl.table_id}",
         "enabled": tpl.enabled,
         "range": rng, "blocks": tpl.blocks_json or [],
+        "filter_fields": tpl.filters_json or [],
         "schedule": tpl.schedule_json or {}, "push": tpl.push_json or {},
         "range_desc": RANGE_MODE_LABELS.get(rng.get("mode") or "this_week", rng.get("mode")),
         "block_count": len(tpl.blocks_json or []),
@@ -61,6 +64,7 @@ def _apply(rule: ReportTemplate, payload: ReportTemplateIn) -> None:
     rule.enabled = payload.enabled
     rule.range_json = payload.range
     rule.blocks_json = payload.blocks
+    rule.filters_json = payload.filter_fields
     rule.schedule_json = payload.schedule
     rule.push_json = payload.push
     rule.updated_at = datetime.now()
@@ -170,19 +174,28 @@ def run_report(tpl_id: int, payload: dict | None = None, db: Session = Depends(g
         raise HTTPException(404, "报表模板不存在")
     check_owner_or_admin(tpl.user_id, user)
     get_table_access(db, tpl.table_id, user)  # 数据权限跟随表的分享权限（被撤权后不可再跑）
-    return run_template(db, tpl, _range_override((payload or {}).get("range"), None, None, None))
+    payload = payload or {}
+    return run_template(db, tpl, _range_override(payload.get("range"), None, None, None),
+                        viewer_filters=payload.get("filters"))
 
 
 @router.get("/{tpl_id}/export")
 def export_report(tpl_id: int, format: str = "xlsx", mode: str | None = None,
-                  start: str | None = None, end: str | None = None, db: Session = Depends(get_db),
+                  start: str | None = None, end: str | None = None, filters: str | None = None,
+                  db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
     check_owner_or_admin(tpl.user_id, user)
     get_table_access(db, tpl.table_id, user)
-    result = run_template(db, tpl, _range_override(None, mode, start, end))
+    viewer_filters = None
+    if filters:
+        try:
+            viewer_filters = json.loads(filters)
+        except ValueError:
+            raise HTTPException(400, "filters 参数不是合法 JSON")
+    result = run_template(db, tpl, _range_override(None, mode, start, end), viewer_filters=viewer_filters)
     base = f"{tpl.name}-{result['range']['label'].split('（')[0]}"
 
     if format == "xlsx":

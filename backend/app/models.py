@@ -268,9 +268,10 @@ class ReportTemplate(Base):
     user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（多租户）
     enabled = Column(Boolean, default=False)               # 控制定时推送是否生效
     range_json = Column(JSON, default=dict)
-    # {mode: this_week|last_week|this_month|last_month|custom, date_field, start?, end?}
+    # {mode: today|yesterday|past_7d|past_30d|this_week|last_week|this_month|last_month|this_quarter|this_year|custom, date_field, start?, end?}
     blocks_json = Column(JSON, default=list)
-    # [{id, type: stat|chart|table|text, title, filters: {logic, rules}, ...}]
+    # [{id, type: stat|chart|table|text, title, filters: {logic, rules}, ...}]；stat 支持 agg: ratio（占比）与 compare: 环比
+    filters_json = Column(JSON, default=list)      # 查看端开放筛选的字段名列表
     schedule_json = Column(JSON, default=dict)   # {type: interval, minutes} | {type: cron, expr}
     push_json = Column(JSON, default=dict)       # {recipients, formats: [html_inline, xlsx], subject}
     created_at = Column(DateTime, default=datetime.now)

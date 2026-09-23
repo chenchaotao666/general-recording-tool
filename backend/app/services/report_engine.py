@@ -12,11 +12,13 @@ from . import dyn_engine
 from .actions import get_setting, send_smtp_html
 
 BLOCK_TYPES = {"stat", "chart", "table", "text"}
-AGG_TYPES = {"count", "sum", "avg", "max", "min"}
+AGG_TYPES = {"count", "count_distinct", "sum", "avg", "max", "min", "ratio"}
+CHART_AGG_TYPES = AGG_TYPES - {"ratio"}   # ratio（占比）仅统计卡：满足区块筛选数 / 口径内总数
 NUMERIC_TYPES = {"int", "decimal"}
 CHART_TYPES = {"bar", "line", "pie"}
 GROUP_KINDS = {"field", "day", "week", "month"}
-RANGE_MODES = {"this_week", "last_week", "this_month", "last_month", "custom"}
+RANGE_MODES = {"today", "yesterday", "past_7d", "past_30d", "this_week", "last_week",
+               "this_month", "last_month", "this_quarter", "this_year", "custom"}
 SYSTEM_FIELDS = {"id", "created_at", "updated_at"}
 TABLE_LIMIT_MAX = 500
 CHART_TOP_N_DEFAULT = {"pie": 8, "bar": 30, "line": 30}
@@ -34,6 +36,23 @@ def resolve_time_range(cfg: dict, now: datetime | None = None) -> tuple[datetime
     mode = (cfg or {}).get("mode") or "this_week"
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
+    if mode == "today":
+        return today, now, f"今天（{today:%Y-%m-%d}）"
+    if mode == "yesterday":
+        y = today - timedelta(days=1)
+        return y, today, f"昨天（{y:%Y-%m-%d}）"
+    if mode == "past_7d":
+        start = today - timedelta(days=6)
+        return start, now, f"近7天（{start:%Y-%m-%d} ~ {now:%Y-%m-%d}）"
+    if mode == "past_30d":
+        start = today - timedelta(days=29)
+        return start, now, f"近30天（{start:%Y-%m-%d} ~ {now:%Y-%m-%d}）"
+    if mode == "this_quarter":
+        start = today.replace(month=(now.month - 1) // 3 * 3 + 1, day=1)
+        return start, now, f"本季度（{start:%Y-%m-%d} ~ {now:%Y-%m-%d}）"
+    if mode == "this_year":
+        start = today.replace(month=1, day=1)
+        return start, now, f"今年（{start:%Y-%m-%d} ~ {now:%Y-%m-%d}）"
     if mode == "this_week":
         start = today - timedelta(days=now.weekday())
         return start, now, f"本周（{start:%Y-%m-%d} ~ {now:%Y-%m-%d}）"
@@ -86,7 +105,12 @@ def _validate_filters(fields_by_name: dict, filters: dict) -> None:
 
 
 def _check_numeric_field(fields_by_name: dict, agg: str, field: str | None) -> None:
-    if agg == "count":
+    if agg in ("count", "ratio"):
+        return
+    if agg == "count_distinct":
+        # 去重计数可用任意类型字段（含系统字段）
+        if field not in fields_by_name and field not in SYSTEM_FIELDS:
+            raise HTTPException(400, "去重计数需要选择统计字段")
         return
     f = fields_by_name.get(field or "")
     if f is None or f.data_type not in NUMERIC_TYPES:
@@ -132,6 +156,8 @@ def validate_template(db: Session, payload) -> None:
         elif t == "chart":
             if b.get("chart_type") not in CHART_TYPES:
                 raise HTTPException(400, f"不支持的图表类型：{b.get('chart_type')}")
+            if (b.get("agg") or "count") not in CHART_AGG_TYPES:
+                raise HTTPException(400, f"图表不支持的聚合方式：{b.get('agg')}")
             _check_numeric_field(fields_by_name, b.get("agg") or "count", b.get("field"))
             group = b.get("group") or {}
             gkind, gfield = group.get("kind") or "field", group.get("field")
@@ -152,6 +178,11 @@ def validate_template(db: Session, payload) -> None:
                 if c not in fields_by_name and c not in SYSTEM_FIELDS:
                     raise HTTPException(400, f"明细列不存在：{c}")
 
+    # 查看端可筛选字段必须是表内字段
+    for fn in getattr(payload, "filter_fields", None) or []:
+        if fn not in fields_by_name:
+            raise HTTPException(400, f"查看端筛选字段不存在：{fn}")
+
     # 定时推送配置校验
     s = payload.schedule or {}
     if s.get("type"):
@@ -166,6 +197,8 @@ def _agg_expr(table, agg: str, field: str | None):
     if agg == "count":
         return func.count()
     col = table.c[field]
+    if agg == "count_distinct":
+        return func.count(func.distinct(col))
     return {"sum": func.sum, "avg": func.avg, "max": func.max, "min": func.min}[agg](col)
 
 
@@ -178,9 +211,11 @@ def _round_num(v):
 
 
 def _base_conds(table, fields_by_name: dict, block_filters: dict, date_field: str,
-                start: datetime, end: datetime):
+                start: datetime, end: datetime, viewer_rules: list | None = None):
     conds = [dyn_engine.build_condition(table, fields_by_name, f) for f in (block_filters or {}).get("rules") or []]
     conds = dyn_engine.combine_conditions(conds, (block_filters or {}).get("logic"))
+    # 查看端筛选恒为 AND，叠加在区块筛选之上
+    conds += [dyn_engine.build_condition(table, fields_by_name, f) for f in viewer_rules or []]
     return conds + _time_conds(table, fields_by_name, date_field, start, end)
 
 
@@ -198,15 +233,37 @@ def _option_label(f: MetaField | None, key) -> str:
     return str(dyn_engine.serialize_value(key))
 
 
-def _eval_stat(db, table, fields_by_name, block, date_field, start, end) -> dict:
-    conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end)
-    expr = _agg_expr(table, block["agg"], block.get("field"))
-    v = db.execute(select(expr).select_from(table).where(*conds)).scalar()
-    return {"id": block["id"], "type": "stat", "title": block.get("title") or "", "value": _round_num(v if v is not None else 0)}
+def _stat_value_sql(db, table, fields_by_name: dict, block: dict, date_field: str,
+                    start: datetime, end: datetime, viewer_rules: list | None):
+    """统计卡数值。ratio（占比）= 满足区块筛选的记录数 / 口径内（含查看者筛选）总记录数 × 100。"""
+    conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end, viewer_rules)
+    if block["agg"] == "ratio":
+        num = db.execute(select(func.count()).select_from(table).where(*conds)).scalar() or 0
+        den_conds = _base_conds(table, fields_by_name, None, date_field, start, end, viewer_rules)
+        den = db.execute(select(func.count()).select_from(table).where(*den_conds)).scalar() or 0
+        return round(num / den * 100, 2) if den else 0
+    v = db.execute(select(_agg_expr(table, block["agg"], block.get("field"))).select_from(table).where(*conds)).scalar()
+    return _round_num(v if v is not None else 0)
 
 
-def _eval_chart(db, table, fields_by_name, block, date_field, start, end) -> dict:
-    conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end)
+def _compare_payload(cur, prev) -> dict:
+    """环比：当前值 vs 等长上一期。prev 为 0 时无法计算百分比，返回 None。"""
+    delta = _round_num(cur - prev)
+    return {"prev": prev, "delta": delta, "delta_pct": round(delta / prev * 100, 1) if prev else None}
+
+
+def _eval_stat(db, table, fields_by_name, block, date_field, start, end, viewer_rules=None) -> dict:
+    v = _stat_value_sql(db, table, fields_by_name, block, date_field, start, end, viewer_rules)
+    out = {"id": block["id"], "type": "stat", "title": block.get("title") or "", "value": v, "agg": block["agg"]}
+    if block.get("compare"):
+        span = end - start  # 环比：等长上一期
+        prev = _stat_value_sql(db, table, fields_by_name, block, date_field, start - span, start, viewer_rules)
+        out["compare"] = _compare_payload(v, prev)
+    return out
+
+
+def _eval_chart(db, table, fields_by_name, block, date_field, start, end, viewer_rules=None) -> dict:
+    conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end, viewer_rules)
     group = block.get("group") or {}
     gkind, gfield = group.get("kind") or "field", group.get("field")
     gcol = table.c[gfield]
@@ -252,8 +309,8 @@ def _eval_chart(db, table, fields_by_name, block, date_field, start, end) -> dic
     }
 
 
-def _eval_table(db, table, fields_by_name, block, date_field, start, end) -> dict:
-    conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end)
+def _eval_table(db, table, fields_by_name, block, date_field, start, end, viewer_rules=None) -> dict:
+    conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end, viewer_rules)
     cols = block.get("columns") or []
     limit = min(max(int(block.get("limit") or 100), 1), TABLE_LIMIT_MAX)
     total = db.execute(select(func.count()).select_from(table).where(*conds)).scalar() or 0
@@ -303,9 +360,11 @@ def _eval_text(block: dict, context: dict) -> dict:
 # ---------- json 模式：Python 侧求值（输出结构与 SQL 路径一致） ----------
 
 def _py_agg(rows: list[dict], agg: str, field: str | None):
-    """对齐 _agg_expr：count=len（count(*) 语义）；sum/avg/max/min 跳过 None，空集 → 0。"""
+    """对齐 _agg_expr：count=len（count(*) 语义）；count_distinct 去重计数；sum/avg/max/min 跳过 None，空集 → 0。"""
     if agg == "count":
         return len(rows)
+    if agg == "count_distinct":
+        return len({r.get(field) for r in rows if r.get(field) is not None})
     vals = [r.get(field) for r in rows if r.get(field) is not None]
     if not vals:
         return 0
@@ -318,33 +377,48 @@ def _py_agg(rows: list[dict], agg: str, field: str | None):
     return min(vals)
 
 
-def _run_py(db, mt, fields, tpl, date_field, start, end, label) -> dict:
+def _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules=None) -> dict:
     from . import json_store
     from .pyquery import match_filters, sort_records
 
     fields_by_name = {f.field_name: f for f in fields}
     recs = json_store.all_dicts(db, mt.id, fields, normalized=True)
+    viewer_filters = {"logic": "AND", "rules": viewer_rules or []}   # 查看端筛选恒 AND
+    date_f = fields_by_name.get(date_field)
 
-    def base_recs(block) -> list[dict]:
-        out = [r for r in recs if match_filters(r, fields_by_name, block.get("filters") or {})]
-        f = fields_by_name.get(date_field)
-
+    def time_recs(s, e) -> list[dict]:
+        """口径 [s,e) 内 + 查看端筛选的记录（不含区块自身筛选，供 ratio 分母/环比复用）。"""
         def in_range(r):
             v = r.get(date_field)
             if v is None:
                 return False  # SQL 三值逻辑：NULL 比较即排除
             try:
-                if f is not None and f.data_type == "date":
-                    return start.date() <= v < end.date()
-                return start <= v < end
+                if date_f is not None and date_f.data_type == "date":
+                    return s.date() <= v < e.date()
+                return s <= v < e
             except TypeError:
                 return False
 
-        return [r for r in out if in_range(r)]
+        return [r for r in recs if match_filters(r, fields_by_name, viewer_filters) and in_range(r)]
+
+    def base_recs(block, s=start, e=end) -> list[dict]:
+        return [r for r in time_recs(s, e) if match_filters(r, fields_by_name, block.get("filters") or {})]
+
+    def stat_value(block, s, e):
+        if block["agg"] == "ratio":
+            rows_all = time_recs(s, e)
+            num = len([r for r in rows_all if match_filters(r, fields_by_name, block.get("filters") or {})])
+            return round(num / len(rows_all) * 100, 2) if rows_all else 0
+        return _py_agg(base_recs(block, s, e), block["agg"], block.get("field"))
 
     def eval_stat(block):
-        v = _py_agg(base_recs(block), block["agg"], block.get("field"))
-        return {"id": block["id"], "type": "stat", "title": block.get("title") or "", "value": _round_num(v)}
+        v = _round_num(stat_value(block, start, end))
+        out = {"id": block["id"], "type": "stat", "title": block.get("title") or "", "value": v, "agg": block["agg"]}
+        if block.get("compare"):
+            span = end - start  # 环比：等长上一期
+            prev = _round_num(stat_value(block, start - span, start))
+            out["compare"] = _compare_payload(v, prev)
+        return out
 
     def eval_chart(block):
         rows = base_recs(block)
@@ -445,9 +519,29 @@ def _run_py(db, mt, fields, tpl, date_field, start, end, label) -> dict:
     }
 
 
-def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None = None) -> dict:
-    """执行报表模板，返回结构化结果（前端渲染 / 导出共用）。"""
+def _validate_viewer_filters(tpl: ReportTemplate, fields: list, viewer_filters: dict | None) -> list:
+    """查看端筛选：只允许筛模板声明过（filters_json）的字段，防止越权过滤任意列。"""
+    rules = (viewer_filters or {}).get("rules") or []
+    if not rules:
+        return []
+    declared = set(tpl.filters_json or [])
+    fields_by_name = {f.field_name: f for f in fields}
+    for r in rules:
+        name = r.get("field")
+        if name not in declared:
+            raise HTTPException(400, f"该字段未开放查看端筛选：{name}")
+        if r.get("op") not in dyn_engine.FILTER_OPS:
+            raise HTTPException(400, f"不支持的筛选操作符：{r.get('op')}")
+        if not dyn_engine.rule_value_ok(fields_by_name.get(name), r.get("op"), r.get("value")):
+            raise HTTPException(400, f"筛选值无效（{name}）")
+    return rules
+
+
+def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None = None,
+                 viewer_filters: dict | None = None) -> dict:
+    """执行报表模板，返回结构化结果（前端渲染 / 导出共用）。viewer_filters 为查看端自助筛选。"""
     mt, fields = dyn_engine.load_meta(db, tpl.table_id)
+    viewer_rules = _validate_viewer_filters(tpl, fields, viewer_filters)
     rng = dict(tpl.range_json or {})
     if range_override:
         rng.update({k: v for k, v in range_override.items() if v is not None})
@@ -458,7 +552,7 @@ def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None =
         raise HTTPException(400, str(e))
 
     if mt.storage_mode == "json":
-        return _run_py(db, mt, fields, tpl, date_field, start, end, label)
+        return _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules)
 
     _, fields, table = dyn_engine.load_business(db, tpl.table_id)
     fields_by_name = {f.field_name: f for f in fields}
@@ -468,13 +562,13 @@ def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None =
     for b in blocks:
         t = b.get("type")
         if t == "stat":
-            r = _eval_stat(db, table, fields_by_name, b, date_field, start, end)
+            r = _eval_stat(db, table, fields_by_name, b, date_field, start, end, viewer_rules)
             stat_values[b["id"]] = r["value"]
             results_by_id[b["id"]] = r
         elif t == "chart":
-            results_by_id[b["id"]] = _eval_chart(db, table, fields_by_name, b, date_field, start, end)
+            results_by_id[b["id"]] = _eval_chart(db, table, fields_by_name, b, date_field, start, end, viewer_rules)
         elif t == "table":
-            results_by_id[b["id"]] = _eval_table(db, table, fields_by_name, b, date_field, start, end)
+            results_by_id[b["id"]] = _eval_table(db, table, fields_by_name, b, date_field, start, end, viewer_rules)
     context = {"range_label": label, "start": f"{start:%Y-%m-%d}", "end": f"{end:%Y-%m-%d}", **stat_values}
     for b in blocks:
         if b.get("type") == "text":

@@ -388,6 +388,90 @@ print("parity 报表四区块一致")
 for rid_ in rep_ids:
     client.delete(f"/api/reports/{rid_}")
 
+# 10.5 报表 P0：新时间口径 / 去重计数 / 占比 / 环比 / 查看端筛选
+BLOCKS_P0 = [
+    {"id": "b1", "type": "stat", "title": "记录数", "agg": "count", "compare": True,
+     "filters": {"logic": "AND", "rules": []}},
+    {"id": "b2", "type": "stat", "title": "去重客户", "agg": "count_distinct", "field": "customer_name",
+     "filters": {"logic": "AND", "rules": []}},
+    {"id": "b3", "type": "stat", "title": "成交占比", "agg": "ratio",
+     "filters": {"logic": "AND", "rules": [{"field": "is_deal", "op": "eq", "value": True}]}},
+    {"id": "b4", "type": "chart", "title": "按成交去重客户", "chart_type": "bar",
+     "group": {"kind": "field", "field": "is_deal"}, "agg": "count_distinct", "field": "customer_name",
+     "filters": {"logic": "AND", "rules": []}},
+]
+
+# 校验：图表不支持占比、去重计数必须有字段、查看端筛选字段必须是表内字段
+for bad_blocks, bad_ff in (
+    ([{"id": "x", "type": "chart", "chart_type": "bar", "group": {"kind": "field", "field": "is_deal"}, "agg": "ratio"}], None),
+    ([{"id": "x", "type": "stat", "agg": "count_distinct"}], None),
+    ([{"id": "x", "type": "stat", "agg": "count"}], ["ghost_field"]),
+):
+    r = client.post("/api/reports", json={
+        "name": "bad", "table_id": tj, "range": {"mode": "today"},
+        "blocks": bad_blocks, "filter_fields": bad_ff or [],
+    })
+    assert r.status_code == 400, r.text
+
+p0_ids = []
+for t in (tj, tp):
+    r = client.post("/api/reports", json={
+        "name": "P0报表", "table_id": t, "enabled": False,
+        "range": {"mode": "today", "date_field": "created_at"},
+        "blocks": BLOCKS_P0, "filter_fields": ["customer_name", "is_deal"],
+        "schedule": {}, "push": {},
+    })
+    assert r.status_code == 200 and r.json()["filter_fields"] == ["customer_name", "is_deal"], r.text
+    p0_ids.append(r.json()["id"])
+
+
+def _blocks_by_id(res):
+    return {b["id"]: b for b in res["blocks"]}
+
+
+# 两种存储引擎结果一致 + 新聚合语义（tj=json / tp=physical，数据均为今天创建）
+runs = [client.post(f"/api/reports/{rid}/run").json() for rid in p0_ids]
+for res in runs:
+    b = _blocks_by_id(res)
+    assert res["range"]["label"].startswith("今天"), res["range"]
+    assert b["b1"]["value"] == 4 and b["b1"]["compare"] == {"prev": 0, "delta": 4, "delta_pct": None}, b["b1"]
+    assert b["b2"]["value"] == 4      # 4 个不同客户名
+    assert b["b3"]["value"] == 50.0   # 4 条中 2 条成交
+    assert sorted(b["b4"]["values"]) == [2, 2]
+for bid in ("b1", "b2", "b3"):
+    assert _blocks_by_id(runs[0])[bid] == _blocks_by_id(runs[1])[bid], bid
+
+# 查看端筛选：只筛已成交 → 记录数 2、占比 100%（占比分母是查看者筛选后的集合）
+r = client.post(f"/api/reports/{p0_ids[0]}/run", json={
+    "filters": {"logic": "AND", "rules": [{"field": "is_deal", "op": "eq", "value": True}]}})
+b = _blocks_by_id(r.json())
+assert b["b1"]["value"] == 2 and b["b3"]["value"] == 100.0 and sum(b["b4"]["values"]) == 2, b
+# 未声明的字段不允许查看端筛选
+r = client.post(f"/api/reports/{p0_ids[0]}/run", json={
+    "filters": {"logic": "AND", "rules": [{"field": "amount", "op": "gt", "value": 1}]}})
+assert r.status_code == 400, r.text
+
+# 新时间口径
+for mode, label_prefix, expect in (
+    ("yesterday", "昨天", 0), ("past_7d", "近7天", 4), ("past_30d", "近30天", 4),
+    ("this_quarter", "本季度", 4), ("this_year", "今年", 4),
+):
+    res = client.post(f"/api/reports/{p0_ids[0]}/run", json={"range": {"mode": mode}}).json()
+    assert res["range"]["label"].startswith(label_prefix), res["range"]
+    assert _blocks_by_id(res)["b1"]["value"] == expect, (mode, res["range"])
+
+# 环比：换业务日期字段 + 自定义区间（10 月 2 条 vs 9 月 1 条），两引擎一致
+cmp_range = {"range": {"mode": "custom", "start": "2026-10-01", "end": "2026-10-31", "date_field": "next_follow_date"}}
+res_py = client.post(f"/api/reports/{p0_ids[0]}/run", json=cmp_range).json()
+res_phy = client.post(f"/api/reports/{p0_ids[1]}/run", json=cmp_range).json()
+b1 = _blocks_by_id(res_py)["b1"]
+assert b1["value"] == 2 and b1["compare"]["prev"] == 1 and b1["compare"]["delta_pct"] == 100.0, b1
+assert b1 == _blocks_by_id(res_phy)["b1"]
+
+for rid_ in p0_ids:
+    client.delete(f"/api/reports/{rid_}")
+print("报表 P0（口径/去重/占比/环比/查看端筛选）通过")
+
 # 11. 权限矩阵：未分享 404 / 分享者按开关 / 主人与 admin 全权
 admin_headers = dict(client.headers)
 r = client.post("/api/auth/register", json={"username": "worker", "password": "secret123"})

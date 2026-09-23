@@ -52,15 +52,20 @@
 
           <!-- 统计卡片 -->
           <div v-if="b.type === 'stat'" class="block-body">
-            <el-select v-model="b.agg" size="small" style="width: 110px">
-              <el-option v-for="[v, l] in AGGS" :key="v" :label="l" :value="v" />
+            <el-select v-model="b.agg" size="small" style="width: 110px" @change="onAggChange(b)">
+              <el-option v-for="[v, l] in STAT_AGGS" :key="v" :label="l" :value="v" />
             </el-select>
             <el-select
-              v-if="b.agg !== 'count'" v-model="b.field" size="small" placeholder="数值字段"
+              v-if="needsField(b.agg)" v-model="b.field" size="small"
+              :placeholder="b.agg === 'count_distinct' ? '统计字段' : '数值字段'"
               style="width: 160px; margin-left: 8px"
             >
-              <el-option v-for="f in numericFields" :key="f.field_name" :label="f.label" :value="f.field_name" />
+              <el-option v-for="f in aggFields(b.agg)" :key="f.field_name" :label="f.label" :value="f.field_name" />
             </el-select>
+            <span v-if="b.agg === 'ratio'" style="margin-left: 8px; font-size: 12px; color: #909399">
+              满足筛选的记录数 ÷ 口径内总数
+            </span>
+            <el-checkbox v-model="b.compare" style="margin-left: 12px">环比上期</el-checkbox>
           </div>
 
           <!-- 图表 -->
@@ -80,14 +85,15 @@
               <el-select v-model="b.group.field" size="small" placeholder="分组字段" style="width: 160px; margin-left: 8px">
                 <el-option v-for="f in groupFields(b.group.kind)" :key="f.field_name" :label="f.label" :value="f.field_name" />
               </el-select>
-              <el-select v-model="b.agg" size="small" style="width: 100px; margin-left: 8px">
-                <el-option v-for="[v, l] in AGGS" :key="v" :label="l" :value="v" />
+              <el-select v-model="b.agg" size="small" style="width: 100px; margin-left: 8px" @change="onAggChange(b)">
+                <el-option v-for="[v, l] in CHART_AGGS" :key="v" :label="l" :value="v" />
               </el-select>
               <el-select
-                v-if="b.agg !== 'count'" v-model="b.field" size="small" placeholder="数值字段"
+                v-if="needsField(b.agg)" v-model="b.field" size="small"
+                :placeholder="b.agg === 'count_distinct' ? '统计字段' : '数值字段'"
                 style="width: 140px; margin-left: 8px"
               >
-                <el-option v-for="f in numericFields" :key="f.field_name" :label="f.label" :value="f.field_name" />
+                <el-option v-for="f in aggFields(b.agg)" :key="f.field_name" :label="f.label" :value="f.field_name" />
               </el-select>
               <template v-if="b.chart_type === 'pie'">
                 <span style="margin-left: 8px; font-size: 12px; color: #909399">前</span>
@@ -193,6 +199,13 @@
       </div>
     </el-form-item>
 
+    <el-form-item label="查看筛选">
+      <el-select v-model="form.filter_fields" multiple size="small" placeholder="选择允许查看者自助筛选的字段（可多选）" style="width: 400px">
+        <el-option v-for="f in tableFields" :key="f.field_name" :label="f.label" :value="f.field_name" />
+      </el-select>
+      <span style="margin-left: 10px; color: #909399; font-size: 12px">查看报表时可按这些字段自助过滤，不改动模板配置</span>
+    </el-form-item>
+
     <el-divider content-position="left">定时推送（可选）</el-divider>
     <el-form-item label="执行周期">
       <el-radio-group v-model="form.schedule.type">
@@ -276,8 +289,16 @@ const props = defineProps({ form: { type: Object, required: true }, tables: { ty
 
 const BLOCK_LABELS = { stat: '统计卡片', chart: '图表', table: '明细表', text: '文本' }
 const BLOCK_TAG = { stat: 'success', chart: 'primary', table: 'warning', text: 'info' }
-const RANGE_MODES = [['this_week', '本周'], ['last_week', '上周'], ['this_month', '本月'], ['last_month', '上月'], ['custom', '自定义']]
-const AGGS = [['count', '计数'], ['sum', '求和'], ['avg', '平均值'], ['max', '最大值'], ['min', '最小值']]
+const RANGE_MODES = [
+  ['today', '今天'], ['yesterday', '昨天'], ['past_7d', '近7天'], ['past_30d', '近30天'],
+  ['this_week', '本周'], ['last_week', '上周'], ['this_month', '本月'], ['last_month', '上月'],
+  ['this_quarter', '本季度'], ['this_year', '今年'], ['custom', '自定义'],
+]
+const STAT_AGGS = [
+  ['count', '计数'], ['count_distinct', '去重计数'], ['sum', '求和'],
+  ['avg', '平均值'], ['max', '最大值'], ['min', '最小值'], ['ratio', '占比%'],
+]
+const CHART_AGGS = STAT_AGGS.filter(([v]) => v !== 'ratio')
 const NO_VALUE_OPS = ['null', 'not_null', 'today']
 const DAY_OPS = ['older_than_days', 'within_days', 'past_days']
 const OPS = {
@@ -302,6 +323,19 @@ const customRange = computed({
 const dateFields = computed(() => tableFields.value.filter((f) => ['date', 'datetime'].includes(f.data_type)))
 const numericFields = computed(() => tableFields.value.filter((f) => ['int', 'decimal'].includes(f.data_type)))
 const statBlocks = computed(() => props.form.blocks.filter((b) => b.type === 'stat'))
+
+function needsField(agg) {
+  return agg !== 'count' && agg !== 'ratio'
+}
+
+function aggFields(agg) {
+  // 去重计数可用任意字段；其余数值聚合只能选数值字段
+  return agg === 'count_distinct' ? tableFields.value : numericFields.value
+}
+
+function onAggChange(b) {
+  if (!needsField(b.agg)) b.field = null
+}
 
 function groupFields(kind) {
   const sys = [
@@ -373,8 +407,8 @@ const aiDescription = ref('')
 const aiGenerating = ref(false)
 const aiResult = ref(null)
 
-const RANGE_MODE_TEXT = { this_week: '本周', last_week: '上周', this_month: '本月', last_month: '上月' }
-const AGG_TEXT = { count: '计数', sum: '求和', avg: '平均', max: '最大', min: '最小' }
+const RANGE_MODE_TEXT = Object.fromEntries(RANGE_MODES)
+const AGG_TEXT = { count: '计数', count_distinct: '去重计数', sum: '求和', avg: '平均', max: '最大', min: '最小', ratio: '占比%' }
 const CHART_TEXT = { bar: '柱状图', line: '折线图', pie: '饼图' }
 const GROUP_TEXT = { field: '按字段', day: '按日', week: '按周', month: '按月' }
 

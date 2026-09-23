@@ -55,12 +55,13 @@
 
       <!-- 统计卡片 -->
       <view v-if="b.type === 'stat'" class="fc-row">
-        <picker :range="AGGS" range-key="label" @change="(e) => (b.agg = AGGS[Number(e.detail.value)].value)">
+        <picker :range="STAT_AGGS" range-key="label" @change="(e) => onAggChange(b, STAT_AGGS[Number(e.detail.value)].value)">
           <view class="fc-picker">{{ aggLabel(b.agg) }} ›</view>
         </picker>
-        <picker v-if="b.agg !== 'count'" :range="numericFields" range-key="label" @change="(e) => (b.field = numericFields[Number(e.detail.value)].field_name)">
-          <view class="fc-picker wide">{{ fieldLabel(b.field) || '数值字段' }} ›</view>
+        <picker v-if="needsField(b.agg)" :range="aggFields(b.agg)" range-key="label" @change="(e) => (b.field = aggFields(b.agg)[Number(e.detail.value)].field_name)">
+          <view class="fc-picker wide">{{ fieldLabel(b.field) || (b.agg === 'count_distinct' ? '统计字段' : '数值字段') }} ›</view>
         </picker>
+        <text class="chip" :class="{ on: b.compare }" @click="b.compare = !b.compare">环比上期</text>
       </view>
 
       <!-- 图表 -->
@@ -77,11 +78,11 @@
           </picker>
         </view>
         <view class="fc-row">
-          <picker :range="AGGS" range-key="label" @change="(e) => (b.agg = AGGS[Number(e.detail.value)].value)">
+          <picker :range="CHART_AGGS" range-key="label" @change="(e) => onAggChange(b, CHART_AGGS[Number(e.detail.value)].value)">
             <view class="fc-picker">{{ aggLabel(b.agg) }} ›</view>
           </picker>
-          <picker v-if="b.agg !== 'count'" :range="numericFields" range-key="label" @change="(e) => (b.field = numericFields[Number(e.detail.value)].field_name)">
-            <view class="fc-picker wide">{{ fieldLabel(b.field) || '数值字段' }} ›</view>
+          <picker v-if="needsField(b.agg)" :range="aggFields(b.agg)" range-key="label" @change="(e) => (b.field = aggFields(b.agg)[Number(e.detail.value)].field_name)">
+            <view class="fc-picker wide">{{ fieldLabel(b.field) || (b.agg === 'count_distinct' ? '统计字段' : '数值字段') }} ›</view>
           </picker>
           <template v-if="b.chart_type === 'pie'">
             <text class="lbl-sm">前N项</text>
@@ -169,6 +170,19 @@
       <text class="ab" @click="addBlock('text')">+ 文本</text>
     </view>
 
+    <!-- 查看端自助筛选字段 -->
+    <view class="form-item">
+      <view class="label">查看筛选（可选）</view>
+      <view class="chip-row">
+        <text
+          v-for="f in tableFields" :key="f.field_name"
+          class="chip" :class="{ on: form.filter_fields.includes(f.field_name) }"
+          @click="toggleFilterField(f.field_name)"
+        >{{ f.label }}</text>
+      </view>
+      <view class="lbl-sm" style="margin-top: 8rpx">查看报表时可按这些字段自助过滤，不改动模板配置</view>
+    </view>
+
     <!-- 定时推送 -->
     <view class="form-item">
       <view class="label">定时推送（可选）</view>
@@ -204,8 +218,17 @@ import { onLoad } from '@dcloudio/uni-app'
 import { aiAssistReport, createReport, getReport, getTable, listTables, updateReport } from '../../api'
 
 const BLOCK_LABELS = { stat: '统计卡片', chart: '图表', table: '明细表', text: '文本' }
-const RANGE_MODES = [['this_week', '本周'], ['last_week', '上周'], ['this_month', '本月'], ['last_month', '上月'], ['custom', '自定义']]
-const AGGS = [{ value: 'count', label: '计数' }, { value: 'sum', label: '求和' }, { value: 'avg', label: '平均值' }, { value: 'max', label: '最大值' }, { value: 'min', label: '最小值' }]
+const RANGE_MODES = [
+  ['today', '今天'], ['yesterday', '昨天'], ['past_7d', '近7天'], ['past_30d', '近30天'],
+  ['this_week', '本周'], ['last_week', '上周'], ['this_month', '本月'], ['last_month', '上月'],
+  ['this_quarter', '本季度'], ['this_year', '今年'], ['custom', '自定义'],
+]
+const STAT_AGGS = [
+  { value: 'count', label: '计数' }, { value: 'count_distinct', label: '去重计数' },
+  { value: 'sum', label: '求和' }, { value: 'avg', label: '平均值' },
+  { value: 'max', label: '最大值' }, { value: 'min', label: '最小值' }, { value: 'ratio', label: '占比%' },
+]
+const CHART_AGGS = STAT_AGGS.filter((a) => a.value !== 'ratio')
 const CHART_TYPES = [['bar', '柱状图'], ['line', '折线图'], ['pie', '饼图']]
 const GROUP_KINDS = [{ value: 'field', label: '按字段分组' }, { value: 'day', label: '按日' }, { value: 'week', label: '按周' }, { value: 'month', label: '按月' }]
 const NO_VALUE_OPS = ['null', 'not_null', 'today']
@@ -235,6 +258,7 @@ function blank() {
     name: '', enabled: false,
     range: { mode: 'this_week', date_field: 'created_at', start: null, end: null },
     blocks: [],
+    filter_fields: [],
     schedule: { type: '', minutes: '60', expr: '0 9 * * 1' },
     push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '' },
   }
@@ -265,6 +289,7 @@ async function fillForm(t) {
       ...b,
       filters: { logic: 'AND', ...(b.filters || {}), rules: (b.filters?.rules || []).map((r) => ({ ...r })) },
     })),
+    filter_fields: [...(t.filter_fields || [])],
     schedule: { type: '', minutes: '60', expr: '0 9 * * 1', ...(t.schedule || {}) },
     push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', ...(t.push || {}) },
   }
@@ -322,7 +347,28 @@ function columnLabel(name) {
 }
 
 function aggLabel(v) {
-  return AGGS.find((a) => a.value === v)?.label || v
+  return STAT_AGGS.find((a) => a.value === v)?.label || v
+}
+
+function needsField(agg) {
+  return agg !== 'count' && agg !== 'ratio'
+}
+
+function aggFields(agg) {
+  // 去重计数可用任意字段；其余数值聚合只能选数值字段
+  return agg === 'count_distinct' ? tableFields.value : numericFields.value
+}
+
+function onAggChange(b, agg) {
+  b.agg = agg
+  if (!needsField(agg)) b.field = null
+}
+
+function toggleFilterField(fn) {
+  const arr = form.value.filter_fields
+  const i = arr.indexOf(fn)
+  if (i >= 0) arr.splice(i, 1)
+  else arr.push(fn)
 }
 
 function groupFields(kind) {
@@ -428,6 +474,7 @@ async function save() {
       limit: b.limit !== undefined ? Number(b.limit) || 100 : undefined,
       filters: { logic: b.filters.logic, rules: (b.filters.rules || []).filter((r) => r.field && r.op) },
     })),
+    filter_fields: f.filter_fields || [],
     schedule: f.schedule.type === 'interval'
       ? { type: 'interval', minutes: Number(f.schedule.minutes) || 60 }
       : f.schedule.type === 'cron'
