@@ -4,7 +4,7 @@ import json
 from io import BytesIO
 
 from openpyxl import Workbook
-from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+from openpyxl.chart import AreaChart, BarChart, LineChart, PieChart, Reference
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
@@ -41,24 +41,30 @@ def export_xlsx(result: dict) -> BytesIO:
             ws.cell(row=row, column=1, value=b["title"]).font = head_font
             row += 1
             data_start = row
+            series = b.get("series") or [{"name": "值", "values": b.get("values") or []}]
             ws.cell(row=row, column=1, value="分组").font = head_font
-            ws.cell(row=row, column=2, value="值").font = head_font
+            for si, s in enumerate(series):
+                ws.cell(row=row, column=2 + si, value=s["name"]).font = head_font
             row += 1
-            for label, v in zip(b["labels"], b["values"]):
+            for li, label in enumerate(b["labels"]):
                 ws.cell(row=row, column=1, value=label)
-                ws.cell(row=row, column=2, value=v)
+                for si, s in enumerate(series):
+                    ws.cell(row=row, column=2 + si, value=s["values"][li])
                 row += 1
             data_end = row - 1
             if data_end >= data_start:
-                cls = {"bar": BarChart, "line": LineChart, "pie": PieChart}[b["chart_type"]]
+                cls = {"bar": BarChart, "line": LineChart, "pie": PieChart, "area": AreaChart}[b["chart_type"]]
                 chart = cls()
                 chart.title = b["title"]
-                data = Reference(ws, min_col=2, min_row=data_start, max_row=data_end)
+                if b.get("stack") and len(series) > 1 and b["chart_type"] in ("bar", "line", "area"):
+                    chart.grouping = "stacked"
+                data = Reference(ws, min_col=2, min_row=data_start,
+                                 max_col=1 + len(series), max_row=data_end)
                 cats = Reference(ws, min_col=1, min_row=data_start + 1, max_row=data_end)
                 chart.add_data(data, titles_from_data=True)
                 chart.set_categories(cats)
                 chart.width, chart.height = 16, 9
-                ws.add_chart(chart, f"D{data_start}")
+                ws.add_chart(chart, f"{get_column_letter(3 + len(series))}{data_start}")
         elif t == "table":
             row += 1
             ws.cell(row=row, column=1, value=f"{b['title']}（共 {b['total']} 条" + ("，仅导出前 %d 条" % len(b["rows"]) if b["truncated"] else "）")).font = head_font
@@ -132,10 +138,18 @@ if (window.echarts) {{
         series: [{{ type: 'pie', radius: ['35%', '65%'],
           data: b.labels.map((l, i) => ({{ name: l, value: b.values[i] }})) }}] }};
     }} else {{
-      option = {{ tooltip: {{ trigger: 'axis' }}, grid: {{ left: 48, right: 24, top: 24, bottom: 48 }},
+      const seriesList = (b.series && b.series.length) ? b.series : [{{ name: '值', values: b.values }}];
+      const stack = b.stack && seriesList.length > 1 ? 'total' : undefined;
+      option = {{ tooltip: {{ trigger: 'axis' }}, grid: {{ left: 48, right: 24, top: 24, bottom: seriesList.length > 1 ? 56 : 48 }},
+        legend: seriesList.length > 1 ? {{ bottom: 0 }} : undefined,
         xAxis: {{ type: 'category', data: b.labels }},
         yAxis: {{ type: 'value' }},
-        series: [{{ type: b.chart_type, data: b.values }}] }};
+        series: seriesList.map(s => ({{
+          name: s.name, type: b.chart_type === 'area' ? 'line' : b.chart_type, data: s.values,
+          smooth: true, barMaxWidth: 40,
+          ...(stack ? {{ stack }} : {{}}),
+          ...(b.chart_type === 'area' ? {{ areaStyle: {{}} }} : {{}}),
+        }})) }};
     }}
     ch.setOption(option);
     window.addEventListener('resize', () => ch.resize());
@@ -163,14 +177,23 @@ def export_html(result: dict, echarts_cdn: str | None = None) -> str:
         if t == "stat":
             continue
         if t == "chart":
-            rows = "".join(
-                f"<tr><td>{_esc(l)}</td><td>{_esc(v)}</td></tr>" for l, v in zip(b["labels"], b["values"])
-            )
+            series = b.get("series") or [{"name": "值", "values": b.get("values") or []}]
+            if len(series) > 1:
+                head = "<tr><th>分组</th>" + "".join(f"<th>{_esc(s['name'])}</th>" for s in series) + "</tr>"
+                rows = "".join(
+                    f"<tr><td>{_esc(l)}</td>" + "".join(f"<td>{_esc(s['values'][i])}</td>" for s in series) + "</tr>"
+                    for i, l in enumerate(b["labels"])
+                )
+            else:
+                head = "<tr><th>分组</th><th>值</th></tr>"
+                rows = "".join(
+                    f"<tr><td>{_esc(l)}</td><td>{_esc(v)}</td></tr>" for l, v in zip(b["labels"], series[0]["values"])
+                )
             parts.append(
                 f'<div class="block"><h3>{_esc(b["title"])}</h3>'
                 f'<div class="chart" id="chart-{_esc(b["id"])}"></div>'
                 f'<details><summary class="note">数据明细</summary>'
-                f"<table><tr><th>分组</th><th>值</th></tr>{rows}</table></details></div>"
+                f"<table>{head}{rows}</table></details></div>"
             )
         elif t == "table":
             head = "".join(f"<th>{_esc(c['label'])}</th>" for c in b["columns"])

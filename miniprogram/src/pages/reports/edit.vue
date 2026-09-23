@@ -78,16 +78,45 @@
           </picker>
         </view>
         <view class="fc-row">
-          <picker :range="CHART_AGGS" range-key="label" @change="(e) => onAggChange(b, CHART_AGGS[Number(e.detail.value)].value)">
-            <view class="fc-picker">{{ aggLabel(b.agg) }} ›</view>
-          </picker>
-          <picker v-if="needsField(b.agg)" :range="aggFields(b.agg)" range-key="label" @change="(e) => (b.field = aggFields(b.agg)[Number(e.detail.value)].field_name)">
-            <view class="fc-picker wide">{{ fieldLabel(b.field) || (b.agg === 'count_distinct' ? '统计字段' : '数值字段') }} ›</view>
-          </picker>
+          <template v-if="seriesMode(b) !== 'metrics'">
+            <picker :range="CHART_AGGS" range-key="label" @change="(e) => onAggChange(b, CHART_AGGS[Number(e.detail.value)].value)">
+              <view class="fc-picker">{{ aggLabel(b.agg) }} ›</view>
+            </picker>
+            <picker v-if="needsField(b.agg)" :range="aggFields(b.agg)" range-key="label" @change="(e) => (b.field = aggFields(b.agg)[Number(e.detail.value)].field_name)">
+              <view class="fc-picker wide">{{ fieldLabel(b.field) || (b.agg === 'count_distinct' ? '统计字段' : '数值字段') }} ›</view>
+            </picker>
+          </template>
           <template v-if="b.chart_type === 'pie'">
             <text class="lbl-sm">前N项</text>
             <input v-model="b.top_n" type="number" class="fc-input" style="max-width: 120rpx" />
           </template>
+        </view>
+        <!-- 多系列：多指标或二级分组（饼图不支持） -->
+        <view v-if="b.chart_type !== 'pie'" class="fc-row">
+          <text class="lbl-sm">系列</text>
+          <text class="chip" :class="{ on: seriesMode(b) === 'single' }" @click="setSeriesMode(b, 'single')">单指标</text>
+          <text class="chip" :class="{ on: seriesMode(b) === 'metrics' }" @click="setSeriesMode(b, 'metrics')">多指标</text>
+          <text class="chip" :class="{ on: seriesMode(b) === 'group2' }" @click="setSeriesMode(b, 'group2')">二级分组</text>
+          <text v-if="seriesMode(b) !== 'single'" class="chip" :class="{ on: b.stack }" @click="b.stack = !b.stack">堆叠</text>
+        </view>
+        <template v-if="seriesMode(b) === 'metrics'">
+          <view v-for="(m, mi) in b.metrics" :key="mi" class="fc-row">
+            <picker :range="CHART_AGGS" range-key="label" @change="(e) => { m.agg = CHART_AGGS[Number(e.detail.value)].value; if (!needsField(m.agg)) m.field = null }">
+              <view class="fc-picker">{{ aggLabel(m.agg) }} ›</view>
+            </picker>
+            <picker v-if="needsField(m.agg)" :range="aggFields(m.agg)" range-key="label" @change="(e) => (m.field = aggFields(m.agg)[Number(e.detail.value)].field_name)">
+              <view class="fc-picker wide">{{ fieldLabel(m.field) || '统计字段' }} ›</view>
+            </picker>
+            <input v-model="m.title" class="fc-input" style="max-width: 180rpx" placeholder="系列名（可空）" />
+            <text class="bc-op del" @click="b.metrics.splice(mi, 1)">删</text>
+          </view>
+          <view v-if="(b.metrics || []).length < 5" class="add-field sm" @click="b.metrics.push({ agg: 'count', field: null, title: '' })">+ 添加指标（最多 5 个）</view>
+        </template>
+        <view v-if="seriesMode(b) === 'group2'" class="fc-row">
+          <picker :range="group2Fields" range-key="label" @change="(e) => (b.group2.field = group2Fields[Number(e.detail.value)].field_name)">
+            <view class="fc-picker wide">{{ fieldLabel(b.group2?.field) || '二级分组字段' }} ›</view>
+          </picker>
+          <text class="lbl-sm">每个取值一个系列，前8项其余合并"其他"</text>
         </view>
       </template>
 
@@ -239,7 +268,7 @@ const STAT_AGGS = [
   { value: 'max', label: '最大值' }, { value: 'min', label: '最小值' }, { value: 'ratio', label: '占比%' },
 ]
 const CHART_AGGS = STAT_AGGS.filter((a) => a.value !== 'ratio')
-const CHART_TYPES = [['bar', '柱状图'], ['line', '折线图'], ['pie', '饼图']]
+const CHART_TYPES = [['bar', '柱状图'], ['line', '折线图'], ['area', '面积图'], ['pie', '饼图']]
 const GROUP_KINDS = [{ value: 'field', label: '按字段分组' }, { value: 'day', label: '按日' }, { value: 'week', label: '按周' }, { value: 'month', label: '按月' }]
 const NO_VALUE_OPS = ['null', 'not_null', 'today']
 const DAY_OPS = ['older_than_days', 'within_days', 'past_days']
@@ -298,6 +327,7 @@ async function fillForm(t) {
     blocks: (t.blocks || []).map((b) => ({
       ...b,
       filters: { logic: 'AND', ...(b.filters || {}), rules: (b.filters?.rules || []).map((r) => ({ ...r })) },
+      ...(b.type === 'chart' ? { metrics: b.metrics || [], group2: b.group2 || { field: null }, stack: !!b.stack } : {}),
     })),
     filter_fields: [...(t.filter_fields || [])],
     schedule: { type: '', minutes: '60', expr: '0 9 * * 1', ...(t.schedule || {}) },
@@ -333,6 +363,7 @@ const dateFieldOptions = computed(() => [
 ])
 const dateFieldLabel = computed(() => dateFieldOptions.value.find((o) => o.value === form.value.range.date_field)?.label || '创建时间')
 const numericFields = computed(() => tableFields.value.filter((f) => ['int', 'decimal'].includes(f.data_type)))
+const group2Fields = computed(() => tableFields.value.filter((f) => !['date', 'datetime'].includes(f.data_type)))
 const statBlocks = computed(() => form.value.blocks.filter((b) => b.type === 'stat'))
 const allColumns = computed(() => [
   { value: 'id', label: 'ID' },
@@ -372,6 +403,27 @@ function aggFields(agg) {
 function onAggChange(b, agg) {
   b.agg = agg
   if (!needsField(agg)) b.field = null
+}
+
+// 图表系列模式：metrics 非空 → 多指标；group2 有字段 → 二级分组；否则单指标
+function seriesMode(b) {
+  if (b.metrics?.length) return 'metrics'
+  if (b.group2?.field) return 'group2'
+  return 'single'
+}
+
+function setSeriesMode(b, mode) {
+  if (mode === 'metrics') {
+    b.metrics = [{ agg: b.agg || 'count', field: b.field, title: '' }]
+    b.group2 = { field: null }
+  } else if (mode === 'group2') {
+    b.metrics = []
+    b.group2 = b.group2 || { field: null }
+  } else {
+    b.metrics = []
+    b.group2 = { field: null }
+    b.stack = false
+  }
 }
 
 function toggleFilterField(fn) {
@@ -421,7 +473,7 @@ function nextBlockId() {
 function addBlock(type) {
   const base = { id: nextBlockId(), type, title: '', filters: { logic: 'AND', rules: [] } }
   if (type === 'stat') Object.assign(base, { agg: 'count', field: null })
-  if (type === 'chart') Object.assign(base, { chart_type: 'bar', group: { kind: 'field', field: null }, agg: 'count', field: null, top_n: '8' })
+  if (type === 'chart') Object.assign(base, { chart_type: 'bar', group: { kind: 'field', field: null }, agg: 'count', field: null, top_n: '8', metrics: [], group2: { field: null }, stack: false })
   if (type === 'table') Object.assign(base, { columns: [], sort_by: 'created_at', sort_order: 'desc', limit: '100' })
   if (type === 'text') Object.assign(base, { content: '' })
   form.value.blocks.push(base)

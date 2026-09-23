@@ -73,6 +73,7 @@
             <el-radio-group v-model="b.chart_type" size="small">
               <el-radio-button value="bar">柱状图</el-radio-button>
               <el-radio-button value="line">折线图</el-radio-button>
+              <el-radio-button value="area">面积图</el-radio-button>
               <el-radio-button value="pie">饼图</el-radio-button>
             </el-radio-group>
             <div style="margin-top: 8px">
@@ -85,21 +86,55 @@
               <el-select v-model="b.group.field" size="small" placeholder="分组字段" style="width: 160px; margin-left: 8px">
                 <el-option v-for="f in groupFields(b.group.kind)" :key="f.field_name" :label="f.label" :value="f.field_name" />
               </el-select>
-              <el-select v-model="b.agg" size="small" style="width: 100px; margin-left: 8px" @change="onAggChange(b)">
-                <el-option v-for="[v, l] in CHART_AGGS" :key="v" :label="l" :value="v" />
-              </el-select>
-              <el-select
-                v-if="needsField(b.agg)" v-model="b.field" size="small"
-                :placeholder="b.agg === 'count_distinct' ? '统计字段' : '数值字段'"
-                style="width: 140px; margin-left: 8px"
-              >
-                <el-option v-for="f in aggFields(b.agg)" :key="f.field_name" :label="f.label" :value="f.field_name" />
-              </el-select>
+              <template v-if="seriesMode(b) !== 'metrics'">
+                <el-select v-model="b.agg" size="small" style="width: 100px; margin-left: 8px" @change="onAggChange(b)">
+                  <el-option v-for="[v, l] in CHART_AGGS" :key="v" :label="l" :value="v" />
+                </el-select>
+                <el-select
+                  v-if="needsField(b.agg)" v-model="b.field" size="small"
+                  :placeholder="b.agg === 'count_distinct' ? '统计字段' : '数值字段'"
+                  style="width: 140px; margin-left: 8px"
+                >
+                  <el-option v-for="f in aggFields(b.agg)" :key="f.field_name" :label="f.label" :value="f.field_name" />
+                </el-select>
+              </template>
               <template v-if="b.chart_type === 'pie'">
                 <span style="margin-left: 8px; font-size: 12px; color: #909399">前</span>
                 <el-input-number v-model="b.top_n" :min="2" :max="30" size="small" controls-position="right" style="width: 80px" />
                 <span style="font-size: 12px; color: #909399">项，其余合并</span>
               </template>
+            </div>
+            <!-- 多系列：多指标或二级分组（饼图不支持） -->
+            <div v-if="b.chart_type !== 'pie'" style="margin-top: 8px">
+              <span style="font-size: 12px; color: #909399">系列</span>
+              <el-radio-group :model-value="seriesMode(b)" size="small" style="margin-left: 8px" @change="(v) => setSeriesMode(b, v)">
+                <el-radio-button value="single">单指标</el-radio-button>
+                <el-radio-button value="metrics">多指标</el-radio-button>
+                <el-radio-button value="group2">二级分组</el-radio-button>
+              </el-radio-group>
+              <el-checkbox v-if="seriesMode(b) !== 'single'" v-model="b.stack" style="margin-left: 12px">堆叠</el-checkbox>
+            </div>
+            <div v-if="seriesMode(b) === 'metrics'" style="margin-top: 8px">
+              <div v-for="(m, mi) in b.metrics" :key="mi" style="display: flex; gap: 8px; margin-bottom: 6px">
+                <el-select v-model="m.agg" size="small" style="width: 100px" @change="onMetricAgg(m)">
+                  <el-option v-for="[v, l] in CHART_AGGS" :key="v" :label="l" :value="v" />
+                </el-select>
+                <el-select v-if="needsField(m.agg)" v-model="m.field" size="small" placeholder="统计字段" style="width: 140px">
+                  <el-option v-for="f in aggFields(m.agg)" :key="f.field_name" :label="f.label" :value="f.field_name" />
+                </el-select>
+                <el-input v-model="m.title" size="small" placeholder="系列名（可空）" style="width: 150px" />
+                <el-button text type="danger" size="small" @click="b.metrics.splice(mi, 1)">删除</el-button>
+              </div>
+              <el-button
+                text type="primary" size="small" :disabled="(b.metrics || []).length >= 5"
+                @click="b.metrics.push({ agg: 'count', field: null, title: '' })"
+              >+ 添加指标（最多 5 个）</el-button>
+            </div>
+            <div v-if="seriesMode(b) === 'group2'" style="margin-top: 8px">
+              <el-select v-model="b.group2.field" size="small" placeholder="二级分组字段" style="width: 160px">
+                <el-option v-for="f in group2Fields" :key="f.field_name" :label="f.label" :value="f.field_name" />
+              </el-select>
+              <span style="margin-left: 8px; font-size: 12px; color: #909399">该字段每个取值一个系列，取前 8 项，其余合并"其他"</span>
             </div>
           </div>
 
@@ -337,7 +372,29 @@ const customRange = computed({
 
 const dateFields = computed(() => tableFields.value.filter((f) => ['date', 'datetime'].includes(f.data_type)))
 const numericFields = computed(() => tableFields.value.filter((f) => ['int', 'decimal'].includes(f.data_type)))
+const group2Fields = computed(() => tableFields.value.filter((f) => !['date', 'datetime'].includes(f.data_type)))
 const statBlocks = computed(() => props.form.blocks.filter((b) => b.type === 'stat'))
+
+// 图表系列模式：metrics 非空 → 多指标；group2 有字段 → 二级分组；否则单指标
+function seriesMode(b) {
+  if (b.metrics?.length) return 'metrics'
+  if (b.group2?.field) return 'group2'
+  return 'single'
+}
+
+function setSeriesMode(b, mode) {
+  if (mode === 'metrics') {
+    b.metrics = [{ agg: b.agg || 'count', field: b.field, title: '' }]
+    b.group2 = { field: null }
+  } else if (mode === 'group2') {
+    b.metrics = []
+    b.group2 = b.group2 || { field: null }
+  } else {
+    b.metrics = []
+    b.group2 = { field: null }
+    b.stack = false
+  }
+}
 
 function needsField(agg) {
   return agg !== 'count' && agg !== 'ratio'
@@ -350,6 +407,11 @@ function aggFields(agg) {
 
 function onAggChange(b) {
   if (!needsField(b.agg)) b.field = null
+}
+
+// 多指标行切换聚合方式时，清空不再需要的字段
+function onMetricAgg(m) {
+  if (!needsField(m.agg)) m.field = null
 }
 
 function groupFields(kind) {
@@ -392,7 +454,7 @@ function nextBlockId() {
 function addBlock(type) {
   const base = { id: nextBlockId(), type, title: '', filters: { logic: 'AND', rules: [] } }
   if (type === 'stat') Object.assign(base, { agg: 'count', field: null })
-  if (type === 'chart') Object.assign(base, { chart_type: 'bar', group: { kind: 'field', field: null }, agg: 'count', field: null, top_n: 8 })
+  if (type === 'chart') Object.assign(base, { chart_type: 'bar', group: { kind: 'field', field: null }, agg: 'count', field: null, top_n: 8, metrics: [], group2: { field: null }, stack: false })
   if (type === 'table') Object.assign(base, { columns: [], sort_by: 'created_at', sort_order: 'desc', limit: 100 })
   if (type === 'text') Object.assign(base, { content: '' })
   props.form.blocks.push(base)
@@ -424,7 +486,7 @@ const aiResult = ref(null)
 
 const RANGE_MODE_TEXT = Object.fromEntries(RANGE_MODES)
 const AGG_TEXT = { count: '计数', count_distinct: '去重计数', sum: '求和', avg: '平均', max: '最大', min: '最小', ratio: '占比%' }
-const CHART_TEXT = { bar: '柱状图', line: '折线图', pie: '饼图' }
+const CHART_TEXT = { bar: '柱状图', line: '折线图', area: '面积图', pie: '饼图' }
 const GROUP_TEXT = { field: '按字段', day: '按日', week: '按周', month: '按月' }
 
 const aiRangeDesc = computed(() => {
@@ -437,7 +499,12 @@ function blockDesc(b) {
   if (b.type === 'stat') return AGG_TEXT[b.agg] + (b.field ? `（${fieldOf(b.field)?.label || b.field}）` : '')
   if (b.type === 'chart') {
     const g = b.group?.kind === 'field' ? `按 ${fieldOf(b.group.field)?.label || b.group.field}` : GROUP_TEXT[b.group?.kind]
-    return `${CHART_TEXT[b.chart_type]} · ${g} · ${AGG_TEXT[b.agg]}`
+    let s = `${CHART_TEXT[b.chart_type]} · ${g}`
+    if (b.metrics?.length) s += ` · ${b.metrics.length} 指标`
+    else if (b.group2?.field) s += ` · 按${fieldOf(b.group2.field)?.label || b.group2.field}拆分 · ${AGG_TEXT[b.agg]}`
+    else s += ` · ${AGG_TEXT[b.agg]}`
+    if (b.stack) s += ' · 堆叠'
+    return s
   }
   if (b.type === 'table') return `${(b.columns || []).length} 列 · 上限 ${b.limit} 行`
   return (b.content || '').slice(0, 40)

@@ -560,6 +560,85 @@ assert r.status_code == 400 and "未配置推送渠道" in r.json()["detail"], r
 client.delete(f"/api/reports/{wh_id}")
 print("报表 Webhook 推送（协议/失败汇总/无渠道报错）通过")
 
+# 10.7 报表 P1：多系列图表（多指标 / 二级分组 / 堆叠 / 面积图）
+# 校验：饼图不支持多系列、metrics 与 group2 互斥、指标超限、ratio 不可用于图表、二级分组字段约束
+for bad in (
+    [{"id": "x", "type": "chart", "chart_type": "pie", "group": {"kind": "field", "field": "is_deal"},
+      "metrics": [{"agg": "count"}]}],
+    [{"id": "x", "type": "chart", "chart_type": "bar", "group": {"kind": "field", "field": "is_deal"},
+      "metrics": [{"agg": "count"}], "group2": {"field": "customer_name"}}],
+    [{"id": "x", "type": "chart", "chart_type": "bar", "group": {"kind": "field", "field": "is_deal"},
+      "metrics": [{"agg": "count"}] * 6}],
+    [{"id": "x", "type": "chart", "chart_type": "bar", "group": {"kind": "field", "field": "is_deal"},
+      "metrics": [{"agg": "ratio"}]}],
+    [{"id": "x", "type": "chart", "chart_type": "bar", "group": {"kind": "field", "field": "is_deal"},
+      "group2": {"field": "ghost"}}],
+    [{"id": "x", "type": "chart", "chart_type": "bar", "group": {"kind": "field", "field": "is_deal"},
+      "group2": {"field": "next_follow_date"}}],
+):
+    r = client.post("/api/reports", json={"name": "bad", "table_id": tj, "range": {"mode": "today"}, "blocks": bad})
+    assert r.status_code == 400, r.text
+
+MS_BLOCKS = [
+    {"id": "c1", "type": "chart", "title": "多指标", "chart_type": "bar", "stack": True,
+     "group": {"kind": "field", "field": "is_deal"},
+     "metrics": [{"agg": "sum", "field": "amount", "title": "总额"},
+                 {"agg": "count", "title": "笔数"},
+                 {"agg": "count_distinct", "field": "customer_name", "title": "去重客户数"}]},
+    {"id": "c2", "type": "chart", "title": "按月×成交", "chart_type": "area",
+     "group": {"kind": "month", "field": "next_follow_date"}, "agg": "count",
+     "group2": {"field": "is_deal"}},
+]
+ms_ids = []
+for t in (tj, tp):
+    r = client.post("/api/reports", json={
+        "name": "多系列", "table_id": t, "range": {"mode": "past_30d", "date_field": "created_at"},
+        "blocks": MS_BLOCKS,
+    })
+    assert r.status_code == 200, r.text
+    ms_ids.append(r.json()["id"])
+
+
+def _series_map(b):
+    """{label: {系列名: 值}}，行序/系列序不依赖实现，便于两引擎对比"""
+    return {str(l): {s["name"]: s["values"][i] for s in b["series"]} for i, l in enumerate(b["labels"])}
+
+
+runs_ms = [client.post(f"/api/reports/{rid}/run").json() for rid in ms_ids]
+for res in runs_ms:
+    c1 = _blocks_by_id(res)["c1"]
+    assert c1["stack"] is True and len(c1["series"]) == 3
+    assert [s["name"] for s in c1["series"]] == ["总额", "笔数", "去重客户数"]
+    assert c1["values"] == c1["series"][0]["values"]  # values 兼容字段 = 首系列
+    m1 = _series_map(c1)
+    # 成交组（张三15000.5+王五20000.25）与未成交组（李四8000+赵六500）
+    assert sorted((v["总额"], v["笔数"], v["去重客户数"]) for v in m1.values()) == [(8500, 2, 2), (35000.75, 2, 2)], m1
+
+    c2 = _blocks_by_id(res)["c2"]
+    assert c2["chart_type"] == "area" and c2["stack"] is False and len(c2["series"]) == 2
+    assert c2["labels"] == ["2026-09", "2026-10", "（空）"], c2["labels"]  # 时间升序，空值最后
+    m2 = _series_map(c2)
+    deal_name = max(m2["2026-09"], key=lambda n: m2["2026-09"][n])  # 2026-09 只有王五（成交）
+    other_name = next(n for n in m2["2026-09"] if n != deal_name)
+    assert m2["2026-09"] == {deal_name: 1, other_name: 0}
+    assert m2["2026-10"] == {deal_name: 1, other_name: 1}
+    assert m2["（空）"] == {deal_name: 0, other_name: 1}
+
+# 两引擎多系列结果一致
+for bid in ("c1", "c2"):
+    a, b = _blocks_by_id(runs_ms[0])[bid], _blocks_by_id(runs_ms[1])[bid]
+    assert a["labels"] == b["labels"] and _series_map(a) == _series_map(b), bid
+
+# 导出兼容多系列：xlsx/html 均正常
+r = client.get(f"/api/reports/{ms_ids[0]}/export?format=xlsx")
+assert r.status_code == 200, r.text
+r = client.get(f"/api/reports/{ms_ids[0]}/export?format=html")
+assert r.status_code == 200 and "总额" in r.text and "笔数" in r.text, r.status_code
+
+for rid_ in ms_ids:
+    client.delete(f"/api/reports/{rid_}")
+print("报表多系列图表（多指标/二级分组/堆叠/面积图）通过")
+
 # 11. 权限矩阵：未分享 404 / 分享者按开关 / 主人与 admin 全权
 admin_headers = dict(client.headers)
 r = client.post("/api/auth/register", json={"username": "worker", "password": "secret123"})

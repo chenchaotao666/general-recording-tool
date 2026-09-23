@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import httpx
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, not_, or_, select
 from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
@@ -16,13 +16,17 @@ BLOCK_TYPES = {"stat", "chart", "table", "text"}
 AGG_TYPES = {"count", "count_distinct", "sum", "avg", "max", "min", "ratio"}
 CHART_AGG_TYPES = AGG_TYPES - {"ratio"}   # ratio（占比）仅统计卡：满足区块筛选数 / 口径内总数
 NUMERIC_TYPES = {"int", "decimal"}
-CHART_TYPES = {"bar", "line", "pie"}
+CHART_TYPES = {"bar", "line", "pie", "area"}
 GROUP_KINDS = {"field", "day", "week", "month"}
 RANGE_MODES = {"today", "yesterday", "past_7d", "past_30d", "this_week", "last_week",
                "this_month", "last_month", "this_quarter", "this_year", "custom"}
 SYSTEM_FIELDS = {"id", "created_at", "updated_at"}
 TABLE_LIMIT_MAX = 500
-CHART_TOP_N_DEFAULT = {"pie": 8, "bar": 30, "line": 30}
+CHART_TOP_N_DEFAULT = {"pie": 8, "bar": 30, "line": 30, "area": 30}
+SERIES_MAX = 5          # 多指标图表的指标上限
+GROUP2_TOP_N = 8        # 二级分组系列上限，其余合并为"其他"系列
+METRIC_AGG_LABELS = {"count": "记录数", "count_distinct": "去重计数", "sum": "求和",
+                     "avg": "平均值", "max": "最大值", "min": "最小值"}
 WEBHOOK_TYPES = {"wecom": "企业微信", "dingtalk": "钉钉", "custom": "自定义"}
 
 
@@ -156,11 +160,23 @@ def validate_template(db: Session, payload) -> None:
                 raise HTTPException(400, f"不支持的聚合方式：{b.get('agg')}")
             _check_numeric_field(fields_by_name, b["agg"], b.get("field"))
         elif t == "chart":
-            if b.get("chart_type") not in CHART_TYPES:
-                raise HTTPException(400, f"不支持的图表类型：{b.get('chart_type')}")
-            if (b.get("agg") or "count") not in CHART_AGG_TYPES:
-                raise HTTPException(400, f"图表不支持的聚合方式：{b.get('agg')}")
-            _check_numeric_field(fields_by_name, b.get("agg") or "count", b.get("field"))
+            ctype = b.get("chart_type")
+            if ctype not in CHART_TYPES:
+                raise HTTPException(400, f"不支持的图表类型：{ctype}")
+            metrics = [m for m in (b.get("metrics") or []) if m.get("agg")]
+            g2field = (b.get("group2") or {}).get("field")
+            if metrics and g2field:
+                raise HTTPException(400, "多指标与二级分组不能同时使用")
+            if len(metrics) > SERIES_MAX:
+                raise HTTPException(400, f"多指标最多 {SERIES_MAX} 个")
+            if ctype == "pie" and (metrics or g2field):
+                raise HTTPException(400, "饼图不支持多系列（多指标/二级分组）")
+            if b.get("stack") and ctype not in ("bar", "line", "area"):
+                raise HTTPException(400, "堆叠仅支持柱状/折线/面积图")
+            for m in metrics or [{"agg": b.get("agg") or "count", "field": b.get("field")}]:
+                if (m.get("agg") or "count") not in CHART_AGG_TYPES:
+                    raise HTTPException(400, f"图表不支持的聚合方式：{m.get('agg')}")
+                _check_numeric_field(fields_by_name, m.get("agg") or "count", m.get("field"))
             group = b.get("group") or {}
             gkind, gfield = group.get("kind") or "field", group.get("field")
             if gkind not in GROUP_KINDS:
@@ -172,6 +188,12 @@ def validate_template(db: Session, payload) -> None:
                 is_date_type = (gf is not None and gf.data_type in ("date", "datetime")) or gfield in ("created_at", "updated_at")
                 if not is_date_type:
                     raise HTTPException(400, "按日/周/月分组需要选择日期类型字段")
+            if g2field:
+                g2f = fields_by_name.get(g2field)
+                if g2f is None:
+                    raise HTTPException(400, f"二级分组字段不存在：{g2field}")
+                if g2f.data_type in ("date", "datetime"):
+                    raise HTTPException(400, "二级分组不支持日期类型字段")
         elif t == "table":
             cols = b.get("columns") or []
             if not cols:
@@ -270,6 +292,25 @@ def _eval_stat(db, table, fields_by_name, block, date_field, start, end, viewer_
     return out
 
 
+def _chart_metrics(block: dict, fields_by_name: dict) -> list[dict]:
+    """图表指标列表：metrics 非空时优先（多指标），否则退化为单指标 {agg, field}。每项补上显示名。"""
+    ms = [m for m in (block.get("metrics") or []) if m.get("agg")]
+    if not ms:
+        ms = [{"agg": block.get("agg") or "count", "field": block.get("field")}]
+    out = []
+    for m in ms:
+        agg = m.get("agg") or "count"
+        name = m.get("title")
+        if not name:
+            if agg == "count":
+                name = "记录数"
+            else:
+                f = fields_by_name.get(m.get("field") or "")
+                name = f"{f.label if f else m.get('field')}{METRIC_AGG_LABELS.get(agg, agg)}"
+        out.append({"agg": agg, "field": m.get("field"), "name": name})
+    return out
+
+
 def _eval_chart(db, table, fields_by_name, block, date_field, start, end, viewer_rules=None) -> dict:
     conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end, viewer_rules)
     group = block.get("group") or {}
@@ -281,39 +322,70 @@ def _eval_chart(db, table, fields_by_name, block, date_field, start, end, viewer
         # SQLite strftime：%W 周一为周首（跨年边界第 0 周有坑，业务周报够用）
         fmt = {"day": "%Y-%m-%d", "week": "%Y-%W", "month": "%Y-%m"}[gkind]
         gexpr = func.strftime(fmt, gcol)
-    agg = block.get("agg") or "count"
-    vexpr = _agg_expr(table, agg, block.get("field"))
+    gf = fields_by_name.get(gfield)
+    metrics = _chart_metrics(block, fields_by_name)
+    g2field = (block.get("group2") or {}).get("field")
 
+    def label_of(k):
+        return _option_label(gf, k) if gkind == "field" else (str(k) if k is not None else "（空）")
+
+    def query_map(agg, field, extra=None):
+        """按主分组聚合 → {分组key: 值}。保留原始 key，便于多系列对齐。"""
+        q = select(gexpr.label("g"), _agg_expr(table, agg, field).label("v")).select_from(table).where(*conds)
+        if extra is not None:
+            q = q.where(extra)
+        return {r.g: (r.v or 0) for r in db.execute(q.group_by(gexpr)).all()}
+
+    # 主分组 labels：多系列共用同一 x 轴
     if gkind == "field":
-        # 字段分组：按值降序取 top_n，其余合并为"其他"
+        # 字段分组：按值降序取 top_n，其余合并为"其他"；二级分组时按各组记录数排序
         top_n = int(block.get("top_n") or CHART_TOP_N_DEFAULT.get(block.get("chart_type"), 30))
-        rows = db.execute(
-            select(gexpr.label("g"), vexpr.label("v")).select_from(table).where(*conds)
-            .group_by(gexpr).order_by(func.count().desc() if agg == "count" else vexpr.desc())
-        ).all()
-        gf = fields_by_name.get(gfield)
-        labels, values, other = [], [], 0
-        for i, r in enumerate(rows):
-            if i < top_n:
-                labels.append(_option_label(gf, r.g))
-                values.append(_round_num(r.v or 0))
-            else:
-                other += r.v or 0
-        if other:
-            labels.append("其他")
-            values.append(_round_num(other))
+        order_map = query_map("count", None) if g2field else query_map(metrics[0]["agg"], metrics[0]["field"])
+        ordered_keys = sorted(order_map, key=lambda k: order_map[k], reverse=True)
+        master_keys, rest_keys = ordered_keys[:top_n], ordered_keys[top_n:]
     else:
-        # 日期分组：按时间升序
-        rows = db.execute(
-            select(gexpr.label("g"), vexpr.label("v")).select_from(table).where(*conds)
-            .group_by(gexpr).order_by(gexpr)
+        # 日期分组：按时间升序，空值排最后
+        order_map = query_map("count", None)
+        master_keys = sorted(order_map, key=lambda k: (k is None, str(k or "")))
+        rest_keys = []
+    labels = [label_of(k) for k in master_keys] + (["其他"] if rest_keys else [])
+
+    def align(mp) -> list:
+        vals = [_round_num(mp.get(k, 0)) for k in master_keys]
+        if rest_keys:
+            vals.append(_round_num(sum(mp.get(k, 0) for k in rest_keys)))
+        return vals
+
+    if g2field:
+        # 二级分组：每个取值一个系列（按记录数 top N，其余合并"其他"系列）
+        g2col = table.c[g2field]
+        g2f = fields_by_name.get(g2field)
+        m0 = metrics[0]
+        g2_rows = db.execute(
+            select(g2col.label("g2"), func.count().label("c")).select_from(table).where(*conds)
+            .group_by(g2col).order_by(func.count().desc())
         ).all()
-        labels = [str(r.g) if r.g is not None else "（空）" for r in rows]
-        values = [_round_num(r.v or 0) for r in rows]
+        top_g2 = [r.g2 for r in g2_rows[:GROUP2_TOP_N]]
+        series = []
+        for v in top_g2:
+            cond = g2col.is_(None) if v is None else (g2col == v)
+            series.append({"name": _option_label(g2f, v), "values": align(query_map(m0["agg"], m0["field"], cond))})
+        if len(g2_rows) > GROUP2_TOP_N:
+            in_top = []
+            non_null_top = [v for v in top_g2 if v is not None]
+            if non_null_top:
+                in_top.append(g2col.in_(non_null_top))
+            if None in top_g2:
+                in_top.append(g2col.is_(None))
+            series.append({"name": "其他", "values": align(query_map(m0["agg"], m0["field"], not_(or_(*in_top))))})
+    else:
+        series = [{"name": m["name"], "values": align(query_map(m["agg"], m["field"]))} for m in metrics]
+
     return {
         "id": block["id"], "type": "chart", "title": block.get("title") or "",
-        "chart_type": block.get("chart_type"), "labels": labels, "values": values,
-        "agg": agg,
+        "chart_type": block.get("chart_type"), "labels": labels,
+        "series": series, "values": series[0]["values"] if series else [],
+        "agg": metrics[0]["agg"], "stack": bool(block.get("stack")),
     }
 
 
@@ -432,44 +504,76 @@ def _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules=Non
         rows = base_recs(block)
         group = block.get("group") or {}
         gkind, gfield = group.get("kind") or "field", group.get("field")
-        agg = block.get("agg") or "count"
         gf = fields_by_name.get(gfield)
-        if gkind == "field":
-            buckets: dict = {}
-            for r in rows:
-                buckets.setdefault(r.get(gfield), []).append(r)
-            ordered = sorted(
-                buckets.items(),
-                key=lambda kv: len(kv[1]) if agg == "count" else (_py_agg(kv[1], agg, block.get("field")) or 0),
-                reverse=True,
-            )
-            top_n = int(block.get("top_n") or CHART_TOP_N_DEFAULT.get(block.get("chart_type"), 30))
-            labels, values, other = [], [], 0
-            for i, (k, rs) in enumerate(ordered):
-                v = _py_agg(rs, agg, block.get("field")) or 0
-                if i < top_n:
-                    labels.append(_option_label(gf, k))
-                    values.append(_round_num(v))
-                else:
-                    other += v
-            if other:
-                labels.append("其他")
-                values.append(_round_num(other))
-        else:
+        metrics = _chart_metrics(block, fields_by_name)
+        g2field = (block.get("group2") or {}).get("field")
+
+        def bucket_key(r):
+            if gkind == "field":
+                return r.get(gfield)
+            v = r.get(gfield)
             # Python strftime('%Y-%W') 与 SQLite strftime('%Y-%W') 同为 C 库 %W 语义（周一为周首），结果等价
             fmt = {"day": "%Y-%m-%d", "week": "%Y-%W", "month": "%Y-%m"}[gkind]
-            buckets = {}
+            return v.strftime(fmt) if isinstance(v, (date, datetime)) else None
+
+        buckets: dict = {}
+        for r in rows:
+            buckets.setdefault(bucket_key(r), []).append(r)
+
+        def agg_rows(rs, m):
+            return _py_agg(rs, m["agg"], m["field"]) or 0
+
+        m0 = metrics[0]
+        if gkind == "field":
+            top_n = int(block.get("top_n") or CHART_TOP_N_DEFAULT.get(block.get("chart_type"), 30))
+            ordered = sorted(buckets, key=lambda k: len(buckets[k]) if g2field else agg_rows(buckets[k], m0),
+                             reverse=True)
+            master_keys, rest_keys = ordered[:top_n], ordered[top_n:]
+        else:
+            master_keys = sorted(buckets, key=lambda k: (k is None, str(k or "")))
+            rest_keys = []
+        rest_rows = [r for k in rest_keys for r in buckets[k]]
+
+        def label_of(k):
+            return _option_label(gf, k) if gkind == "field" else (str(k) if k is not None else "（空）")
+
+        labels = [label_of(k) for k in master_keys] + (["其他"] if rest_keys else [])
+
+        if g2field:
+            g2f = fields_by_name.get(g2field)
+            g2_counts: dict = {}
             for r in rows:
-                v = r.get(gfield)
-                key = v.strftime(fmt) if isinstance(v, (date, datetime)) else None
-                buckets.setdefault(key, []).append(r)
-            ordered = sorted(buckets.items(), key=lambda kv: (kv[0] is not None, kv[0] or ""))
-            labels = [k if k is not None else "（空）" for k, _ in ordered]
-            values = [_round_num(_py_agg(rs, agg, block.get("field")) or 0) for _, rs in ordered]
+                k = r.get(g2field)
+                g2_counts[k] = g2_counts.get(k, 0) + 1
+            top_g2 = sorted(g2_counts, key=lambda k: g2_counts[k], reverse=True)[:GROUP2_TOP_N]
+
+            def g2_filter(rs, v):
+                return [r for r in rs if r.get(g2field) == v]
+
+            series = []
+            for v in top_g2:
+                vals = [_round_num(agg_rows(g2_filter(buckets[k], v), m0)) for k in master_keys]
+                if rest_keys:
+                    vals.append(_round_num(agg_rows(g2_filter(rest_rows, v), m0)))
+                series.append({"name": _option_label(g2f, v), "values": vals})
+            if len(g2_counts) > GROUP2_TOP_N:
+                vals = [_round_num(agg_rows([r for r in buckets[k] if r.get(g2field) not in top_g2], m0))
+                        for k in master_keys]
+                if rest_keys:
+                    vals.append(_round_num(agg_rows([r for r in rest_rows if r.get(g2field) not in top_g2], m0)))
+                series.append({"name": "其他", "values": vals})
+        else:
+            series = []
+            for m in metrics:
+                vals = [_round_num(agg_rows(buckets[k], m)) for k in master_keys]
+                if rest_keys:
+                    vals.append(_round_num(agg_rows(rest_rows, m)))
+                series.append({"name": m["name"], "values": vals})
         return {
             "id": block["id"], "type": "chart", "title": block.get("title") or "",
-            "chart_type": block.get("chart_type"), "labels": labels, "values": values,
-            "agg": agg,
+            "chart_type": block.get("chart_type"), "labels": labels,
+            "series": series, "values": series[0]["values"] if series else [],
+            "agg": m0["agg"], "stack": bool(block.get("stack")),
         }
 
     def eval_table(block):
@@ -616,11 +720,25 @@ def render_email_html(result: dict) -> str:
         parts.append(f'<table cellpadding="0" cellspacing="0"><tr>{cells}</tr></table>')
     for b in result["blocks"]:
         if b["type"] == "chart":
-            rows = "".join(
-                f'<tr><td style="padding:4px 12px;border:1px solid #e4e7ed">{esc(l)}</td>'
-                f'<td style="padding:4px 12px;border:1px solid #e4e7ed;text-align:right">{esc(v)}</td></tr>'
-                for l, v in zip(b["labels"], b["values"])
-            )
+            series = b.get("series") or [{"name": "值", "values": b.get("values") or []}]
+            if len(series) > 1:
+                # 多系列：分组 + 每系列一列
+                head = f'<tr><th style="padding:4px 12px;border:1px solid #e4e7ed;background:#f5f7fa">分组</th>' + "".join(
+                    f'<th style="padding:4px 12px;border:1px solid #e4e7ed;background:#f5f7fa;text-align:right">{esc(s["name"])}</th>'
+                    for s in series) + "</tr>"
+                rows = "".join(
+                    f'<tr><td style="padding:4px 12px;border:1px solid #e4e7ed">{esc(l)}</td>' + "".join(
+                        f'<td style="padding:4px 12px;border:1px solid #e4e7ed;text-align:right">{esc(s["values"][i])}</td>'
+                        for s in series) + "</tr>"
+                    for i, l in enumerate(b["labels"])
+                )
+                rows = head + rows
+            else:
+                rows = "".join(
+                    f'<tr><td style="padding:4px 12px;border:1px solid #e4e7ed">{esc(l)}</td>'
+                    f'<td style="padding:4px 12px;border:1px solid #e4e7ed;text-align:right">{esc(v)}</td></tr>'
+                    for l, v in zip(b["labels"], series[0]["values"])
+                )
             parts.append(f'<h3 style="margin:20px 0 8px">{esc(b["title"])}</h3>'
                          f'<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px">{rows}</table>')
         elif b["type"] == "table":
@@ -653,7 +771,13 @@ def render_markdown(result: dict, max_rows: int = 10) -> str:
     for b in result["blocks"]:
         if b["type"] == "chart":
             lines.append(f"\n**{b['title']}**")
-            lines += [f"- {l}：{v}" for l, v in zip(b["labels"], b["values"])]
+            series = b.get("series") or [{"name": "值", "values": b.get("values") or []}]
+            if len(series) > 1:
+                for i, l in enumerate(b["labels"]):
+                    parts = "，".join(f"{s['name']} {s['values'][i]}" for s in series)
+                    lines.append(f"- {l}：{parts}")
+            else:
+                lines += [f"- {l}：{v}" for l, v in zip(b["labels"], series[0]["values"])]
         elif b["type"] == "table":
             note = f"（共 {b['total']} 条，仅显示前 {min(len(b['rows']), max_rows)} 条）" if b["total"] > max_rows else ""
             lines.append(f"\n**{b['title']}**{note}")

@@ -182,6 +182,7 @@ function openEdit(row) {
       ...b,
       group: b.group ? { ...b.group } : undefined,
       filters: { logic: 'AND', ...(b.filters || {}), rules: (b.filters?.rules || []).map((r) => ({ ...r })) },
+      ...(b.type === 'chart' ? { metrics: b.metrics || [], group2: b.group2 || { field: null }, stack: !!b.stack } : {}),
     })),
     filter_fields: [...(row.filter_fields || [])],
     schedule: { type: '', minutes: 60, expr: '0 9 * * 1', ...(row.schedule || {}) },

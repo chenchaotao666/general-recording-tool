@@ -152,12 +152,23 @@ function renderCharts() {
         series: [{ type: 'pie', radius: ['35%', '65%'], data: b.labels.map((l, i) => ({ name: l, value: b.values[i] })) }],
       }
     } else {
+      const seriesList = (b.series?.length ? b.series : [{ name: '', values: b.values }])
+      const stack = b.stack && seriesList.length > 1 ? 'total' : undefined
       option = {
         tooltip: { trigger: 'axis' },
-        grid: { left: 48, right: 24, top: 24, bottom: 48 },
+        legend: seriesList.length > 1 ? { bottom: 0 } : undefined,
+        grid: { left: 48, right: 24, top: 24, bottom: seriesList.length > 1 ? 56 : 48 },
         xAxis: { type: 'category', data: b.labels },
         yAxis: { type: 'value' },
-        series: [{ type: b.chart_type, data: b.values, barMaxWidth: 40, smooth: true }],
+        series: seriesList.map((s) => ({
+          name: s.name,
+          type: b.chart_type === 'area' ? 'line' : b.chart_type,
+          data: s.values,
+          barMaxWidth: 40,
+          smooth: true,
+          ...(stack ? { stack } : {}),
+          ...(b.chart_type === 'area' ? { areaStyle: {} } : {}),
+        })),
       }
     }
     ch.setOption(option)

@@ -7,15 +7,17 @@
 </template>
 
 <script setup>
-// u-charts 封装：把报表的 {chart_type, labels, values} 渲染成柱状/折线/饼图
+// u-charts 封装：把报表的 {chart_type, labels, values, series, stack} 渲染成柱状/折线/面积/饼图
 // 用 canvas 2d 并显式设置画布像素尺寸，保证各端（开发者工具/真机）渲染一致
 import { getCurrentInstance, onMounted, watch } from 'vue'
 import uCharts from '@qiun/ucharts'
 
 const props = defineProps({
-  type: { type: String, default: 'bar' },   // bar / line / pie
+  type: { type: String, default: 'bar' },   // bar / line / area / pie
   labels: { type: Array, default: () => [] },
   values: { type: Array, default: () => [] },
+  series: { type: Array, default: () => [] },  // [{name, values}]，多系列时优先于 values
+  stack: { type: Boolean, default: false },
   heightPx: { type: Number, default: 220 },
 })
 
@@ -66,27 +68,35 @@ function draw() {
         // 不画数值标签（会叠在一起），明细看下方数据表；
         // 类目多时按 labelCount 抽稀横轴标签
         const crowded = props.labels.length > 6
+        const seriesList = (props.series && props.series.length)
+          ? props.series.map((s) => ({ name: String(s.name || '值'), data: (s.values || []).map((v) => v ?? 0) }))
+          : [{ name: '值', data: props.values.map((v) => v ?? 0) }]
+        const multi = seriesList.length > 1
+        const uType = props.type === 'line' ? 'line' : props.type === 'area' ? 'area' : 'column'
         chart = new uCharts({
           ...common,
-          type: props.type === 'line' ? 'line' : 'column',
+          type: uType,
           categories: props.labels.map(String),
-          series: [{ name: '值', data: props.values.map((v) => v ?? 0) }],
+          series: seriesList,
           dataLabel: false,
-          legend: { show: false },
+          legend: { show: multi, position: 'bottom' },
           // Y 轴从 0 开始：否则 uCharts 会按数据最小值（如 900）做下限，柱子向下溢出横轴标签区
           yAxis: { data: [{ min: 0 }] },
           xAxis: { fontSize: 10, labelCount: crowded ? 5 : 10 },
           // uCharts 的 fixColumeData 会直接读 opts.extra.column.seriesGap，不能缺省
-          extra: props.type === 'line'
-            ? { line: { type: 'curve' } }
-            : { column: { seriesGap: 2, categoryGap: 3 } },
+          extra: uType === 'column'
+            // 堆叠柱状图：extra.column.type = 'stack'
+            ? { column: { seriesGap: 2, categoryGap: 3, ...(props.stack && multi ? { type: 'stack' } : {}) } }
+            : uType === 'area'
+              ? { area: { type: 'curve', addLine: true } }
+              : { line: { type: 'curve' } },
         })
       }
     })
 }
 
 onMounted(() => setTimeout(draw, 50))
-watch(() => [props.labels, props.values], () => setTimeout(draw, 50), { deep: true })
+watch(() => [props.labels, props.values, props.series], () => setTimeout(draw, 50), { deep: true })
 
 // 点击/滑动柱子显示数值提示，松手重绘清除
 function onTouch(e) {

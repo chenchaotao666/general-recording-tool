@@ -73,13 +73,13 @@
         <view class="block-title">{{ b.title }}</view>
 
         <template v-if="b.type === 'chart'">
-          <UChart v-if="b.labels.length" :type="b.chart_type" :labels="b.labels" :values="b.values" />
+          <UChart v-if="b.labels.length" :type="b.chart_type" :labels="b.labels" :values="b.values" :series="b.series" :stack="b.stack" />
           <view v-else class="hint" style="padding: 30rpx 0">该时间范围内暂无数据</view>
           <!-- 数据明细兜底 -->
           <view class="data-table">
             <view v-for="(l, i) in b.labels" :key="i" class="dt-row">
               <text class="dt-label">{{ l }}</text>
-              <text class="dt-value">{{ b.values[i] }}</text>
+              <text class="dt-value">{{ seriesText(b, i) }}</text>
             </view>
           </view>
         </template>
@@ -147,6 +147,13 @@ onLoad((q) => {
 
 function selectOpts(f) {
   return (f?.options?.options || []).map((o) => (typeof o === 'object' ? o.value : o))
+}
+
+// 图表数据明细兜底：多系列时拼成 "系列名 值，系列名 值"
+function seriesText(b, i) {
+  const ss = b.series?.length ? b.series : [{ name: '', values: b.values }]
+  if (ss.length === 1) return ss[0].values[i]
+  return ss.map((s) => `${s.name} ${s.values[i]}`).join('，')
 }
 
 function setFilter(f, v) {
