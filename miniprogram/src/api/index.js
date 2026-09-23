@@ -148,6 +148,7 @@ export const taskRuns = (id) => http.get(`/tasks/${id}/runs`)
 // 报表
 export const listReports = () => http.get('/reports')
 export const runReport = (id, range, filters) => http.post(`/reports/${id}/run`, { range, filters })
+export const drillReport = (id, payload) => http.post(`/reports/${id}/drill`, payload)
 
 // 站内通知
 export const listNotifications = () => http.get('/notify')

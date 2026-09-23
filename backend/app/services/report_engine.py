@@ -311,30 +311,12 @@ def _chart_metrics(block: dict, fields_by_name: dict) -> list[dict]:
     return out
 
 
-def _eval_chart(db, table, fields_by_name, block, date_field, start, end, viewer_rules=None) -> dict:
-    conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end, viewer_rules)
+def _chart_layout_sql(db, table, fields_by_name, block, conds, query_map) -> dict:
+    """图表分组布局：主分组 master/rest keys + 二级分组 top 取值。eval 与下钻共用，保证口径一致。"""
     group = block.get("group") or {}
-    gkind, gfield = group.get("kind") or "field", group.get("field")
-    gcol = table.c[gfield]
-    if gkind == "field":
-        gexpr = gcol
-    else:
-        # SQLite strftime：%W 周一为周首（跨年边界第 0 周有坑，业务周报够用）
-        fmt = {"day": "%Y-%m-%d", "week": "%Y-%W", "month": "%Y-%m"}[gkind]
-        gexpr = func.strftime(fmt, gcol)
-    gf = fields_by_name.get(gfield)
+    gkind = group.get("kind") or "field"
     metrics = _chart_metrics(block, fields_by_name)
     g2field = (block.get("group2") or {}).get("field")
-
-    def label_of(k):
-        return _option_label(gf, k) if gkind == "field" else (str(k) if k is not None else "（空）")
-
-    def query_map(agg, field, extra=None):
-        """按主分组聚合 → {分组key: 值}。保留原始 key，便于多系列对齐。"""
-        q = select(gexpr.label("g"), _agg_expr(table, agg, field).label("v")).select_from(table).where(*conds)
-        if extra is not None:
-            q = q.where(extra)
-        return {r.g: (r.v or 0) for r in db.execute(q.group_by(gexpr)).all()}
 
     # 主分组 labels：多系列共用同一 x 轴
     if gkind == "field":
@@ -348,6 +330,47 @@ def _eval_chart(db, table, fields_by_name, block, date_field, start, end, viewer
         order_map = query_map("count", None)
         master_keys = sorted(order_map, key=lambda k: (k is None, str(k or "")))
         rest_keys = []
+
+    g2_top, g2_has_rest = [], False
+    if g2field:
+        g2col = table.c[g2field]
+        g2_rows = db.execute(
+            select(g2col.label("g2"), func.count().label("c")).select_from(table).where(*conds)
+            .group_by(g2col).order_by(func.count().desc())
+        ).all()
+        g2_top = [r.g2 for r in g2_rows[:GROUP2_TOP_N]]
+        g2_has_rest = len(g2_rows) > GROUP2_TOP_N
+    return {"gkind": gkind, "metrics": metrics, "g2field": g2field,
+            "master_keys": master_keys, "rest_keys": rest_keys,
+            "g2_top": g2_top, "g2_has_rest": g2_has_rest}
+
+
+def _eval_chart(db, table, fields_by_name, block, date_field, start, end, viewer_rules=None) -> dict:
+    conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end, viewer_rules)
+    group = block.get("group") or {}
+    gkind, gfield = group.get("kind") or "field", group.get("field")
+    gcol = table.c[gfield]
+    if gkind == "field":
+        gexpr = gcol
+    else:
+        # SQLite strftime：%W 周一为周首（跨年边界第 0 周有坑，业务周报够用）
+        fmt = {"day": "%Y-%m-%d", "week": "%Y-%W", "month": "%Y-%m"}[gkind]
+        gexpr = func.strftime(fmt, gcol)
+    gf = fields_by_name.get(gfield)
+
+    def label_of(k):
+        return _option_label(gf, k) if gkind == "field" else (str(k) if k is not None else "（空）")
+
+    def query_map(agg, field, extra=None):
+        """按主分组聚合 → {分组key: 值}。保留原始 key，便于多系列对齐。"""
+        q = select(gexpr.label("g"), _agg_expr(table, agg, field).label("v")).select_from(table).where(*conds)
+        if extra is not None:
+            q = q.where(extra)
+        return {r.g: (r.v or 0) for r in db.execute(q.group_by(gexpr)).all()}
+
+    L = _chart_layout_sql(db, table, fields_by_name, block, conds, query_map)
+    metrics, g2field = L["metrics"], L["g2field"]
+    master_keys, rest_keys = L["master_keys"], L["rest_keys"]
     labels = [label_of(k) for k in master_keys] + (["其他"] if rest_keys else [])
 
     def align(mp) -> list:
@@ -361,21 +384,16 @@ def _eval_chart(db, table, fields_by_name, block, date_field, start, end, viewer
         g2col = table.c[g2field]
         g2f = fields_by_name.get(g2field)
         m0 = metrics[0]
-        g2_rows = db.execute(
-            select(g2col.label("g2"), func.count().label("c")).select_from(table).where(*conds)
-            .group_by(g2col).order_by(func.count().desc())
-        ).all()
-        top_g2 = [r.g2 for r in g2_rows[:GROUP2_TOP_N]]
         series = []
-        for v in top_g2:
+        for v in L["g2_top"]:
             cond = g2col.is_(None) if v is None else (g2col == v)
             series.append({"name": _option_label(g2f, v), "values": align(query_map(m0["agg"], m0["field"], cond))})
-        if len(g2_rows) > GROUP2_TOP_N:
+        if L["g2_has_rest"]:
             in_top = []
-            non_null_top = [v for v in top_g2 if v is not None]
+            non_null_top = [v for v in L["g2_top"] if v is not None]
             if non_null_top:
                 in_top.append(g2col.in_(non_null_top))
-            if None in top_g2:
+            if None in L["g2_top"]:
                 in_top.append(g2col.is_(None))
             series.append({"name": "其他", "values": align(query_map(m0["agg"], m0["field"], not_(or_(*in_top))))})
     else:
@@ -386,6 +404,7 @@ def _eval_chart(db, table, fields_by_name, block, date_field, start, end, viewer
         "chart_type": block.get("chart_type"), "labels": labels,
         "series": series, "values": series[0]["values"] if series else [],
         "agg": metrics[0]["agg"], "stack": bool(block.get("stack")),
+        "group2": bool(g2field),
     }
 
 
@@ -574,6 +593,7 @@ def _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules=Non
             "chart_type": block.get("chart_type"), "labels": labels,
             "series": series, "values": series[0]["values"] if series else [],
             "agg": m0["agg"], "stack": bool(block.get("stack")),
+            "group2": bool(g2field),
         }
 
     def eval_table(block):
@@ -693,6 +713,203 @@ def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None =
         "generated_at": datetime.now().isoformat(sep=" ", timespec="seconds"),
         "blocks": blocks_out,
     }
+
+
+# ---------- 图表下钻 ----------
+
+DRILL_LIMIT = 200
+
+
+def _drill_columns(fields: list) -> tuple[list, dict]:
+    """下钻明细列：全部业务字段 + 创建时间。返回 (columns, select字段映射)。"""
+    fields_by_name = {f.field_name: f for f in fields}
+    cols = [f.field_name for f in fields]
+    columns = [{"prop": c, "label": fields_by_name[c].label} for c in cols]
+    columns.append({"prop": "created_at", "label": "创建时间"})
+    select_fields = {c: fields_by_name[c] for c in cols if fields_by_name[c].widget == "select"}
+    return columns, select_fields
+
+
+def _drill_sql(db, tpl, block, date_field, start, end, viewer_rules, group_index, series_index) -> dict:
+    _, fields, table = dyn_engine.load_business(db, tpl.table_id)
+    fields_by_name = {f.field_name: f for f in fields}
+    conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end, viewer_rules)
+    group = block.get("group") or {}
+    gkind, gfield = group.get("kind") or "field", group.get("field")
+    gcol = table.c[gfield]
+    if gkind == "field":
+        gexpr = gcol
+    else:
+        fmt = {"day": "%Y-%m-%d", "week": "%Y-%W", "month": "%Y-%m"}[gkind]
+        gexpr = func.strftime(fmt, gcol)
+
+    def query_map(agg, field, extra=None):
+        q = select(gexpr.label("g"), _agg_expr(table, agg, field).label("v")).select_from(table).where(*conds)
+        if extra is not None:
+            q = q.where(extra)
+        return {r.g: (r.v or 0) for r in db.execute(q.group_by(gexpr)).all()}
+
+    L = _chart_layout_sql(db, table, fields_by_name, block, conds, query_map)
+    master_keys, rest_keys = L["master_keys"], L["rest_keys"]
+
+    # 主分组条件：序号 = labels 下标（含末尾"其他"桶）
+    if group_index < 0 or group_index >= len(master_keys) + (1 if rest_keys else 0):
+        raise HTTPException(400, "分组序号无效")
+    if group_index < len(master_keys):
+        k = master_keys[group_index]
+        conds.append(gexpr.is_(None) if k is None else gexpr == k)
+    else:
+        in_master = []
+        nn = [k for k in master_keys if k is not None]
+        if nn:
+            in_master.append(gexpr.in_(nn))
+        if any(k is None for k in master_keys):
+            in_master.append(gexpr.is_(None))
+        conds.append(not_(or_(*in_master)))
+
+    # 二级分组条件：系列序号 = series 下标（含末尾"其他"系列）；多指标系列的指标不影响记录集
+    if L["g2field"] and series_index is not None:
+        g2col = table.c[L["g2field"]]
+        g2_top = L["g2_top"]
+        if series_index < 0 or series_index >= len(g2_top) + (1 if L["g2_has_rest"] else 0):
+            raise HTTPException(400, "系列序号无效")
+        if series_index < len(g2_top):
+            v = g2_top[series_index]
+            conds.append(g2col.is_(None) if v is None else g2col == v)
+        else:
+            in_top = []
+            nn = [v for v in g2_top if v is not None]
+            if nn:
+                in_top.append(g2col.in_(nn))
+            if None in g2_top:
+                in_top.append(g2col.is_(None))
+            conds.append(not_(or_(*in_top)))
+
+    columns, select_fields = _drill_columns(fields)
+    cols = [f.field_name for f in fields]
+    total = db.execute(select(func.count()).select_from(table).where(*conds)).scalar() or 0
+    sel_cols = [table.c[c] for c in cols] + [table.c.id, table.c.created_at]
+    rows = db.execute(
+        select(*sel_cols).select_from(table).where(*conds).order_by(table.c.id.desc()).limit(DRILL_LIMIT)
+    ).mappings().all()
+    out_rows = []
+    for r in rows:
+        d = dyn_engine.row_to_dict(r)
+        for c, f in select_fields.items():
+            d[c] = _option_label(f, d.get(c)) if d.get(c) is not None else d.get(c)
+        out_rows.append(d)
+    return {"columns": columns, "rows": out_rows, "total": total, "truncated": total > DRILL_LIMIT}
+
+
+def _drill_py(db, mt, fields, block, date_field, start, end, viewer_rules, group_index, series_index) -> dict:
+    from . import json_store
+    from .pyquery import match_filters
+
+    fields_by_name = {f.field_name: f for f in fields}
+    recs = json_store.all_dicts(db, mt.id, fields, normalized=True)
+    viewer_filters = {"logic": "AND", "rules": viewer_rules or []}
+    date_f = fields_by_name.get(date_field)
+
+    def in_range(r):
+        v = r.get(date_field)
+        if v is None:
+            return False
+        try:
+            if date_f is not None and date_f.data_type == "date":
+                return start.date() <= v < end.date()
+            return start <= v < end
+        except TypeError:
+            return False
+
+    rows = [r for r in recs if match_filters(r, fields_by_name, viewer_filters) and in_range(r)]
+    rows = [r for r in rows if match_filters(r, fields_by_name, block.get("filters") or {})]
+
+    group = block.get("group") or {}
+    gkind, gfield = group.get("kind") or "field", group.get("field")
+    metrics = _chart_metrics(block, fields_by_name)
+    g2field = (block.get("group2") or {}).get("field")
+
+    def bucket_key(r):
+        if gkind == "field":
+            return r.get(gfield)
+        v = r.get(gfield)
+        fmt = {"day": "%Y-%m-%d", "week": "%Y-%W", "month": "%Y-%m"}[gkind]
+        return v.strftime(fmt) if isinstance(v, (date, datetime)) else None
+
+    buckets: dict = {}
+    for r in rows:
+        buckets.setdefault(bucket_key(r), []).append(r)
+
+    if gkind == "field":
+        top_n = int(block.get("top_n") or CHART_TOP_N_DEFAULT.get(block.get("chart_type"), 30))
+        ordered = sorted(buckets, key=lambda k: len(buckets[k]) if g2field
+                         else (_py_agg(buckets[k], metrics[0]["agg"], metrics[0]["field"]) or 0), reverse=True)
+        master_keys, rest_keys = ordered[:top_n], ordered[top_n:]
+    else:
+        master_keys = sorted(buckets, key=lambda k: (k is None, str(k or "")))
+        rest_keys = []
+
+    # 二级分组布局要在主分组过滤之前算（与 SQL 路径一致）：系列序号对应全量口径下的 top 取值
+    g2_counts: dict = {}
+    if g2field:
+        for r in rows:
+            k = r.get(g2field)
+            g2_counts[k] = g2_counts.get(k, 0) + 1
+
+    if group_index < 0 or group_index >= len(master_keys) + (1 if rest_keys else 0):
+        raise HTTPException(400, "分组序号无效")
+    if group_index < len(master_keys):
+        k = master_keys[group_index]
+        rows = [r for r in rows if bucket_key(r) == k]
+    else:
+        rows = [r for r in rows if bucket_key(r) not in set(master_keys)]
+
+    if g2field and series_index is not None:
+        top_g2 = sorted(g2_counts, key=lambda k: g2_counts[k], reverse=True)[:GROUP2_TOP_N]
+        if series_index < 0 or series_index >= len(top_g2) + (1 if len(g2_counts) > GROUP2_TOP_N else 0):
+            raise HTTPException(400, "系列序号无效")
+        if series_index < len(top_g2):
+            v = top_g2[series_index]
+            rows = [r for r in rows if r.get(g2field) == v]
+        else:
+            rows = [r for r in rows if r.get(g2field) not in set(top_g2)]
+
+    columns, select_fields = _drill_columns(fields)
+    cols = [f.field_name for f in fields]
+    total = len(rows)
+    rows = sorted(rows, key=lambda r: r.get("id") or 0, reverse=True)[:DRILL_LIMIT]
+    out_rows = []
+    for r in rows:
+        d = {c: dyn_engine.serialize_value(r.get(c)) for c in cols}
+        d["id"] = r["id"]
+        d["created_at"] = dyn_engine.serialize_value(r.get("created_at"))
+        for c, f in select_fields.items():
+            if d.get(c) is not None:
+                d[c] = _option_label(f, d.get(c))
+        out_rows.append(d)
+    return {"columns": columns, "rows": out_rows, "total": total, "truncated": total > DRILL_LIMIT}
+
+
+def drill_chart(db: Session, tpl: ReportTemplate, block_id: str, group_index: int, series_index: int | None = None,
+                range_override: dict | None = None, viewer_filters: dict | None = None) -> dict:
+    """图表下钻：按分组/系列序号取该图表单元的明细记录。序号与图表结果 labels/series 下标一致。"""
+    mt, fields = dyn_engine.load_meta(db, tpl.table_id)
+    viewer_rules = _validate_viewer_filters(tpl, fields, viewer_filters)
+    block = next((b for b in (tpl.blocks_json or []) if b.get("id") == block_id), None)
+    if not block or block.get("type") != "chart":
+        raise HTTPException(400, "图表区块不存在")
+    rng = dict(tpl.range_json or {})
+    if range_override:
+        rng.update({k: v for k, v in range_override.items() if v is not None})
+    date_field = rng.get("date_field") or "created_at"
+    try:
+        start, end, _label = resolve_time_range(rng)
+    except ReportError as e:
+        raise HTTPException(400, str(e))
+
+    if mt.storage_mode == "json":
+        return _drill_py(db, mt, fields, block, date_field, start, end, viewer_rules, group_index, series_index)
+    return _drill_sql(db, tpl, block, date_field, start, end, viewer_rules, group_index, series_index)
 
 
 # ---------- 定时推送 ----------

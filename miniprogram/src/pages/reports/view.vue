@@ -73,7 +73,10 @@
         <view class="block-title">{{ b.title }}</view>
 
         <template v-if="b.type === 'chart'">
-          <UChart v-if="b.labels.length" :type="b.chart_type" :labels="b.labels" :values="b.values" :series="b.series" :stack="b.stack" />
+          <UChart
+            v-if="b.labels.length" :type="b.chart_type" :labels="b.labels" :values="b.values"
+            :series="b.series" :stack="b.stack" @drill="(i) => onDrill(b, i)"
+          />
           <view v-else class="hint" style="padding: 30rpx 0">该时间范围内暂无数据</view>
           <!-- 数据明细兜底 -->
           <view class="data-table">
@@ -103,13 +106,34 @@
         </template>
       </view>
     </template>
+
+    <!-- 图表下钻明细弹层 -->
+    <view v-if="drill.visible" class="drill-mask" @click="drill.visible = false">
+      <view class="drill-panel" @click.stop>
+        <view class="drill-head">
+          <text class="drill-title">{{ drill.title }}</text>
+          <text class="drill-close" @click="drill.visible = false">✕</text>
+        </view>
+        <view v-if="drill.loading" class="hint">加载中…</view>
+        <scroll-view v-else scroll-y class="drill-body">
+          <view v-if="!drill.rows.length" class="hint">该分组暂无记录</view>
+          <view v-for="(r, ri) in drill.rows" :key="ri" class="drill-rec">
+            <view v-for="c in drill.columns" :key="c.prop" class="drill-cell">
+              <text class="drill-k">{{ c.label }}</text>
+              <text class="drill-v">{{ r[c.prop] ?? '—' }}</text>
+            </view>
+          </view>
+          <view v-if="drill.truncated" class="truncated">共 {{ drill.total }} 条，仅显示前 {{ drill.rows.length }} 条</view>
+        </scroll-view>
+      </view>
+    </view>
   </view>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { getReport, getTable, runReport } from '../../api'
+import { drillReport, getReport, getTable, runReport } from '../../api'
 import UChart from '../../components/UChart.vue'
 
 const MODES = [
@@ -190,6 +214,33 @@ function maybeRun() {
   if (customStart.value && customEnd.value) run()
 }
 
+// ---------- 图表下钻 ----------
+const drill = ref({ visible: false, loading: false, title: '', columns: [], rows: [], total: 0, truncated: false })
+
+async function onDrill(b, groupIndex) {
+  drill.value = {
+    visible: true, loading: true, columns: [], rows: [], total: 0, truncated: false,
+    title: `${b.title} · ${b.labels[groupIndex]}`,
+  }
+  try {
+    let range
+    if (mode.value) {
+      range = { mode: mode.value }
+      if (mode.value === 'custom') {
+        range.start = customStart.value
+        range.end = customEnd.value
+      }
+    }
+    const res = await drillReport(tplId.value, {
+      block_id: b.id, group_index: groupIndex, range, filters: currentFilters(),
+    })
+    drill.value = { ...drill.value, loading: false, ...res }
+  } catch (e) {
+    drill.value.visible = false
+    uni.showToast({ title: e.message, icon: 'none' })
+  }
+}
+
 async function run() {
   loading.value = true
   try {
@@ -261,4 +312,24 @@ function changeMode(v) {
 }
 .truncated { font-size: 22rpx; color: #909399; margin-top: 12rpx; }
 .text-block { font-size: 28rpx; color: #606266; line-height: 1.7; }
+
+/* 图表下钻弹层 */
+.drill-mask {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, .45); z-index: 99;
+  display: flex; align-items: flex-end;
+}
+.drill-panel {
+  background: #fff; width: 100%; max-height: 75vh; border-radius: 24rpx 24rpx 0 0;
+  padding: 24rpx; box-sizing: border-box; display: flex; flex-direction: column;
+}
+.drill-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16rpx; }
+.drill-title { font-size: 30rpx; font-weight: 600; color: #303133; }
+.drill-close { font-size: 32rpx; color: #909399; padding: 0 12rpx; }
+.drill-body { max-height: 60vh; }
+.drill-rec {
+  border: 1rpx solid #ebeef5; border-radius: 12rpx; padding: 16rpx 20rpx; margin-bottom: 16rpx;
+}
+.drill-cell { display: flex; justify-content: space-between; gap: 24rpx; padding: 6rpx 0; }
+.drill-k { font-size: 24rpx; color: #909399; flex-shrink: 0; }
+.drill-v { font-size: 26rpx; color: #303133; text-align: right; word-break: break-all; }
 </style>

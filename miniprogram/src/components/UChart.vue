@@ -12,6 +12,8 @@
 import { getCurrentInstance, onMounted, watch } from 'vue'
 import uCharts from '@qiun/ucharts'
 
+const emit = defineEmits(['drill'])  // 松手时带出类目下标，用于图表下钻
+
 const props = defineProps({
   type: { type: String, default: 'bar' },   // bar / line / area / pie
   labels: { type: Array, default: () => [] },
@@ -98,11 +100,18 @@ function draw() {
 onMounted(() => setTimeout(draw, 50))
 watch(() => [props.labels, props.values, props.series], () => setTimeout(draw, 50), { deep: true })
 
-// 点击/滑动柱子显示数值提示，松手重绘清除
+// 点击/滑动柱子显示数值提示；松手视为下钻：带出当前类目下标并重绘清除提示
+let lastTouch = null
 function onTouch(e) {
+  lastTouch = e
   if (chart) chart.showToolTip(e)
 }
 function onTouchEnd() {
+  if (chart && lastTouch) {
+    const idx = chart.getCurrentDataIndex(lastTouch)
+    if (typeof idx === 'number' && idx >= 0) emit('drill', idx)
+    lastTouch = null
+  }
   draw()
 }
 </script>

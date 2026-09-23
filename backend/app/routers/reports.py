@@ -15,7 +15,7 @@ from ..services import scheduler as sched
 from ..services.llm import LLMError
 from ..services.llm.gateway import assist_report
 from ..services.meta_service import get_meta_fields, get_meta_table
-from ..services.report_engine import push_template, run_template, validate_template
+from ..services.report_engine import drill_chart, push_template, run_template, validate_template
 from ..services.report_export import DEFAULT_ECHARTS_CDN, export_html, export_xlsx
 from ..utils.access import check_owner_or_admin, get_table_access
 from ..utils.auth import get_current_user
@@ -177,6 +177,27 @@ def run_report(tpl_id: int, payload: dict | None = None, db: Session = Depends(g
     payload = payload or {}
     return run_template(db, tpl, _range_override(payload.get("range"), None, None, None),
                         viewer_filters=payload.get("filters"))
+
+
+@router.post("/{tpl_id}/drill")
+def report_drill(tpl_id: int, payload: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """图表下钻：{block_id, group_index, series_index?, range?, filters?} → 该图表单元的明细记录。"""
+    tpl = db.get(ReportTemplate, tpl_id)
+    if not tpl:
+        raise HTTPException(404, "报表模板不存在")
+    check_owner_or_admin(tpl.user_id, user)
+    get_table_access(db, tpl.table_id, user)
+    try:
+        group_index = int(payload.get("group_index"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "缺少有效的 group_index")
+    si = payload.get("series_index")
+    try:
+        series_index = int(si) if si is not None else None
+    except (TypeError, ValueError):
+        raise HTTPException(400, "series_index 无效")
+    return drill_chart(db, tpl, payload.get("block_id") or "", group_index, series_index,
+                       _range_override(payload.get("range"), None, None, None), payload.get("filters"))
 
 
 @router.get("/{tpl_id}/export")

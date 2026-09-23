@@ -639,6 +639,74 @@ for rid_ in ms_ids:
     client.delete(f"/api/reports/{rid_}")
 print("报表多系列图表（多指标/二级分组/堆叠/面积图）通过")
 
+# 10.8 图表下钻：分组/系列序号取明细记录
+DRILL_BLOCKS = MS_BLOCKS + [
+    {"id": "t1", "type": "table", "title": "明细", "columns": ["customer_name"], "sort_by": "id", "sort_order": "desc", "limit": 10},
+]
+drill_ids = []
+for t in (tj, tp):
+    r = client.post("/api/reports", json={
+        "name": "下钻", "table_id": t, "range": {"mode": "past_30d", "date_field": "created_at"},
+        "blocks": DRILL_BLOCKS, "filter_fields": ["is_deal", "customer_name"],
+    })
+    assert r.status_code == 200, r.text
+    drill_ids.append(r.json()["id"])
+
+run0 = client.post(f"/api/reports/{drill_ids[0]}/run").json()
+c1 = _blocks_by_id(run0)["c1"]
+assert c1["group2"] is False and _blocks_by_id(run0)["c2"]["group2"] is True
+
+# c1（按是否成交分组，多指标）：成交组 = 首指标"总额"最大的组（张三+王五）
+gi_deal = c1["series"][0]["values"].index(max(c1["series"][0]["values"]))
+r = client.post(f"/api/reports/{drill_ids[0]}/drill", json={"block_id": "c1", "group_index": gi_deal})
+d = r.json()
+assert r.status_code == 200 and d["total"] == 2, r.text
+assert {row["customer_name"] for row in d["rows"]} == {"张三", "王五"}
+assert any(c["prop"] == "customer_name" for c in d["columns"]) and any(c["prop"] == "created_at" for c in d["columns"])
+
+# 多指标图的系列序号不影响记录集（指标不是筛选维度）
+r = client.post(f"/api/reports/{drill_ids[0]}/drill", json={"block_id": "c1", "group_index": gi_deal, "series_index": 1})
+assert r.json()["total"] == 2, r.text
+
+# 查看端筛选叠加并收窄：只含"张" → 成交组只剩张三
+r = client.post(f"/api/reports/{drill_ids[0]}/drill", json={
+    "block_id": "c1", "group_index": 0,
+    "filters": {"logic": "AND", "rules": [{"field": "customer_name", "op": "contains", "value": "张"}]}})
+assert r.status_code == 200 and r.json()["total"] == 1 and r.json()["rows"][0]["customer_name"] == "张三", r.text
+# 未开放字段的查看端筛选被拒
+r = client.post(f"/api/reports/{drill_ids[0]}/drill", json={
+    "block_id": "c1", "group_index": gi_deal,
+    "filters": {"logic": "AND", "rules": [{"field": "amount", "op": "gt", "value": 1}]}})
+assert r.status_code == 400, r.text
+
+# c2（按月 × 成交二级分组）：2026-10 桶 + 成交系列 → 张三；"（空）"桶 + 未成交系列 → 赵六。两引擎各自定位序号后结果一致
+for rid in drill_ids:
+    res = client.post(f"/api/reports/{rid}/run").json()
+    c2r = _blocks_by_id(res)["c2"]
+    gi_oct = c2r["labels"].index("2026-10")
+    i_sep = c2r["labels"].index("2026-09")
+    si_deal = next(i for i, s in enumerate(c2r["series"]) if s["values"][i_sep] == 1)
+    si_nodeal = 1 - si_deal
+    d = client.post(f"/api/reports/{rid}/drill",
+                    json={"block_id": "c2", "group_index": gi_oct, "series_index": si_deal}).json()
+    assert d["total"] == 1 and d["rows"][0]["customer_name"] == "张三", (rid, d)
+    gi_null = c2r["labels"].index("（空）")
+    d = client.post(f"/api/reports/{rid}/drill",
+                    json={"block_id": "c2", "group_index": gi_null, "series_index": si_nodeal}).json()
+    assert d["total"] == 1 and d["rows"][0]["customer_name"] == "赵六", (rid, d)
+
+# 非法序号 / 非图表区块 / 不存在的区块
+r = client.post(f"/api/reports/{drill_ids[0]}/drill", json={"block_id": "c1", "group_index": 99})
+assert r.status_code == 400, r.text
+r = client.post(f"/api/reports/{drill_ids[0]}/drill", json={"block_id": "t1", "group_index": 0})
+assert r.status_code == 400, r.text
+r = client.post(f"/api/reports/{drill_ids[0]}/drill", json={"block_id": "ghost", "group_index": 0})
+assert r.status_code == 400, r.text
+
+for rid_ in drill_ids:
+    client.delete(f"/api/reports/{rid_}")
+print("报表图表下钻（分组/系列/查看端筛选/非法参数）通过")
+
 # 11. 权限矩阵：未分享 404 / 分享者按开关 / 主人与 admin 全权
 admin_headers = dict(client.headers)
 r = client.post("/api/auth/register", json={"username": "worker", "password": "secret123"})

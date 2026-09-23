@@ -79,6 +79,7 @@
         <h3>{{ b.title }}</h3>
         <template v-if="b.type === 'chart'">
           <div :ref="(el) => chartRef(b.id, el)" class="chart" />
+          <div class="drill-hint">点击图表可查看该分组明细</div>
         </template>
         <template v-else-if="b.type === 'table'">
           <el-table :data="b.rows" size="small" border max-height="480">
@@ -97,6 +98,22 @@
       </div>
       <el-empty v-if="!result.blocks.length" description="该模板还没有区块，去编辑添加" />
     </template>
+
+    <!-- 图表下钻明细 -->
+    <el-dialog v-model="drill.visible" :title="drill.title" width="80%" top="8vh">
+      <div v-loading="drill.loading">
+        <el-table :data="drill.rows" size="small" border max-height="55vh">
+          <el-table-column
+            v-for="c in drill.columns" :key="c.prop" :prop="c.prop" :label="c.label"
+            show-overflow-tooltip
+          />
+        </el-table>
+        <div v-if="drill.truncated" style="font-size: 12px; color: #909399; margin-top: 6px">
+          共 {{ drill.total }} 条，仅显示前 {{ drill.rows.length }} 条
+        </div>
+        <el-empty v-if="!drill.loading && !drill.rows.length" description="该分组暂无记录" :image-size="60" />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -109,7 +126,7 @@ import * as echarts from 'echarts/core'
 import { BarChart, LineChart, PieChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TitleComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { reportExportUrl, runReport, getReport, getTable } from '../api'
+import { reportExportUrl, runReport, drillReport, getReport, getTable } from '../api'
 
 echarts.use([BarChart, LineChart, PieChart, GridComponent, LegendComponent, TitleComponent, TooltipComponent, CanvasRenderer])
 
@@ -172,7 +189,35 @@ function renderCharts() {
       }
     }
     ch.setOption(option)
+    ch.off('click')
+    ch.on('click', (p) => onChartClick(b, p))
     charts.push(ch)
+  }
+}
+
+// ---------- 图表下钻 ----------
+const drill = ref({ visible: false, loading: false, title: '', columns: [], rows: [], total: 0, truncated: false })
+
+async function onChartClick(b, p) {
+  if (p.componentType !== 'series' || p.dataIndex == null) return
+  const groupIndex = p.dataIndex
+  // 二级分组图的系列是筛选维度；多指标图的系列只是指标，不影响记录集
+  const seriesIndex = b.group2 && p.seriesIndex != null ? p.seriesIndex : null
+  const seriesName = b.group2 ? b.series?.[p.seriesIndex]?.name : null
+  drill.value = {
+    visible: true, loading: true, columns: [], rows: [], total: 0, truncated: false,
+    title: `${b.title} · ${b.labels[groupIndex]}${seriesName ? ` · ${seriesName}` : ''}`,
+  }
+  try {
+    const res = await drillReport(tplId, {
+      block_id: b.id, group_index: groupIndex, series_index: seriesIndex,
+      range: currentRange() || { mode: rangeMode.value }, filters: currentFilters(),
+    })
+    Object.assign(drill.value, { loading: false, ...res })
+  } catch (e) {
+    drill.value.loading = false
+    drill.value.visible = false
+    ElMessage.error(e.message)
   }
 }
 
@@ -298,5 +343,6 @@ onBeforeUnmount(() => {
 .block { background: #fff; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0, 0, 0, .06); }
 .block h3 { margin: 0 0 12px; font-size: 15px; }
 .chart { width: 100%; height: 340px; }
+.drill-hint { font-size: 12px; color: #c0c4cc; text-align: right; }
 .text-block { color: #606266; line-height: 1.8; white-space: pre-wrap; }
 </style>
