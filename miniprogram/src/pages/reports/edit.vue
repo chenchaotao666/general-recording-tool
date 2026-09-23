@@ -67,7 +67,7 @@
       <!-- 图表 -->
       <template v-else-if="b.type === 'chart'">
         <view class="radio-row" style="margin-bottom: 12rpx">
-          <view v-for="[v, l] in CHART_TYPES" :key="v" class="radio sm" :class="{ active: b.chart_type === v }" @click="b.chart_type = v">{{ l }}</view>
+          <view v-for="[v, l] in CHART_TYPES" :key="v" class="radio sm" :class="{ active: b.chart_type === v }" @click="b.chart_type = v; v === 'pie' && setSeriesMode(b, 'single')">{{ l }}</view>
         </view>
         <view class="fc-row">
           <picker :range="GROUP_KINDS" range-key="label" @change="(e) => onGroupKind(b, e)">
@@ -405,14 +405,14 @@ function onAggChange(b, agg) {
   if (!needsField(agg)) b.field = null
 }
 
-// 图表系列模式：metrics 非空 → 多指标；group2 有字段 → 二级分组；否则单指标
+// 图表系列模式：series_mode 为编辑器内部显式状态（保存时剥离）；
+// 旧数据没有它时按内容反推：metrics 非空 → 多指标；group2 有字段 → 二级分组；否则单指标
 function seriesMode(b) {
-  if (b.metrics?.length) return 'metrics'
-  if (b.group2?.field) return 'group2'
-  return 'single'
+  return b.series_mode || (b.metrics?.length ? 'metrics' : b.group2?.field ? 'group2' : 'single')
 }
 
 function setSeriesMode(b, mode) {
+  b.series_mode = mode
   if (mode === 'metrics') {
     b.metrics = [{ agg: b.agg || 'count', field: b.field, title: '' }]
     b.group2 = { field: null }
@@ -533,12 +533,15 @@ async function save() {
     table_id: tables.value[tableIndex.value].id,
     enabled: f.schedule.type ? f.enabled : false,
     range: f.range,
-    blocks: f.blocks.map((b) => ({
-      ...b,
-      top_n: b.top_n !== undefined ? Number(b.top_n) || 8 : undefined,
-      limit: b.limit !== undefined ? Number(b.limit) || 100 : undefined,
-      filters: { logic: b.filters.logic, rules: (b.filters.rules || []).filter((r) => r.field && r.op) },
-    })),
+    blocks: f.blocks.map((b) => {
+      const { series_mode, ...rest } = b  // series_mode 仅编辑器内部使用，不入库
+      return {
+        ...rest,
+        top_n: b.top_n !== undefined ? Number(b.top_n) || 8 : undefined,
+        limit: b.limit !== undefined ? Number(b.limit) || 100 : undefined,
+        filters: { logic: b.filters.logic, rules: (b.filters.rules || []).filter((r) => r.field && r.op) },
+      }
+    }),
     filter_fields: f.filter_fields || [],
     schedule: f.schedule.type === 'interval'
       ? { type: 'interval', minutes: Number(f.schedule.minutes) || 60 }

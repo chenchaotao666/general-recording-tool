@@ -205,10 +205,13 @@ async function save() {
     table_id: form.table_id,
     enabled: form.schedule.type ? form.enabled : false,
     range: form.range,
-    blocks: form.blocks.map((b) => ({
-      ...b,
-      filters: { logic: b.filters.logic, rules: (b.filters.rules || []).filter((r) => r.field && r.op) },
-    })),
+    blocks: form.blocks.map((b) => {
+      const { series_mode, ...rest } = b  // series_mode 仅编辑器内部使用，不入库
+      return {
+        ...rest,
+        filters: { logic: b.filters.logic, rules: (b.filters.rules || []).filter((r) => r.field && r.op) },
+      }
+    }),
     filter_fields: form.filter_fields || [],
     schedule: form.schedule.type === 'interval'
       ? { type: 'interval', minutes: form.schedule.minutes }

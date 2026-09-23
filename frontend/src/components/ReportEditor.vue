@@ -70,13 +70,13 @@
 
           <!-- 图表 -->
           <div v-else-if="b.type === 'chart'" class="block-body">
-            <el-radio-group v-model="b.chart_type" size="small">
+            <el-radio-group v-model="b.chart_type" size="small" @change="(v) => v === 'pie' && setSeriesMode(b, 'single')">
               <el-radio-button value="bar">柱状图</el-radio-button>
               <el-radio-button value="line">折线图</el-radio-button>
               <el-radio-button value="area">面积图</el-radio-button>
               <el-radio-button value="pie">饼图</el-radio-button>
             </el-radio-group>
-            <div style="margin-top: 8px">
+            <div style="margin-top: 8px; display: flex; align-items: center; flex-wrap: wrap; row-gap: 6px">
               <el-select v-model="b.group.kind" size="small" style="width: 120px">
                 <el-option label="按字段分组" value="field" />
                 <el-option label="按日" value="day" />
@@ -105,7 +105,7 @@
               </template>
             </div>
             <!-- 多系列：多指标或二级分组（饼图不支持） -->
-            <div v-if="b.chart_type !== 'pie'" style="margin-top: 8px">
+            <div v-if="b.chart_type !== 'pie'" style="margin-top: 8px; display: flex; align-items: center">
               <span style="font-size: 12px; color: #909399">系列</span>
               <el-radio-group :model-value="seriesMode(b)" size="small" style="margin-left: 8px" @change="(v) => setSeriesMode(b, v)">
                 <el-radio-button value="single">单指标</el-radio-button>
@@ -115,7 +115,7 @@
               <el-checkbox v-if="seriesMode(b) !== 'single'" v-model="b.stack" style="margin-left: 12px">堆叠</el-checkbox>
             </div>
             <div v-if="seriesMode(b) === 'metrics'" style="margin-top: 8px">
-              <div v-for="(m, mi) in b.metrics" :key="mi" style="display: flex; gap: 8px; margin-bottom: 6px">
+              <div v-for="(m, mi) in b.metrics" :key="mi" style="display: flex; gap: 8px; margin-bottom: 6px; align-items: center">
                 <el-select v-model="m.agg" size="small" style="width: 100px" @change="onMetricAgg(m)">
                   <el-option v-for="[v, l] in CHART_AGGS" :key="v" :label="l" :value="v" />
                 </el-select>
@@ -130,7 +130,7 @@
                 @click="b.metrics.push({ agg: 'count', field: null, title: '' })"
               >+ 添加指标（最多 5 个）</el-button>
             </div>
-            <div v-if="seriesMode(b) === 'group2'" style="margin-top: 8px">
+            <div v-if="seriesMode(b) === 'group2'" style="margin-top: 8px; display: flex; align-items: center">
               <el-select v-model="b.group2.field" size="small" placeholder="二级分组字段" style="width: 160px">
                 <el-option v-for="f in group2Fields" :key="f.field_name" :label="f.label" :value="f.field_name" />
               </el-select>
@@ -375,14 +375,14 @@ const numericFields = computed(() => tableFields.value.filter((f) => ['int', 'de
 const group2Fields = computed(() => tableFields.value.filter((f) => !['date', 'datetime'].includes(f.data_type)))
 const statBlocks = computed(() => props.form.blocks.filter((b) => b.type === 'stat'))
 
-// 图表系列模式：metrics 非空 → 多指标；group2 有字段 → 二级分组；否则单指标
+// 图表系列模式：series_mode 为编辑器内部显式状态（保存时剥离）；
+// 旧数据没有它时按内容反推：metrics 非空 → 多指标；group2 有字段 → 二级分组；否则单指标
 function seriesMode(b) {
-  if (b.metrics?.length) return 'metrics'
-  if (b.group2?.field) return 'group2'
-  return 'single'
+  return b.series_mode || (b.metrics?.length ? 'metrics' : b.group2?.field ? 'group2' : 'single')
 }
 
 function setSeriesMode(b, mode) {
+  b.series_mode = mode
   if (mode === 'metrics') {
     b.metrics = [{ agg: b.agg || 'count', field: b.field, title: '' }]
     b.group2 = { field: null }
