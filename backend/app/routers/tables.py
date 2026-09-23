@@ -12,11 +12,13 @@ from ..services import meta_service
 from ..services.dyn_engine import log_audit
 from ..services.excel_parser import ExcelParseError, build_headers, read_sheet
 from ..services.meta_service import MetaError
+from ..services.notify import notify_user
 from ..services.typemap import coerce_value
 from ..services.uploads import UploadNotFound, get_upload_filename, get_upload_path
 from ..utils.access import TableAccess, get_table_access, require_table
 from ..utils.auth import get_current_user
 from ..utils.rbac import has_perm, perm_value
+from .friends import is_friend, same_group
 
 router = APIRouter(prefix="/api/tables", tags=["tables"])
 
@@ -40,18 +42,17 @@ def _share_perms(db: Session, mt: MetaTable, user: User) -> dict:
 
 @router.get("")
 def list_tables(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """我的表 + 分享给我的表（含用户组分享，admin 全量）。"""
-    q = db.query(MetaTable)
-    if user.role != "admin":
-        shared_ids = [
-            s.table_id for s in db.query(TableShare)
-            .outerjoin(GroupMember, TableShare.group_id == GroupMember.group_id)
-            .filter(
-                or_(TableShare.user_id == user.id, GroupMember.user_id == user.id),
-                TableShare.can_view == True,  # noqa: E712
-            )
-        ]
-        q = q.filter(or_(MetaTable.owner_id == user.id, MetaTable.id.in_(shared_ids or [-1])))
+    """我的表 + 分享给我的表（含用户组分享）。admin 不例外——未分享的不出现在列表。"""
+    shared_ids = [
+        s.table_id for s in db.query(TableShare)
+        .outerjoin(GroupMember, TableShare.group_id == GroupMember.group_id)
+        .filter(
+            or_(TableShare.user_id == user.id, GroupMember.user_id == user.id),
+            TableShare.can_view == True,  # noqa: E712
+            TableShare.status == "accepted",
+        )
+    ]
+    q = db.query(MetaTable).filter(or_(MetaTable.owner_id == user.id, MetaTable.id.in_(shared_ids or [-1])))
     rows = q.order_by(MetaTable.id.desc()).all()
     return [meta_service.table_out(db, t, with_fields=False, access=_share_perms(db, t, user)) for t in rows]
 
@@ -147,6 +148,7 @@ def _share_out(db: Session, s: TableShare) -> dict:
         "id": s.id, "target": target, "target_type": target_type,
         "can_view": s.can_view, "can_create": s.can_create,
         "can_edit": s.can_edit, "can_delete": s.can_delete,
+        "status": s.status,
     }
 
 
@@ -165,30 +167,61 @@ def put_share(table_id: int, payload: TableShareIn, db: Session = Depends(get_db
               user: User = Depends(get_current_user)):
     mt = access.table
     _require_sharer(db, mt, user)
+    is_admin = user.role == "admin"
+    notify_target = None
+    notify_members: list[int] = []
     if payload.group_id is not None:
         group = db.get(Group, payload.group_id)
         if not group:
             raise HTTPException(404, "用户组不存在")
+        # 组分享只能发到自己所在的组（admin 豁免）；组成员资格即同意，即时生效
+        if not is_admin and not db.query(GroupMember).filter_by(
+            group_id=payload.group_id, user_id=user.id
+        ).first():
+            raise HTTPException(403, "只能分享到自己所在的组")
         share = db.query(TableShare).filter_by(table_id=table_id, group_id=payload.group_id).first()
         if not share:
             share = TableShare(table_id=table_id, group_id=payload.group_id, shared_by=user.id)
             db.add(share)
-    elif payload.username:
-        target = db.query(User).filter(User.username == payload.username.strip()).first()
+            # 即时生效，但告知每个成员（更新权限不重复通知）
+            notify_members = [
+                m.user_id for m in db.query(GroupMember).filter_by(group_id=payload.group_id).all()
+                if m.user_id != user.id
+            ]
+        share.status = "accepted"
+    else:
+        target = None
+        if payload.user_id is not None:
+            target = db.get(User, payload.user_id)
+        elif payload.username:
+            target = db.query(User).filter(User.username == payload.username.strip()).first()
         if not target:
-            raise HTTPException(404, "用户不存在")
+            raise HTTPException(404, "用户不存在" if (payload.user_id is not None or payload.username) else "请指定分享的用户或用户组")
         if target.id == mt.owner_id:
             raise HTTPException(400, "不能分享给表主人")
+        # 直发对象约束（admin 豁免）：只能分享给好友或同组用户
+        if not is_admin and not (is_friend(db, user.id, target.id) or same_group(db, user.id, target.id)):
+            raise HTTPException(403, "只能分享给好友或同组用户")
         share = db.query(TableShare).filter_by(table_id=table_id, user_id=target.id).first()
         if not share:
-            share = TableShare(table_id=table_id, user_id=target.id, shared_by=user.id)
+            share = TableShare(table_id=table_id, user_id=target.id, shared_by=user.id, status="pending")
             db.add(share)
-    else:
-        raise HTTPException(400, "请指定分享的用户或用户组")
+            notify_target = target
+        elif share.status == "rejected":
+            share.status = "pending"   # 被拒绝后重新发起
+            notify_target = target
+        # accepted 仅更新权限不打扰对方；pending 更新权限不重复通知
     share.can_view = payload.can_view
     share.can_create = payload.can_create
     share.can_edit = payload.can_edit
     share.can_delete = payload.can_delete
+    if notify_target:
+        notify_user(db, notify_target.id, "收到表分享",
+                    f"{user.username} 把数据表「{mt.label}」分享给你，请确认", link="/tables")
+    for mid in notify_members:
+        notify_user(db, mid, "收到表分享",
+                    f"{user.username} 把数据表「{mt.label}」分享给你所在的组「{group.name}」，现在可以查看",
+                    link="/tables")
     db.commit()
     return _share_out(db, share)
 

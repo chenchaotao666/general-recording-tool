@@ -99,6 +99,7 @@ class TableShare(Base):
     can_edit = Column(Boolean, default=False)
     can_delete = Column(Boolean, default=False)
     shared_by = Column(Integer, ForeignKey("users.id"))   # 分享操作者
+    status = Column(String(16), default="pending")        # pending（待对方确认）/ accepted / rejected；组分享恒为 accepted
     created_at = Column(DateTime, default=datetime.now)
 
     __table_args__ = (UniqueConstraint("table_id", "user_id", "group_id", name="uq_table_shares_target"),)
@@ -124,6 +125,20 @@ class GroupMember(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     __table_args__ = (UniqueConstraint("group_id", "user_id", name="uq_group_members"),)
+
+
+class Friendship(Base):
+    """好友关系（申请-同意制）：requester 申请，addressee 同意后双向生效"""
+    __tablename__ = "friendships"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    requester_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    addressee_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    status = Column(String(16), default="pending")        # pending / accepted / rejected
+    created_at = Column(DateTime, default=datetime.now)
+    responded_at = Column(DateTime)
+
+    __table_args__ = (UniqueConstraint("requester_id", "addressee_id", name="uq_friendships_pair"),)
 
 
 class SharedLink(Base):

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import User
 from ..utils.auth import create_token, get_current_user, hash_password, verify_password
+from ..utils.rbac import user_perms
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -20,8 +21,8 @@ class PasswordIn(BaseModel):
     new_password: str
 
 
-def _user_payload(user: User) -> dict:
-    return {"id": user.id, "username": user.username, "role": user.role}
+def _user_payload(db: Session, user: User) -> dict:
+    return {"id": user.id, "username": user.username, "role": user.role, "perms": user_perms(db, user)}
 
 
 @router.post("/login")
@@ -29,7 +30,7 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == body.username).first()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(401, "用户名或密码错误")
-    return {"token": create_token(user.id), "user": _user_payload(user)}
+    return {"token": create_token(user.id), "user": _user_payload(db, user)}
 
 
 @router.post("/register")
@@ -46,12 +47,12 @@ def register(body: LoginIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     # 注册成功直接登录
-    return {"token": create_token(user.id), "user": _user_payload(user)}
+    return {"token": create_token(user.id), "user": _user_payload(db, user)}
 
 
 @router.get("/me")
-def me(user: User = Depends(get_current_user)):
-    return _user_payload(user)
+def me(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return _user_payload(db, user)
 
 
 @router.put("/password")

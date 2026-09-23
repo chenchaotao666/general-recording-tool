@@ -49,6 +49,7 @@ def get_table_access(db: Session, table_id: int, user: User) -> TableAccess:
         .filter(
             TableShare.table_id == table_id,
             or_(TableShare.user_id == user.id, GroupMember.user_id == user.id),
+            TableShare.status == "accepted",   # 待确认/已拒绝的分享不产生权限
         )
         .all()
     )

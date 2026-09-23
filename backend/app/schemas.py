@@ -69,12 +69,17 @@ class TableCreate(BaseModel):
 
 
 class TableShareIn(BaseModel):
-    username: str | None = None      # 分享给用户（二选一）
+    user_id: int | None = None       # 分享给用户（优先，选择器选中后直传 id）
+    username: str | None = None      # 分享给用户（二选一，user_id 的兜底）
     group_id: int | None = None      # 分享给用户组（二选一）
     can_view: bool = True
     can_create: bool = False
     can_edit: bool = False
     can_delete: bool = False
+
+
+class FriendRequestIn(BaseModel):
+    username: str
 
 
 class FieldUpdate(BaseModel):

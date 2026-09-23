@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import auth, dyn, excel, groups, notify, rbac, reports, settings as settings_router, share_links, tables, tasks, users, vision
+from .routers import auth, dyn, excel, friends, groups, notify, rbac, reports, settings as settings_router, share_links, shares, tables, tasks, users, vision
 from .services import scheduler
 from .services.migrate import run_migrations
 from .utils.auth import get_current_user, hash_password
@@ -62,6 +62,8 @@ app.include_router(vision.router, dependencies=protected)
 app.include_router(tasks.router, dependencies=protected)
 app.include_router(reports.router, dependencies=protected)
 app.include_router(notify.router, dependencies=protected)
+app.include_router(friends.router, dependencies=protected)
+app.include_router(shares.router, dependencies=protected)
 app.include_router(settings_router.router, dependencies=protected)
 
 # 前端构建产物存在时直接由后端托管（生产模式）

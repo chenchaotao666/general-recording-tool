@@ -8,7 +8,8 @@ from urllib.parse import quote
 import httpx
 from sqlalchemy.orm import Session
 
-from ..models import AppSetting, Notification
+from ..models import AppSetting
+from .notify import notify_user
 
 
 class ActionError(Exception):
@@ -149,8 +150,7 @@ def send_smtp_html(cfg: dict, recipients: list[str], subject: str, html: str,
 
 
 def act_notify(db: Session, rule, record: dict, content: str) -> None:
-    db.add(Notification(title=f"【{rule.name}】", content=content, link=f"/t/{rule.table_id}",
-                        user_id=rule.user_id))  # 接收人 = 规则归属人
+    notify_user(db, rule.user_id, f"【{rule.name}】", content, link=f"/t/{rule.table_id}")  # 接收人 = 规则归属人
 
 
 def act_email(db: Session, rule, record: dict, content: str) -> None:

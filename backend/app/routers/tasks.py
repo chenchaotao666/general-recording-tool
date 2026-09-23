@@ -93,10 +93,7 @@ def _out(db: Session, rule: TaskRule) -> dict:
 
 @router.get("")
 def list_rules(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    q = db.query(TaskRule)
-    if user.role != "admin":
-        q = q.filter(TaskRule.user_id == user.id)
-    rows = q.order_by(TaskRule.id.desc()).all()
+    rows = db.query(TaskRule).filter(TaskRule.user_id == user.id).order_by(TaskRule.id.desc()).all()
     return [_out(db, r) for r in rows]
 
 

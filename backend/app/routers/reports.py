@@ -68,10 +68,7 @@ def _apply(rule: ReportTemplate, payload: ReportTemplateIn) -> None:
 
 @router.get("")
 def list_templates(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    q = db.query(ReportTemplate)
-    if user.role != "admin":
-        q = q.filter(ReportTemplate.user_id == user.id)
-    rows = q.order_by(ReportTemplate.id.desc()).all()
+    rows = db.query(ReportTemplate).filter(ReportTemplate.user_id == user.id).order_by(ReportTemplate.id.desc()).all()
     return [_out(db, t) for t in rows]
 
 

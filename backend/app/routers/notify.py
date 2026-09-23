@@ -1,4 +1,4 @@
-"""站内通知（按接收人隔离，admin 可见全部）。"""
+"""站内通知（按接收人隔离，admin 也不例外）。"""
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -16,10 +16,7 @@ class ReadIn(BaseModel):
 
 
 def _my_notifications(db: Session, user: User):
-    q = db.query(Notification)
-    if user.role != "admin":
-        q = q.filter(Notification.user_id == user.id)
-    return q
+    return db.query(Notification).filter(Notification.user_id == user.id)
 
 
 @router.get("")

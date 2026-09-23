@@ -25,6 +25,28 @@ class MemberIn(BaseModel):
     username: str
 
 
+@router.get("/mine")
+def list_my_groups(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """分享对话框的组下拉数据源：普通用户只列自己所在的组，admin 可列全部（后端约束对 admin 豁免）。"""
+    if user.role == "admin":
+        rows = db.query(Group).order_by(Group.id).all()
+    else:
+        rows = (
+            db.query(Group)
+            .join(GroupMember, GroupMember.group_id == Group.id)
+            .filter(GroupMember.user_id == user.id)
+            .order_by(Group.id)
+            .all()
+        )
+    return [
+        {
+            "id": g.id, "name": g.name, "description": g.description,
+            "member_count": db.query(GroupMember).filter_by(group_id=g.id).count(),
+        }
+        for g in rows
+    ]
+
+
 def _group_out(db: Session, g: Group) -> dict:
     members = (
         db.query(User)

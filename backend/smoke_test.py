@@ -23,12 +23,14 @@ r = client.post("/api/auth/login", json={"username": "admin", "password": "admin
 assert r.status_code == 200, r.text
 token = r.json()["token"]
 assert r.json()["user"]["role"] == "admin"
+assert {"share", "create_physical_table", "max_tables"} <= set(r.json()["user"]["perms"])  # admin 拥有全部权限
 client.headers.update({"Authorization": f"Bearer {token}"})
 print("登录成功，token 已注入请求头")
 
 # 注册：新用户可注册并直接登录；重名/弱密码被拒绝
 r = client.post("/api/auth/register", json={"username": "zhangsan", "password": "secret123"})
 assert r.status_code == 200 and r.json()["user"]["role"] == "user", r.text
+assert "share" not in r.json()["user"]["perms"]  # 普通用户默认无分享权限
 r = client.post("/api/auth/register", json={"username": "zhangsan", "password": "secret123"})
 assert r.status_code == 400, r.text
 r = client.post("/api/auth/register", json={"username": "lisi", "password": "123"})
@@ -404,7 +406,13 @@ assert client.get(f"/api/dyn/{tj}/records").status_code == 404
 as_user(admin_headers)
 r = client.post(f"/api/tables/{tj}/shares", json={"username": "worker", "can_view": True})
 assert r.status_code == 200, r.text
+assert r.json()["status"] == "pending"  # 直发分享需对方确认
 as_user(worker_headers)
+assert client.get(f"/api/tables/{tj}").status_code == 404  # 待确认不可见
+assert all(t["id"] != tj for t in client.get("/api/tables").json())
+r = client.get("/api/shares/pending")
+share_id = next(s["id"] for s in r.json() if s["table_id"] == tj)
+assert client.post(f"/api/shares/{share_id}/accept").status_code == 200
 r = client.get(f"/api/tables/{tj}")
 assert r.status_code == 200 and r.json()["my_perms"]["can_create"] is False, r.text
 assert client.get(f"/api/dyn/{tj}/records").json()["total"] == 4
@@ -415,7 +423,7 @@ assert client.post(f"/api/tables/{tj}/shares", json={"username": "outsider"}).st
 assert any(t["id"] == tj and t["owner_label"] == "admin" for t in client.get("/api/tables").json())  # 分享表可见
 as_user(admin_headers)
 r = client.post(f"/api/tables/{tj}/shares", json={"username": "worker", "can_view": True, "can_create": True})
-assert r.status_code == 200
+assert r.status_code == 200 and r.json()["status"] == "accepted"  # 已接受的分享仅更新权限，不回到待确认
 as_user(worker_headers)
 assert client.post(f"/api/dyn/{tj}/records", json={"customer_name": "worker新增", "amount": 1}).status_code == 200
 as_user(outsider_headers)
@@ -431,13 +439,25 @@ r = client.post("/api/tables", json={"label": "worker的表", "fields": PFIELDS}
 worker_tid = r.json()["table"]["id"]
 assert client.post(f"/api/tables/{worker_tid}/shares", json={"username": "outsider"}).status_code == 403  # user 不能分享
 as_user(admin_headers)
+assert all(t["id"] != worker_tid for t in client.get("/api/tables").json())  # admin 列表也不含未分享给自己的表
 r = client.get("/api/users")
 worker_id = next(u["id"] for u in r.json() if u["username"] == "worker")
 assert client.put(f"/api/users/{worker_id}/role", json={"role": "vip"}).status_code == 200
 me_id = next(u["id"] for u in client.get("/api/users").json() if u["role"] == "admin")
 assert client.put(f"/api/users/{me_id}/role", json={"role": "user"}).status_code == 400  # 不能改自己
 as_user(worker_headers)
-assert client.post(f"/api/tables/{worker_tid}/shares", json={"username": "outsider", "can_view": True}).status_code == 200  # vip 可分享
+# 分享对象约束： outsider 还不是好友/同组 → 403；建立好友关系后可分享
+assert client.post(f"/api/tables/{worker_tid}/shares", json={"username": "outsider", "can_view": True}).status_code == 403
+r = client.post("/api/friends/request", json={"username": "outsider"})
+assert r.status_code == 200 and r.json()["status"] == "pending", r.text
+assert client.post("/api/friends/request", json={"username": "outsider"}).status_code == 400  # 重复申请
+as_user(outsider_headers)
+r = client.get("/api/friends/requests")
+fid = next(f["id"] for f in r.json() if f["username"] == "worker")
+assert client.post(f"/api/friends/{fid}/accept").status_code == 200
+as_user(worker_headers)
+assert any(f["username"] == "outsider" for f in client.get("/api/friends").json())
+assert client.post(f"/api/tables/{worker_tid}/shares", json={"username": "outsider", "can_view": True}).status_code == 200  # vip 可分享（待确认）
 r = client.post("/api/tables", json={"label": "vip物理表", "storage_mode": "physical", "fields": PFIELDS})
 assert r.status_code == 200  # vip 可建独立表
 vip_tid = r.json()["table"]["id"]
@@ -461,6 +481,8 @@ assert all(t["id"] != worker_rule for t in client.get("/api/tasks").json())
 assert all(t["id"] != rep_ids[0] for t in client.get("/api/reports").json())
 as_user(outsider_headers)
 assert client.post(f"/api/tasks/{worker_rule}/run").status_code == 404  # 他人规则不可操作
+as_user(outsider_headers)
+client.post("/api/notify/read", json={"all": True})  # 清掉好友申请通知，避免干扰下面的隔离断言
 as_user(worker_headers)
 client.post("/api/notify/read", json={"all": True})
 r = client.post(f"/api/tasks/{worker_rule}/run")
@@ -469,7 +491,7 @@ assert client.get("/api/notify/unread_count").json()["count"] >= 1  # worker 收
 as_user(outsider_headers)
 assert client.get("/api/notify/unread_count").json()["count"] == 0  # 别人收不到
 as_user(admin_headers)
-assert client.get("/api/notify/unread_count").status_code == 200  # admin 可见全部（不报错）
+assert client.get("/api/notify/unread_count").status_code == 200  # admin 也只看到自己的通知（不报错）
 print("归属隔离通过")
 
 # 14. 迁移幂等：重复执行不报错、列不重复加
@@ -510,6 +532,13 @@ assert r.status_code == 200, r.text
 lu_tid = r.json()["table"]["id"]
 r = client.post("/api/tables", json={"label": "限额表2", "fields": PFIELDS})
 assert r.status_code == 403, r.text  # 上限 1 张
+# 分享对象约束：先与 outsider 成为好友
+r = client.post("/api/friends/request", json={"username": "outsider"})
+lu_fid = r.json()["id"]
+saved_h = dict(client.headers)
+client.headers = outsider_headers
+assert client.post(f"/api/friends/{lu_fid}/accept").status_code == 200
+client.headers = saved_h
 assert client.post(f"/api/tables/{lu_tid}/shares", json={"username": "outsider", "can_view": True}).status_code == 200  # 有 share
 r = client.post("/api/tables", json={"label": "限额物理表", "storage_mode": "physical", "fields": PFIELDS})
 assert r.status_code == 403, r.text  # 无 create_physical_table
@@ -523,7 +552,97 @@ assert client.delete(f"/api/roles/{limited_id}").status_code == 400  # 用户仍
 assert client.put(f"/api/users/{lu_id}/role", json={"role": "user"}).status_code == 200  # 改回默认角色
 assert client.delete(f"/api/roles/{limited_id}").status_code == 200
 assert client.delete(f"/api/permissions/{custom_pid}").status_code == 200
+
+# 给内置 user 角色授予 share：普通用户重新登录后即可分享（登录信息携带权限列表）
+r = client.get("/api/roles")
+user_role = next(x for x in r.json() if x["code"] == "user")
+grants = [{"permission_id": p["id"], "value": p["value"]} for p in user_role["permissions"]]
+grants.append({"permission_id": perm_ids["share"]})
+r = client.put(f"/api/roles/{user_role['id']}/permissions", json={"grants": grants})
+assert r.status_code == 200, r.text
+r = client.post("/api/auth/register", json={"username": "normie", "password": "secret123"})
+normie_headers = {"Authorization": f"Bearer {r.json()['token']}"}
+assert "share" in r.json()["user"]["perms"]  # 登录信息携带权限列表
+client.headers = normie_headers
+r = client.post("/api/friends/request", json={"username": "outsider"})
+normie_fid = r.json()["id"]
+client.headers = outsider_headers
+assert client.post(f"/api/friends/{normie_fid}/accept").status_code == 200
+client.headers = normie_headers
+r = client.post("/api/tables", json={"label": "normie的表", "fields": PFIELDS})
+normie_tid = r.json()["table"]["id"]
+assert client.post(f"/api/tables/{normie_tid}/shares", json={"username": "outsider", "can_view": True}).status_code == 200  # 普通用户被授予 share 后可分享
+client.headers = admin_headers
 print("RBAC 通过")
+
+# 15.5 分享确认流与组约束
+r = client.post("/api/auth/register", json={"username": "stranger", "password": "secret123"})
+stranger_headers = {"Authorization": f"Bearer {r.json()['token']}"}
+
+# 用户搜索 scope：all 能搜到任何人；shareable 只搜得到好友/同组
+as_user(stranger_headers)
+r = client.get("/api/users/search", params={"q": "worker", "scope": "all"})
+assert any(u["username"] == "worker" for u in r.json())
+r = client.get("/api/users/search", params={"q": "worker", "scope": "shareable"})
+assert r.json() == []  # 非好友非同组搜不到
+
+# 拒绝 → 分享者看到已拒绝 → 重新发起重置 pending → 接受后可见
+as_user(admin_headers)
+r = client.post(f"/api/tables/{vip_tid}/shares", json={"username": "stranger", "can_view": True})
+assert r.status_code == 200 and r.json()["status"] == "pending", r.text
+as_user(stranger_headers)
+sid = next(s["id"] for s in client.get("/api/shares/pending").json() if s["table_id"] == vip_tid)
+assert client.post(f"/api/shares/{sid}/reject").status_code == 200
+assert client.get(f"/api/tables/{vip_tid}").status_code == 404
+as_user(admin_headers)
+shares_ = client.get(f"/api/tables/{vip_tid}/shares").json()
+assert next(s for s in shares_ if s["target"] == "stranger")["status"] == "rejected"
+r = client.post(f"/api/tables/{vip_tid}/shares", json={"username": "stranger", "can_view": True})
+assert r.status_code == 200 and r.json()["status"] == "pending"  # 重新发起
+as_user(stranger_headers)
+sid = next(s["id"] for s in client.get("/api/shares/pending").json() if s["table_id"] == vip_tid)
+assert client.post(f"/api/shares/{sid}/accept").status_code == 200
+assert client.get(f"/api/tables/{vip_tid}").status_code == 200
+
+# 组约束：只能分享到自己所在的组（admin 豁免）；组分享即时生效
+as_user(admin_headers)
+r = client.post("/api/groups", json={"name": "临时组"})
+tmp_gid = r.json()["id"]
+assert client.post(f"/api/groups/{tmp_gid}/members", json={"username": "stranger"}).status_code == 200
+as_user(worker_headers)
+assert client.post(f"/api/tables/{worker_tid}/shares", json={"group_id": tmp_gid, "can_view": True}).status_code == 403  # 非本组
+as_user(admin_headers)
+assert client.post(f"/api/groups/{tmp_gid}/members", json={"username": "worker"}).status_code == 200
+as_user(worker_headers)
+r = client.post(f"/api/tables/{worker_tid}/shares", json={"group_id": tmp_gid, "can_view": True})
+assert r.status_code == 200 and r.json()["status"] == "accepted", r.text
+as_user(stranger_headers)
+assert client.get(f"/api/tables/{worker_tid}").status_code == 200  # 组内即时可见
+r = client.get("/api/users/search", params={"q": "worker", "scope": "shareable"})
+assert any(u["username"] == "worker" for u in r.json())  # 同组即可搜到
+assert any(g["id"] == tmp_gid for g in client.get("/api/groups/mine").json())
+as_user(admin_headers)
+# admin 分享时可见所有用户和用户组（约束对 admin 豁免）
+r = client.get("/api/users/search", params={"q": "stranger", "scope": "shareable"})
+assert any(u["username"] == "stranger" for u in r.json())
+assert any(g["id"] == tmp_gid for g in client.get("/api/groups/mine").json())
+client.delete(f"/api/groups/{tmp_gid}")  # 删组 → 组分享同步失效
+as_user(stranger_headers)
+assert client.get(f"/api/tables/{worker_tid}").status_code == 404
+
+# 互申自动接受 + 删除好友
+as_user(stranger_headers)
+r = client.post("/api/friends/request", json={"username": "outsider"})
+assert r.status_code == 200 and r.json()["status"] == "pending"
+as_user(outsider_headers)
+r = client.post("/api/friends/request", json={"username": "stranger"})
+assert r.status_code == 200 and r.json()["status"] == "accepted"  # 互申自动成为好友
+fid = next(f["id"] for f in client.get("/api/friends").json() if f["username"] == "stranger")
+assert client.delete(f"/api/friends/{fid}").status_code == 200
+r = client.post("/api/friends/request", json={"username": "stranger"})  # 删除后可重新申请
+assert r.status_code == 200 and r.json()["status"] == "pending"
+as_user(admin_headers)
+print("分享确认流与组约束通过")
 
 # 16. 链接分享 + 用户组
 # 用户组
@@ -538,6 +657,9 @@ tj2 = make_table("组分享表", "json")
 fill(tj2)
 r = client.post(f"/api/tables/{tj2}/shares", json={"group_id": gid, "can_view": True, "can_create": True})
 assert r.status_code == 200 and r.json()["target_type"] == "group", r.text
+as_user(worker_headers)  # worker 是组成员：即时生效 + 收到告知通知
+assert any("生产部" in n["content"] for n in client.get("/api/notify").json())
+as_user(admin_headers)
 as_user(outsider_headers)
 assert client.get(f"/api/tables/{tj2}").status_code == 404  # outsider 不在组
 as_user(admin_headers)
@@ -596,7 +718,7 @@ print("链接分享 + 用户组通过")
 
 # 清理测试表
 as_user(admin_headers)
-for t_ in (tj, tp, worker_tid, vip_tid, tj2):
+for t_ in (tj, tp, worker_tid, vip_tid, tj2, normie_tid):
     client.delete(f"/api/tables/{t_}")
 
 print("\nALL SMOKE TESTS PASSED")
