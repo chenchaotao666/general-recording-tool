@@ -10,14 +10,11 @@
         <el-menu-item index="/import">
           <el-icon><Upload /></el-icon><span>导入 Excel</span>
         </el-menu-item>
-        <el-menu-item index="/tasks">
-          <el-icon><AlarmClock /></el-icon><span>任务规则</span>
-        </el-menu-item>
         <el-menu-item index="/reports">
           <el-icon><DataAnalysis /></el-icon><span>报表</span>
         </el-menu-item>
-        <el-menu-item index="/settings">
-          <el-icon><Setting /></el-icon><span>模型设置</span>
+        <el-menu-item index="/tasks">
+          <el-icon><AlarmClock /></el-icon><span>任务规则</span>
         </el-menu-item>
         <template v-if="user?.role === 'admin'">
           <el-menu-item index="/system/users">
@@ -35,6 +32,9 @@
         </template>
         <el-menu-item index="/friends">
           <el-icon><User /></el-icon><span>好友</span>
+        </el-menu-item>
+        <el-menu-item index="/settings">
+          <el-icon><Setting /></el-icon><span>设置</span>
         </el-menu-item>
       </el-menu>
     </el-aside>

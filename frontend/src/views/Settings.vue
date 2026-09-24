@@ -1,44 +1,51 @@
 <template>
   <div>
     <div class="page-header">
-      <h2>模型设置</h2>
-      <el-button type="primary" :icon="Plus" @click="openCreate">添加模型服务</el-button>
+      <h2>设置</h2>
     </div>
 
-    <el-alert type="info" :closable="false" style="margin-bottom: 14px"
-      title="支持 OpenAI 兼容接口（DeepSeek、通义千问、智谱等）和 Claude。Excel 结构分析与图片识别会使用「默认」的启用服务。" />
-
-    <el-table :data="providers" v-loading="loading" border>
-      <el-table-column prop="name" label="名称" width="150" />
-      <el-table-column label="类型" width="140">
-        <template #default="{ row }">
-          <el-tag size="small">{{ row.type === 'claude' ? 'Claude' : 'OpenAI 兼容' }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="base_url" label="Base URL" min-width="220" show-overflow-tooltip />
-      <el-table-column prop="model" label="模型" width="180" />
-      <el-table-column label="默认" width="80" align="center">
-        <template #default="{ row }">
-          <el-tag v-if="row.is_default" type="success" size="small">默认</el-tag>
-          <el-button v-else text size="small" @click="setDefault(row)">设为默认</el-button>
-        </template>
-      </el-table-column>
-      <el-table-column label="启用" width="80" align="center">
-        <template #default="{ row }">
-          <el-switch :model-value="row.enabled" @change="(v) => toggle(row, v)" />
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="200">
-        <template #default="{ row }">
-          <el-button text size="small" :loading="testingId === row.id" @click="test(row)">测试</el-button>
-          <el-button text type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-          <el-popconfirm title="确定删除该配置？" @confirm="del(row)">
-            <template #reference><el-button text type="danger" size="small">删除</el-button></template>
-          </el-popconfirm>
-        </template>
-      </el-table-column>
-      <template #empty>还没有模型服务，点击右上角添加</template>
-    </el-table>
+    <!-- 模型服务 -->
+    <el-card>
+      <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span>模型服务</span>
+          <el-button type="primary" :icon="Plus" @click="openCreate">添加模型服务</el-button>
+        </div>
+      </template>
+      <el-alert type="info" :closable="false" style="margin-bottom: 14px"
+        title="支持 OpenAI 兼容接口（DeepSeek、通义千问、智谱等）和 Claude。Excel 结构分析与图片识别会使用「默认」的启用服务。" />
+      <el-table :data="providers" v-loading="loading" border>
+        <el-table-column prop="name" label="名称" width="150" />
+        <el-table-column label="类型" width="140">
+          <template #default="{ row }">
+            <el-tag size="small">{{ row.type === 'claude' ? 'Claude' : 'OpenAI 兼容' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="base_url" label="Base URL" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="model" label="模型" width="180" />
+        <el-table-column label="默认" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.is_default" type="success" size="small">默认</el-tag>
+            <el-button v-else text size="small" @click="setDefault(row)">设为默认</el-button>
+          </template>
+        </el-table-column>
+        <el-table-column label="启用" width="80" align="center">
+          <template #default="{ row }">
+            <el-switch :model-value="row.enabled" @change="(v) => toggle(row, v)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="200">
+          <template #default="{ row }">
+            <el-button text size="small" :loading="testingId === row.id" @click="test(row)">测试</el-button>
+            <el-button text type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+            <el-popconfirm title="确定删除该配置？" @confirm="del(row)">
+              <template #reference><el-button text type="danger" size="small">删除</el-button></template>
+            </el-popconfirm>
+          </template>
+        </el-table-column>
+        <template #empty>还没有模型服务，点击右上角添加</template>
+      </el-table>
+    </el-card>
 
     <!-- 通知渠道配置 -->
     <el-card style="margin-top: 20px">
