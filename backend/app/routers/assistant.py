@@ -19,15 +19,17 @@ class ChatIn(BaseModel):
     message: str
     history: list[dict] = []
     context: dict = {}
+    images: list[str] = []   # 粘贴图片的 data URL（前端已压为 JPEG）
 
 
 @router.post("/chat")
 def chat(payload: ChatIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """对话：返回 {reply, action_card}，除只读问答外不写库。"""
-    if not payload.message.strip():
+    """对话：返回 {reply, action_card}，除只读问答外不写库。支持附图片走视觉模型。"""
+    message = payload.message.strip()
+    if not message and not payload.images:
         raise HTTPException(400, "请输入内容")
     try:
-        return assist_chat(db, user, payload.message.strip(), payload.history, payload.context)
+        return assist_chat(db, user, message or "请理解这张图片的内容", payload.history, payload.context, payload.images)
     except LLMError as e:
         raise HTTPException(400, str(e))
 

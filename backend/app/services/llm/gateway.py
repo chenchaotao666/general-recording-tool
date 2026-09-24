@@ -780,8 +780,29 @@ def _chat_with_search(db: Session, provider, message: str, history: list, action
     }
 
 
-def assist_chat(db: Session, user, message: str, history: list | None, context: dict | None) -> dict:
-    """AI 助手对话：输出 {reply, action_card}；query 动作在 align 阶段已完成只读求值。"""
+def _decode_data_urls(images: list[str] | None) -> list[bytes]:
+    """把前端粘贴/上传的 data URL 图片解码为字节。限 4 张、单张 5MB。"""
+    import base64
+    import binascii
+
+    out = []
+    for s in (images or [])[:4]:
+        if not isinstance(s, str) or not s.startswith("data:image/") or "," not in s:
+            raise LLMError("图片格式不正确（需要 image data URL）")
+        try:
+            raw = base64.b64decode(s.split(",", 1)[1])
+        except (binascii.Error, ValueError):
+            raise LLMError("图片解码失败")
+        if not raw or len(raw) > 5 * 1024 * 1024:
+            raise LLMError("单张图片不能超过 5MB")
+        out.append(raw)
+    return out
+
+
+def assist_chat(db: Session, user, message: str, history: list | None, context: dict | None,
+                images: list[str] | None = None) -> dict:
+    """AI 助手对话：输出 {reply, action_card}；query 动作在 align 阶段已完成只读求值。
+    images 为粘贴图片的 data URL 列表，非空时走视觉模型（recognize）。"""
     from datetime import datetime
 
     from ..meta_service import get_meta_fields
@@ -814,7 +835,11 @@ def assist_chat(db: Session, user, message: str, history: list | None, context: 
         {"role": "user" if h.get("role") == "user" else "assistant", "content": str(h.get("content") or "")[:_ASSISTANT_HISTORY_CHARS]}
         for h in (history or []) if isinstance(h, dict)
     ][-_ASSISTANT_HISTORY_MAX:]
+    img_bytes = _decode_data_urls(images)
     prompt = build_assistant_prompt(message, history, table_briefs, current, datetime.now().strftime("%Y-%m-%d"))
+    if img_bytes:
+        prompt += (f"\n\n注意：用户随消息附上了 {len(img_bytes)} 张图片，请结合图片内容理解需求"
+                   "（例如从截图中提取信息填入数据表、根据图片中的表格建表等）。")
     last_err: Exception | None = None
     for attempt in range(2):
         current_prompt = prompt if attempt == 0 else (
@@ -822,7 +847,10 @@ def assist_chat(db: Session, user, message: str, history: list | None, context: 
             "请重新输出，只输出 JSON。\n\n原始任务：\n" + prompt
         )
         try:
-            raw = provider.complete(current_prompt, system=ASSISTANT_SYSTEM)
+            if img_bytes:
+                raw = provider.recognize(img_bytes, current_prompt, system=ASSISTANT_SYSTEM)
+            else:
+                raw = provider.complete(current_prompt, system=ASSISTANT_SYSTEM)
             data = extract_json(raw)
             action = data.get("action")
             # 联网搜索：单独通道（执行搜索 + 二次调用组织回答）
