@@ -5,7 +5,10 @@
         {{ meta?.label || '数据表' }}
         <el-tag v-if="meta && !meta.is_owner" size="small" style="margin-left: 8px">来自 {{ meta.owner_label }} 的分享</el-tag>
       </h2>
-      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">新增记录</el-button>
+      <div>
+        <el-button :icon="Download" @click="exportXlsx">导出 Excel</el-button>
+        <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">新增记录</el-button>
+      </div>
     </div>
 
     <!-- 动态筛选区 -->
@@ -85,9 +88,9 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Download } from '@element-plus/icons-vue'
 import DynamicForm from '../components/DynamicForm.vue'
-import { createRecord, deleteRecord, getTable, listRecords, updateRecord } from '../api'
+import { createRecord, deleteRecord, getTable, listRecords, recordExportUrl, updateRecord } from '../api'
 
 const route = useRoute()
 const tableId = Number(route.params.id)
@@ -148,6 +151,16 @@ function buildFilters() {
     }
   }
   return filters
+}
+
+// 导出按当前筛选/排序条件（与列表同口径），上限 5000 条
+function exportXlsx() {
+  const filters = buildFilters()
+  window.open(recordExportUrl(tableId, {
+    sort_by: sortBy.value || undefined,
+    sort_order: sortOrder.value || undefined,
+    filters: filters.length ? JSON.stringify(filters) : undefined,
+  }), '_blank')
 }
 
 async function load() {

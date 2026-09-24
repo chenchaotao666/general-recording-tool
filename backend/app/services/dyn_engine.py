@@ -169,17 +169,19 @@ def rule_value_ok(f: MetaField | None, op: str, value) -> bool:
 
 
 def list_records(db: Session, table_id: int, page: int, page_size: int,
-                 filters: list[dict] | None, sort_by: str | None, sort_order: str | None) -> dict:
+                 filters: list[dict] | None, sort_by: str | None, sort_order: str | None,
+                 page_cap: int = MAX_PAGE_SIZE) -> dict:
+    """page_cap：页大小上限，常规列表用默认 200；导出等批量场景可放宽（传 EXPORT_MAX）。"""
     mt, fields = load_meta(db, table_id)
     if mt.storage_mode == "json":
         from . import json_store
-        return json_store.list_records(db, mt, fields, page, page_size, filters, sort_by, sort_order)
+        return json_store.list_records(db, mt, fields, page, page_size, filters, sort_by, sort_order, page_cap)
     _, fields, table = load_business(db, table_id)
     fields_by_name = {f.field_name: f for f in fields}
     conds = [build_condition(table, fields_by_name, f) for f in (filters or [])]
 
     page = max(page, 1)
-    page_size = min(max(page_size, 1), MAX_PAGE_SIZE)
+    page_size = min(max(page_size, 1), page_cap)
     total = db.execute(select(func.count()).select_from(table).where(*conds)).scalar() or 0
 
     sortable = set(fields_by_name) | {"id", "created_at", "updated_at"}

@@ -1,16 +1,21 @@
 """动态数据 CRUD：/api/dyn/{table_id}/records（表级权限：查看/新增/编辑/删除）"""
 import json
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import User
-from ..services import dyn_engine
+from ..services import dyn_engine, meta_service
+from ..services.records_export import export_records_xlsx
 from ..utils.access import TableAccess, require_table
 from ..utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/dyn", tags=["dyn"])
+
+EXPORT_MAX = 5000  # 导出记录数上限
 
 
 def _parse_filters(filters: str | None) -> list[dict]:
@@ -37,6 +42,31 @@ def list_records(
     access: TableAccess = Depends(require_table("view")),
 ):
     return dyn_engine.list_records(db, table_id, page, page_size, _parse_filters(filters), sort_by, sort_order)
+
+
+@router.get("/{table_id}/export")
+def export_records(
+    table_id: int,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    filters: str | None = None,
+    db: Session = Depends(get_db),
+    access: TableAccess = Depends(require_table("view")),
+):
+    """导出记录为 xlsx：参数与列表一致（filters/sort 同参），上限 EXPORT_MAX 条。"""
+    res = dyn_engine.list_records(
+        db, table_id, 1, EXPORT_MAX, _parse_filters(filters), sort_by or "id", sort_order or "asc",
+        page_cap=EXPORT_MAX,
+    )
+    fields = meta_service.get_meta_fields(db, table_id)
+    columns = ([{"prop": f.field_name, "label": f.label} for f in fields]
+               + [{"prop": "created_at", "label": "创建时间"}])
+    buf = export_records_xlsx(access.table.label, columns, res["items"])
+    filename = quote(f"{access.table.label}-导出.xlsx")
+    return StreamingResponse(
+        buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=utf-8''{filename}"},
+    )
 
 
 @router.post("/{table_id}/records")

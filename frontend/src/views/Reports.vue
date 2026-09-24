@@ -9,7 +9,7 @@
       title="报表模板由区块拼装：统计卡片 / 图表 / 明细表 / 文本。可在线查看、导出 Excel 或 HTML，也可配置定时邮件推送。" />
 
     <el-table :data="reports" v-loading="loading" border>
-      <el-table-column prop="name" label="报表名称" min-width="150">
+      <el-table-column prop="name" label="报表名称" min-width="90">
         <template #default="{ row }">
           <div>{{ row.name }}</div>
           <div v-if="row.description" style="font-size: 12px; color: #909399">{{ row.description }}</div>
@@ -40,7 +40,7 @@
           <span v-else style="color: #c0c4cc">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="380">
+      <el-table-column label="操作" width="560">
         <template #default="{ row }">
           <el-button text type="primary" size="small" @click="$router.push(`/reports/${row.id}/view`)">查看</el-button>
           <el-button text size="small" @click="exportFile(row, 'xlsx')">导出Excel</el-button>

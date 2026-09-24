@@ -388,6 +388,34 @@ print("parity 报表四区块一致")
 for rid_ in rep_ids:
     client.delete(f"/api/reports/{rid_}")
 
+# 记录导出：整表导出 + 带筛选导出，行数与口径一致
+r = client.get(f"/api/dyn/{tj}/export")
+assert r.status_code == 200 and r.content[:2] == b"PK", r.status_code
+assert "attachment" in r.headers.get("content-disposition", "")
+assert openpyxl.load_workbook(io.BytesIO(r.content)).active.max_row == 5  # 表头 + 4 条
+r = client.get(f"/api/dyn/{tj}/export", params={"filters": '[{"field":"is_deal","op":"eq","value":true}]'})
+assert r.status_code == 200, r.text
+assert openpyxl.load_workbook(io.BytesIO(r.content)).active.max_row == 3  # 表头 + 张三/王五
+print("记录导出（整表/筛选）通过")
+
+# 导出回归：>200 条不被列表页大小上限（MAX_PAGE_SIZE=200）截断，json/physical 两种引擎都验证
+exp_ids = []
+for mode in ("json", "physical"):
+    et = make_table(f"export-cap-{mode}", mode)
+    for i in range(205):
+        r = client.post(f"/api/dyn/{et}/records", json={"customer_name": f"客{i:03d}"})
+        assert r.status_code == 200, r.text
+    # 列表接口仍受 200 页上限保护（FastAPI 参数校验 422；page_size=200 正常返回 200 条）
+    assert client.get(f"/api/dyn/{et}/records", params={"page_size": 500}).status_code == 422
+    assert len(client.get(f"/api/dyn/{et}/records", params={"page_size": 200}).json()["items"]) == 200
+    r = client.get(f"/api/dyn/{et}/export")
+    assert r.status_code == 200, r.text
+    assert openpyxl.load_workbook(io.BytesIO(r.content)).active.max_row == 206  # 表头 + 205 条
+    exp_ids.append(et)
+for et in exp_ids:
+    client.delete(f"/api/tables/{et}")
+print("导出上限（>200 条不截断，双引擎）通过")
+
 # 10.5 报表 P0：新时间口径 / 去重计数 / 占比 / 环比 / 查看端筛选
 BLOCKS_P0 = [
     {"id": "b1", "type": "stat", "title": "记录数", "agg": "count", "compare": True,
@@ -987,6 +1015,33 @@ gw.get_default_provider = lambda db: JudgeFakeProvider()
 
 client.delete(f"/api/tables/{new_tid}")
 print("AI 助手（聊天/填表/建表/问答/生成Excel/权限校验）通过")
+
+# 10.10.5 助手粘贴图片：走视觉模型（recognize），无文字也可发送；非法图片被拒
+import base64
+
+
+class VisionChatFakeProvider(AssistantFakeProvider):
+    def recognize(self, images, prompt, system=None):
+        assert images and images[0][:2] == b"\xff\xd8", "图片应以 JPEG 字节传入"
+        assert "附上了 1 张图片" in prompt, prompt[-200:]
+        return AssistantFakeProvider.responses.pop(0)
+
+
+gw.get_default_provider = lambda db: VisionChatFakeProvider()
+AssistantFakeProvider.responses = [
+    '{"reply": "从图片中整理出 1 条记录", "action": {"type": "fill_records", "table_id": %d,'
+    ' "records": [{"customer_name": "图客户", "amount": 100}]}}' % tj
+]
+img_data_url = "data:image/jpeg;base64," + base64.b64encode(b"\xff\xd8\xff\xd9").decode()
+r = client.post("/api/assistant/chat", json={"message": "", "images": [img_data_url]})
+card = r.json()["action_card"]
+assert r.status_code == 200 and card["type"] == "fill_records", r.text
+assert card["payload"]["records"][0]["customer_name"] == "图客户", card
+# 无文字且无图片 → 400；非法图片格式 → 400
+assert client.post("/api/assistant/chat", json={"message": ""}).status_code == 400
+assert client.post("/api/assistant/chat", json={"message": "x", "images": ["not-a-data-url"]}).status_code == 400
+gw.get_default_provider = lambda db: JudgeFakeProvider()
+print("AI 助手图片对话（视觉模型/空消息/非法图片）通过")
 
 # 10.11 AI 助手联网搜索：搜索执行 → 二次调用组织回答 + 来源卡片；搜索不可用降级
 import app.services.web_search as ws_mod

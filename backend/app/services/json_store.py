@@ -56,7 +56,8 @@ def count(db: Session, table_id: int) -> int:
 
 
 def list_records(db: Session, mt: MetaTable, fields: list[MetaField], page: int, page_size: int,
-                 filters: list[dict] | None, sort_by: str | None, sort_order: str | None) -> dict:
+                 filters: list[dict] | None, sort_by: str | None, sort_order: str | None,
+                 page_cap: int | None = None) -> dict:
     fields_by_name = {f.field_name: f for f in fields}
     recs = all_dicts(db, mt.id, fields, normalized=True)
     if filters:
@@ -65,7 +66,7 @@ def list_records(db: Session, mt: MetaTable, fields: list[MetaField], page: int,
     total = len(recs)
     recs = sort_records(recs, sort_by, sort_order, fields_by_name)
     page = max(page, 1)
-    page_size = min(max(page_size, 1), dyn_engine.MAX_PAGE_SIZE)
+    page_size = min(max(page_size, 1), page_cap or dyn_engine.MAX_PAGE_SIZE)
     items = [
         {k: dyn_engine.serialize_value(v) for k, v in r.items()}
         for r in recs[(page - 1) * page_size: page * page_size]

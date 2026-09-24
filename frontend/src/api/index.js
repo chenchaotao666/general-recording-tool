@@ -100,6 +100,12 @@ export const listRecords = (tid, params) => http.get(`/dyn/${tid}/records`, { pa
 export const createRecord = (tid, data) => http.post(`/dyn/${tid}/records`, data)
 export const updateRecord = (tid, rid, data) => http.put(`/dyn/${tid}/records/${rid}`, data)
 export const deleteRecord = (tid, rid) => http.delete(`/dyn/${tid}/records/${rid}`)
+export const recordExportUrl = (tid, params) => {
+  // <a>/window.open 无法带请求头，token 走查询参数；filters 为 JSON 字符串
+  const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v != null && v !== ''))
+  const token = localStorage.getItem('grt_token') || ''
+  return `/api/dyn/${tid}/export?${qs}&token=${encodeURIComponent(token)}`
+}
 
 // LLM 设置
 export const listProviders = () => http.get('/settings/llm')

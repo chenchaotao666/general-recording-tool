@@ -292,7 +292,8 @@ def _exec_gen_excel(db: Session, user: User, payload: dict) -> dict:
         fbn = {f.field_name: f for f in fields}
         # 筛选规则重新校验（不信任 chat 输出）
         filters = clean_assistant_filters(payload.get("filters"), fbn, [])
-        res = dyn_engine.list_records(db, access.table.id, 1, EXPORT_MAX, filters["rules"], "id", "asc")
+        res = dyn_engine.list_records(db, access.table.id, 1, EXPORT_MAX, filters["rules"], "id", "asc",
+                                      page_cap=EXPORT_MAX)
         columns = ([{"prop": f.field_name, "label": f.label} for f in fields]
                    + [{"prop": "created_at", "label": "创建时间"}])
         buf = export_records_xlsx(access.table.label, columns, res["items"])

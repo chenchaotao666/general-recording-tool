@@ -24,6 +24,7 @@
           <div class="card-sub">创建于 {{ t.created_at }}</div>
           <div style="margin-top: 12px">
             <el-button type="primary" @click="$router.push(`/t/${t.id}`)">打开</el-button>
+            <el-button text :icon="Download" @click="exportXlsx(t)">导出</el-button>
             <el-button v-if="canShare(t)" text type="primary" @click="openShare(t)">分享</el-button>
             <el-popconfirm v-if="t.is_owner || t.is_admin" title="将删除该表及全部数据，确定？" width="240" @confirm="del(t)">
               <template #reference>
@@ -162,12 +163,17 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Upload } from '@element-plus/icons-vue'
+import { Upload, Download } from '@element-plus/icons-vue'
 import {
   acceptShare, createShareLink, deleteShare, deleteShareLink, deleteTable,
   listMyGroups, listPendingShares, listShareLinks, listShares, listTables,
-  putShare, rejectShare, searchUsers,
+  putShare, recordExportUrl, rejectShare, searchUsers,
 } from '../api'
+
+// 导出整表（上限 5000 条）；打开表页后可按当前筛选导出
+function exportXlsx(t) {
+  window.open(recordExportUrl(t.id), '_blank')
+}
 
 const tables = ref([])
 const loading = ref(false)
