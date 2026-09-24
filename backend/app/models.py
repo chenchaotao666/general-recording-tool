@@ -339,3 +339,82 @@ class AuditLog(Base):
     before_json = Column(JSON)
     after_json = Column(JSON)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class Workflow(Base):
+    """工作流定义：一个触发器 + 节点列表 + 连线。见 docs/工作流节点规范.md"""
+    __tablename__ = "workflows"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(128), nullable=False)
+    description = Column(String(500), default="")
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（节点以其身份执行）
+    enabled = Column(Boolean, default=False)
+    trigger_json = Column(JSON, default=dict)   # {type: schedule|record_created|record_updated|webhook|manual, ...}
+    nodes_json = Column(JSON, default=list)     # [{id, type, name, config, on_error?}]
+    edges_json = Column(JSON, default=list)     # [{from, to, branch?}]
+    schema_version = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class WorkflowRun(Base):
+    """工作流的一次执行"""
+    __tablename__ = "workflow_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workflow_id = Column(Integer, ForeignKey("workflows.id"), index=True, nullable=False)
+    trigger = Column(String(16), default="manual")  # schedule / manual / record / webhook / test
+    status = Column(String(16), default="pending")  # pending / running / success / failed / waiting / cancelled
+    context_json = Column(JSON, default=dict)       # {trigger, nodes: {node_id: output}}
+    tokens_used = Column(Integer, default=0)
+    error = Column(Text)
+    started_at = Column(DateTime, default=datetime.now)
+    finished_at = Column(DateTime)
+
+
+class WorkflowNodeRun(Base):
+    """一次 Run 中每个节点的执行记录（审计与成本核算的最小粒度）"""
+    __tablename__ = "workflow_node_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, ForeignKey("workflow_runs.id"), index=True, nullable=False)
+    node_id = Column(String(64), nullable=False)
+    node_type = Column(String(32), nullable=False)
+    status = Column(String(16), default="pending")  # pending / running / success / failed / skipped / waiting
+    input_json = Column(JSON, default=dict)         # 渲染后的 config 快照
+    output_json = Column(JSON, default=dict)
+    tokens_used = Column(Integer, default=0)
+    duration_ms = Column(Integer, default=0)
+    error = Column(Text)
+    started_at = Column(DateTime, default=datetime.now)
+    finished_at = Column(DateTime)
+
+
+class WorkflowJob(Base):
+    """简易任务队列：worker（调度器内轮询）领取执行。支撑异步触发、延迟、重试、审批恢复。"""
+    __tablename__ = "workflow_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, ForeignKey("workflow_runs.id"), index=True, nullable=False)
+    node_id = Column(String(64))                    # resume/retry 时定位节点；start 为空
+    kind = Column(String(16), default="start")      # start（从头执行）/ resume（从节点后继继续）/ retry（重跑该节点）
+    execute_after = Column(DateTime, default=datetime.now)
+    attempts = Column(Integer, default=0)
+    status = Column(String(16), default="pending")  # pending / running / done / dead
+    locked_at = Column(DateTime)
+
+
+class ImageFile(Base):
+    """图片附件：文件本体存 uploads/images/，本表存元数据与归属（表/记录/字段）。"""
+    __tablename__ = "image_files"
+
+    id = Column(String(32), primary_key=True)           # uuid hex，即磁盘文件名
+    table_id = Column(Integer, index=True)              # 归属数据表（上传后关联记录时回填）
+    record_id = Column(BigInteger, index=True)          # 归属记录
+    field_name = Column(String(64))                     # 归属字段
+    uploader_id = Column(Integer, ForeignKey("users.id"))
+    filename = Column(String(256))                      # 原始文件名
+    mime = Column(String(64))
+    size = Column(Integer)
+    created_at = Column(DateTime, default=datetime.now)

@@ -12,6 +12,8 @@ class LLMProvider(ABC):
         self.api_key = api_key
         self.model = model
         self.vision_model = vision_model or model
+        # 最近一次调用的 token 用量 {"prompt_tokens": n, "completion_tokens": n}，由实现类在响应后更新
+        self.last_usage: dict = {}
 
     @abstractmethod
     def complete(self, prompt: str, system: str | None = None) -> str:

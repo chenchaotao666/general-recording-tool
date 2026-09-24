@@ -21,7 +21,13 @@ class OpenAICompatProvider(LLMProvider):
                     resp = client.post(url, json=body, headers=headers)
                 if resp.status_code != 200:
                     raise LLMError(f"模型服务返回 {resp.status_code}：{resp.text[:300]}")
-                return resp.json()["choices"][0]["message"]["content"]
+                data = resp.json()
+                usage = data.get("usage") or {}
+                self.last_usage = {
+                    "prompt_tokens": usage.get("prompt_tokens") or 0,
+                    "completion_tokens": usage.get("completion_tokens") or 0,
+                }
+                return data["choices"][0]["message"]["content"]
         except httpx.HTTPError as e:
             raise LLMError(f"模型服务请求失败：{e}")
 

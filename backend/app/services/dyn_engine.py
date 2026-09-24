@@ -1,4 +1,5 @@
 """动态 CRUD 引擎：运行时按元数据反射业务表，动态拼 SQL（字段名全部来自服务端元数据）。"""
+import json
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -33,6 +34,29 @@ def serialize_value(v):
 
 def row_to_dict(row) -> dict:
     return {k: serialize_value(v) for k, v in dict(row).items()}
+
+
+def _image_field_names(fields: list[MetaField]) -> list[str]:
+    return [f.field_name for f in fields if f.data_type == "image"]
+
+
+def _encode_image_fields(cleaned: dict, fields: list[MetaField]) -> None:
+    """physical 模式：image 列是 Text，写入前把 list 编码为 JSON 字符串。"""
+    for name in _image_field_names(fields):
+        if name in cleaned and cleaned[name] is not None:
+            cleaned[name] = json.dumps(cleaned[name], ensure_ascii=False)
+
+
+def _expand_image_fields(record: dict, fields: list[MetaField]) -> dict:
+    """physical 模式：读出时把 image 列的 JSON 字符串还原为 list。"""
+    for name in _image_field_names(fields):
+        v = record.get(name)
+        if isinstance(v, str):
+            try:
+                record[name] = json.loads(v) if v else None
+            except ValueError:
+                record[name] = None
+    return record
 
 
 def load_meta(db: Session, table_id: int) -> tuple[MetaTable, list[MetaField]]:
@@ -195,7 +219,7 @@ def list_records(db: Session, table_id: int, page: int, page_size: int,
         select(table).where(*conds).order_by(order)
         .offset((page - 1) * page_size).limit(page_size)
     ).mappings().all()
-    return {"total": total, "items": [row_to_dict(r) for r in rows]}
+    return {"total": total, "items": [_expand_image_fields(row_to_dict(r), fields) for r in rows]}
 
 
 def coerce_payload(fields: list[MetaField], data: dict, partial: bool = False):
@@ -227,14 +251,26 @@ def get_record(db: Session, table_id: int, record_id: int) -> dict:
     row = db.execute(select(table).where(table.c.id == record_id)).mappings().first()
     if not row:
         raise HTTPException(404, "记录不存在")
-    return row_to_dict(row)
+    return _expand_image_fields(row_to_dict(row), fields)
+
+
+def _fire_workflow_hook(kind: str, table_id: int, record: dict, old_record: dict | None = None) -> None:
+    """记录变更触发工作流。只投递不执行，失败绝不影响写入主流程。"""
+    try:
+        from .workflow import triggers
+        triggers.fire_record_event(table_id, kind, record, old_record)
+    except Exception:
+        pass
 
 
 def create_record(db: Session, table_id: int, data: dict, user: str | None = None) -> dict:
     mt, fields = load_meta(db, table_id)
     if mt.storage_mode == "json":
         from . import json_store
-        return json_store.create_record(db, mt, fields, data, user=user)
+        record = json_store.create_record(db, mt, fields, data, user=user)
+        _sync_images(db, table_id, record["id"], fields, {}, record)
+        _fire_workflow_hook("record_created", table_id, record)
+        return record
     _, fields, table = load_business(db, table_id)
     cleaned, errors = coerce_payload(fields, data)
     if errors:
@@ -247,11 +283,14 @@ def create_record(db: Session, table_id: int, data: dict, user: str | None = Non
     now = datetime.now()
     cleaned["created_at"] = now
     cleaned["updated_at"] = now
+    _encode_image_fields(cleaned, fields)
     result = db.execute(table.insert().values(**cleaned))
     db.commit()
     record = get_record(db, table_id, result.inserted_primary_key[0])
     log_audit(db, "create", table_id, record["id"], after=record, user=user)
     db.commit()
+    _sync_images(db, table_id, record["id"], fields, {}, record)
+    _fire_workflow_hook("record_created", table_id, record)
     return record
 
 
@@ -259,19 +298,37 @@ def update_record(db: Session, table_id: int, record_id: int, data: dict, user: 
     mt, fields = load_meta(db, table_id)
     if mt.storage_mode == "json":
         from . import json_store
-        return json_store.update_record(db, mt, fields, record_id, data, user=user)
+        before = json_store.get_record(db, table_id, record_id, fields)
+        record = json_store.update_record(db, mt, fields, record_id, data, user=user)
+        _sync_images(db, table_id, record_id, fields, before, record)
+        _fire_workflow_hook("record_updated", table_id, record)
+        return record
     _, fields, table = load_business(db, table_id)
     before = get_record(db, table_id, record_id)
     cleaned, errors = coerce_payload(fields, data, partial=True)
     if errors:
         raise HTTPException(422, detail=errors)
     cleaned["updated_at"] = datetime.now()
+    _encode_image_fields(cleaned, fields)
     db.execute(table.update().where(table.c.id == record_id).values(**cleaned))
     db.commit()
     after = get_record(db, table_id, record_id)
     log_audit(db, "update", table_id, record_id, before=before, after=after, user=user)
     db.commit()
+    _sync_images(db, table_id, record_id, fields, before, after)
+    _fire_workflow_hook("record_updated", table_id, after, before)
     return after
+
+
+def _sync_images(db: Session, table_id: int, record_id: int, fields, before: dict, after: dict) -> None:
+    names = _image_field_names(fields)
+    if not names:
+        return
+    try:
+        from . import images
+        images.sync_record_images(db, table_id, record_id, names, before or {}, after or {})
+    except Exception:  # noqa: BLE001 — 图片归属同步失败不影响写入主流程
+        db.rollback()
 
 
 def delete_record(db: Session, table_id: int, record_id: int, user: str | None = None) -> None:
@@ -279,9 +336,20 @@ def delete_record(db: Session, table_id: int, record_id: int, user: str | None =
     if mt.storage_mode == "json":
         from . import json_store
         json_store.delete_record(db, table_id, record_id, fields=fields, user=user)
+        _delete_images(db, record_id)
         return
     _, _, table = load_business(db, table_id)
     before = get_record(db, table_id, record_id)
     db.execute(table.delete().where(table.c.id == record_id))
     log_audit(db, "delete", table_id, record_id, before=before, user=user)
     db.commit()
+    _delete_images(db, record_id)
+
+
+def _delete_images(db: Session, record_id: int) -> None:
+    try:
+        from . import images
+        images.delete_record_images(db, record_id)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()

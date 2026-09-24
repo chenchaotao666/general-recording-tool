@@ -4,7 +4,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from ..database import SessionLocal
-from ..models import TaskRule
+from ..models import TaskRule, Workflow
 from .task_engine import execute_rule
 
 scheduler = BackgroundScheduler()
@@ -28,8 +28,17 @@ def trigger_of(schedule: dict):
     return None
 
 
+def _register_workflow_poller() -> None:
+    """工作流任务队列轮询（5s）：延迟/重试/审批恢复/异步触发的统一出口。"""
+    from .workflow.engine import process_due_jobs
+    scheduler.add_job(
+        process_due_jobs, IntervalTrigger(seconds=5),
+        id="workflow_poller", replace_existing=True, max_instances=1,
+    )
+
+
 def reload_jobs() -> None:
-    """全量重载任务（规则/报表模板增删改后调用）。单进程部署下足够简单可靠。"""
+    """全量重载任务（规则/报表模板/工作流增删改后调用）。单进程部署下足够简单可靠。"""
     scheduler.remove_all_jobs()
     db = SessionLocal()
     try:
@@ -52,8 +61,22 @@ def reload_jobs() -> None:
                     push_template, trigger, args=[tpl.id, "schedule"],
                     id=f"report_{tpl.id}", replace_existing=True, misfire_grace_time=300,
                 )
+        # 工作流定时触发（trigger_json 与任务模块 schedule_json 同格式：{type: interval|cron, ...}）
+        from .workflow.engine import run_scheduled
+        workflows = db.query(Workflow).filter_by(enabled=True).all()
+        for wf in workflows:
+            t = wf.trigger_json or {}
+            if t.get("type") not in ("interval", "cron"):
+                continue
+            trigger = trigger_of(t)
+            if trigger is not None:
+                scheduler.add_job(
+                    run_scheduled, trigger, args=[wf.id],
+                    id=f"wf_{wf.id}", replace_existing=True, misfire_grace_time=300,
+                )
     finally:
         db.close()
+    _register_workflow_poller()   # remove_all_jobs 会清掉 poller，每次重载后补回
 
 
 def start() -> None:

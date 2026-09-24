@@ -151,3 +151,12 @@ class ReportTemplateIn(BaseModel):
     filter_fields: list[str] = []   # 查看端开放自助筛选的字段
     schedule: dict = {}    # {type: interval, minutes} | {type: cron, expr}
     push: dict = {}        # {recipients, formats, subject}
+
+
+class WorkflowIn(BaseModel):
+    name: str
+    description: str = ""
+    enabled: bool = False
+    trigger: dict = {}     # {type: schedule|record_created|record_updated|webhook|manual, ...}
+    nodes: list[dict] = [] # [{id, type, name?, config, on_error?}]
+    edges: list[dict] = [] # [{from, to, branch?}]

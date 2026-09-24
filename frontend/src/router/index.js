@@ -26,6 +26,11 @@ const router = createRouter({
     // 懒加载隔离 editorjs 体积
     { path: '/notes', component: () => import('../views/Notes.vue') },
     { path: '/tasks', component: Tasks },
+    // 工作流：编辑器懒加载隔离 vue-flow 体积
+    { path: '/workflows', component: () => import('../views/Workflows.vue') },
+    { path: '/workflows/new', component: () => import('../views/WorkflowEditor.vue') },
+    { path: '/workflows/:id/edit', component: () => import('../views/WorkflowEditor.vue') },
+    { path: '/workflows/runs/:id', component: () => import('../views/WorkflowRunDetail.vue') },
     { path: '/reports', component: Reports },
     // 懒加载隔离 echarts 体积
     { path: '/reports/:id/view', component: () => import('../views/ReportView.vue') },

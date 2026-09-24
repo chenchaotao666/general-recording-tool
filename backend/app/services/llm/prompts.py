@@ -317,14 +317,20 @@ _ASSISTANT_OUTPUT_EXAMPLE = {
 
 
 def build_assistant_prompt(message: str, history: list[dict], tables: list[dict],
-                           current_table: dict | None, today: str) -> str:
+                           current_table: dict | None, today: str,
+                           workflows: list[dict] | None = None) -> str:
     """AI 助手对话提示词。tables: [{id, label, fields?: [{field_name,label,data_type,options}]}]（前 N 张表带字段简报）；
-    current_table: {id, label} 用户当前正在查看的表。"""
+    current_table: {id, label} 用户当前正在查看的表；workflows: [{id, name, description, enabled}] 用户的工作流。"""
     lines = [
         f"今天日期：{today}",
         "",
         f"用户可访问的数据表（含字段清单）：\n{json.dumps(tables, ensure_ascii=False, indent=2)}",
     ]
+    if workflows:
+        wf_lines = "、".join(
+            f"#{w['id']}「{w['name']}」{'（停用）' if not w.get('enabled') else ''}" for w in workflows
+        )
+        lines += ["", f"用户已配置的工作流（可执行）：{wf_lines}"]
     if current_table:
         lines += [
             "",
@@ -356,7 +362,7 @@ def build_assistant_prompt(message: str, history: list[dict], tables: list[dict]
         "系统数据答不了的如实说明，不要编造数字",
         "7. reply 用自然的中文，像日常聊天一样，可以有适当的结构和细节",
         "",
-        "你需要输出 JSON：{\"reply\": \"给用户看的回复文字\", \"action\": 动作对象或 null}。action 有七种：",
+        "你需要输出 JSON：{\"reply\": \"给用户看的回复文字\", \"action\": 动作对象或 null}。action 有九种：",
         "0. 联网搜索 web_search（优先考虑的只读动作）：{\"type\": \"web_search\", \"queries\": [\"搜索词1\", \"搜索词2\"]}。"
         "问题涉及实时/公开信息而你不确定时使用，queries 1~3 个、每个是一句精炼的搜索词；"
         "执行后你会拿到搜索结果，再基于结果组织最终回答",
@@ -366,7 +372,8 @@ def build_assistant_prompt(message: str, history: list[dict], tables: list[dict]
         "2. 建表 create_table：{\"type\": \"create_table\", \"label\": \"表名\", \"fields\": [{\"field_name\": \"snake_case\", "
         "\"label\": \"中文名\", \"data_type\": \"varchar|text|int|decimal|date|datetime|bool\", \"widget\": \"控件\", "
         "\"nullable\": true, \"options\": {}}]}。用户想新建一个业务表/让你设计表结构时使用；"
-        "data_type 从 varchar/text/int/decimal/date/datetime/bool 中选；有固定取值集合的字段 widget 用 select 且 "
+        "data_type 从 varchar/text/int/decimal/date/datetime/bool/image 中选（image 仅当用户明确要存照片/图片附件时用）；"
+        "有固定取值集合的字段 widget 用 select 且 "
         "options 填 {\"options\": [\"值1\", \"值2\"]}；其余 widget 用 input/number/date-picker/switch 等与类型匹配的",
         "3. 生成 Excel gen_excel 两种模式："
         "{\"type\": \"gen_excel\", \"mode\": \"blank\", \"label\": \"表名\", \"fields\": [同 create_table], "
@@ -386,6 +393,18 @@ def build_assistant_prompt(message: str, history: list[dict], tables: list[dict]
         "6. 创建任务规则 create_task：{\"type\": \"create_task\", \"table_id\": 表id, \"description\": \"任务需求描述\"}。"
         "用户想要定时提醒/到期通知/自动监控预警时使用；description 写清触发条件、执行周期、通知内容，"
         "系统会自动生成任务配置并让用户预览确认（创建后默认停用，用户在任务页启用）",
+        "7. 执行工作流 run_workflow：{\"type\": \"run_workflow\", \"workflow_id\": 工作流id, \"params\": {}}。"
+        "用户让你运行某个已配置好的工作流/自动化流程时使用（如「帮我跑一下每日汇总」「执行 XX 流程」）；"
+        "只能用上方工作流清单里的 id；params 是手动触发参数（流程里可用 {trigger.params.xxx} 引用），一般给空对象；"
+        "用户没说清跑哪个时在 reply 里追问并列出可选工作流",
+        "8. 修改表结构 alter_table：{\"type\": \"alter_table\", \"table_id\": 表id, \"ops\": [...]}。"
+        "用户想给现有表加字段/删字段/改字段（改中文名、改类型、改枚举选项、改字段名）时使用。ops 每项是："
+        "加字段 {\"op\": \"add_field\", \"field\": {同 create_table 的字段定义}}；"
+        "删字段 {\"op\": \"delete_field\", \"field_name\": \"字段名\"}；"
+        "改属性 {\"op\": \"update_field\", \"field_name\": \"字段名\", \"label\": \"新中文名\", \"data_type\": \"新类型\", "
+        "\"nullable\": true, \"options\": {\"options\": [\"值1\", \"值2\"]}}（只给要改的键）；"
+        "改字段名 {\"op\": \"rename_field\", \"field_name\": \"旧名\", \"new_field_name\": \"新snake_case名\", \"label\": \"新中文名\"}。"
+        "只能操作字段清单里存在的字段；改类型会尝试转换存量数据，转不了的值会被清空，执行前在 reply 里提醒用户",
         "",
         f"输出 JSON 格式示例：\n{json.dumps(_ASSISTANT_OUTPUT_EXAMPLE, ensure_ascii=False)}",
         "",

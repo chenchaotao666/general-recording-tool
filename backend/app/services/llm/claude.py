@@ -22,6 +22,11 @@ class ClaudeProvider(LLMProvider):
                 if resp.status_code != 200:
                     raise LLMError(f"模型服务返回 {resp.status_code}：{resp.text[:300]}")
                 data = resp.json()
+                usage = data.get("usage") or {}
+                self.last_usage = {
+                    "prompt_tokens": usage.get("input_tokens") or 0,
+                    "completion_tokens": usage.get("output_tokens") or 0,
+                }
                 return "".join(b.get("text", "") for b in data.get("content", []))
         except httpx.HTTPError as e:
             raise LLMError(f"模型服务请求失败：{e}")

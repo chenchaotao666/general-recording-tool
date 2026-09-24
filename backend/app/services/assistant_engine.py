@@ -6,9 +6,9 @@ from types import SimpleNamespace
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from ..models import MetaTable, User
+from ..models import MetaTable, User, Workflow
 from ..schemas import TableCreate
-from ..utils.access import get_table_access
+from ..utils.access import check_owner_or_admin, get_table_access
 from ..utils.rbac import perm_value
 from . import dyn_engine, meta_service
 from .dyn_engine import log_audit
@@ -161,7 +161,49 @@ def execute_action(db: Session, user: User, type_: str, payload: dict) -> dict:
         return _exec_create_task(db, user, payload or {})
     if type_ == "gen_excel":
         return _exec_gen_excel(db, user, payload or {})
+    if type_ == "run_workflow":
+        return _exec_run_workflow(db, user, payload or {})
+    if type_ == "alter_table":
+        return _exec_alter_table(db, user, payload or {})
     raise HTTPException(400, f"不支持的动作类型：{type_}")
+
+
+def _exec_alter_table(db: Session, user: User, payload: dict) -> dict:
+    """AI 修改表结构：重新鉴权（仅主人/admin）后执行 ops 序列。"""
+    access = get_table_access(db, int(payload.get("table_id") or 0), user)
+    if not (access.is_owner or access.is_admin):
+        raise HTTPException(404, "数据表不存在")
+    ops = payload.get("ops") or []
+    if not ops:
+        raise HTTPException(400, "没有要执行的结构变更")
+    try:
+        result = meta_service.alter_business_table(db, access.table, ops)
+    except meta_service.MetaError as e:
+        db.rollback()
+        raise HTTPException(400, str(e))
+    log_audit(db, "alter_table", access.table.id, after={"ops": ops}, user=user.username)
+    db.commit()
+    return {"type": "alter_table", "table_id": access.table.id, "table_label": access.table.label, **result}
+
+
+def _exec_run_workflow(db: Session, user: User, payload: dict) -> dict:
+    """执行用户自己的工作流（同步），返回执行摘要 + run_id 供跳转轨迹页。"""
+    from .workflow import engine as wf_engine
+
+    try:
+        wf_id = int(payload.get("workflow_id") or 0)
+    except (TypeError, ValueError):
+        wf_id = 0
+    wf = db.get(Workflow, wf_id)
+    if not wf:
+        raise HTTPException(404, "工作流不存在")
+    check_owner_or_admin(wf.user_id, user)
+    params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+    result = wf_engine.run_now(wf.id, trigger="manual", trigger_data={"params": params})
+    return {
+        "type": "run_workflow", "workflow_id": wf.id, "workflow_name": wf.name,
+        **(result or {"status": "failed", "error": "执行失败"}),
+    }
 
 
 def _exec_fill(db: Session, user: User, payload: dict) -> dict:

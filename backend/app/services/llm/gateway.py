@@ -712,6 +712,106 @@ def align_assistant_action(db: Session, user, action: dict | None, notes: list) 
             "warnings": notes,
         }
 
+    if t == "alter_table":
+        import re as _re
+
+        from ..typemap import DATA_TYPES
+        try:
+            access = get_table_access(db, int(action.get("table_id")), user)
+        except Exception:  # noqa: BLE001
+            notes.append("目标表不存在，已忽略修改表结构动作")
+            return None
+        if not (access.is_owner or access.is_admin):
+            notes.append("只有表主人或管理员能修改表结构，已忽略")
+            return None
+        mt = access.table
+        fields = get_meta_fields(db, mt.id)
+        fbn = {f.field_name: f for f in fields}
+        ops, summaries = [], []
+        for raw in (action.get("ops") or [])[:20]:
+            if not isinstance(raw, dict):
+                continue
+            kind = raw.get("op")
+            if kind == "add_field":
+                cleaned = _clean_assistant_fields([raw.get("field") or {}], notes)
+                if not cleaned:
+                    continue
+                f0 = cleaned[0]
+                if f0["field_name"] in fbn:
+                    notes.append(f"字段 {f0['field_name']} 已存在，已忽略")
+                    continue
+                ops.append({"op": "add_field", "field": f0})
+                summaries.append(f"新增字段「{f0['label']}」({f0['data_type']})")
+            elif kind == "delete_field":
+                name = raw.get("field_name")
+                if name not in fbn:
+                    notes.append(f"字段 {name} 不存在，已忽略")
+                    continue
+                ops.append({"op": "delete_field", "field_name": name})
+                summaries.append(f"删除字段「{fbn[name].label}」")
+            elif kind == "update_field":
+                name = raw.get("field_name")
+                if name not in fbn:
+                    notes.append(f"字段 {name} 不存在，已忽略")
+                    continue
+                upd = {"op": "update_field", "field_name": name}
+                for k in ("label", "data_type", "nullable", "widget", "options", "default_value"):
+                    if raw.get(k) is not None:
+                        upd[k] = raw[k]
+                if upd.get("data_type") and upd["data_type"] not in DATA_TYPES:
+                    notes.append(f"字段 {name} 的目标类型 {upd['data_type']} 无效，已忽略类型修改")
+                    upd.pop("data_type")
+                if len(upd) <= 2:
+                    continue
+                ops.append(upd)
+                desc = f"修改字段「{fbn[name].label}」"
+                if upd.get("data_type"):
+                    desc += f"类型→{upd['data_type']}（存量数据将尝试转换）"
+                elif upd.get("label"):
+                    desc += f"显示名→「{upd['label']}」"
+                summaries.append(desc)
+            elif kind == "rename_field":
+                name, new = raw.get("field_name"), str(raw.get("new_field_name") or "").strip()
+                if name not in fbn:
+                    notes.append(f"字段 {name} 不存在，已忽略")
+                    continue
+                if not _re.match(r"^[a-z][a-z0-9_]{0,40}$", new):
+                    notes.append(f"新字段名 {new} 不是合法 snake_case，已忽略改名")
+                    continue
+                if new in fbn:
+                    notes.append(f"新字段名 {new} 已存在，已忽略改名")
+                    continue
+                ops.append({"op": "rename_field", "field_name": name, "new_field_name": new,
+                            "label": raw.get("label")})
+                summaries.append(f"字段 {name} 改名为 {new}")
+            else:
+                notes.append(f"不支持的结构变更操作：{kind}")
+        if not ops:
+            notes.append("没有有效的结构变更操作")
+            return None
+        return {
+            "type": "alter_table", "summary": f"修改表「{mt.label}」结构（{len(ops)} 项）",
+            "payload": {"table_id": mt.id, "table_label": mt.label, "ops": ops, "summaries": summaries},
+            "warnings": notes,
+        }
+
+    if t == "run_workflow":
+        from ...models import Workflow
+        try:
+            wf = db.get(Workflow, int(action.get("workflow_id") or 0))
+        except (TypeError, ValueError):
+            wf = None
+        if wf is None or wf.user_id != user.id:
+            notes.append("工作流不存在或不属于你，已忽略执行工作流动作")
+            return None
+        params = action.get("params") if isinstance(action.get("params"), dict) else {}
+        status_note = "" if wf.enabled else "（当前停用，仍可手动执行一次）"
+        return {
+            "type": "run_workflow", "summary": f"执行工作流「{wf.name}」{status_note}",
+            "payload": {"workflow_id": wf.id, "workflow_name": wf.name, "params": params},
+            "warnings": notes,
+        }
+
     if t == "query":
         mt, fields = table_ctx(action.get("table_id"))
         if mt is None:
@@ -810,6 +910,11 @@ def assist_chat(db: Session, user, message: str, history: list | None, context: 
 
     provider = get_default_provider(db)
     tables = _accessible_tables(db, user)
+    from ...models import Workflow
+    wf_briefs = [
+        {"id": w.id, "name": w.name, "description": w.description, "enabled": w.enabled}
+        for w in db.query(Workflow).filter(Workflow.user_id == user.id).order_by(Workflow.id.desc()).limit(30).all()
+    ]
     # 前 15 张表带字段简报（模型才能在任意页面正确填表/问答）；更多表只给 id+label
     table_briefs = []
     for t in tables[:15]:
@@ -836,7 +941,8 @@ def assist_chat(db: Session, user, message: str, history: list | None, context: 
         for h in (history or []) if isinstance(h, dict)
     ][-_ASSISTANT_HISTORY_MAX:]
     img_bytes = _decode_data_urls(images)
-    prompt = build_assistant_prompt(message, history, table_briefs, current, datetime.now().strftime("%Y-%m-%d"))
+    prompt = build_assistant_prompt(message, history, table_briefs, current, datetime.now().strftime("%Y-%m-%d"),
+                                    workflows=wf_briefs)
     if img_bytes:
         prompt += (f"\n\n注意：用户随消息附上了 {len(img_bytes)} 张图片，请结合图片内容理解需求"
                    "（例如从截图中提取信息填入数据表、根据图片中的表格建表等）。")

@@ -36,11 +36,20 @@ export const uploadExcel = (file) => {
 }
 export const analyzeExcel = (payload) => http.post('/excel/analyze', payload)
 
+// 图片附件
+export const uploadImage = (file) => {
+  const fd = new FormData()
+  fd.append('files', file)
+  return http.post('/uploads/image', fd)
+}
+export const imageUrl = (id) => `/api/uploads/image/${id}?token=${localStorage.getItem('grt_token')}`
+
 // 数据表
 export const listTables = () => http.get('/tables')
 export const getTable = (id) => http.get(`/tables/${id}`)
 export const createTable = (payload) => http.post('/tables', payload)
 export const updateTable = (id, payload) => http.put(`/tables/${id}`, payload)
+export const alterTable = (id, ops) => http.post(`/tables/${id}/alter`, { ops })
 export const deleteTable = (id) => http.delete(`/tables/${id}`)
 
 // 表分享（vip/admin）
@@ -129,6 +138,31 @@ export const testTask = (id) => http.post(`/tasks/${id}/test`)
 export const runTask = (id) => http.post(`/tasks/${id}/run`)
 export const taskRuns = (id) => http.get(`/tasks/${id}/runs`)
 export const aiAssistTask = (tableId, description) => http.post('/tasks/ai-assist', { table_id: tableId, description })
+
+// 工作流
+export const listWorkflows = () => http.get('/workflows')
+export const getWorkflow = (id) => http.get(`/workflows/${id}`)
+export const createWorkflow = (p) => http.post('/workflows', p)
+export const updateWorkflow = (id, p) => http.put(`/workflows/${id}`, p)
+export const deleteWorkflow = (id) => http.delete(`/workflows/${id}`)
+export const toggleWorkflow = (id) => http.post(`/workflows/${id}/toggle`)
+export const runWorkflow = (id, params = {}) => http.post(`/workflows/${id}/run`, { params })
+export const testRunWorkflow = (id, params = {}) => http.post(`/workflows/${id}/test-run`, { params })
+export const workflowRuns = (id) => http.get(`/workflows/${id}/runs`)
+export const getWorkflowRun = (runId) => http.get(`/workflows/runs/${runId}`)
+export const approveWorkflowNode = (nodeRunId, approved, comment = '') =>
+  http.post(`/workflows/node-runs/${nodeRunId}/approve`, { approved, comment })
+export const workflowNodeTypes = () => http.get('/workflows/node-types')
+export const aiAssistWorkflow = (description) => http.post('/workflows/ai-assist', { description })
+
+// 工作流模板市场
+export const listWorkflowTemplates = () => http.get('/workflow-templates')
+export const installWorkflowTemplate = (key) => http.post(`/workflow-templates/${key}/install`)
+
+// MCP 接入
+export const getMcpConfig = () => http.get('/mcp/config')
+export const createMcpToken = () => http.post('/mcp/token')
+export const revokeMcpToken = () => http.delete('/mcp/token')
 
 // 报表
 export const listReports = () => http.get('/reports')

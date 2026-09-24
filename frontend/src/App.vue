@@ -19,6 +19,9 @@
         <el-menu-item index="/tasks">
           <el-icon><AlarmClock /></el-icon><span>任务规则</span>
         </el-menu-item>
+        <el-menu-item index="/workflows">
+          <el-icon><Connection /></el-icon><span>工作流</span>
+        </el-menu-item>
         <template v-if="user?.role === 'admin'">
           <el-menu-item index="/system/users">
             <el-icon><User /></el-icon><span>用户管理</span>
@@ -108,7 +111,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { AlarmClock, Avatar, Bell, DataAnalysis, Grid, Key, Notebook, Setting, Upload, User, UserFilled } from '@element-plus/icons-vue'
+import { AlarmClock, Avatar, Bell, Connection, DataAnalysis, Grid, Key, Notebook, Setting, Upload, User, UserFilled } from '@element-plus/icons-vue'
 import { changePassword as changePasswordApi, listNotifications, markRead, unreadCount } from './api'
 import AssistantPanel from './components/AssistantPanel.vue'
 

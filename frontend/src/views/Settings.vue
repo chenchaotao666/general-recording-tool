@@ -121,6 +121,40 @@
       </el-form>
     </el-card>
 
+    <!-- MCP 接入（外部 AI 客户端调用工作流） -->
+    <el-card style="margin-top: 20px">
+      <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span>MCP 接入（外部 AI 客户端）</span>
+          <div>
+            <el-button v-if="mcp.has_token" type="danger" plain @click="onRevokeMcp">吊销</el-button>
+            <el-button type="primary" :loading="mcpLoading" @click="onCreateMcpToken">
+              {{ mcp.has_token ? '轮换 token' : '生成接入 token' }}
+            </el-button>
+          </div>
+        </div>
+      </template>
+      <template v-if="mcp.has_token">
+        <el-form label-width="120px" style="max-width: 760px">
+          <el-form-item label="接入地址">
+            <el-input :model-value="mcpUrl" readonly>
+              <template #append><el-button @click="copyText(mcpUrl)">复制</el-button></template>
+            </el-input>
+          </el-form-item>
+          <el-form-item label="客户端配置">
+            <el-input type="textarea" :rows="4" :model-value="mcpConfigExample" readonly />
+          </el-form-item>
+        </el-form>
+        <div style="font-size: 12px; color: #909399">
+          把上面的接入地址（或配置 JSON）填到 Claude / Cursor 等支持 MCP 的 AI 客户端，
+          客户端即可列出并执行你已启用的工作流（当前 {{ mcp.workflow_count }} 个）。token 即凭证，请勿泄露；泄露后点「轮换 token」。
+        </div>
+      </template>
+      <div v-else style="font-size: 13px; color: #909399">
+        生成 token 后，把接入地址填到 Claude / Cursor 等 MCP 客户端，
+        外部 AI 就能直接调用你已启用的工作流（如「帮我跑一下每日汇总」）。
+      </div>
+    </el-card>
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑模型服务' : '添加模型服务'" width="560px" destroy-on-close>
       <el-form label-width="110px">
         <el-form-item label="名称" required>
@@ -164,8 +198,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
-  createProvider, deleteProvider, getGeneralSettings, listProviders,
-  saveGeneralSettings, setDefaultProvider, testEmail, testProvider, testSearchSettings, updateProvider,
+  createMcpToken, createProvider, deleteProvider, getGeneralSettings, getMcpConfig, listProviders,
+  revokeMcpToken, saveGeneralSettings, setDefaultProvider, testEmail, testProvider, testSearchSettings, updateProvider,
 } from '../api'
 
 const providers = ref([])
@@ -183,6 +217,48 @@ const testEmailTo = ref('')
 const testEmailSending = ref(false)
 const webSearchSaving = ref(false)
 const testSearchSending = ref(false)
+
+// MCP 接入
+const mcp = reactive({ has_token: false, token: '', url_path: '', workflow_count: 0 })
+const mcpLoading = ref(false)
+const mcpUrl = computed(() => (mcp.has_token ? `${location.origin}${mcp.url_path}` : ''))
+const mcpConfigExample = computed(() => JSON.stringify({
+  mcpServers: { grt: { url: mcpUrl.value } },
+}, null, 2))
+
+async function loadMcp() {
+  try {
+    Object.assign(mcp, await getMcpConfig())
+  } catch { /* MCP 配置加载失败不阻塞设置页 */ }
+}
+
+async function onCreateMcpToken() {
+  mcpLoading.value = true
+  try {
+    const res = await createMcpToken()
+    mcp.has_token = true
+    mcp.token = res.token
+    mcp.url_path = res.url_path
+    ElMessage.success('token 已生成' + (mcp.workflow_count ? '' : '（还没有启用的工作流）'))
+    loadMcp()
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    mcpLoading.value = false
+  }
+}
+
+async function onRevokeMcp() {
+  await revokeMcpToken()
+  mcp.has_token = false
+  mcp.token = ''
+  mcp.url_path = ''
+  ElMessage.success('已吊销')
+}
+
+function copyText(text) {
+  navigator.clipboard?.writeText(text).then(() => ElMessage.success('已复制'))
+}
 
 async function loadGeneral() {
   try {
@@ -355,5 +431,6 @@ async function del(row) {
 onMounted(() => {
   load()
   loadGeneral()
+  loadMcp()
 })
 </script>

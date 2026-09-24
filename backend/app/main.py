@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import assistant, auth, dyn, excel, friends, groups, notes, notify, rbac, reports, settings as settings_router, share_links, shares, tables, tasks, users, vision
+from .routers import assistant, auth, dyn, excel, friends, groups, images, mcp, notes, notify, rbac, reports, settings as settings_router, share_links, shares, tables, tasks, users, vision, workflows
 from .services import scheduler
 from .services.migrate import run_migrations
 from .utils.auth import get_current_user, hash_password
@@ -20,8 +20,20 @@ async def lifespan(app: FastAPI):
     _seed_admin()
     run_migrations(engine)
     scheduler.start()
+    _cleanup_orphan_images()
     yield
     scheduler.shutdown()
+
+
+def _cleanup_orphan_images():
+    """启动时清理超期未关联记录的临时图片（上传后没保存进任何记录的）。"""
+    try:
+        from .services.images import cleanup_orphans
+        n = cleanup_orphans(SessionLocal())
+        if n:
+            print(f"[images] 清理孤儿图片 {n} 张", flush=True)
+    except Exception:  # noqa: BLE001 — 清理失败不影响启动
+        pass
 
 
 def _seed_admin():
@@ -49,10 +61,13 @@ app.add_middleware(
 
 app.include_router(auth.router)  # 登录接口本身不鉴权
 app.include_router(share_links.router)  # 管理端点自带 get_current_user；/share/{token} 公开免登录
+app.include_router(workflows.public_router)  # webhook 触发：URL 即凭证，免登录
+app.include_router(mcp.public_router)        # MCP 端点：URL 路径 token 即凭证，免登录
 
 # 其余所有接口都需要登录（支持 Authorization 头或 ?token= 查询参数，后者供导出下载用）
 protected = [Depends(get_current_user)]
 app.include_router(users.router, dependencies=protected)
+app.include_router(images.router, dependencies=protected)
 app.include_router(rbac.router, dependencies=protected)
 app.include_router(groups.router, dependencies=protected)
 app.include_router(excel.router, dependencies=protected)
@@ -60,6 +75,9 @@ app.include_router(tables.router, dependencies=protected)
 app.include_router(dyn.router, dependencies=protected)
 app.include_router(vision.router, dependencies=protected)
 app.include_router(tasks.router, dependencies=protected)
+app.include_router(workflows.router, dependencies=protected)
+app.include_router(workflows.templates_router, dependencies=protected)
+app.include_router(mcp.router, dependencies=protected)
 app.include_router(reports.router, dependencies=protected)
 app.include_router(assistant.router, dependencies=protected)
 app.include_router(notes.router, dependencies=protected)

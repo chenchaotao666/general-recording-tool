@@ -121,6 +121,17 @@
                 <card-footer v-else :m="m" confirm-text="确认生成" @confirm="confirm(m)" />
               </div>
 
+              <!-- 动作卡片：修改表结构 -->
+              <div v-else-if="m.card?.type === 'alter_table'" class="card">
+                <div class="card-title">🔧 {{ m.card.summary }} → {{ m.card.payload.table_label }}</div>
+                <div v-for="(s, si) in m.card.payload.summaries" :key="si" class="kv-row">
+                  <el-tag size="small" effect="plain">{{ si + 1 }}</el-tag>
+                  <span style="margin-left: 6px">{{ s }}</span>
+                </div>
+                <warnings-view :list="m.card.warnings" />
+                <card-footer :m="m" confirm-text="确认修改" @confirm="confirm(m)" />
+              </div>
+
               <!-- 动作卡片：数据问答（只读结果，无需确认） -->
               <div v-else-if="m.card?.type === 'query_answer'" class="card">
                 <div class="card-title">🔍 {{ m.card.table_label }} · {{ m.card.result.range_label }}</div>
@@ -161,6 +172,8 @@
             <div v-if="m.ts" class="msg-time">{{ fmtTime(m.ts) }}</div>
           </div>
           <div v-if="m.role === 'user'" class="avatar avatar-user">{{ userInitial }}</div>
+          <!-- 悬停钉住：把自己问过的问题存为常用操作 -->
+          <div v-if="m.role === 'user' && m.content" class="pin-btn" title="存为常用问题" @click="addPin(m.content)">📌</div>
         </div>
 
         <!-- 思考中 -->
@@ -175,6 +188,19 @@
       </div>
 
       <div class="input-bar">
+        <!-- 常用操作：内置（按页面上下文）+ 用户钉住的问题，点击填入输入框 -->
+        <div class="chips-row">
+          <span v-for="c in quickChips" :key="c.label" class="chip chip-builtin" :title="c.text" @click="fillDraft(c.text)">
+            {{ c.label }}
+          </span>
+          <span v-for="(p, i) in pins" :key="`p${i}`" class="chip chip-pin" :title="p" @click="fillDraft(p)">
+            <span class="chip-text">{{ p }}</span>
+            <span class="chip-x" title="删除" @click.stop="removePin(i)">✕</span>
+          </span>
+          <span v-if="draft.trim()" class="chip chip-add" title="把当前输入存为常用问题" @click="pinDraft">
+            📌 存为常用
+          </span>
+        </div>
         <div v-if="attachments.length" class="attach-strip">
           <div v-for="(a, i) in attachments" :key="i" class="attach-item">
             <img :src="a" class="attach-img" alt="待发送图片" />
@@ -182,7 +208,7 @@
           </div>
         </div>
         <el-input
-          v-model="draft" type="textarea" :rows="2" resize="none" class="input-box"
+          ref="inputEl" v-model="draft" type="textarea" :rows="2" resize="none" class="input-box"
           placeholder="输入需求，Enter 发送（Shift+Enter 换行），可直接粘贴截图"
           @keydown.enter.exact.prevent="send"
           @paste="onPaste"
@@ -206,7 +232,7 @@ import { ElMessage } from 'element-plus'
 import { Promotion, CirclePlus } from '@element-plus/icons-vue'
 import { assistantChat, assistantDownloadUrl, assistantExecute } from '../api'
 
-const DATA_TYPES = ['varchar', 'text', 'int', 'decimal', 'date', 'datetime', 'bool']
+const DATA_TYPES = ['varchar', 'text', 'int', 'decimal', 'date', 'datetime', 'bool', 'image']
 const RANGE_LABELS = {
   today: '今天', yesterday: '昨天', past_7d: '近7天', past_30d: '近30天',
   this_week: '本周', last_week: '上周', this_month: '本月', last_month: '上月',
@@ -289,6 +315,56 @@ const listEl = ref(null)
 const user = computed(() => JSON.parse(localStorage.getItem('grt_user') || 'null'))
 const storageKey = computed(() => `grt_assistant_${user.value?.id || 'anon'}`)
 const userInitial = computed(() => (user.value?.username || '我').slice(0, 1).toUpperCase())
+const inputEl = ref(null)
+
+// 内置常用操作：表页优先给当前表相关动作
+const quickChips = computed(() => {
+  if (context.value.table_id) {
+    return [
+      { label: '📝 把数据插入当前数据表', text: '帮我向当前数据表插入一条数据' },
+      { label: '📊 统计当前表数据', text: '帮我统计一下当前数据表的数据情况' },
+      { label: '📤 导出当前表 Excel', text: '把当前数据表的数据导出 Excel' },
+      { label: '⏰ 对当前表设提醒', text: '我想对当前数据表设置一个提醒任务' },
+    ]
+  }
+  return [
+    { label: '📝 把数据新增到当前数据表', text: '帮我向数据表插入一条数据' },
+    { label: '🧱 创建数据表', text: '我想创建一个数据表' },
+    { label: '📊 做一份报表', text: '我想做一份数据报表' },
+  ]
+})
+
+// 用户钉住的常用问题（按用户隔离，最多 12 条）
+const pinsKey = computed(() => `grt_assistant_pins_${user.value?.id || 'anon'}`)
+const pins = ref([])
+
+function loadPins() {
+  try { pins.value = JSON.parse(localStorage.getItem(pinsKey.value) || '[]') } catch { pins.value = [] }
+}
+function savePins() {
+  try { localStorage.setItem(pinsKey.value, JSON.stringify(pins.value.slice(0, 12))) } catch { /* 存储满时静默 */ }
+}
+function addPin(text) {
+  const t = (text || '').trim().slice(0, 60)
+  if (!t) return
+  if (pins.value.includes(t)) { ElMessage.info('这条已经在常用问题里了'); return }
+  pins.value.unshift(t)
+  savePins()
+  ElMessage.success('已存为常用问题')
+}
+function removePin(i) {
+  pins.value.splice(i, 1)
+  savePins()
+}
+function pinDraft() {
+  addPin(draft.value)
+}
+
+// 点击常用操作：填入输入框并聚焦（不直接发送，用户可修改后再发）
+function fillDraft(text) {
+  draft.value = text
+  nextTick(() => inputEl.value?.focus())
+}
 
 // 当前页面上下文：表页带上 table_id，AI 默认往当前表填
 const context = computed(() => {
@@ -300,6 +376,7 @@ const context = computed(() => {
 function open() {
   visible.value = true
   if (!messages.value.length) loadHistory()
+  loadPins()
 }
 
 function loadHistory() {
@@ -389,6 +466,8 @@ function cardDigest(card) {
     }
     if (card.type === 'create_report') return `[报表预览：${card.payload?.name}，${(card.payload?.blocks || []).length} 个区块]`
     if (card.type === 'create_task') return `[任务预览：${card.payload?.name}]`
+    if (card.type === 'alter_table') return `[修改表结构 → ${card.payload?.table_label}：${(card.payload?.summaries || []).join('；')}]`
+    if (card.type === 'run_workflow') return `[执行工作流：${card.payload?.workflow_name}]`
     if (card.type === 'gen_excel') return `[生成 Excel：${card.summary}]`
     if (card.type === 'query_answer') {
       const r = card.result || {}
@@ -453,6 +532,8 @@ const TYPE_DEFAULT_PAYLOAD = {
   create_report: (card) => card.payload,
   create_task: (card) => card.payload,
   gen_excel: (card) => card.payload,
+  run_workflow: (card) => card.payload,
+  alter_table: (card) => card.payload,
 }
 
 async function confirm(m) {
@@ -465,6 +546,8 @@ async function confirm(m) {
       if (res.fail?.length) text += `，失败 ${res.fail.length} 条（${res.fail[0].reason}）`
       text += ` · <a href="/t/${res.table_id}" class="dl-link">查看「${res.table_label}」</a>`
       m.done = text
+      // 广播给打开中的数据表页即时刷新（无需等 15s 轮询）
+      window.dispatchEvent(new CustomEvent('grt:records-changed', { detail: { table_id: res.table_id } }))
     } else if (res.type === 'create_table') {
       m.done = `✅ 已创建「${res.table_label}」 · <a href="/t/${res.table_id}" class="dl-link">去使用</a>`
     } else if (res.type === 'create_report') {
@@ -473,6 +556,17 @@ async function confirm(m) {
       m.done = `✅ 已创建任务「${res.name}」（默认停用，到任务规则页启用） · <a href="/tasks" class="dl-link">去查看</a>`
     } else if (res.type === 'gen_excel') {
       m.download = { url: assistantDownloadUrl(res.file_id), filename: res.filename }
+    } else if (res.type === 'run_workflow') {
+      m.done = res.status === 'success'
+        ? `✅ 工作流「${res.workflow_name}」执行成功（token ${res.tokens_used || 0}） · <a href="/workflows/runs/${res.id}" class="dl-link">查看轨迹</a>`
+        : `⚠️ 工作流「${res.workflow_name}」状态：${res.status}${res.error ? `（${res.error}）` : ''} · <a href="/workflows/runs/${res.id}" class="dl-link">查看轨迹</a>`
+    } else if (res.type === 'alter_table') {
+      let text = `✅ 表结构已更新：${(res.changes || []).join('；')}`
+      if (res.warnings?.length) text += `<br/>⚠️ ${res.warnings.join('；')}`
+      text += ` · <a href="/t/${res.table_id}" class="dl-link">查看「${res.table_label}」</a>`
+      m.done = text
+      window.dispatchEvent(new CustomEvent('grt:records-changed', { detail: { table_id: res.table_id } }))
+      window.dispatchEvent(new CustomEvent('grt:table-meta-changed', { detail: { table_id: res.table_id } }))
     }
     ElMessage.success('执行完成')
   } catch (e) {
@@ -483,8 +577,8 @@ async function confirm(m) {
   }
 }
 
-// 路由变化时 context 自动更新；跨账号登录切换时重载历史
-watch(storageKey, () => { messages.value = []; if (visible.value) loadHistory() })
+// 路由变化时 context 自动更新；跨账号登录切换时重载历史与常用问题
+watch(storageKey, () => { messages.value = []; if (visible.value) { loadHistory(); loadPins() } })
 </script>
 
 <style scoped>
@@ -642,4 +736,34 @@ watch(storageKey, () => { messages.value = []; if (visible.value) loadHistory() 
   box-shadow: 0 4px 10px rgba(80, 110, 255, .35);
 }
 .send-btn:disabled { background: #a0cfff; box-shadow: none; }
+
+/* 常用操作 chips */
+.chips-row {
+  display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 2px;
+  scrollbar-width: thin; white-space: nowrap;
+}
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  padding: 4px 10px; border-radius: 999px; font-size: 12px; cursor: pointer;
+  border: 1px solid #dcdfe6; background: #fff; color: #606266;
+  transition: border-color .15s ease, color .15s ease, background .15s ease;
+  user-select: none;
+}
+.chip:hover { border-color: #409eff; color: #409eff; background: #ecf5ff; }
+.chip-builtin { background: #f4f4f5; border-color: #e9e9eb; }
+.chip-pin { background: #fdf6ec; border-color: #f5dab1; color: #b88230; }
+.chip-pin:hover { border-color: #e6a23c; color: #e6a23c; background: #fdf6ec; }
+.chip-text { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.chip-x { font-size: 10px; opacity: .6; margin-left: 2px; }
+.chip-x:hover { opacity: 1; color: #f56c6c; }
+.chip-add { border-style: dashed; color: #909399; }
+
+/* 用户消息悬停钉住按钮 */
+.msg.user { position: relative; }
+.pin-btn {
+  align-self: center; font-size: 13px; cursor: pointer; opacity: 0;
+  transition: opacity .15s ease; padding: 4px; border-radius: 6px;
+}
+.msg.user:hover .pin-btn { opacity: .7; }
+.pin-btn:hover { opacity: 1 !important; background: #f4f4f5; }
 </style>
