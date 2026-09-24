@@ -8,8 +8,8 @@ from decimal import Decimal, InvalidOperation
 from dateutil import parser as dtparser
 from sqlalchemy import BigInteger, Boolean, Column, Date, DateTime, Numeric, String, Text
 
-DATA_TYPES = ["varchar", "text", "int", "decimal", "date", "datetime", "bool"]
-WIDGETS = ["input", "textarea", "number", "date-picker", "datetime-picker", "select", "switch"]
+DATA_TYPES = ["varchar", "text", "int", "decimal", "date", "datetime", "bool", "image"]
+WIDGETS = ["input", "textarea", "number", "date-picker", "datetime-picker", "select", "switch", "image-uploader"]
 
 DATE_FORMATS = [
     "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d", "%Y年%m月%d日",
@@ -44,6 +44,7 @@ def default_widget(data_type: str) -> str:
     return {
         "varchar": "input", "text": "textarea", "int": "number", "decimal": "number",
         "date": "date-picker", "datetime": "datetime-picker", "bool": "switch",
+        "image": "image-uploader",
     }.get(data_type, "input")
 
 
@@ -64,6 +65,8 @@ def sa_column(field) -> Column:
         col_type = DateTime()
     elif t == "bool":
         col_type = Boolean()
+    elif t == "image":
+        col_type = Text()   # 存图片 file_id 的 JSON 数组
     else:
         raise ValueError(f"不支持的字段类型：{t}")
     return Column(field.field_name, col_type, nullable=field.nullable, comment=field.label)
@@ -181,6 +184,14 @@ def coerce_value(v, data_type: str, nullable: bool = True):
             if s in BOOL_FALSE:
                 return True, False, None
             raise ValueError
+        if data_type == "image":
+            ids = v if isinstance(v, list) else [v]
+            out = []
+            for item in ids[:5]:   # 单字段最多 5 张
+                if not isinstance(item, str) or not item.strip():
+                    return False, None, "图片标识无效"
+                out.append(item.strip())
+            return (True, out or None, None) if out else (True, None, None)
         raise ValueError
     except (ValueError, InvalidOperation):
         return False, None, f"值「{v}」无法转换为 {data_type}"

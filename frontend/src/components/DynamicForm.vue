@@ -27,6 +27,16 @@
           <el-option v-for="opt in fieldOptions(f)" :key="String(opt.value)" :label="opt.label" :value="opt.value" />
         </el-select>
         <el-switch v-else-if="f.widget === 'switch'" v-model="form[f.field_name]" />
+        <!-- 图片字段：压缩上传，最多 5 张，可预览/删除 -->
+        <el-upload
+          v-else-if="f.widget === 'image-uploader'"
+          :file-list="imageLists[f.field_name] || []" list-type="picture-card" accept="image/*"
+          :limit="5" multiple :http-request="(req) => uploadImage(f.field_name, req)"
+          :on-remove="(file) => removeImage(f.field_name, file)"
+          :on-preview="(file) => previewImage(f.field_name, file)"
+        >
+          <el-icon><Plus /></el-icon>
+        </el-upload>
         <el-input v-else v-model="form[f.field_name]" clearable :placeholder="'请输入' + f.label" />
       </el-form-item>
       <el-form-item>
@@ -38,6 +48,12 @@
         >智能识别</el-button>
       </el-form-item>
     </el-form>
+
+    <!-- 图片预览 -->
+    <el-image-viewer
+      v-if="previewList.length" :url-list="previewList" :initial-index="previewIndex"
+      teleported hide-on-click-modal @close="previewList = []"
+    />
 
     <!-- 智能识别对话框 -->
     <el-dialog v-model="visionVisible" title="图片智能识别" width="760px" destroy-on-close append-to-body>
@@ -107,7 +123,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Camera, Plus } from '@element-plus/icons-vue'
-import { adoptVision, recognizeForm } from '../api'
+import { adoptVision, imageUrl, recognizeForm, uploadImage as apiUploadImage } from '../api'
 
 const props = defineProps({
   fields: { type: Array, required: true },
@@ -131,13 +147,78 @@ watch(
         form[f.field_name] = val
       } else if (f.widget === 'switch') {
         form[f.field_name] = false
+      } else if (f.widget === 'image-uploader') {
+        form[f.field_name] = []
       } else {
         form[f.field_name] = null
+      }
+      // 图片字段：由 file_id 列表构建 el-upload 的 file-list
+      if (f.widget === 'image-uploader') {
+        const ids = Array.isArray(form[f.field_name]) ? form[f.field_name] : []
+        form[f.field_name] = ids
+        imageLists[f.field_name] = ids.map((id) => ({ uid: id, name: id.slice(0, 8), url: imageUrl(id), status: 'success' }))
       }
     }
   },
   { immediate: true, deep: true }
 )
+
+// ---------- 图片上传 ----------
+const imageLists = reactive({})   // field_name → el-upload file-list
+const previewList = ref([])
+const previewIndex = ref(0)
+
+// 上传前压缩（最长边 1600 JPEG），与助手粘贴图片同一策略
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      const scale = Math.min(1, 1600 / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * scale)
+      canvas.height = Math.round(img.height * scale)
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+      URL.revokeObjectURL(url)
+      canvas.toBlob(
+        (blob) => resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })),
+        'image/jpeg', 0.85,
+      )
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片读取失败')) }
+    img.src = url
+  })
+}
+
+async function uploadImage(fieldName, req) {
+  try {
+    const compressed = await compressImage(req.file)
+    const res = await apiUploadImage(compressed)
+    const fid = res.files[0].id
+    if (!Array.isArray(form[fieldName])) form[fieldName] = []
+    form[fieldName].push(fid)
+    imageLists[fieldName] = [
+      ...(imageLists[fieldName] || []),
+      { uid: fid, name: fid.slice(0, 8), url: imageUrl(fid), status: 'success' },
+    ]
+    req.onSuccess && req.onSuccess({})
+  } catch (e) {
+    ElMessage.error(e.message)
+    req.onError && req.onError(e)
+  }
+}
+
+function removeImage(fieldName, file) {
+  const ids = Array.isArray(form[fieldName]) ? form[fieldName] : []
+  form[fieldName] = ids.filter((id) => id !== file.uid)
+  imageLists[fieldName] = (imageLists[fieldName] || []).filter((x) => x.uid !== file.uid)
+}
+
+function previewImage(fieldName, file) {
+  const ids = Array.isArray(form[fieldName]) ? form[fieldName] : []
+  previewList.value = ids.map(imageUrl)
+  previewIndex.value = Math.max(0, ids.indexOf(file.uid))
+}
 
 const rules = computed(() => {
   const r = {}
