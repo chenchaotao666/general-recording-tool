@@ -10,6 +10,9 @@
         <el-menu-item index="/import">
           <el-icon><Upload /></el-icon><span>导入 Excel</span>
         </el-menu-item>
+        <el-menu-item index="/notes">
+          <el-icon><Notebook /></el-icon><span>记事本</span>
+        </el-menu-item>
         <el-menu-item index="/reports">
           <el-icon><DataAnalysis /></el-icon><span>报表</span>
         </el-menu-item>
@@ -105,7 +108,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { AlarmClock, Avatar, Bell, DataAnalysis, Grid, Key, Setting, Upload, User, UserFilled } from '@element-plus/icons-vue'
+import { AlarmClock, Avatar, Bell, DataAnalysis, Grid, Key, Notebook, Setting, Upload, User, UserFilled } from '@element-plus/icons-vue'
 import { changePassword as changePasswordApi, listNotifications, markRead, unreadCount } from './api'
 import AssistantPanel from './components/AssistantPanel.vue'
 

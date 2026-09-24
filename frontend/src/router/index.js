@@ -23,6 +23,8 @@ const router = createRouter({
     { path: '/friends', component: Friends },
     { path: '/import', component: ImportWizard },
     { path: '/t/:id', component: DynamicTable },
+    // 懒加载隔离 editorjs 体积
+    { path: '/notes', component: () => import('../views/Notes.vue') },
     { path: '/tasks', component: Tasks },
     { path: '/reports', component: Reports },
     // 懒加载隔离 echarts 体积

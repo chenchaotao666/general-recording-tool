@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import assistant, auth, dyn, excel, friends, groups, notify, rbac, reports, settings as settings_router, share_links, shares, tables, tasks, users, vision
+from .routers import assistant, auth, dyn, excel, friends, groups, notes, notify, rbac, reports, settings as settings_router, share_links, shares, tables, tasks, users, vision
 from .services import scheduler
 from .services.migrate import run_migrations
 from .utils.auth import get_current_user, hash_password
@@ -62,6 +62,7 @@ app.include_router(vision.router, dependencies=protected)
 app.include_router(tasks.router, dependencies=protected)
 app.include_router(reports.router, dependencies=protected)
 app.include_router(assistant.router, dependencies=protected)
+app.include_router(notes.router, dependencies=protected)
 app.include_router(notify.router, dependencies=protected)
 app.include_router(friends.router, dependencies=protected)
 app.include_router(shares.router, dependencies=protected)
@@ -70,4 +71,16 @@ app.include_router(settings_router.router, dependencies=protected)
 # 前端构建产物存在时直接由后端托管（生产模式）
 dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if dist.exists():
-    app.mount("/", StaticFiles(directory=dist, html=True), name="static")
+    from starlette.responses import FileResponse
+    from starlette.staticfiles import StaticFiles
+
+    class NoCacheStaticFiles(StaticFiles):
+        """index.html 不带哈希、内容随构建变化，必须禁用缓存；assets 带哈希可长缓存。"""
+
+        async def get_response(self, path, scope):
+            resp = await super().get_response(path, scope)
+            if isinstance(resp, FileResponse) and resp.path.endswith("index.html"):
+                resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+            return resp
+
+    app.mount("/", NoCacheStaticFiles(directory=dist, html=True), name="static")

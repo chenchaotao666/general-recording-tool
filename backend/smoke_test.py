@@ -1082,6 +1082,85 @@ assert r.status_code == 200 and "尚未配置联网搜索服务" in out["reply"]
 gw.get_default_provider = lambda db: JudgeFakeProvider()
 print("AI 助手联网搜索（二次调用/来源卡片/失败降级）通过")
 
+# 10.12 记事本：CRUD + 页面树 + 搜索 + 层级/移动约束 + 严格私有
+r = client.post("/api/notes", json={"title": "工作日志"})
+assert r.status_code == 200, r.text
+n1 = r.json()["id"]
+n2 = client.post("/api/notes", json={"parent_id": n1, "title": "2026-09"}).json()["id"]
+n3 = client.post("/api/notes", json={"parent_id": n2}).json()["id"]
+assert client.post("/api/notes", json={"parent_id": n3}).status_code == 400  # 第 4 层被拒
+
+blocks = [
+    {"id": "b1", "type": "header", "data": {"text": "本周事项", "level": 2}},
+    {"id": "b2", "type": "checklist", "data": {"items": [{"text": "给<b>张三</b>回电话", "checked": False}]}},
+]
+r = client.put(f"/api/notes/{n1}", json={"blocks": blocks, "pinned": True})
+assert r.status_code == 200 and r.json()["pinned"] is True, r.text
+tree = client.get("/api/notes/tree").json()["notes"]
+assert tree[0]["id"] == n1 and tree[0]["pinned"] is True  # 置顶在前
+assert next(n for n in tree if n["id"] == n1)["preview"] == "本周事项"  # 摘要剥 HTML 标签
+
+hit = client.get("/api/notes/search", params={"keyword": "张三"}).json()["notes"]
+assert [n["id"] for n in hit] == [n1]  # 块文本（剥标签后）可搜
+assert client.get("/api/notes/search", params={"keyword": "不存在xyz"}).json()["notes"] == []
+
+assert client.put(f"/api/notes/{n1}", json={"parent_id": n1}).status_code == 400   # 移到自己下面
+assert client.put(f"/api/notes/{n1}", json={"parent_id": n3}).status_code == 400   # 移到子孙页下面
+# 移回顶级（显式 null）
+n4 = client.post("/api/notes", json={"parent_id": n1}).json()["id"]
+r = client.put(f"/api/notes/{n4}", json={"parent_id": None})
+assert r.status_code == 200 and r.json()["parent_id"] is None, r.text
+client.delete(f"/api/notes/{n4}")
+
+assert client.delete(f"/api/notes/{n1}").status_code == 400  # 有子页拒删
+assert client.delete(f"/api/notes/{n2}").status_code == 400
+client.delete(f"/api/notes/{n3}")
+assert client.delete(f"/api/notes/{n2}").status_code == 200
+assert client.delete(f"/api/notes/{n1}").status_code == 200
+
+# 严格私有：zhangsan 看不到、也搜不到 admin 的笔记（admin 也看不到他人的）
+priv_id = client.post("/api/notes", json={"title": "admin私有"}).json()["id"]
+admin_headers = dict(client.headers)
+zs = client.post("/api/auth/login", json={"username": "zhangsan", "password": "newpass123"}).json()["token"]
+zs_headers = {"Authorization": f"Bearer {zs}"}
+assert client.get(f"/api/notes/{priv_id}", headers=zs_headers).status_code == 404
+assert client.get("/api/notes/tree", headers=zs_headers).json()["notes"] == []
+assert client.put(f"/api/notes/{priv_id}", headers=zs_headers, json={"title": "x"}).status_code == 404
+assert client.delete(f"/api/notes/{priv_id}", headers=zs_headers).status_code == 404
+client.headers.update(admin_headers)
+client.delete(f"/api/notes/{priv_id}")
+print("记事本（CRUD/树/搜索/层级移动/私有）通过")
+
+# 10.13 记事本 AI 写作：块白名单清洗（未知类型丢弃、形状归一、层级收敛）
+class NoteAiFakeProvider:
+    def complete(self, prompt, system=None):
+        return (
+            '{"blocks": ['
+            '{"type": "header", "data": {"text": "本周总结", "level": 9}},'
+            '{"type": "checklist", "data": {"items": [{"text": "回电话", "checked": true}, "裸字符串", 123]}},'
+            '{"type": "list", "data": {"style": "weird", "items": [{"content": "甲"}, "乙"]}},'
+            '{"type": "table", "data": {}},'
+            '{"type": "quote", "data": {"text": "引用", "alignment": "center"}}'
+            ']}'
+        )
+
+
+gw.get_default_provider = lambda db: NoteAiFakeProvider()
+r = client.post("/api/notes/ai-assist", json={"instruction": "写一份周总结", "note_title": "工作日志"})
+assert r.status_code == 200, r.text
+blocks = r.json()["blocks"]
+assert [b["type"] for b in blocks] == ["header", "checklist", "list", "quote"], blocks  # table 被丢弃
+assert blocks[0]["data"]["level"] == 3  # 层级收敛到 1~3
+assert blocks[1]["data"]["items"] == [
+    {"text": "回电话", "checked": True}, {"text": "裸字符串", "checked": False}, {"text": "123", "checked": False},
+]
+assert blocks[2]["data"]["style"] == "unordered"  # 非法 style 收敛
+assert blocks[2]["data"]["items"] == [{"content": "甲", "items": []}, {"content": "乙", "items": []}]
+assert blocks[3]["data"]["alignment"] == "left"
+assert client.post("/api/notes/ai-assist", json={"instruction": ""}).status_code == 400
+gw.get_default_provider = lambda db: JudgeFakeProvider()
+print("记事本 AI 写作（块清洗/空指令）通过")
+
 # 11. 权限矩阵：未分享 404 / 分享者按开关 / 主人与 admin 全权
 admin_headers = dict(client.headers)
 r = client.post("/api/auth/register", json={"username": "worker", "password": "secret123"})

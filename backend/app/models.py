@@ -291,6 +291,21 @@ class ReportRunLog(Base):
     error = Column(Text)
 
 
+class Note(Base):
+    """记事本页面：块模型内容（Editor.js blocks），可嵌套（最多 3 层），严格私有。"""
+    __tablename__ = "notes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（仅本人可见，admin 也不例外）
+    parent_id = Column(Integer, ForeignKey("notes.id"), nullable=True, index=True)  # 父页面，可空=顶级
+    title = Column(String(200), default="")
+    blocks_json = Column(JSON, default=list)   # Editor.js blocks: [{id, type, data}]
+    pinned = Column(Boolean, default=False)
+    sort = Column(Integer, default=0)          # 同级手工排序
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class Notification(Base):
     """站内通知"""
     __tablename__ = "notifications"

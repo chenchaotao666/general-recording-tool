@@ -151,6 +151,15 @@ export const reportExportUrl = (id, params) => {
   return `/api/reports/${id}/export?${qs}&token=${encodeURIComponent(token)}`
 }
 
+// 记事本
+export const noteTree = () => http.get('/notes/tree')
+export const searchNotes = (keyword) => http.get('/notes/search', { params: { keyword } })
+export const createNote = (p) => http.post('/notes', p)
+export const getNote = (id) => http.get(`/notes/${id}`)
+export const updateNote = (id, p) => http.put(`/notes/${id}`, p)
+export const deleteNote = (id) => http.delete(`/notes/${id}`)
+export const noteAiAssist = (p) => http.post('/notes/ai-assist', p)
+
 // 站内通知
 export const listNotifications = () => http.get('/notify')
 export const unreadCount = () => http.get('/notify/unread_count')

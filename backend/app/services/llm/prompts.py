@@ -266,6 +266,38 @@ def build_report_prompt(description: str, fields: list[dict]) -> str:
 
 # ---------- AI 助手（对话式） ----------
 
+NOTE_AI_SYSTEM = (
+    "你是记事本写作助手，按用户指令直接生成笔记内容（块结构 JSON）。"
+    "不写客套话、不解释，只输出 JSON。"
+)
+
+
+def build_note_ai_prompt(instruction: str, note_title: str, context_texts: list[str], today: str) -> str:
+    """记事本 AI 写作：指令 + 笔记上下文 → Editor.js 块数组。"""
+    lines = [
+        f"今天日期：{today}",
+        f"当前笔记标题：{note_title or '（无标题）'}",
+    ]
+    if context_texts:
+        lines.append("笔记已有内容（供衔接，不要重复）：")
+        lines += [f"- {t}" for t in context_texts[-20:] if t.strip()]
+    lines += [
+        "",
+        f"用户的指令：{instruction}",
+        "",
+        '输出 JSON：{"blocks": [...]}，块只能是以下五种（Editor.js 格式）：',
+        '{"type": "paragraph", "data": {"text": "段落文字"}}',
+        '{"type": "header", "data": {"text": "标题", "level": 1}},  // level 1~3',
+        '{"type": "list", "data": {"style": "unordered 或 ordered", "items": ["条目1", "条目2"]}}',
+        '{"type": "checklist", "data": {"items": [{"text": "待办事项", "checked": false}]}}',
+        '{"type": "quote", "data": {"text": "引用文字"}}',
+        "规则：内容用中文（用户要求其他语言除外）；text 里可以用 <b></b> 加粗；"
+        "按指令体裁组织（总结用标题+段落/清单，计划用 checklist，清单用 list）；"
+        "最多 30 个块；不要输出其他字段。",
+    ]
+    return "\n".join(lines)
+
+
 ASSISTANT_SYSTEM = (
     "你是一个通用 AI 助手（像豆包、DeepSeek 那样能聊能答），同时具备两项工具能力："
     "① 联网搜索——查询实时/公开信息（电话、排班、招投标、新闻等）；"
