@@ -6,6 +6,7 @@
         <el-tag v-if="meta && !meta.is_owner" size="small" style="margin-left: 8px">来自 {{ meta.owner_label }} 的分享</el-tag>
       </h2>
       <div>
+        <el-button v-if="canAlter" :icon="SetUp" @click="openStruct">表结构</el-button>
         <el-button :icon="Download" @click="exportXlsx">导出 Excel</el-button>
         <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">新增记录</el-button>
       </div>
@@ -50,8 +51,23 @@
       <el-table-column
         v-for="f in listFields" :key="f.field_name"
         :prop="f.field_name" :label="f.label" sortable="custom"
-        :formatter="(row) => fmt(f, row[f.field_name])" show-overflow-tooltip min-width="110"
-      />
+        show-overflow-tooltip min-width="110"
+      >
+        <template #default="{ row }">
+          <template v-if="f.data_type === 'image'">
+            <el-image
+              v-for="id in asImageList(row[f.field_name]).slice(0, 3)" :key="id"
+              :src="imageUrl(id)" :preview-src-list="asImageList(row[f.field_name]).map(imageUrl)"
+              :initial-index="asImageList(row[f.field_name]).indexOf(id)"
+              fit="cover" preview-teleported hide-on-click-modal class="cell-thumb"
+            />
+            <span v-if="asImageList(row[f.field_name]).length > 3" class="thumb-more">
+              +{{ asImageList(row[f.field_name]).length - 3 }}
+            </span>
+          </template>
+          <span v-else>{{ fmt(f, row[f.field_name]) }}</span>
+        </template>
+      </el-table-column>
       <el-table-column v-if="canEdit || canDelete" label="操作" width="130" fixed="right">
         <template #default="{ row }">
           <el-button v-if="canEdit" text type="primary" size="small" @click="openEdit(row)">编辑</el-button>
@@ -81,16 +97,68 @@
         @submit="onSave" @cancel="dialogVisible = false"
       />
     </el-dialog>
+
+    <!-- 表结构编辑：加/删/改/重命名字段（仅主人/admin 可见） -->
+    <el-drawer v-model="structVisible" title="表结构设置" size="600px">
+      <el-form label-width="70px" style="max-width: 400px">
+        <el-form-item label="表名称">
+          <el-input v-model="structLabel" maxlength="64" />
+        </el-form-item>
+      </el-form>
+      <el-divider content-position="left">字段（{{ structRows.length }}）</el-divider>
+      <div class="struct-head struct-row">
+        <span class="sr-label">显示名</span>
+        <span class="sr-name">字段名（英文）</span>
+        <span class="sr-type">类型</span>
+        <span class="sr-null">可空</span>
+        <span class="sr-del" />
+      </div>
+      <div v-for="(r, i) in structRows" :key="r._key" class="struct-row">
+        <el-input v-model="r.label" placeholder="如：金额" class="sr-label" />
+        <el-input v-model="r.field_name" placeholder="如：amount" class="sr-name" />
+        <el-select v-model="r.data_type" class="sr-type" :disabled="!!r.id && meta?.storage_mode !== 'json'">
+          <el-option v-for="t in DATA_TYPES" :key="t" :label="t" :value="t" />
+        </el-select>
+        <el-checkbox v-model="r.nullable" class="sr-null" />
+        <el-button text type="danger" size="small" class="sr-del" @click="structRows.splice(i, 1)">删</el-button>
+      </div>
+      <el-button text type="primary" size="small" @click="addStructRow">+ 添加字段</el-button>
+      <div v-if="meta?.storage_mode !== 'json'" class="struct-hint">
+        physical 模式表暂不支持修改已有字段类型（可加/删/改名字段）
+      </div>
+      <div class="struct-hint">
+        修改类型会尝试转换存量数据（转不了的值将被清空）；删除字段会连带删除存量数据中的该字段。
+      </div>
+      <div class="struct-footer">
+        <el-button @click="structVisible = false">取消</el-button>
+        <el-button type="primary" :loading="structSaving" @click="saveStruct">保存修改</el-button>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { Plus, Download } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Download, SetUp } from '@element-plus/icons-vue'
 import DynamicForm from '../components/DynamicForm.vue'
-import { createRecord, deleteRecord, getTable, listRecords, recordExportUrl, updateRecord } from '../api'
+import { alterTable, createRecord, deleteRecord, getTable, imageUrl, listRecords, recordExportUrl, updateRecord, updateTable } from '../api'
+
+const DATA_TYPES = ['varchar', 'text', 'int', 'decimal', 'date', 'datetime', 'bool', 'image']
+const WIDGET_OF = {
+  varchar: 'input', text: 'textarea', int: 'number', decimal: 'number',
+  date: 'date-picker', datetime: 'datetime-picker', bool: 'switch', image: 'image-uploader',
+}
+
+// 图片列兜底：值可能是 list / JSON 字符串 / null
+function asImageList(v) {
+  if (Array.isArray(v)) return v
+  if (typeof v === 'string' && v.startsWith('[')) {
+    try { return JSON.parse(v) } catch { return [] }
+  }
+  return []
+}
 
 const route = useRoute()
 const tableId = Number(route.params.id)
@@ -112,6 +180,7 @@ const saving = ref(false)
 const fields = computed(() => meta.value?.fields || [])
 const canCreate = computed(() => meta.value?.my_perms?.can_create)
 const canEdit = computed(() => meta.value?.my_perms?.can_edit)
+const canAlter = computed(() => meta.value?.is_owner || meta.value?.my_perms?.is_admin)
 const canDelete = computed(() => meta.value?.my_perms?.can_delete)
 const listFields = computed(() => fields.value.filter((f) => f.options?.show_in_list !== false))
 const filterable = computed(() =>
@@ -163,16 +232,20 @@ function exportXlsx() {
   }), '_blank')
 }
 
+function queryParams() {
+  return {
+    page: page.value,
+    page_size: pageSize.value,
+    sort_by: sortBy.value || undefined,
+    sort_order: sortOrder.value || undefined,
+    filters: JSON.stringify(buildFilters()),
+  }
+}
+
 async function load() {
   loading.value = true
   try {
-    const res = await listRecords(tableId, {
-      page: page.value,
-      page_size: pageSize.value,
-      sort_by: sortBy.value || undefined,
-      sort_order: sortOrder.value || undefined,
-      filters: JSON.stringify(buildFilters()),
-    })
+    const res = await listRecords(tableId, queryParams())
     rows.value = res.items
     total.value = res.total
   } catch (e) {
@@ -180,6 +253,33 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+// 静默刷新：轮询用，不闪 loading、失败不打扰
+async function silentLoad() {
+  try {
+    const res = await listRecords(tableId, queryParams())
+    rows.value = res.items
+    total.value = res.total
+  } catch { /* 静默刷新失败不打断用户 */ }
+}
+
+// 后台写入（工作流定时/webhook、其他同事编辑）感知：页面可见时每 15s 静默刷新
+let pollTimer = null
+function startPoll() {
+  stopPoll()
+  pollTimer = setInterval(() => {
+    if (document.hidden || loading.value || dialogVisible.value) return
+    silentLoad()
+  }, 15000)
+}
+function stopPoll() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
+
+// 同页写入（AI 助手填表等）即时刷新：监听应用内广播
+function onRecordsChanged(e) {
+  if (Number(e.detail?.table_id) === tableId) load()
 }
 
 function search() {
@@ -236,6 +336,106 @@ async function del(row) {
   }
 }
 
+// ---------- 表结构编辑 ----------
+const structVisible = ref(false)
+const structSaving = ref(false)
+const structLabel = ref('')
+const structRows = ref([])
+const origFields = ref([])
+let structKeySeq = 0
+
+function openStruct() {
+  structLabel.value = meta.value?.label || ''
+  origFields.value = JSON.parse(JSON.stringify(meta.value?.fields || []))
+  structRows.value = origFields.value.map((f) => ({ ...f, _key: ++structKeySeq }))
+  structVisible.value = true
+}
+
+function addStructRow() {
+  structRows.value.push({
+    id: null, _key: ++structKeySeq, label: '', field_name: '',
+    data_type: 'varchar', nullable: true, widget: 'input', options: {},
+  })
+}
+
+function buildStructOps() {
+  const ops = []
+  const origById = new Map(origFields.value.map((f) => [f.id, f]))
+  const seenIds = new Set()
+  for (const r of structRows.value) {
+    if (r.id) {
+      seenIds.add(r.id)
+      const orig = origById.get(r.id)
+      if (!orig) continue
+      if (r.field_name !== orig.field_name) {
+        ops.push({
+          op: 'rename_field', field_name: orig.field_name, new_field_name: r.field_name,
+          ...(r.label !== orig.label ? { label: r.label } : {}),
+        })
+        const upd = { op: 'update_field', field_name: r.field_name }
+        if (r.data_type !== orig.data_type) upd.data_type = r.data_type
+        if (r.nullable !== orig.nullable) upd.nullable = r.nullable
+        if (Object.keys(upd).length > 2) ops.push(upd)
+      } else {
+        const upd = { op: 'update_field', field_name: r.field_name }
+        if (r.label !== orig.label) upd.label = r.label
+        if (r.data_type !== orig.data_type) upd.data_type = r.data_type
+        if (r.nullable !== orig.nullable) upd.nullable = r.nullable
+        if (Object.keys(upd).length > 2) ops.push(upd)
+      }
+    } else if (r.field_name.trim()) {
+      ops.push({
+        op: 'add_field',
+        field: {
+          field_name: r.field_name.trim(), label: r.label.trim() || r.field_name.trim(),
+          data_type: r.data_type, nullable: r.nullable, widget: WIDGET_OF[r.data_type] || 'input',
+        },
+      })
+    }
+  }
+  for (const f of origFields.value) {
+    if (!seenIds.has(f.id)) ops.push({ op: 'delete_field', field_name: f.field_name })
+  }
+  return ops
+}
+
+async function saveStruct() {
+  const ops = buildStructOps()
+  const labelChanged = structLabel.value.trim() && structLabel.value.trim() !== meta.value?.label
+  if (!ops.length && !labelChanged) { structVisible.value = false; return }
+  const destructive = ops.filter((o) => o.op === 'delete_field' || (o.op === 'update_field' && o.data_type))
+  if (destructive.length) {
+    await ElMessageBox.confirm(
+      '本次修改包含删除字段或修改字段类型，存量数据可能受影响（删除的字段数据将被清除、无法转换的值将被置空）。确定继续？',
+      '修改确认', { type: 'warning', confirmButtonText: '继续保存', cancelButtonText: '再想想' },
+    )
+  }
+  structSaving.value = true
+  try {
+    if (labelChanged) await updateTable(tableId, { label: structLabel.value.trim() })
+    let result = null
+    if (ops.length) result = await alterTable(tableId, ops)
+    ElMessage.success(result?.changes?.length ? `已更新：${result.changes.join('；')}` : '已保存')
+    if (result?.warnings?.length) ElMessage.warning(result.warnings.join('；'))
+    structVisible.value = false
+    meta.value = await getTable(tableId)
+    load()
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.message || e)
+  } finally {
+    structSaving.value = false
+  }
+}
+
+async function reloadMeta() {
+  try { meta.value = await getTable(tableId) } catch { /* 静默 */ }
+}
+
+// AI 助手改了表结构时，元数据即时重载（字段列随之更新）
+function onTableMetaChanged(e) {
+  if (Number(e.detail?.table_id) === tableId) reloadMeta()
+}
+
 onMounted(async () => {
   try {
     meta.value = await getTable(tableId)
@@ -245,5 +445,28 @@ onMounted(async () => {
     metaLoading.value = false
   }
   load()
+  window.addEventListener('grt:records-changed', onRecordsChanged)
+  window.addEventListener('grt:table-meta-changed', onTableMetaChanged)
+  startPoll()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('grt:records-changed', onRecordsChanged)
+  window.removeEventListener('grt:table-meta-changed', onTableMetaChanged)
+  stopPoll()
 })
 </script>
+
+<style scoped>
+.struct-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.struct-head { font-size: 12px; color: #909399; }
+.sr-label { width: 130px; }
+.sr-name { width: 150px; }
+.sr-type { width: 110px; }
+.sr-null { width: 40px; }
+.sr-del { width: 36px; }
+.struct-hint { font-size: 12px; color: #909399; margin-top: 10px; }
+.struct-footer { margin-top: 18px; display: flex; justify-content: flex-end; gap: 8px; }
+.cell-thumb { width: 40px; height: 40px; border-radius: 4px; margin-right: 4px; vertical-align: middle; }
+.thumb-more { font-size: 12px; color: #909399; }
+</style>

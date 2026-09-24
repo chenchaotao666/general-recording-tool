@@ -2,6 +2,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -124,6 +125,29 @@ def delete_table(table_id: int, db: Session = Depends(get_db),
     log_audit(db, "drop_table", mt.id, before={"name": mt.name, "label": mt.label}, user=user.username)
     meta_service.drop_business_table(db, mt)
     return {"ok": True}
+
+
+class AlterIn(BaseModel):
+    ops: list[dict]   # [{op: add_field|update_field|delete_field|rename_field, ...}]
+
+
+@router.post("/{table_id}/alter")
+def alter_table(table_id: int, payload: AlterIn, db: Session = Depends(get_db),
+                access: TableAccess = Depends(require_table("view")),
+                user: User = Depends(get_current_user)):
+    """表结构变更（加/删/改/重命名字段）：仅主人/admin。任何一步非法整体回滚。"""
+    if not access.is_owner and not access.is_admin:
+        raise HTTPException(404, "数据表不存在")
+    if not payload.ops:
+        raise HTTPException(400, "没有要执行的结构变更")
+    try:
+        result = meta_service.alter_business_table(db, access.table, payload.ops)
+    except MetaError as e:
+        db.rollback()
+        raise HTTPException(400, str(e))
+    log_audit(db, "alter_table", table_id, after={"ops": payload.ops}, user=user.username)
+    db.commit()
+    return {**result, "table": meta_service.table_out(db, access.table)}
 
 
 # ---------- 分享授权（vip/admin 且为表主人，或 admin） ----------
