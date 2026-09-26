@@ -12,9 +12,13 @@
       </div>
     </div>
 
-    <!-- 动态筛选区 -->
-    <el-card v-if="filterable.length" style="margin-bottom: 14px">
-      <el-form inline>
+    <!-- 动态筛选区：快捷（各字段 AND）/ 高级（规则编辑器，支持 全部/任一 条件） -->
+    <el-card v-if="filterable.length || fields.length" style="margin-bottom: 14px">
+      <el-radio-group v-model="filterMode" size="small" style="margin-bottom: 10px">
+        <el-radio-button value="quick">快捷筛选</el-radio-button>
+        <el-radio-button value="advanced">高级筛选</el-radio-button>
+      </el-radio-group>
+      <el-form v-if="filterMode === 'quick'" inline>
         <el-form-item v-for="f in filterable" :key="f.field_name" :label="f.label">
           <el-select
             v-if="f.widget === 'select'" v-model="filterModel[f.field_name]" clearable
@@ -43,6 +47,15 @@
           <el-button @click="resetFilters">重置</el-button>
         </el-form-item>
       </el-form>
+      <template v-else>
+        <!-- 与工作流筛选条件同一组件；reactive 对象不能整体替换，手动拆赋值 -->
+        <FiltersEditor :model-value="advFilters" :fields="fields"
+          @update:model-value="(v) => { advFilters.logic = v.logic; advFilters.rules = v.rules }" />
+        <div style="margin-top: 8px">
+          <el-button type="primary" size="small" @click="search">查询</el-button>
+          <el-button size="small" @click="resetFilters">重置</el-button>
+        </div>
+      </template>
     </el-card>
 
     <!-- 动态列表 -->
@@ -143,6 +156,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Download, SetUp } from '@element-plus/icons-vue'
 import DynamicForm from '../components/DynamicForm.vue'
+import FiltersEditor from '../components/workflow/FiltersEditor.vue'
 import { alterTable, createRecord, deleteRecord, getTable, imageUrl, listRecords, recordExportUrl, updateRecord, updateTable } from '../api'
 
 const DATA_TYPES = ['varchar', 'text', 'int', 'decimal', 'date', 'datetime', 'bool', 'image']
@@ -173,6 +187,9 @@ const loading = ref(false)
 const sortBy = ref(null)
 const sortOrder = ref(null)
 const filterModel = reactive({})
+// 高级筛选：规则编辑器（与工作流筛选条件同一组件），{logic: AND|OR, rules}
+const filterMode = ref('quick')
+const advFilters = reactive({ logic: 'AND', rules: [] })
 const dialogVisible = ref(false)
 const editing = ref(null)
 const saving = ref(false)
@@ -204,6 +221,11 @@ function fieldOptions(f) {
 }
 
 function buildFilters() {
+  // 高级筛选：{logic, rules} 对象形态（支持 任一条件/OR）；快捷筛选：平铺数组（AND）
+  if (filterMode.value === 'advanced') {
+    const rules = (advFilters.rules || []).filter((r) => r.field && r.op)
+    return rules.length ? { logic: advFilters.logic || 'AND', rules } : []
+  }
   const filters = []
   for (const f of filterable.value) {
     const v = filterModel[f.field_name]
@@ -224,11 +246,12 @@ function buildFilters() {
 
 // 导出按当前筛选/排序条件（与列表同口径），上限 5000 条
 function exportXlsx() {
-  const filters = buildFilters()
+  const f = buildFilters()
+  const has = Array.isArray(f) ? f.length > 0 : (f.rules || []).length > 0
   window.open(recordExportUrl(tableId, {
     sort_by: sortBy.value || undefined,
     sort_order: sortOrder.value || undefined,
-    filters: filters.length ? JSON.stringify(filters) : undefined,
+    filters: has ? JSON.stringify(f) : undefined,
   }), '_blank')
 }
 
@@ -289,6 +312,8 @@ function search() {
 
 function resetFilters() {
   for (const k of Object.keys(filterModel)) filterModel[k] = null
+  advFilters.logic = 'AND'
+  advFilters.rules = []
   search()
 }
 

@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import MetaData, Table, and_, func, select
+from sqlalchemy import MetaData, Table, and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..database import engine
@@ -192,17 +192,28 @@ def rule_value_ok(f: MetaField | None, op: str, value) -> bool:
     return True
 
 
+def _to_condition(table: Table, fields_by_name: dict, f: dict):
+    """单条规则 → SQL 条件；{logic, rules} 形态按 AND/OR 组展开（组内递归仍是扁平规则）。"""
+    if isinstance(f, dict) and isinstance(f.get("rules"), list):
+        subs = [build_condition(table, fields_by_name, r) for r in f["rules"] if isinstance(r, dict)]
+        if not subs:
+            return None
+        return or_(*subs) if f.get("logic") == "OR" else and_(*subs)
+    return build_condition(table, fields_by_name, f)
+
+
 def list_records(db: Session, table_id: int, page: int, page_size: int,
                  filters: list[dict] | None, sort_by: str | None, sort_order: str | None,
                  page_cap: int = MAX_PAGE_SIZE) -> dict:
-    """page_cap：页大小上限，常规列表用默认 200；导出等批量场景可放宽（传 EXPORT_MAX）。"""
+    """page_cap：页大小上限，常规列表用默认 200；导出等批量场景可放宽（传 EXPORT_MAX）。
+    filters 元素除单条规则外，也接受 {"logic": "AND"|"OR", "rules": [...]} 组合条件。"""
     mt, fields = load_meta(db, table_id)
     if mt.storage_mode == "json":
         from . import json_store
         return json_store.list_records(db, mt, fields, page, page_size, filters, sort_by, sort_order, page_cap)
     _, fields, table = load_business(db, table_id)
     fields_by_name = {f.field_name: f for f in fields}
-    conds = [build_condition(table, fields_by_name, f) for f in (filters or [])]
+    conds = [c for c in (_to_condition(table, fields_by_name, f) for f in (filters or [])) if c is not None]
 
     page = max(page, 1)
     page_size = min(max(page_size, 1), page_cap)

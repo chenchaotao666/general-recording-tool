@@ -6,11 +6,32 @@
   供 JSON 字段整体引用，如 "record": "{trigger.record}"。
 """
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 TOKEN_RE = re.compile(r"\{([^{}]+)\}")
 WHOLE_TOKEN_RE = re.compile(r"^\{([^{}]+)\}$")
+
+
+def now_vars() -> dict:
+    """内置时间变量（{now.xxx}）：每次执行实时计算；中断恢复时取恢复当下的时间。"""
+    n = datetime.now()
+    today = n.date()
+    week_start = today - timedelta(days=today.weekday())          # 本周一
+    month_start = today.replace(day=1)
+    last_month_end = month_start - timedelta(days=1)
+    return {
+        "today": today.isoformat(),
+        "yesterday": (today - timedelta(days=1)).isoformat(),
+        "tomorrow": (today + timedelta(days=1)).isoformat(),
+        "datetime": n.isoformat(sep=" ", timespec="seconds"),
+        "week_start": week_start.isoformat(),
+        "last_week_start": (week_start - timedelta(days=7)).isoformat(),
+        "last_week_end": (week_start - timedelta(days=1)).isoformat(),
+        "month_start": month_start.isoformat(),
+        "last_month_start": last_month_end.replace(day=1).isoformat(),
+        "last_month_end": last_month_end.isoformat(),
+    }
 
 
 def resolve_path(context: dict, path: str):

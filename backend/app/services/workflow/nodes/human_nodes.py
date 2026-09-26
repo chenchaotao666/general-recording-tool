@@ -29,12 +29,16 @@ class ApprovalNode(NodeType):
     }
 
     def execute(self, ctx: NodeContext) -> NodeResult:
+        from ....utils.auth import create_approval_token
         title = (ctx.config.get("title") or "").strip() or f"【{ctx.workflow.name}】待审批"
         detail = (ctx.config.get("detail_template") or "").strip()
         approvers = [int(i) for i in (ctx.config.get("approver_user_ids") or []) if str(i).strip().isdigit()]
         if not approvers:
             approvers = [ctx.user_id]
+        # 免登审批链接（7 天签名 token）：点开即可通过/驳回，无需登录
+        public_link = f"/approve/{create_approval_token(ctx.node_run_id)}"
         for uid in approvers:
-            notify_user(ctx.db, uid, title, detail or "请前往工作流执行详情处理审批。",
-                        link=f"/workflows/runs/{ctx.run_id}")
-        return NodeResult(status="waiting", output={"approval": {"title": title, "approver_user_ids": approvers}})
+            notify_user(ctx.db, uid, title, detail or "请前往处理审批。", link=public_link)
+        return NodeResult(status="waiting", output={
+            "approval": {"title": title, "detail": detail, "approver_user_ids": approvers},
+        })

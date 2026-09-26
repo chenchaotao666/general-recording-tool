@@ -61,8 +61,12 @@ def list_records(db: Session, mt: MetaTable, fields: list[MetaField], page: int,
     fields_by_name = {f.field_name: f for f in fields}
     recs = all_dicts(db, mt.id, fields, normalized=True)
     if filters:
-        # filters 是顶层 AND（与 dyn list_records 一致；单个 filter 内的 logic 由任务/报表层组合）
-        recs = [r for r in recs if all(match_filters(r, fields_by_name, {"logic": "AND", "rules": [f]}) for f in filters)]
+        # 元素是单条规则 → 顶层 AND；{"logic", "rules"} 形态 → 按组的 AND/OR 组合
+        def _hit(r, f):
+            if isinstance(f, dict) and isinstance(f.get("rules"), list):
+                return match_filters(r, fields_by_name, {"logic": f.get("logic"), "rules": f["rules"]})
+            return match_filters(r, fields_by_name, {"logic": "AND", "rules": [f]})
+        recs = [r for r in recs if all(_hit(r, f) for f in filters)]
     total = len(recs)
     recs = sort_records(recs, sort_by, sort_order, fields_by_name)
     page = max(page, 1)

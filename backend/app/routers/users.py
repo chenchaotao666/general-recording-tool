@@ -40,7 +40,9 @@ def search_users(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """用户搜索（登录即可）：按用户名前缀模糊匹配，limit 20。admin 不受 shareable 约束（可搜全站）。"""
+    """用户搜索：shareable=好友+同组（选分享对象）；all=全站（仅 admin，加好友下拉用）。"""
+    if scope == "all" and user.role != "admin":
+        raise HTTPException(403, "仅管理员可以搜索全站用户；添加好友请输入完整用户名")
     query = db.query(User).filter(User.id != user.id)
     if scope == "shareable" and user.role != "admin":
         friend_rows = db.query(Friendship).filter(

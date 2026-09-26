@@ -23,16 +23,35 @@
               </el-tag>
             </span>
           </div>
-          <el-button type="primary" size="small" :loading="installingKey === t.key" @click="onInstall(t)">
+          <el-button type="primary" size="small" @click="onInstall(t)">
             安装到我的工作流
           </el-button>
         </el-card>
       </div>
     </el-dialog>
 
+    <!-- 安装确认：明确让用户选择是否要示例数据 -->
+    <el-dialog v-model="confirmVisible" :title="`安装「${installTarget?.name || ''}」`" width="440px" append-to-body>
+      <div class="cf-tables">
+        <span v-for="tb in installTarget?.tables || []" :key="tb.label" class="tpl-table">
+          <el-tag size="small" :type="tb.exists ? 'success' : 'info'" effect="plain">
+            {{ tb.label }}{{ tb.exists ? '（已有，复用）' : '（将自动创建）' }}
+          </el-tag>
+        </span>
+      </div>
+      <el-checkbox v-model="installDemoData" class="cf-cb">
+        为新建的表生成 50 条示例数据（方便装完直接试运行）
+      </el-checkbox>
+      <div class="hint">复用的已有表不会写入任何数据</div>
+      <template #footer>
+        <el-button @click="confirmVisible = false">取消</el-button>
+        <el-button type="primary" :loading="!!installingKey" @click="doInstall">确认安装</el-button>
+      </template>
+    </el-dialog>
+
     <!-- AI 生成对话框 -->
     <el-dialog v-model="aiVisible" title="AI 生成工作流" width="560px">
-      <el-input v-model="aiDesc" type="textarea" :rows="4"
+      <el-input v-model="aiDesc" type="textarea" :rows="6"
         placeholder="用一句话描述你想要的自动化流程，例如：&#10;每天早上 9 点查询库存表里数量低于 10 的记录，AI 生成补货建议，发站内通知给我" />
       <div class="ai-examples">
         <span class="hint">试试：</span>
@@ -87,7 +106,7 @@
     </el-table>
 
     <!-- 执行日志抽屉 -->
-    <el-drawer v-model="runsVisible" :title="`执行日志 · ${runsRow?.name || ''}`" size="480px">
+    <el-drawer v-model="runsVisible" :title="`执行日志 · ${runsRow?.name || ''}`" size="720px">
       <el-table :data="runs" size="small">
         <el-table-column label="时间" width="150">
           <template #default="{ row }">
@@ -127,7 +146,7 @@ const AI_EXAMPLES = [
 
 const TRIGGER_LABELS = {
   manual: '手动', schedule: '定时', record: '数据变更', webhook: 'Webhook', test: '试运行',
-  interval: '定时', cron: '定时',
+  interval: '定时', cron: '定时', form: '表单', sub: '子流程',
 }
 const STATUS_LABELS = { pending: '排队中', running: '执行中', success: '成功', failed: '失败', waiting: '等待中', cancelled: '已取消' }
 
@@ -150,6 +169,9 @@ const tplVisible = ref(false)
 const tplLoading = ref(false)
 const templates = ref([])
 const installingKey = ref('')
+const confirmVisible = ref(false)
+const installTarget = ref(null)
+const installDemoData = ref(true)   // 默认生成示例数据，每次安装时都会弹出确认框让用户选
 
 async function openTemplates() {
   tplVisible.value = true
@@ -157,10 +179,19 @@ async function openTemplates() {
   try { templates.value = await listWorkflowTemplates() } finally { tplLoading.value = false }
 }
 
-async function onInstall(t) {
+function onInstall(t) {
+  installTarget.value = t
+  installDemoData.value = true
+  confirmVisible.value = true
+}
+
+async function doInstall() {
+  const t = installTarget.value
+  if (!t) return
   installingKey.value = t.key
   try {
-    const res = await installWorkflowTemplate(t.key)
+    const res = await installWorkflowTemplate(t.key, installDemoData.value)
+    confirmVisible.value = false
     tplVisible.value = false
     await load()
     await ElMessageBox.alert(
@@ -246,7 +277,7 @@ onMounted(load)
 .desc { font-size: 12px; color: #909399; }
 .last-time { margin-left: 8px; font-size: 12px; color: #909399; }
 .tokens { margin-left: 8px; font-size: 12px; color: #9b59b6; }
-.err { font-size: 12px; color: #f56c6c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.err { font-size: 12px; color: #f56c6c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
 .ai-examples { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .ai-examples .hint { font-size: 12px; color: #909399; }
 .ai-examples .ex { font-size: 12px; }
@@ -257,4 +288,7 @@ onMounted(load)
 .tpl-desc { color: #606266; margin-bottom: 6px; }
 .tpl-scenario { font-size: 12px; color: #909399; margin-bottom: 8px; }
 .tpl-tables { margin-bottom: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.cf-tables { margin-bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+.cf-cb { margin-bottom: 4px; }
+.hint { font-size: 12px; color: #909399; }
 </style>

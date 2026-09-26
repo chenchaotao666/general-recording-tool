@@ -4,7 +4,7 @@
       <el-form-item v-for="f in fields" :key="f.field_name" :label="f.label" :prop="f.field_name">
         <el-input
           v-if="f.widget === 'textarea'"
-          v-model="form[f.field_name]" type="textarea" :rows="3" :placeholder="'请输入' + f.label"
+          v-model="form[f.field_name]" type="textarea" :rows="5" :placeholder="'请输入' + f.label"
         />
         <el-input-number
           v-else-if="f.widget === 'number'"

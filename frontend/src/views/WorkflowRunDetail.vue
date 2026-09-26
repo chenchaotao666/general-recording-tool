@@ -21,7 +21,7 @@
         <el-icon color="#e6a23c"><WarningFilled /></el-icon>
         <b>{{ nr.output?.approval?.title || '待审批' }}</b>
       </div>
-      <el-input v-model="comments[nr.id]" type="textarea" :rows="2" placeholder="审批意见（可选）" class="mb" />
+      <el-input v-model="comments[nr.id]" type="textarea" :rows="3" placeholder="审批意见（可选）" class="mb" />
       <el-button type="success" :loading="acting" @click="act(nr, true)">通过</el-button>
       <el-button type="danger" plain :loading="acting" @click="act(nr, false)">驳回</el-button>
     </el-card>
@@ -64,8 +64,8 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, WarningFilled } from '@element-plus/icons-vue'
 import { approveWorkflowNode, getWorkflowRun, workflowNodeTypes } from '../api'
 
-const TRIGGER_LABELS = { manual: '手动', schedule: '定时', record: '数据变更', webhook: 'Webhook', test: '试运行' }
-const STATUS_LABELS = { pending: '排队中', running: '执行中', success: '成功', failed: '失败', waiting: '等待中', cancelled: '已取消' }
+const TRIGGER_LABELS = { manual: '手动', schedule: '定时', record: '数据变更', webhook: 'Webhook', test: '试运行', form: '表单', sub: '子流程' }
+const STATUS_LABELS = { pending: '排队中', running: '执行中', success: '成功', failed: '失败', waiting: '等待中', cancelled: '已取消', skipped: '已跳过' }
 
 const route = useRoute()
 const runId = Number(route.params.id)

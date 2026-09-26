@@ -29,12 +29,17 @@ def list_workflow_templates(db: Session = Depends(get_db), user: User = Depends(
     return list_templates(db, user)
 
 
+class InstallIn(BaseModel):
+    with_demo_data: bool = False   # 为新建的表生成 50 条示例数据
+
+
 @templates_router.post("/{key}/install")
-def install_workflow_template(key: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def install_workflow_template(key: str, payload: InstallIn | None = None,
+                              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """一键安装模板：自动建表（或复用同名表）→ 生成工作流（默认停用）→ 跳画布确认。"""
     from ..services.workflow.templates import install_template
     try:
-        return install_template(db, user, key)
+        return install_template(db, user, key, with_demo_data=(payload or InstallIn()).with_demo_data)
     except WorkflowError as e:
         raise HTTPException(400, str(e))
 
@@ -67,6 +72,8 @@ def _out(db: Session, wf: Workflow) -> dict:
     }
     if t.get("type") == "webhook":
         out["webhook_url"] = f"/api/workflows/webhook/{wf.id}/{t.get('secret')}"
+    if t.get("type") == "form":
+        out["form_url"] = f"/form/{wf.id}/{t.get('secret')}"   # 前端公开表单页路由（免登录）
     return out
 
 
@@ -106,7 +113,7 @@ def create_workflow(payload: WorkflowIn, db: Session = Depends(get_db), user: Us
         engine.validate_definition(db, trigger, payload.nodes, payload.edges, user)
     except WorkflowError as e:
         raise HTTPException(400, str(e))
-    if trigger.get("type") == "webhook" and not trigger.get("secret"):
+    if trigger.get("type") in ("webhook", "form") and not trigger.get("secret"):
         trigger["secret"] = uuid.uuid4().hex
     wf = Workflow(
         user_id=user.id, name=payload.name, description=payload.description,
@@ -133,7 +140,7 @@ def update_workflow(wf_id: int, payload: WorkflowIn, db: Session = Depends(get_d
         engine.validate_definition(db, trigger, payload.nodes, payload.edges, user)
     except WorkflowError as e:
         raise HTTPException(400, str(e))
-    if trigger.get("type") == "webhook" and not trigger.get("secret"):
+    if trigger.get("type") in ("webhook", "form") and not trigger.get("secret"):
         trigger["secret"] = (wf.trigger_json or {}).get("secret") or uuid.uuid4().hex
     wf.name, wf.description, wf.enabled = payload.name, payload.description, payload.enabled
     wf.trigger_json, wf.nodes_json, wf.edges_json = trigger, payload.nodes, payload.edges
@@ -163,6 +170,7 @@ def toggle_workflow(wf_id: int, db: Session = Depends(get_db), user: User = Depe
 
 class RunIn(BaseModel):
     params: dict = {}
+    node_id: str | None = None   # 单节点试运行：执行完该节点即停
 
 
 @router.post("/{wf_id}/run")
@@ -177,9 +185,14 @@ def run_workflow(wf_id: int, payload: RunIn | None = None, db: Session = Depends
 @router.post("/{wf_id}/test-run")
 def test_run_workflow(wf_id: int, payload: RunIn | None = None, db: Session = Depends(get_db),
                       user: User = Depends(get_current_user)):
-    """试运行：真实执行并标记 trigger=test，返回 run id 供查询完整节点轨迹。"""
-    _get_own(db, wf_id, user)
-    result = engine.run_now(wf_id, trigger="test", trigger_data={"params": (payload or RunIn()).params})
+    """试运行：真实执行并标记 trigger=test，返回 run id 供查询完整节点轨迹。
+    带 node_id 时执行到该节点为止（单节点试运行）。"""
+    wf = _get_own(db, wf_id, user)
+    payload = payload or RunIn()
+    if payload.node_id and not any(n.get("id") == payload.node_id for n in (wf.nodes_json or [])):
+        raise HTTPException(400, f"节点不存在：{payload.node_id}")
+    result = engine.run_now(wf_id, trigger="test", trigger_data={"params": payload.params},
+                            stop_after=payload.node_id)
     return result or {"error": "执行失败"}
 
 
@@ -264,4 +277,107 @@ async def webhook_trigger(wf_id: int, secret: str, request: Request, db: Session
         body = {}
     params = {**dict(request.query_params), **(body if isinstance(body, dict) else {})}
     run = engine.enqueue_run(db, wf, "webhook", {"params": jsonable(params)})
+    tpl = t.get("response_template")
+    if tpl:
+        # 自定义响应（验签/对接场景）：用 {trigger.params.xxx} 渲染；内容是 JSON 则按 JSON 返回
+        import json as _json
+        from fastapi.responses import PlainTextResponse
+        from ..services.workflow.template import now_vars, render_string
+        text = render_string({"trigger": {"params": params}, "now": now_vars()}, str(tpl))
+        try:
+            return _json.loads(text)
+        except ValueError:
+            return PlainTextResponse(text)
+    return {"ok": True, "run_id": run.id}
+
+
+# ---------- 免登审批（签名链接，URL 即凭证，7 天有效） ----------
+
+def _approval_by_token(db: Session, token: str) -> WorkflowNodeRun:
+    from ..utils.auth import decode_approval_token
+    nr = db.get(WorkflowNodeRun, decode_approval_token(token))
+    if not nr or nr.node_type != "approval":
+        raise HTTPException(404, "审批不存在")
+    return nr
+
+
+@public_router.get("/approval/{token}")
+def approval_public_info(token: str, db: Session = Depends(get_db)):
+    """免登审批页的信息（标题/详情/状态）。"""
+    nr = _approval_by_token(db, token)
+    run = db.get(WorkflowRun, nr.run_id)
+    wf = db.get(Workflow, run.workflow_id) if run else None
+    out = nr.output_json or {}
+    ap = out.get("approval") or {}
+    return {
+        "title": ap.get("title") or "待审批",
+        "detail": ap.get("detail") or "",
+        "workflow_name": wf.name if wf else "",
+        "status": nr.status,                      # waiting / success（已处理）
+        "approved": out.get("approved"),
+        "comment": out.get("comment") or "",
+        "created_at": nr.started_at.isoformat(sep=" ") if nr.started_at else None,
+    }
+
+
+@public_router.post("/approval/{token}")
+def approval_public_act(token: str, payload: ApproveIn, db: Session = Depends(get_db)):
+    """免登通过/驳回：以工作流归属人身份恢复执行（链接本身即凭证）。"""
+    nr = _approval_by_token(db, token)
+    if nr.status != "waiting":
+        raise HTTPException(400, "该审批已处理")
+    run = db.get(WorkflowRun, nr.run_id)
+    wf = db.get(Workflow, run.workflow_id) if run else None
+    owner = db.get(User, wf.user_id) if wf else None
+    if not owner:
+        raise HTTPException(404, "审批不存在")
+    try:
+        return engine.resume_approval(db, nr.id, owner, payload.approved, payload.comment)
+    except WorkflowError as e:
+        raise HTTPException(400, str(e))
+
+
+# ---------- 公开表单（表单触发器，免登录，URL 即凭证） ----------
+
+def _get_form_wf(db: Session, wf_id: int, secret: str) -> tuple[Workflow, dict]:
+    wf = db.get(Workflow, wf_id)
+    t = (wf.trigger_json or {}) if wf else {}
+    if not wf or not wf.enabled or t.get("type") != "form" or t.get("secret") != secret:
+        raise HTTPException(404, "Not found")
+    return wf, t
+
+
+@public_router.get("/form/{wf_id}/{secret}")
+def form_meta(wf_id: int, secret: str, db: Session = Depends(get_db)):
+    """公开表单的渲染元数据：表字段（图片字段除外，公开页不支持上传）。"""
+    wf, t = _get_form_wf(db, wf_id, secret)
+    from ..services import dyn_engine
+    mt, fields = dyn_engine.load_meta(db, t["table_id"])
+    return {
+        "name": wf.name, "description": wf.description or "", "table_label": mt.label,
+        "fields": [
+            {"field_name": f.field_name, "label": f.label, "data_type": f.data_type,
+             "widget": f.widget, "options": f.options or {}, "nullable": f.nullable,
+             "default_value": f.default_value}
+            for f in fields if f.data_type != "image"
+        ],
+    }
+
+
+@public_router.post("/form/{wf_id}/{secret}")
+async def form_submit(wf_id: int, secret: str, request: Request, db: Session = Depends(get_db)):
+    """公开表单提交：写入数据表（沿用 dyn_engine 校验）+ 触发工作流（trigger.record = 新记录）。"""
+    wf, t = _get_form_wf(db, wf_id, secret)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        raise HTTPException(400, "提交内容格式错误")
+    from ..services import dyn_engine
+    _, fields = dyn_engine.load_meta(db, t["table_id"])
+    allowed = {f.field_name for f in fields if f.data_type != "image"}
+    data = {k: v for k, v in body.items() if k in allowed}   # 只收表字段，其余丢弃
+    record = dyn_engine.create_record(db, t["table_id"], data, user="公开表单")   # 422 由 dyn_engine 抛出
+    run = engine.enqueue_run(db, wf, "form", {"record": jsonable(record)})
     return {"ok": True, "run_id": run.id}

@@ -147,7 +147,8 @@ export const updateWorkflow = (id, p) => http.put(`/workflows/${id}`, p)
 export const deleteWorkflow = (id) => http.delete(`/workflows/${id}`)
 export const toggleWorkflow = (id) => http.post(`/workflows/${id}/toggle`)
 export const runWorkflow = (id, params = {}) => http.post(`/workflows/${id}/run`, { params })
-export const testRunWorkflow = (id, params = {}) => http.post(`/workflows/${id}/test-run`, { params })
+export const testRunWorkflow = (id, params = {}, nodeId = null) =>
+  http.post(`/workflows/${id}/test-run`, { params, ...(nodeId ? { node_id: nodeId } : {}) })
 export const workflowRuns = (id) => http.get(`/workflows/${id}/runs`)
 export const getWorkflowRun = (runId) => http.get(`/workflows/runs/${runId}`)
 export const approveWorkflowNode = (nodeRunId, approved, comment = '') =>
@@ -155,9 +156,19 @@ export const approveWorkflowNode = (nodeRunId, approved, comment = '') =>
 export const workflowNodeTypes = () => http.get('/workflows/node-types')
 export const aiAssistWorkflow = (description) => http.post('/workflows/ai-assist', { description })
 
+// 公开表单（表单触发器，免登录，URL 即凭证）
+export const getPublicForm = (wfId, secret) => http.get(`/workflows/form/${wfId}/${secret}`)
+export const submitPublicForm = (wfId, secret, data) => http.post(`/workflows/form/${wfId}/${secret}`, data)
+
+// 免登审批（签名链接）
+export const getPublicApproval = (token) => http.get(`/workflows/approval/${token}`)
+export const submitPublicApproval = (token, approved, comment = '') =>
+  http.post(`/workflows/approval/${token}`, { approved, comment })
+
 // 工作流模板市场
 export const listWorkflowTemplates = () => http.get('/workflow-templates')
-export const installWorkflowTemplate = (key) => http.post(`/workflow-templates/${key}/install`)
+export const installWorkflowTemplate = (key, withDemoData = false) =>
+  http.post(`/workflow-templates/${key}/install`, { with_demo_data: withDemoData })
 
 // MCP 接入
 export const getMcpConfig = () => http.get('/mcp/config')
@@ -196,6 +207,7 @@ export const noteAiAssist = (p) => http.post('/notes/ai-assist', p)
 
 // 站内通知
 export const listNotifications = () => http.get('/notify')
+export const listNotificationsPage = (params) => http.get('/notify/page', { params })
 export const unreadCount = () => http.get('/notify/unread_count')
 export const markRead = (payload) => http.post('/notify/read', payload)
 

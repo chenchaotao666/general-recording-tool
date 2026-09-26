@@ -55,6 +55,19 @@ def decode_token(token: str) -> int:
         raise HTTPException(401, "未登录或登录已过期")
 
 
+def create_approval_token(node_run_id: int) -> str:
+    """免登审批链接的签名凭证：7 天有效。载荷键用 arp（与登录 token 的 uid 互不相通）。"""
+    payload = {"arp": node_run_id, "exp": datetime.now(timezone.utc) + timedelta(days=7)}
+    return jwt.encode(payload, _secret(), algorithm="HS256")
+
+
+def decode_approval_token(token: str) -> int:
+    try:
+        return jwt.decode(token, _secret(), algorithms=["HS256"])["arp"]
+    except (jwt.InvalidTokenError, KeyError):
+        raise HTTPException(404, "审批链接无效或已过期")
+
+
 def get_current_user(
     authorization: str = Header(default=""),
     token: str = "",  # 导出下载等 <a>/<window.open> 场景无法带请求头，允许 ?token=

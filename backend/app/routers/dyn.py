@@ -19,15 +19,20 @@ EXPORT_MAX = 5000  # 导出记录数上限
 
 
 def _parse_filters(filters: str | None) -> list[dict]:
+    """兼容两种形态：JSON 数组（每条规则顶层 AND，旧）/ {logic, rules} 对象（AND/OR 组合，新）。
+    统一规整成数组：对象形态作为唯一一个「组合条件」元素。"""
     if not filters:
         return []
     try:
         data = json.loads(filters)
-        if not isinstance(data, list):
-            raise ValueError
-        return [f for f in data if isinstance(f, dict)]
     except (ValueError, json.JSONDecodeError):
-        raise HTTPException(400, "filters 参数必须是 JSON 数组")
+        raise HTTPException(400, "filters 参数必须是 JSON 数组或 {\"logic\", \"rules\"} 对象")
+    if isinstance(data, dict) and isinstance(data.get("rules"), list):
+        rules = [r for r in data["rules"] if isinstance(r, dict)]
+        return [{"logic": data.get("logic"), "rules": rules}] if rules else []
+    if isinstance(data, list):
+        return [f for f in data if isinstance(f, dict)]
+    raise HTTPException(400, "filters 参数必须是 JSON 数组或 {\"logic\", \"rules\"} 对象")
 
 
 @router.get("/{table_id}/records")

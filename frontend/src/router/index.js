@@ -18,6 +18,10 @@ const router = createRouter({
   routes: [
     { path: '/login', component: Login },
     { path: '/share/:token', component: ShareView },  // 公开链接分享，免登录
+    // 公开表单（工作流表单触发器），免登录
+    { path: '/form/:wfId/:secret', component: () => import('../views/PublicForm.vue') },
+    // 免登审批（签名链接），免登录
+    { path: '/approve/:token', component: () => import('../views/PublicApprove.vue') },
     { path: '/', redirect: '/tables' },
     { path: '/tables', component: TableList },
     { path: '/friends', component: Friends },
@@ -29,8 +33,11 @@ const router = createRouter({
     // 工作流：编辑器懒加载隔离 vue-flow 体积
     { path: '/workflows', component: () => import('../views/Workflows.vue') },
     { path: '/workflows/new', component: () => import('../views/WorkflowEditor.vue') },
+    // 旧站内通知里的链接是 /workflows/:id，重定向到编辑器
+    { path: '/workflows/:id(\\d+)', redirect: (to) => `/workflows/${to.params.id}/edit` },
     { path: '/workflows/:id/edit', component: () => import('../views/WorkflowEditor.vue') },
     { path: '/workflows/runs/:id', component: () => import('../views/WorkflowRunDetail.vue') },
+    { path: '/notifications', component: () => import('../views/Notifications.vue') },
     { path: '/reports', component: Reports },
     // 懒加载隔离 echarts 体积
     { path: '/reports/:id/view', component: () => import('../views/ReportView.vue') },
@@ -38,13 +45,14 @@ const router = createRouter({
     { path: '/system/users', component: UsersManage, meta: { admin: true } },
     { path: '/system/roles', component: RolesManage, meta: { admin: true } },
     { path: '/system/permissions', component: PermissionsManage, meta: { admin: true } },
-    { path: '/system/groups', component: GroupsManage, meta: { admin: true } },
+    { path: '/system/groups', component: GroupsManage },   // 普通成员也可建组（只能加好友为成员）
   ],
 })
 
 router.beforeEach((to) => {
   const user = JSON.parse(localStorage.getItem('grt_user') || 'null')
-  if (to.path === '/login' || to.path.startsWith('/share/')) return true
+  if (to.path === '/login' || to.path.startsWith('/share/') || to.path.startsWith('/form/')
+    || to.path.startsWith('/approve/')) return true
   if (!localStorage.getItem('grt_token')) return '/login'
   if (to.meta.admin && user?.role !== 'admin') return '/tables'
 })

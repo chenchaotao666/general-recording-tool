@@ -27,8 +27,10 @@ class NodeContext:
     run_id: int
     user_id: int                     # 工作流归属用户（节点以其身份执行）
     username: str
-    context: dict                    # 只读视图：trigger + 上游节点输出
+    context: dict                    # 只读视图：trigger + 上游节点输出（+ loops 循环状态）
     config: dict                     # 已渲染模板后的本节点配置
+    node_id: str = ""                # 本节点 id（foreach 等需定位自身循环状态）
+    node_run_id: int = 0             # 本次执行的 NodeRun id（审批节点生成免登链接用）
 
 
 class NodeType:
@@ -39,6 +41,8 @@ class NodeType:
     description: str = ""
     config_schema: dict = {}
     output_schema: dict = {}
+    disabled_branch: str | None = None   # 节点被停用时走的兜底分支（分支类节点）
+    is_loop: bool = False                # 逐条处理节点：引擎据此维护循环计数
 
     def execute(self, ctx: NodeContext) -> NodeResult:
         raise NotImplementedError

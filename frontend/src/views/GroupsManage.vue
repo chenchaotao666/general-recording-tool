@@ -14,17 +14,20 @@
       <el-table-column label="成员" min-width="300">
         <template #default="{ row }">
           <el-tag
-            v-for="m in row.members" :key="m.id" closable size="small"
+            v-for="m in row.members" :key="m.id" :closable="row.can_manage" size="small"
             style="margin-right: 6px" @close="removeMember(row, m)"
           >{{ m.username }}</el-tag>
-          <el-button text type="primary" size="small" @click="openAddMember(row)">+ 添加成员</el-button>
+          <el-button v-if="row.can_manage" text type="primary" size="small" @click="openAddMember(row)">+ 添加成员</el-button>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="100" fixed="right">
         <template #default="{ row }">
-          <el-popconfirm title="删除组将同步取消其所有分享授权，确定？" width="240" @confirm="del(row)">
-            <template #reference><el-button text type="danger" size="small">删除</el-button></template>
-          </el-popconfirm>
+          <template v-if="row.can_manage">
+            <el-popconfirm title="删除组将同步取消其所有分享授权，确定？" width="240" @confirm="del(row)">
+              <template #reference><el-button text type="danger" size="small">删除</el-button></template>
+            </el-popconfirm>
+          </template>
+          <span v-else style="color: #c0c4cc; font-size: 12px">仅查看</span>
         </template>
       </el-table-column>
     </el-table>
@@ -45,9 +48,15 @@
       </template>
     </el-dialog>
 
-    <!-- 添加成员 -->
+    <!-- 添加成员：admin 输用户名；普通成员只能从好友里选 -->
     <el-dialog v-model="memberVisible" title="添加成员" width="400px" destroy-on-close>
-      <el-input v-model="memberName" placeholder="输入用户名" @keyup.enter="addMember" />
+      <el-select v-if="!isAdmin" v-model="memberName" filterable placeholder="从好友中选择" style="width: 100%">
+        <el-option v-for="f in friends" :key="f.user_id" :label="f.username" :value="f.username" />
+      </el-select>
+      <el-input v-else v-model="memberName" placeholder="输入用户名" @keyup.enter="addMember" />
+      <div v-if="!isAdmin" style="color: #909399; font-size: 12px; margin-top: 6px">
+        只能把好友加入用户组；要加其他人，先到「好友」页添加对方
+      </div>
       <template #footer>
         <el-button @click="memberVisible = false">取消</el-button>
         <el-button type="primary" :loading="memberSaving" @click="addMember">添加</el-button>
@@ -57,14 +66,18 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
-  addGroupMember, createGroup, deleteGroup, listGroups, removeGroupMember, updateGroup,
+  addGroupMember, createGroup, deleteGroup, listFriends, listGroups, removeGroupMember, updateGroup,
 } from '../api'
 
+// 普通成员可建组并管理自己的组（成员只能加好友）；admin 全权
+const isAdmin = computed(() => JSON.parse(localStorage.getItem('grt_user') || 'null')?.role === 'admin')
+
 const groups = ref([])
+const friends = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editing = ref(null)
@@ -129,7 +142,9 @@ function openAddMember(row) {
 }
 
 async function addMember() {
-  if (!memberName.value.trim()) return ElMessage.warning('请输入用户名')
+  if (!memberName.value || !memberName.value.trim()) {
+    return ElMessage.warning(isAdmin.value ? '请输入用户名' : '请选择好友')
+  }
   memberSaving.value = true
   try {
     await addGroupMember(memberGroup.value.id, memberName.value.trim())
@@ -152,5 +167,9 @@ async function removeMember(row, m) {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  // 普通成员的「添加成员」只能从好友里选
+  if (!isAdmin.value) listFriends().then((f) => { friends.value = f }).catch(() => {})
+})
 </script>

@@ -20,9 +20,9 @@ from ...utils.access import get_table_access
 from . import nodes  # noqa: F401  — import 即注册全部内置节点类型
 from .nodes.base import NodeContext, NodeResult
 from .registry import REGISTRY, validate_config
-from .template import jsonable, render_config
+from .template import jsonable, now_vars, render_config
 
-MAX_STEPS = 200          # 单 Run 最大节点执行步数，兜底防意外死循环
+MAX_STEPS = 1000         # 单 Run 最大节点执行步数（循环每轮计步），兜底防意外死循环
 NODE_ID_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 
 # 节点类型 → 保存时校验的表权限
@@ -36,16 +36,51 @@ def current_workflow_id() -> int | None:
     return getattr(_tls, "workflow_id", None)
 
 
+def call_stack() -> list[int]:
+    """当前线程的工作流调用栈（子流程调用时逐层压入），供子流程节点防循环调用。"""
+    return getattr(_tls, "stack", [])
+
+
+MAX_CALL_DEPTH = 3   # 子流程嵌套上限
+
+
 class WorkflowError(Exception):
     """定义校验 / 恢复审批等业务性错误，路由层转 400。"""
 
 
 # ---------- 定义校验 ----------
 
+def _find_back_edges(nodes_by_id: dict, edges: list) -> set:
+    """回边 = 指向 foreach 节点、且源头可从该 foreach 到达的边（循环体的回路）。
+
+    逐个 foreach 计算：剔除指向它自己的边后做可达性分析，能从它出发走到的节点
+    再指回它的边即回边。DAG 校验时剔除回边，执行时据此区分「新鲜入口 / 循环继续」。
+    """
+    foreach_ids = {nid for nid, n in nodes_by_id.items() if n.get("type") == "foreach"}
+    backs = set()
+    for f in foreach_ids:
+        adj = {}
+        for e in edges:
+            if e.get("to") == f:
+                continue
+            adj.setdefault(e.get("from"), []).append(e.get("to"))
+        seen, stack = set(), [f]
+        while stack:
+            x = stack.pop()
+            for y in adj.get(x, []):
+                if y not in seen:
+                    seen.add(y)
+                    stack.append(y)
+        for e in edges:
+            if e.get("to") == f and e.get("from") in seen:
+                backs.add((e.get("from"), f))
+    return backs
+
+
 def validate_definition(db: Session, trigger: dict, nodes: list, edges: list, user: User) -> None:
-    """保存前校验：节点类型/config、图结构（DAG、单起点、全连通）、触发器、表权限。"""
-    if not nodes:
-        raise WorkflowError("至少需要一个节点")
+    """保存前校验：节点类型/config、图结构（DAG、单起点、全连通）、触发器、表权限。
+    允许只有触发器、零节点的半成品（执行时什么都不做），与「停用节点不校验」同一思路。"""
+    nodes = nodes or []
     ids = [n.get("id") for n in nodes]
     if len(set(ids)) != len(ids):
         raise WorkflowError("节点 id 重复")
@@ -56,6 +91,8 @@ def validate_definition(db: Session, trigger: dict, nodes: list, edges: list, us
         cls = REGISTRY.get(n.get("type"))
         if cls is None:
             raise WorkflowError(f"未知节点类型：{n.get('type')}")
+        if n.get("disabled"):
+            continue   # 停用的节点不参与配置/权限校验，允许保存半成品
         errors = validate_config(f"节点 {nid}", cls.config_schema, n.get("config") or {})
         if errors:
             raise WorkflowError(errors[0])
@@ -63,32 +100,59 @@ def validate_definition(db: Session, trigger: dict, nodes: list, edges: list, us
         table_id = (n.get("config") or {}).get("table_id")
         if perm and isinstance(table_id, int):
             _check_table(db, table_id, user, perm, f"节点 {nid}")
+        if n.get("type") == "sub_workflow":
+            sub_id = (n.get("config") or {}).get("workflow_id")
+            if isinstance(sub_id, int):
+                sub = db.get(Workflow, sub_id)
+                if not sub or (sub.user_id != user.id and user.role != "admin"):
+                    raise WorkflowError(f"节点 {nid}：子流程不存在或无权限")
+                if (sub.trigger_json or {}).get("type", "manual") != "manual":
+                    raise WorkflowError(f"节点 {nid}：子流程「{sub.name}」的触发方式必须是「被动调用」（被调用的流程不应有自己的自动触发器）")
 
     edges = edges or []
     idset = set(ids)
     for e in edges:
         if e.get("from") not in idset or e.get("to") not in idset:
             raise WorkflowError("连线引用了不存在的节点")
-    starts = [i for i in ids if not any(e.get("to") == i for e in edges)]
-    if len(starts) != 1:
-        raise WorkflowError("流程必须有且只有一个起始节点（没有入线的节点）")
-    # 拓扑排序：判环 + 全连通
-    indeg = {i: 0 for i in ids}
-    adj = {i: [] for i in ids}
-    for e in edges:
-        adj[e["from"]].append(e["to"])
-        indeg[e["to"]] += 1
-    queue = [i for i in ids if indeg[i] == 0]
-    seen = 0
-    while queue:
-        x = queue.pop()
-        seen += 1
-        for y in adj[x]:
-            indeg[y] -= 1
-            if indeg[y] == 0:
-                queue.append(y)
-    if seen != len(ids):
-        raise WorkflowError("流程存在循环或孤立节点，v1 不支持回边")
+    nodes_by_id = {n["id"]: n for n in nodes}
+    backs = _find_back_edges(nodes_by_id, edges)
+    dag_edges = [e for e in edges if (e.get("from"), e.get("to")) not in backs]
+
+    # 逐条处理节点的接线规则：出边只能走「每条/完成」两个出口，循环体末尾必须有回边
+    for n in nodes:
+        if n.get("type") != "foreach" or n.get("disabled"):
+            continue
+        outs = [e for e in edges if e.get("from") == n["id"]]
+        if any(e.get("branch") not in ("loop", "done") for e in outs):
+            raise WorkflowError(f"节点 {n['id']}（逐条处理）的出边必须从「每条」或「完成」出口连出")
+        if not any(e.get("branch") == "loop" for e in outs):
+            raise WorkflowError(f"节点 {n['id']}（逐条处理）：请把「每条」出口连到循环体")
+        if not any(e.get("branch") == "done" for e in outs):
+            raise WorkflowError(f"节点 {n['id']}（逐条处理）：请把「完成」出口连到后续节点")
+        if not any(t == n["id"] for _, t in backs):
+            raise WorkflowError(f"节点 {n['id']}（逐条处理）：循环体末尾要连回本节点形成循环")
+
+    if ids:
+        starts = [i for i in ids if not any(e.get("to") == i for e in dag_edges)]
+        if len(starts) != 1:
+            raise WorkflowError("流程必须有且只有一个起始节点（没有入线的节点）")
+        # 拓扑排序（剔除回边后）：判环 + 全连通
+        indeg = {i: 0 for i in ids}
+        adj = {i: [] for i in ids}
+        for e in dag_edges:
+            adj[e["from"]].append(e["to"])
+            indeg[e["to"]] += 1
+        queue = [i for i in ids if indeg[i] == 0]
+        seen = 0
+        while queue:
+            x = queue.pop()
+            seen += 1
+            for y in adj[x]:
+                indeg[y] -= 1
+                if indeg[y] == 0:
+                    queue.append(y)
+        if seen != len(ids):
+            raise WorkflowError("流程存在循环或孤立节点（只有逐条处理节点的循环体允许连回）")
 
     t = trigger or {}
     ttype = t.get("type") or "manual"
@@ -100,6 +164,10 @@ def validate_definition(db: Session, trigger: dict, nodes: list, edges: list, us
         if not isinstance(t.get("table_id"), int):
             raise WorkflowError("请配置监听的数据表")
         _check_table(db, t["table_id"], user, "can_view", "触发器")
+    elif ttype == "form":
+        if not isinstance(t.get("table_id"), int):
+            raise WorkflowError("请配置表单写入的数据表")
+        _check_table(db, t["table_id"], user, "can_create", "触发器")
     elif ttype in ("webhook", "manual"):
         pass
     else:
@@ -147,8 +215,9 @@ def enqueue_run(db: Session, wf: Workflow, trigger: str, trigger_data: dict | No
     return run
 
 
-def run_now(workflow_id: int, trigger: str = "manual", trigger_data: dict | None = None) -> dict | None:
-    """同步创建并执行一个 Run（手动 / 试运行 / 定时调度）。"""
+def run_now(workflow_id: int, trigger: str = "manual", trigger_data: dict | None = None,
+            stop_after: str | None = None) -> dict | None:
+    """同步创建并执行一个 Run（手动 / 试运行 / 定时调度）。stop_after：执行完该节点即停。"""
     db = SessionLocal()
     try:
         wf = db.get(Workflow, workflow_id)
@@ -157,7 +226,7 @@ def run_now(workflow_id: int, trigger: str = "manual", trigger_data: dict | None
         run_id = create_run(db, wf, trigger, trigger_data).id
     finally:
         db.close()
-    return execute_run(run_id)
+    return execute_run(run_id, stop_after=stop_after)
 
 
 def run_scheduled(workflow_id: int) -> None:
@@ -180,8 +249,10 @@ def _successors(edges: list, nid: str, branch: str | None) -> list[str]:
     ]
 
 
-def execute_run(run_id: int, resume_from: str | None = None, retry: bool = False) -> dict | None:
-    """主循环。resume_from + retry=False：从该节点的后继继续（审批/延迟恢复）；retry=True：重跑该节点。"""
+def execute_run(run_id: int, resume_from: str | None = None, retry: bool = False,
+                stop_after: str | None = None) -> dict | None:
+    """主循环。resume_from + retry=False：从该节点的后继继续（审批/延迟恢复）；retry=True：重跑该节点。
+    stop_after：成功执行完该节点即结束（单节点试运行）。"""
     db = SessionLocal()
     try:
         run = db.get(WorkflowRun, run_id)
@@ -199,6 +270,8 @@ def execute_run(run_id: int, resume_from: str | None = None, retry: bool = False
         # flush 时新旧值相等导致 UPDATE 被跳过（单节点 Run 会丢 context）
         context = copy.deepcopy(run.context_json) or {"trigger": {}, "nodes": {}}
         context.setdefault("nodes", {})
+        # 内置时间变量 {now.xxx}：每次（含恢复）执行都按当下重算，不随 context 落库复用旧值
+        context["now"] = now_vars()
         nodes_by_id = {n["id"]: n for n in (wf.nodes_json or [])}
         edges = wf.edges_json or []
         user = db.get(User, wf.user_id)
@@ -206,23 +279,48 @@ def execute_run(run_id: int, resume_from: str | None = None, retry: bool = False
 
         if resume_from:
             if retry:
-                queue = [resume_from]
+                queue = [(resume_from, None)]
             else:
                 prev = context["nodes"].get(resume_from) or {}
-                queue = _successors(edges, resume_from, prev.get("branch"))
+                queue = [(to, resume_from) for to in _successors(edges, resume_from, prev.get("branch"))]
         else:
             starts = [nid for nid in nodes_by_id if not any(e.get("to") == nid for e in edges)]
-            queue = starts[:1]
+            queue = [(starts[0], None)] if starts else []   # 零节点的半成品：空跑直接成功
 
         steps = 0
+        back_edges = _find_back_edges(nodes_by_id, edges)
+        prev_stack = getattr(_tls, "stack", [])
+        _tls.stack = [*prev_stack, wf.id]   # 子流程嵌套：压栈，退出时恢复（含 workflow_id）
         _tls.workflow_id = wf.id
         try:
             while queue and steps < MAX_STEPS:
-                nid = queue.pop(0)
+                nid, via = queue.pop(0)   # via：由哪个节点连过来（区分 foreach 的新鲜入口与回边继续）
                 node = nodes_by_id.get(nid)
                 if not node:
                     continue
                 steps += 1
+                if node.get("disabled"):
+                    if via is not None and (via, nid) in back_edges:
+                        continue   # 停用的循环节点被回边再次触发：不再走兜底分支，防死循环
+                    # 停用的节点：记一条 skipped 轨迹，输出置空，直接走后继
+                    db.add(WorkflowNodeRun(
+                        run_id=run.id, node_id=nid, node_type=node.get("type"),
+                        status="skipped", input_json={}, output_json={},
+                        started_at=datetime.now(), finished_at=datetime.now(), duration_ms=0,
+                    ))
+                    context["nodes"][nid] = {}
+                    run.context_json = dict(context)
+                    db.commit()
+                    # 停用的分支类节点视为走兜底分支，保证流程能继续往下走
+                    fallback_branch = getattr(REGISTRY.get(node.get("type")), "disabled_branch", None)
+                    queue.extend((to, nid) for to in _successors(edges, nid, fallback_branch))
+                    continue
+                impl_cls = REGISTRY.get(node.get("type"))
+                is_loop = getattr(impl_cls, "is_loop", False)
+                if is_loop:
+                    loops = context.setdefault("loops", {})
+                    if via is None or (via, nid) not in back_edges:
+                        loops[nid] = {"index": 0}   # 新鲜入口重置计数；回边进入则沿用
                 rendered = render_config(context, node.get("config") or {})
                 nr = WorkflowNodeRun(
                     run_id=run.id, node_id=nid, node_type=node.get("type"),
@@ -239,7 +337,7 @@ def execute_run(run_id: int, resume_from: str | None = None, retry: bool = False
                     nctx = NodeContext(
                         db=db, workflow=wf, run_id=run.id,
                         user_id=wf.user_id, username=username,
-                        context=context, config=rendered,
+                        context=context, config=rendered, node_id=nid, node_run_id=nr.id,
                     )
                     result = impl_cls().execute(nctx)
                     if not isinstance(result, NodeResult):
@@ -254,6 +352,12 @@ def execute_run(run_id: int, resume_from: str | None = None, retry: bool = False
                 nr.duration_ms = int((time.perf_counter() - t0) * 1000)
                 nr.finished_at = datetime.now()
                 run.tokens_used = (run.tokens_used or 0) + nr.tokens_used
+                if is_loop and result.status == "success":
+                    # 推进循环计数：走「完成」分支清状态；走「每条」分支 index+1，回边进来时取下一条
+                    if result.output.get("branch") == "done":
+                        context.get("loops", {}).pop(nid, None)
+                    else:
+                        context.setdefault("loops", {}).setdefault(nid, {"index": 0})["index"] += 1
                 context["nodes"][nid] = jsonable(result.output)
                 run.context_json = dict(context)   # JSON 列需整体重赋值才触发 UPDATE
                 db.commit()
@@ -281,7 +385,7 @@ def execute_run(run_id: int, resume_from: str | None = None, retry: bool = False
                             return _summary(run)
                         policy = "stop"   # 重试耗尽，降级为 stop
                     if policy == "continue":
-                        queue.extend(_successors(edges, nid, None))
+                        queue.extend((to, nid) for to in _successors(edges, nid, None))
                         continue
                     run.status = "failed"
                     run.error = result.error
@@ -289,7 +393,14 @@ def execute_run(run_id: int, resume_from: str | None = None, retry: bool = False
                     db.commit()
                     return _summary(run)
 
-                queue.extend(_successors(edges, nid, result.output.get("branch")))
+                queue.extend((to, nid) for to in _successors(edges, nid, result.output.get("branch")))
+
+                if stop_after and nid == stop_after:
+                    # 单节点试运行：执行完目标节点即成功结束
+                    run.status = "success"
+                    run.finished_at = datetime.now()
+                    db.commit()
+                    return _summary(run)
 
             run.status = "success" if steps < MAX_STEPS else "failed"
             if steps >= MAX_STEPS:
@@ -298,7 +409,8 @@ def execute_run(run_id: int, resume_from: str | None = None, retry: bool = False
             db.commit()
             return _summary(run)
         finally:
-            _tls.workflow_id = None
+            _tls.stack = prev_stack
+            _tls.workflow_id = prev_stack[-1] if prev_stack else None
     finally:
         db.close()
 

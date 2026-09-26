@@ -22,6 +22,10 @@
         <el-menu-item index="/workflows">
           <el-icon><Connection /></el-icon><span>工作流</span>
         </el-menu-item>
+        <el-menu-item index="/notifications">
+          <el-icon><Bell /></el-icon><span>通知</span>
+          <span v-if="unread" class="menu-unread">{{ unread > 99 ? '99+' : unread }}</span>
+        </el-menu-item>
         <template v-if="user?.role === 'admin'">
           <el-menu-item index="/system/users">
             <el-icon><User /></el-icon><span>用户管理</span>
@@ -32,12 +36,12 @@
           <el-menu-item index="/system/permissions">
             <el-icon><Key /></el-icon><span>权限管理</span>
           </el-menu-item>
-          <el-menu-item index="/system/groups">
-            <el-icon><UserFilled /></el-icon><span>用户组</span>
-          </el-menu-item>
         </template>
         <el-menu-item index="/friends">
           <el-icon><User /></el-icon><span>好友</span>
+        </el-menu-item>
+        <el-menu-item index="/system/groups">
+          <el-icon><UserFilled /></el-icon><span>用户组</span>
         </el-menu-item>
         <el-menu-item index="/settings">
           <el-icon><Setting /></el-icon><span>设置</span>
@@ -48,27 +52,6 @@
       <el-header class="topbar">
         <span />
         <div class="topbar-right">
-          <el-popover placement="bottom-end" width="400" trigger="click" @show="loadNotifications">
-            <template #reference>
-              <el-badge :value="unread || ''" :hidden="!unread" class="bell">
-                <el-button text :icon="Bell" size="large" />
-              </el-badge>
-            </template>
-            <div class="notify-header">
-              <span style="font-weight: 600">通知</span>
-              <el-button text size="small" :disabled="!unread" @click="readAll">全部已读</el-button>
-            </div>
-            <div class="notify-list">
-              <el-empty v-if="!notifications.length" description="暂无通知" :image-size="60" />
-              <div
-                v-for="n in notifications" :key="n.id" class="notify-item"
-                :class="{ unread: !n.read }" @click="openNotification(n)"
-              >
-                <div class="notify-title">{{ n.title }}<span class="notify-time">{{ n.created_at }}</span></div>
-                <div class="notify-content">{{ n.content }}</div>
-              </div>
-            </div>
-          </el-popover>
           <el-dropdown>
             <span class="user-name">{{ user?.username || '用户' }}（{{ roleLabel }}）</span>
             <template #dropdown>
@@ -112,13 +95,12 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { AlarmClock, Avatar, Bell, Connection, DataAnalysis, Grid, Key, Notebook, Setting, Upload, User, UserFilled } from '@element-plus/icons-vue'
-import { changePassword as changePasswordApi, listNotifications, markRead, unreadCount } from './api'
+import { changePassword as changePasswordApi, unreadCount } from './api'
 import AssistantPanel from './components/AssistantPanel.vue'
 
 const router = useRouter()
 const route = useRoute()
 const unread = ref(0)
-const notifications = ref([])
 
 // 根组件只创建一次：登录/切换账号后 localStorage 已更新但组件不会重建，
 // 需在路由变化时重新读取当前用户
@@ -128,11 +110,8 @@ function readUser() {
 const user = ref(readUser())
 watch(() => route.path, () => {
   user.value = readUser()
-  // 登录/切换账号后路由首次变化时立即拉取通知（否则要等下一个 30s 轮询周期）
-  if (localStorage.getItem('grt_token')) {
-    pollUnread()
-    loadNotifications()
-  }
+  // 登录/切换账号后路由首次变化时立即拉取未读数（否则要等下一个 30s 轮询周期）
+  if (localStorage.getItem('grt_token')) pollUnread()
 })
 const roleLabel = computed(() => ({ admin: '管理员', vip: 'VIP', user: '普通用户' }[user.value?.role] || '普通用户'))
 let timer = null
@@ -171,35 +150,19 @@ async function pollUnread() {
   } catch { /* 后端未启动时静默 */ }
 }
 
-async function loadNotifications() {
-  try {
-    notifications.value = await listNotifications()
-  } catch { /* ignore */ }
-}
-
-async function openNotification(n) {
-  if (!n.read) {
-    await markRead({ ids: [n.id] }).catch(() => {})
-    n.read = true
-    pollUnread()
-  }
-  if (n.link) router.push(n.link)
-}
-
-async function readAll() {
-  await markRead({ all: true }).catch(() => {})
-  notifications.value.forEach((n) => { n.read = true })
-  unread.value = 0
-}
-
 onMounted(() => {
   // 未登录（停留在 /login）时不发请求，避免 401 触发拦截器的清理逻辑
   if (localStorage.getItem('grt_token')) pollUnread()
+  // 通知页标记已读后广播此事件，角标立即刷新
+  window.addEventListener('grt-notify-refresh', pollUnread)
   timer = setInterval(() => {
     if (localStorage.getItem('grt_token')) pollUnread()
   }, 30000)
 })
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => {
+  clearInterval(timer)
+  window.removeEventListener('grt-notify-refresh', pollUnread)
+})
 </script>
 
 <style>
@@ -213,22 +176,13 @@ body { margin: 0; font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Micr
   display: flex; align-items: center; justify-content: space-between; height: 48px;
 }
 .topbar-right { display: flex; align-items: center; gap: 16px; }
-/* 角标默认向上探出 wrapper 一半高度，在 48px 顶栏里会被上沿裁掉，改为完全落在按钮内侧 */
-.bell .el-badge__content { top: 8px; right: 12px; transform: translateX(100%); }
+/* 侧边菜单的未读数角标 */
+.menu-unread {
+  margin-left: auto; background: #f56c6c; color: #fff; font-size: 11px; line-height: 1;
+  border-radius: 9px; padding: 3px 6px; transform: scale(.9);
+}
 .user-name { cursor: pointer; font-size: 14px; color: #606266; outline: none; }
 .main { background: #f5f7fa; padding: 20px 24px; overflow-y: auto; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-header h2 { margin: 0; }
-.notify-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.notify-list { max-height: 400px; overflow-y: auto; }
-.notify-item { padding: 8px 6px; border-radius: 6px; cursor: pointer; }
-.notify-item:hover { background: #f5f7fa; }
-.notify-item.unread .notify-title { font-weight: 600; }
-.notify-item.unread .notify-title::before {
-  content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-  background: #f56c6c; margin-right: 6px; vertical-align: middle;
-}
-.notify-title { font-size: 13px; }
-.notify-time { float: right; color: #c0c4cc; font-size: 12px; font-weight: 400; }
-.notify-content { font-size: 12px; color: #606266; margin-top: 2px; }
 </style>

@@ -1352,15 +1352,17 @@ print("RBAC 通过")
 r = client.post("/api/auth/register", json={"username": "stranger", "password": "secret123"})
 stranger_headers = {"Authorization": f"Bearer {r.json()['token']}"}
 
-# 用户搜索 scope：all 能搜到任何人；shareable 只搜得到好友/同组
+# 用户搜索 scope：all 仅 admin（普通用户 403）；shareable 只搜得到好友/同组
 as_user(stranger_headers)
 r = client.get("/api/users/search", params={"q": "worker", "scope": "all"})
-assert any(u["username"] == "worker" for u in r.json())
+assert r.status_code == 403, r.text
 r = client.get("/api/users/search", params={"q": "worker", "scope": "shareable"})
 assert r.json() == []  # 非好友非同组搜不到
 
 # 拒绝 → 分享者看到已拒绝 → 重新发起重置 pending → 接受后可见
 as_user(admin_headers)
+r = client.get("/api/users/search", params={"q": "worker", "scope": "all"})
+assert any(u["username"] == "worker" for u in r.json())
 r = client.post(f"/api/tables/{vip_tid}/shares", json={"username": "stranger", "can_view": True})
 assert r.status_code == 200 and r.json()["status"] == "pending", r.text
 as_user(stranger_headers)
@@ -1444,6 +1446,22 @@ assert r.status_code == 200, r.text  # 组分享的 can_create 生效
 rid2 = r.json()["id"]
 assert client.delete(f"/api/dyn/{tj2}/records/{rid2}").status_code == 404  # 组分享未给 delete
 as_user(admin_headers)
+
+# 16.6 普通成员的用户组：可建组（自动入组）、只能加好友、只能管自己的组
+as_user(worker_headers)
+r = client.post("/api/groups", json={"name": "worker小组"})
+assert r.status_code == 200, r.text
+wgid = r.json()["id"]
+assert any(g["id"] == wgid for g in client.get("/api/groups/mine").json())  # 创建者自动入组
+assert client.post(f"/api/groups/{wgid}/members", json={"username": "outsider"}).status_code == 200  # 好友可加入
+r = client.post(f"/api/groups/{wgid}/members", json={"username": "admin"})
+assert r.status_code == 400 and "好友" in r.json()["detail"], r.text  # 非好友拒绝
+assert client.post(f"/api/groups/{gid}/members", json={"username": "outsider"}).status_code == 403  # 别人的组不能管
+assert client.delete(f"/api/groups/{gid}").status_code == 403
+rows = {g["id"]: g for g in client.get("/api/groups").json()}
+assert rows[wgid]["can_manage"] is True and rows[gid]["can_manage"] is False  # 自建可管 / 所在组只读
+as_user(admin_headers)
+print("普通成员用户组约束通过")
 
 # 链接分享（表，无密码）
 r = client.post(f"/api/tables/{tj2}/share-links", json={})
