@@ -868,11 +868,21 @@ function patchSelected(patch) {
   commitHistoryDebounced()
 }
 
-// 节点级示例配置：配置为空且节点目录带 example_config 时，给「照改」起点
+// 节点级示例配置：配置为空且节点目录带 example_config 时，给「照改」起点。
+// 注意"为空"的判定：SchemaForm 打开面板会自动回填 schema 默认值（limit=100 等），
+// 只含默认值/空值的配置仍视为空——否则按钮在面板打开的瞬间就被默认值顶掉了
 const exampleOfSelected = computed(() => {
   const n = selectedNode.value
-  if (!n || n.id === TRIGGER_ID || Object.keys(n.data.config || {}).length) return null
-  return nodeTypeOf(n.data.nodeType)?.example_config || null
+  if (!n || n.id === TRIGGER_ID) return null
+  const nt = nodeTypeOf(n.data.nodeType)
+  if (!nt?.example_config) return null
+  const props = nt.config_schema?.properties || {}
+  const meaningful = Object.entries(n.data.config || {}).filter(([k, v]) => {
+    if (v === undefined || v === null || v === '') return false
+    if (props[k]?.default !== undefined && v === props[k].default) return false   // 自动回填的默认值不算
+    return true
+  })
+  return meaningful.length ? null : nt.example_config
 })
 
 function applyExample() {

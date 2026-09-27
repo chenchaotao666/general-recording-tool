@@ -497,6 +497,18 @@ def _summary(run: WorkflowRun) -> dict:
     return {"id": run.id, "status": run.status, "tokens_used": run.tokens_used or 0, "error": run.error}
 
 
+def _latest_record(db: Session, table_id: int | None) -> dict | None:
+    """取某表最新一条记录（手动执行 record 触发流程时模拟触发数据用）；失败静默返回 None。"""
+    if not isinstance(table_id, int):
+        return None
+    try:
+        from .nodes.data_nodes import query_table
+        rows = query_table(db, table_id, None, 1, "id", True)
+        return rows[0] if rows else None
+    except Exception:  # noqa: BLE001 — 表不存在等场景：无模拟数据，交给下游节点报错
+        return None
+
+
 def create_run(db: Session, wf: Workflow, trigger: str, trigger_data: dict | None = None) -> WorkflowRun:
     run = WorkflowRun(
         workflow_id=wf.id, trigger=trigger, status="pending",
@@ -584,6 +596,18 @@ def execute_run(run_id: int, resume_from: str | None = None, retry: bool = False
         edges = wf.edges_json or []
         user = db.get(User, wf.user_id)
         username = user.username if user else str(wf.user_id)
+
+        # 手动执行/试运行「记录触发」的流程时没有触发记录：用该表最新一条模拟
+        # （否则引用 {trigger.record.xxx} 的节点必挂——如 id 定位条件渲染成空串报「必须是整数」）
+        t0 = wf.trigger_json or {}
+        if t0.get("type") in ("record_created", "record_updated", "form") \
+                and not (context.get("trigger") or {}).get("record"):
+            latest = _latest_record(db, t0.get("table_id"))
+            if latest:
+                context["trigger"]["record"] = jsonable(latest)
+                context["trigger"]["_simulated_by_engine"] = True   # 标记：执行详情可区分真实触发与模拟
+                if t0.get("type") == "record_updated":
+                    context["trigger"].setdefault("old_record", jsonable(latest))
 
         if resume_from:
             if retry:

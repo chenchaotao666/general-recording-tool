@@ -20,7 +20,7 @@ vi.mock('../src/api', () => ({
   testRunWorkflow: vi.fn(async () => ({})),
   workflowRuns: vi.fn(async () => []),
   workflowNodeTypes: vi.fn(async () => [
-    { type: 'send_message', name: '发送通知', category: 'action', description: '', config_schema: { properties: { channel: { type: 'string', enum: ['notify'] }, template: { type: 'string', format: 'template' } }, required: ['channel', 'template'] } },
+    { type: 'send_message', name: '发送通知', category: 'action', description: '', example_config: { channel: 'notify', title: '提醒', template: '有一条新记录' }, config_schema: { properties: { channel: { type: 'string', enum: ['notify'] }, template: { type: 'string', format: 'template' } }, required: ['channel', 'template'] } },
     { type: 'condition', name: '条件分支', category: 'logic', description: '', config_schema: { properties: { record: { type: 'string' }, rules: { type: 'array' }, logic: { type: 'string', enum: ['AND', 'OR'], default: 'AND' } }, required: ['record'] } },
     { type: 'http_request', name: 'HTTP 请求', category: 'action', description: '', config_schema: { properties: { url: { type: 'string' }, headers: { type: 'object' }, body: { type: 'object' }, timeout_seconds: { type: 'integer', default: 30 } }, required: ['url'] } },
     { type: 'sub_workflow', name: '子流程调用', category: 'action', description: '', config_schema: { properties: { workflow_id: { type: 'integer', format: 'workflow-ref' }, params: { type: 'object' } }, required: ['workflow_id'] } },
@@ -57,6 +57,7 @@ test('点击节点面板添加节点不抛错', async () => {
   const errors = []
   const wrapper = mount(WorkflowEditor, {
     global: {
+      plugins: [ElementPlus],
       // el-table 在 jsdom 下会以无上下文调用列插槽（非本次复现目标），打桩掉
       stubs: { 'el-table': true, 'el-table-column': true },
       config: {
@@ -85,6 +86,12 @@ test('点击节点面板添加节点不抛错', async () => {
   await checkBtn?.trigger('click')
   await flushPromises()
   await items[0].trigger('click')
+  await flushPromises()
+
+  // 节点级示例配置：send_message 带 example_config，配置为空时显示「填入示例配置」按钮
+  const exampleBtn = wrapper.findAll('button').find((b) => (b.text() || '').includes('填入示例配置'))
+  expect(exampleBtn).toBeTruthy()
+  await exampleBtn.trigger('click')
   await flushPromises()
 
   window.removeEventListener('unhandledrejection', onRej)
