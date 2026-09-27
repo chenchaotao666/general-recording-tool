@@ -144,6 +144,7 @@ export const listWorkflows = () => http.get('/workflows')
 export const getWorkflow = (id) => http.get(`/workflows/${id}`)
 export const createWorkflow = (p) => http.post('/workflows', p)
 export const updateWorkflow = (id, p) => http.put(`/workflows/${id}`, p)
+export const checkWorkflow = (p) => http.post('/workflows/check', p)   // 保存前体检（不落库）
 export const deleteWorkflow = (id) => http.delete(`/workflows/${id}`)
 export const toggleWorkflow = (id) => http.post(`/workflows/${id}/toggle`)
 export const runWorkflow = (id, params = {}) => http.post(`/workflows/${id}/run`, { params })
@@ -153,8 +154,12 @@ export const workflowRuns = (id) => http.get(`/workflows/${id}/runs`)
 export const getWorkflowRun = (runId) => http.get(`/workflows/runs/${runId}`)
 export const approveWorkflowNode = (nodeRunId, approved, comment = '') =>
   http.post(`/workflows/node-runs/${nodeRunId}/approve`, { approved, comment })
+export const listPendingApprovals = () => http.get('/workflows/pending-approvals')
 export const workflowNodeTypes = () => http.get('/workflows/node-types')
 export const aiAssistWorkflow = (description) => http.post('/workflows/ai-assist', { description })
+export const aiNodeConfig = (nodeType, description) =>
+  http.post('/workflows/ai-node-config', { node_type: nodeType, description })
+export const aiExplainWorkflow = (id) => http.post(`/workflows/${id}/ai-explain`)
 
 // 公开表单（表单触发器，免登录，URL 即凭证）
 export const getPublicForm = (wfId, secret) => http.get(`/workflows/form/${wfId}/${secret}`)
@@ -210,6 +215,7 @@ export const listNotifications = () => http.get('/notify')
 export const listNotificationsPage = (params) => http.get('/notify/page', { params })
 export const unreadCount = () => http.get('/notify/unread_count')
 export const markRead = (payload) => http.post('/notify/read', payload)
+export const deleteNotifications = (payload) => http.post('/notify/delete', payload)
 
 // 通用设置（SMTP/短信网关）
 export const getGeneralSettings = () => http.get('/settings/general')

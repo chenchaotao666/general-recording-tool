@@ -35,19 +35,24 @@
           <b>{{ nr.node_id }}</b>
           <el-tag size="small" effect="plain">{{ NODE_TYPE_NAMES[nr.node_type] || nr.node_type }}</el-tag>
           <el-tag size="small" :type="statusType(nr.status)">{{ statusLabel(nr.status) }}</el-tag>
+          <el-tag v-if="nr.output?.simulated" size="small" type="info" effect="plain" title="试运行沙盒：该节点只模拟，未真实生效">模拟</el-tag>
           <span class="nr-meta">{{ nr.duration_ms }}ms</span>
           <span v-if="nr.tokens_used" class="nr-meta tok">{{ nr.tokens_used }} tok</span>
+          <el-link type="primary" size="small" class="nr-canvas" @click.stop="openInCanvas(nr)">画布定位</el-link>
         </div>
         <div v-if="expanded.has(nr.id)" class="nr-detail">
           <div v-if="nr.error" class="err">{{ nr.error }}</div>
+          <!-- 渲染期告警：变量路径不存在等（静默按空值渲染的场景在这里暴露） -->
+          <el-alert v-for="(w, i) in nr.warnings || []" :key="i" :title="w" type="warning"
+            :closable="false" show-icon class="warn" />
           <div class="io">
             <div class="io-col">
               <div class="io-title">输入（渲染后配置）</div>
-              <pre>{{ fmt(nr.input) }}</pre>
+              <div class="io-body"><JsonTree :data="nr.input" /></div>
             </div>
             <div class="io-col">
               <div class="io-title">输出</div>
-              <pre>{{ fmt(nr.output) }}</pre>
+              <div class="io-body"><JsonTree :data="nr.output" /></div>
             </div>
           </div>
         </div>
@@ -59,15 +64,17 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, WarningFilled } from '@element-plus/icons-vue'
 import { approveWorkflowNode, getWorkflowRun, workflowNodeTypes } from '../api'
+import JsonTree from '../components/workflow/JsonTree.vue'
 
 const TRIGGER_LABELS = { manual: '手动', schedule: '定时', record: '数据变更', webhook: 'Webhook', test: '试运行', form: '表单', sub: '子流程' }
 const STATUS_LABELS = { pending: '排队中', running: '执行中', success: '成功', failed: '失败', waiting: '等待中', cancelled: '已取消', skipped: '已跳过' }
 
 const route = useRoute()
+const router = useRouter()
 const runId = Number(route.params.id)
 const run = ref({})
 const loading = ref(true)
@@ -84,6 +91,11 @@ const waitingApprovals = computed(() =>
 const statusLabel = (s) => STATUS_LABELS[s] || s
 const statusType = (s) => ({ success: 'success', failed: 'danger', waiting: 'warning', running: 'primary', pending: 'info' }[s] || 'info')
 const fmt = (v) => (v === undefined || v === null ? '' : JSON.stringify(v, null, 2))
+
+// 跳回画布并定位到该节点（编辑器读 ?node= 选中并居中）
+function openInCanvas(nr) {
+  router.push(`/workflows/${run.value.workflow_id}/edit?node=${nr.node_id}`)
+}
 
 function toggleExpand(id) {
   expanded.has(id) ? expanded.delete(id) : expanded.add(id)
@@ -143,9 +155,15 @@ onUnmounted(() => clearTimeout(timer))
 .nr-meta.tok { color: #9b59b6; }
 .nr-detail { margin-top: 8px; }
 .err { color: #f56c6c; font-size: 12px; margin-bottom: 6px; }
+.warn { margin-bottom: 6px; }
 .io { display: flex; gap: 12px; }
 .io-col { flex: 1; min-width: 0; }
 .io-title { font-size: 12px; color: #909399; margin-bottom: 4px; }
+.io-body {
+  background: #f5f7fa; border-radius: 6px; padding: 8px;
+  max-height: 280px; overflow: auto;
+}
+.nr-canvas { margin-left: auto; }
 pre {
   background: #f5f7fa; border-radius: 6px; padding: 8px; font-size: 12px;
   max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0;

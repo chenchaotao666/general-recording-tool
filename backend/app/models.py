@@ -384,6 +384,7 @@ class WorkflowNodeRun(Base):
     status = Column(String(16), default="pending")  # pending / running / success / failed / skipped / waiting
     input_json = Column(JSON, default=dict)         # 渲染后的 config 快照
     output_json = Column(JSON, default=dict)
+    warnings_json = Column(JSON, default=list)      # 渲染期告警（如变量路径不存在、已按空值渲染）
     tokens_used = Column(Integer, default=0)
     duration_ms = Column(Integer, default=0)
     error = Column(Text)

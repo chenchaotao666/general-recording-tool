@@ -332,3 +332,75 @@ def assist_workflow(db: Session, user: User, description: str) -> dict:
         except Exception as e:
             last_err = e
     raise LLMError(f"模型生成的工作流不合法：{last_err}")
+
+
+# ---------- 节点级 AI 助手 ----------
+
+NODE_SYSTEM = "你是工作流节点配置助手，把用户的一句话需求转成该节点的配置 JSON。只输出 JSON，不要输出任何解释。"
+
+
+def assist_node_config(db: Session, user: User, node_type: str, description: str) -> dict:
+    """AI 帮我配这个节点：node_type + 一句话需求 → 该节点的 config JSON（schema 校验 + 表权限检查）。"""
+    from . import engine
+    cls = REGISTRY.get(node_type)
+    if cls is None:
+        raise WorkflowError(f"未知节点类型：{node_type}")
+    if not description.strip():
+        raise WorkflowError("请描述你想要的配置")
+    provider = get_default_provider(db)
+    tables_ctx, table_ids, _ = _tables_context(db, user)
+    example = f'\n该节点的示例配置（可参考）：{json.dumps(cls.example_config, ensure_ascii=False)}' if cls.example_config else ''
+    prompt = f"""用户需求：{description.strip()}
+
+节点类型：{node_type}「{cls.name}」——{cls.description}
+
+该节点的 config_schema（必须严格遵守，键名/类型/枚举一致；含 {{ }} 的字符串是模板变量，可引用 trigger/nodes/now）：
+{json.dumps(cls.config_schema, ensure_ascii=False)}{example}
+
+可用数据表（table_id 只能从这里选）：
+{tables_ctx}
+
+只输出该节点的 config JSON 对象。"""
+
+    props = (cls.config_schema or {}).get("properties") or {}
+    last_err: Exception | None = None
+    for attempt in range(2):
+        current = prompt if attempt == 0 else (
+            f"你上次的输出有问题：{last_err}。请修正后重新输出，只输出 JSON。\n\n原始任务：\n{prompt}"
+        )
+        try:
+            raw = provider.complete(current, system=NODE_SYSTEM)
+            data = extract_json(raw)
+            if not isinstance(data, dict):
+                raise ValueError("输出不是 JSON 对象")
+            config = {k: v for k, v in data.items() if k in props}   # 丢弃 schema 之外的键
+            from .registry import validate_config
+            errors = validate_config(f"节点 {node_type}", cls.config_schema, config)
+            if errors:
+                raise WorkflowError(errors[0])
+            perm = engine.TABLE_PERM.get(node_type)
+            tid = config.get("table_id")
+            if perm and isinstance(tid, int):
+                engine._check_table(db, tid, user, perm, "配置")
+            return {"config": config}
+        except (LLMError, WorkflowError, ValueError, KeyError) as e:
+            last_err = e
+    raise LLMError(f"模型生成的配置不合法：{last_err}")
+
+
+def explain_workflow(db: Session, user: User, wf) -> dict:
+    """AI 流程解读：把 trigger/nodes/edges 结构转成 3-5 句大白话（接手别人工作流时用）。"""
+    provider = get_default_provider(db)
+    type_names = {t.type: t.name for t in REGISTRY.values()}
+    lines = [f"工作流「{wf.name}」，触发方式：{json.dumps(wf.trigger_json or {}, ensure_ascii=False)}"]
+    for n in (wf.nodes_json or []):
+        cfg = json.dumps(n.get("config") or {}, ensure_ascii=False)[:300]
+        lines.append(f"- 节点 {n.get('id')}：{type_names.get(n.get('type'), n.get('type'))}「{n.get('name') or ''}」，配置：{cfg}")
+    edges = "，".join(f"{e.get('from')} → {e.get('to')}" for e in (wf.edges_json or []))
+    lines.append(f"连线：{edges or '（无）'}")
+    prompt = (
+        "用 3-5 句通俗的中文解释这个工作流在干什么：触发条件是什么、会经过哪些处理、最终做什么动作。"
+        "给非技术人员看，不要术语堆砌：\n\n" + "\n".join(lines)
+    )
+    text = provider.complete(prompt, system="你是工作流解说员，用大白话向业务同事解释自动化流程。")
+    return {"explanation": (text or "").strip()}

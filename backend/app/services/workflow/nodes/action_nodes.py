@@ -20,6 +20,9 @@ class SendMessageNode(NodeType):
     name = "发送通知"
     category = "action"
     description = "通过站内通知 / 邮件 / 短信 / Webhook 发送消息"
+
+    example_config = {"channel": "notify", "title": "提醒",
+                            "template": "有一条新记录，请处理：{trigger.record}"}
     config_schema = {
         "type": "object",
         "required": ["channel", "template"],
@@ -58,6 +61,10 @@ class SendMessageNode(NodeType):
             raise WorkflowNodeError("未配置内容模板")
         title = (ctx.config.get("title") or "").strip()
         head = f"【{ctx.workflow.name}】{title}" if title else f"【{ctx.workflow.name}】"
+
+        if ctx.dry_run:
+            # 试运行沙盒：算出发送对象与内容预览，不真实触达
+            return NodeResult(output=self._simulated(ctx, channel, head, content))
 
         if channel == "notify":
             from ....models import User
@@ -124,6 +131,18 @@ class SendMessageNode(NodeType):
 
         raise WorkflowNodeError(f"未知通知通道：{channel}")
 
+    def _simulated(self, ctx: NodeContext, channel: str, head: str, content: str) -> dict:
+        """试运行沙盒输出：各通道只算接收人/地址，不真实发送。"""
+        base = {"simulated": True, "channel": channel, "preview": f"{head}\n{content}"}
+        if channel == "notify":
+            user_ids = self._notify_user_ids(ctx)
+            return {**base, "sent": len(user_ids), "recipients": [str(u) for u in user_ids]}
+        if channel in ("email", "sms"):
+            recipients = _split_recipients(ctx.config.get("recipients"))
+            return {**base, "sent": len(recipients), "recipients": recipients}
+        url = (ctx.config.get("webhook_url") or "").strip()
+        return {**base, "sent": 1 if url else 0, "recipients": [url] if url else []}
+
 
 @register
 class SubWorkflowNode(NodeType):
@@ -135,7 +154,9 @@ class SubWorkflowNode(NodeType):
         "type": "object",
         "required": ["workflow_id"],
         "properties": {
-            "workflow_id": {"type": "integer", "format": "workflow-ref", "title": "子流程"},
+            "workflow_id": {"type": "integer", "format": "workflow-ref", "title": "子流程",
+                            "description": "只有触发方式为「被动调用」的工作流才能作为子流程（被调用的流程不应有自己的自动触发器）；"
+                                           "下拉列表里只列出可选的子流程"},
             "params": {"type": "object", "title": "传参（可选）",
                        "description": "JSON 对象，子流程里用 {trigger.params.键} 引用"},
         },
@@ -167,6 +188,9 @@ class SubWorkflowNode(NodeType):
         params = ctx.config.get("params") or {}
         if not isinstance(params, dict):
             raise WorkflowNodeError("传参必须是 JSON 对象")
+        if ctx.dry_run:
+            # 试运行沙盒：不真实调用子流程
+            return NodeResult(output={"status": "simulated", "run_id": 0, "simulated": True})
         result = engine.run_now(wf_id, trigger="sub", trigger_data={"params": jsonable(params)})
         if not result:
             raise WorkflowNodeError("子流程执行失败")
@@ -185,6 +209,8 @@ class HttpRequestNode(NodeType):
     name = "HTTP 请求"
     category = "action"
     description = "调用任意 HTTP API（通用集成逃生舱）"
+
+    example_config = {"method": "GET", "url": "https://api.example.com/data", "timeout_seconds": 30}
     config_schema = {
         "type": "object",
         "required": ["url"],
@@ -225,6 +251,12 @@ class HttpRequestNode(NodeType):
         self._check_url_allowed(ctx, url)
         method = (ctx.config.get("method") or "POST").upper()
         timeout = min(max(int(ctx.config.get("timeout_seconds") or 30), 1), 120)
+        if ctx.dry_run:
+            # 试运行沙盒：不真实发起 HTTP 请求，只回显将要发送的内容
+            return NodeResult(output={"status": 0, "body": None, "simulated": True,
+                                      "request": {"method": method, "url": url,
+                                                  "headers": ctx.config.get("headers") or {},
+                                                  "body": ctx.config.get("body") if method != "GET" else None}})
         try:
             resp = httpx.request(
                 method, url,

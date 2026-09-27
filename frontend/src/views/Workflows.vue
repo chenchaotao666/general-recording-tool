@@ -11,9 +11,18 @@
 
     <!-- 模板市场对话框 -->
     <el-dialog v-model="tplVisible" title="模板市场 · 一键安装场景工作流" width="720px">
+      <div class="tpl-filter">
+        <el-input v-model="tplKw" placeholder="搜索模板名称 / 描述 / 场景" clearable size="small" class="tpl-search" />
+        <el-select v-model="tplCat" placeholder="全部分类" clearable size="small" style="width: 140px">
+          <el-option v-for="c in tplCategories" :key="c" :label="c" :value="c" />
+        </el-select>
+      </div>
       <div class="tpl-grid" v-loading="tplLoading">
-        <el-card v-for="t in templates" :key="t.key" shadow="hover" class="tpl-card">
-          <div class="tpl-name">{{ t.name }}</div>
+        <el-card v-for="t in filteredTemplates" :key="t.key" shadow="hover" class="tpl-card">
+          <div class="tpl-name">
+            {{ t.name }}
+            <el-tag v-if="t.category" size="small" effect="plain" type="warning" class="tpl-cat">{{ t.category }}</el-tag>
+          </div>
           <div class="tpl-desc">{{ t.description }}</div>
           <div class="tpl-scenario">{{ t.scenario }}</div>
           <div class="tpl-tables">
@@ -28,6 +37,7 @@
           </el-button>
         </el-card>
       </div>
+      <el-empty v-if="!tplLoading && !filteredTemplates.length" description="没有匹配的模板" />
     </el-dialog>
 
     <!-- 安装确认：明确让用户选择是否要示例数据 -->
@@ -64,11 +74,24 @@
       </template>
     </el-dialog>
 
-    <el-table :data="rows" v-loading="loading" @row-dblclick="(r) => $router.push(`/workflows/${r.id}/edit`)">
+    <!-- 列表工具栏：搜索 + 状态筛选 -->
+    <div class="list-filter">
+      <el-input v-model="kw" placeholder="搜索工作流名称 / 描述" clearable size="small" style="width: 240px" />
+      <el-select v-model="statusFilter" placeholder="全部状态" clearable size="small" style="width: 140px">
+        <el-option label="已启用" value="enabled" />
+        <el-option label="已停用" value="disabled" />
+        <el-option label="最近执行失败" value="failed" />
+        <el-option label="等待审批/恢复" value="waiting" />
+      </el-select>
+      <span class="hint">{{ filteredRows.length }} 个工作流</span>
+    </div>
+
+    <el-table :data="pagedRows" v-loading="loading" @row-dblclick="(r) => $router.push(`/workflows/${r.id}/edit`)">
       <el-table-column prop="name" label="名称" min-width="150">
         <template #default="{ row }">
           <el-link type="primary" @click="$router.push(`/workflows/${row.id}/edit`)">{{ row.name }}</el-link>
-          <div v-if="row.description" class="desc">{{ row.description }}</div>
+          <!-- 流程自述：优先用描述（AI 生成/模板自带）；没有就从结构自动概括一句话 -->
+          <div class="desc">{{ row.description || flowSummary(row) }}</div>
         </template>
       </el-table-column>
       <el-table-column label="触发方式" width="120">
@@ -104,6 +127,11 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      v-if="filteredRows.length > pageSize" v-model:current-page="listPage" :page-size="pageSize"
+      :total="filteredRows.length" layout="total, prev, pager, next"
+      style="margin-top: 14px; justify-content: flex-end"
+    />
 
     <!-- 执行日志抽屉 -->
     <el-drawer v-model="runsVisible" :title="`执行日志 · ${runsRow?.name || ''}`" size="720px">
@@ -133,7 +161,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { aiAssistWorkflow, deleteWorkflow, installWorkflowTemplate, listWorkflows, listWorkflowTemplates, runWorkflow, toggleWorkflow, workflowRuns } from '../api'
@@ -147,6 +175,7 @@ const AI_EXAMPLES = [
 const TRIGGER_LABELS = {
   manual: '手动', schedule: '定时', record: '数据变更', webhook: 'Webhook', test: '试运行',
   interval: '定时', cron: '定时', form: '表单', sub: '子流程',
+  record_created: '记录新增时', record_updated: '记录修改时',
 }
 const STATUS_LABELS = { pending: '排队中', running: '执行中', success: '成功', failed: '失败', waiting: '等待中', cancelled: '已取消' }
 
@@ -157,6 +186,28 @@ const runsVisible = ref(false)
 const runs = ref([])
 const runsRow = ref(null)
 const router = useRouter()
+
+// 列表搜索 / 状态筛选 / 分页（客户端，数据量小）
+const kw = ref('')
+const statusFilter = ref('')
+const listPage = ref(1)
+const pageSize = 15
+
+const filteredRows = computed(() => {
+  const k = kw.value.trim().toLowerCase()
+  return rows.value.filter((r) => {
+    if (k && !(`${r.name} ${r.description || ''}`.toLowerCase().includes(k))) return false
+    if (statusFilter.value === 'enabled') return r.enabled
+    if (statusFilter.value === 'disabled') return !r.enabled
+    if (statusFilter.value === 'failed') return r.last_run?.status === 'failed'
+    if (statusFilter.value === 'waiting') return r.last_run?.status === 'waiting'
+    return true
+  })
+})
+const pagedRows = computed(() =>
+  filteredRows.value.slice((listPage.value - 1) * pageSize, listPage.value * pageSize)
+)
+watch([kw, statusFilter], () => { listPage.value = 1 })
 
 // AI 生成
 const aiVisible = ref(false)
@@ -172,6 +223,19 @@ const installingKey = ref('')
 const confirmVisible = ref(false)
 const installTarget = ref(null)
 const installDemoData = ref(true)   // 默认生成示例数据，每次安装时都会弹出确认框让用户选
+
+// 模板搜索 / 分类筛选
+const tplKw = ref('')
+const tplCat = ref('')
+const tplCategories = computed(() => [...new Set(templates.value.map((t) => t.category).filter(Boolean))])
+const filteredTemplates = computed(() => {
+  const k = tplKw.value.trim().toLowerCase()
+  return templates.value.filter((t) => {
+    if (tplCat.value && t.category !== tplCat.value) return false
+    if (k && !(`${t.name} ${t.description} ${t.scenario}`.toLowerCase().includes(k))) return false
+    return true
+  })
+})
 
 async function openTemplates() {
   tplVisible.value = true
@@ -226,6 +290,15 @@ async function onAiGenerate() {
 const triggerLabel = (t) => TRIGGER_LABELS[t?.type] || t?.type || '手动'
 const statusLabel = (s) => STATUS_LABELS[s] || s
 const statusType = (s) => ({ success: 'success', failed: 'danger', waiting: 'warning', running: 'primary', pending: 'info' }[s] || 'info')
+
+// 流程自述（无描述时的兜底）：「记录新增时 → 查询记录 → 条件分支 → 发送通知（共 N 步）」
+function flowSummary(row) {
+  const nodes = row.nodes || []
+  if (!nodes.length) return ''
+  const chain = nodes.map((n) => n.name || n.type).slice(0, 4).join(' → ')
+  const tail = nodes.length > 4 ? `（共 ${nodes.length} 步）` : ''
+  return `${triggerLabel(row.trigger)} → ${chain}${tail}`
+}
 
 async function load() {
   loading.value = true
@@ -283,6 +356,10 @@ onMounted(load)
 .ai-examples .ex { font-size: 12px; }
 .mt { margin-top: 10px; }
 .tpl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tpl-filter { display: flex; gap: 10px; margin-bottom: 12px; }
+.tpl-search { flex: 1; }
+.tpl-cat { margin-left: 6px; }
+.list-filter { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
 .tpl-card { font-size: 13px; }
 .tpl-name { font-weight: 600; margin-bottom: 4px; }
 .tpl-desc { color: #606266; margin-bottom: 6px; }

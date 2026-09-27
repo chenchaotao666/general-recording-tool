@@ -44,11 +44,15 @@ class ConditionNode(NodeType):
     category = "logic"
     description = "对一条记录按条件判断，走「是/否」两个分支"
     disabled_branch = "true"
+
+    example_config = {"record": "{trigger.record}",
+                            "rules": [{"field": "urgency", "op": "eq", "value": "高"}]}
     config_schema = {
         "type": "object",
         "required": ["record", "rules"],
         "properties": {
-            "record": {"type": "object", "title": "判断对象", "description": "整体注入，如 {trigger.record}"},
+            "record": {"type": "object", "title": "判断对象",
+                       "description": "要判断哪条记录？通常选「触发记录」（刚触发流程的那条）；在循环体里选「当前条目」。下面的条件规则就是检查这条记录里的字段"},
             "table_id": {"type": "integer", "format": "table-ref", "title": "关联数据表（提供字段类型，可选）"},
             "logic": {"type": "string", "enum": ["AND", "OR"], "default": "AND", "title": "条件组合"},
             "rules": {"type": "array", "title": "条件规则", "description": "[{field, op, value}]，操作符与数据表筛选一致"},
@@ -88,11 +92,16 @@ class SwitchNode(NodeType):
     category = "logic"
     description = "按条件把记录分到多条路径（从上到下第一个命中的分支生效，都不命中走「默认」）"
     disabled_branch = "default"
+
+    example_config = {"record": "{trigger.record}",
+                            "cases": [{"label": "紧急", "field": "urgency", "op": "eq", "value": "高"},
+                                      {"label": "普通", "field": "urgency", "op": "eq", "value": "低"}]}
     config_schema = {
         "type": "object",
         "required": ["record", "cases"],
         "properties": {
-            "record": {"type": "object", "title": "判断对象", "description": "整体注入，如 {trigger.record}"},
+            "record": {"type": "object", "title": "判断对象",
+                       "description": "要判断哪条记录？通常选「触发记录」（刚触发流程的那条）；在循环体里选「当前条目」。下面的条件规则就是检查这条记录里的字段"},
             "table_id": {"type": "integer", "format": "table-ref", "title": "关联数据表（提供字段类型，可选）"},
             "cases": {"type": "array", "title": "分支规则",
                       "description": "[{label: 分支名, field, op, value}]，操作符与数据表筛选一致"},
@@ -138,6 +147,8 @@ class ForeachNode(NodeType):
     description = "对列表（如查询结果）逐条执行循环体分支：每条记录各走一遍下游节点"
     disabled_branch = "done"   # 停用时跳过循环，直接走「完成」
     is_loop = True
+
+    example_config = {"items": "{nodes.q_1.records}", "max_items": 50}
     config_schema = {
         "type": "object",
         "required": ["items"],
@@ -145,7 +156,8 @@ class ForeachNode(NodeType):
             "items": {"type": "string", "format": "template", "title": "记录列表",
                       "description": "整体引用上游节点的列表输出，如 {nodes.q_1.records}（查询/更新节点的「记录列表」）"},
             "max_items": {"type": "integer", "title": "最多处理条数", "default": 50,
-                          "minimum": 1, "maximum": 200},
+                          "minimum": 1, "maximum": 200,
+                          "description": "超出该条数的记录会被截断、不进入循环（硬上限 200）。列表很长时请先用上游查询/筛选收窄"},
         },
     }
     output_schema = {
@@ -183,6 +195,8 @@ class DateCalcNode(NodeType):
     name = "日期计算"
     category = "logic"
     description = "以某个时间为基准加减天数/小时，输出新的日期（供筛选条件、通知模板引用）"
+
+    example_config = {"base": "{now.today}", "offset_days": 7}
     config_schema = {
         "type": "object",
         "properties": {
@@ -221,6 +235,8 @@ class DelayNode(NodeType):
     name = "延迟等待"
     category = "logic"
     description = "暂停流程，到期后自动继续（如「1 小时后再检查一次」）"
+
+    example_config = {"minutes": 60}
     config_schema = {
         "type": "object",
         "required": ["minutes"],
@@ -235,5 +251,8 @@ class DelayNode(NodeType):
         if not isinstance(minutes, int) or minutes < 1:
             raise WorkflowNodeError("等待分钟数必须 ≥ 1")
         until = datetime.now() + timedelta(minutes=minutes)
+        if ctx.dry_run:
+            # 试运行沙盒：不真实等待，直接返回将要恢复的时间
+            return NodeResult(output={"until": until.isoformat(sep=" "), "simulated": True})
         return NodeResult(status="waiting", resume_after=until,
                           output={"until": until.isoformat(sep=" ")})

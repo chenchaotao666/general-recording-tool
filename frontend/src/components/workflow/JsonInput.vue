@@ -38,6 +38,22 @@ watch(() => props.modelValue, (v) => {
   }
 }, { immediate: true, deep: true })
 
+// 把 JSON.parse 的报错翻译成行列号（V8 两种文案格式都兼容：position N / line x column y）
+function parseError(e) {
+  const m = /position (\d+)/.exec(e.message)
+  if (m) {
+    const pos = Number(m[1])
+    const upto = text.value.slice(0, pos)
+    const line = upto.split('\n').length
+    const col = pos - upto.lastIndexOf('\n')
+    const reason = e.message.split(' in JSON')[0].split(' at position')[0]
+    return `JSON 格式错误：第 ${line} 行第 ${col} 列附近（${reason}）`
+  }
+  const m2 = /line (\d+) column (\d+)/i.exec(e.message)
+  if (m2) return `JSON 格式错误：第 ${m2[1]} 行第 ${m2[2]} 列附近`
+  return `JSON 格式错误：${e.message}`
+}
+
 function onInput() {
   const t = text.value.trim()
   if (!t) {
@@ -48,8 +64,8 @@ function onInput() {
   try {
     emit('update:modelValue', JSON.parse(t))
     err.value = ''
-  } catch {
-    err.value = 'JSON 格式错误'
+  } catch (e) {
+    err.value = parseError(e)
   }
 }
 
@@ -58,8 +74,8 @@ function format() {
     text.value = JSON.stringify(JSON.parse(text.value), null, 2)
     err.value = ''
     onInput()
-  } catch {
-    err.value = 'JSON 格式错误，无法格式化'
+  } catch (e) {
+    err.value = `${parseError(e)}，无法格式化`
   }
 }
 

@@ -24,6 +24,7 @@ def get_node_types() -> list[dict]:
             "type": t.type, "name": t.name, "category": t.category,
             "description": t.description,
             "config_schema": t.config_schema, "output_schema": t.output_schema,
+            **({"example_config": t.example_config} if t.example_config else {}),
         }
         for t in REGISTRY.values()
     ]

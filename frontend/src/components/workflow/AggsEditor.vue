@@ -5,10 +5,13 @@
         <el-option v-for="[v, l] in AGG_OPS" :key="v" :label="l" :value="v" />
       </el-select>
       <template v-if="a.op !== 'count'">
-        <!-- 字段：输入框；表字段并进插入面板（统计只认记录里的键名） -->
-        <el-input v-model="a.field" size="small" class="f" placeholder="字段名，或点右侧选择" @input="sync" />
-        <VariablePicker v-if="fields.length" compact title="选择字段" :groups="fieldGroups"
-          @insert="a.field = $event; sync()" />
+        <!-- 字段：有表字段时下拉选（allow-create 仍可手输），不再配选择图标；没有时退回输入框 + 选择面板 -->
+        <el-select v-if="fields.length" v-model="a.field" size="small" class="f" filterable allow-create
+          default-first-option placeholder="选择字段" @change="sync">
+          <el-option v-for="f in fields" :key="f.field_name" :label="`${f.label}（${f.field_name}）`" :value="f.field_name" />
+          <el-option label="ID" value="id" />
+        </el-select>
+        <el-input v-else v-model="a.field" size="small" class="f" placeholder="字段名" @input="sync" />
       </template>
       <el-input v-model="a.title" size="small" class="t" placeholder="显示名（可选）" @input="sync" />
       <el-button link type="danger" size="small" @click="rows.splice(i, 1); sync()">删</el-button>
@@ -18,21 +21,13 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
-import VariablePicker from './VariablePicker.vue'
+import { ref, watch } from 'vue'
 
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },   // [{op, field?, title?}]
-  fields: { type: Array, default: () => [] },        // 上游表字段（可选，供插入面板选字段）
+  fields: { type: Array, default: () => [] },        // 上游表字段（供字段下拉）
 })
 const emit = defineEmits(['update:modelValue'])
-
-// 字段选择的插入面板：只列表字段（插字段名）
-const fieldGroups = computed(() =>
-  props.fields.length
-    ? [{ title: '表字段', items: props.fields.map((f) => ({ label: f.label, expr: f.field_name })) }]
-    : []
-)
 
 const AGG_OPS = [
   ['count', '计数'], ['sum', '求和'], ['avg', '平均'],

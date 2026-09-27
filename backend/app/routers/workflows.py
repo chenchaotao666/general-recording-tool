@@ -77,10 +77,46 @@ def _out(db: Session, wf: Workflow) -> dict:
     return out
 
 
+@router.post("/check")
+def check_workflow(payload: WorkflowIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """保存前体检（不落库、不抛 400）：返回全部问题 [{node_id, field, level, message}]，
+    前端据此在画布上标注错误节点并给出字段级定位。"""
+    return {"issues": engine.lint_definition(db, dict(payload.trigger or {"type": "manual"}),
+                                             payload.nodes, payload.edges, user)}
+
+
 @router.get("/node-types")
 def node_types(user: User = Depends(get_current_user)):
     """节点目录：前端画布渲染与 AI 生成的共同数据源。"""
     return get_node_types()
+
+
+@router.get("/pending-approvals")
+def pending_approvals(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """我的待办审批：全部 waiting 状态审批节点中，我是审批人/归属人（admin 全量）的清单。
+    注意必须声明在 GET /{wf_id} 之前，否则 "pending-approvals" 会被当作 wf_id 匹配。"""
+    rows = (
+        db.query(WorkflowNodeRun, WorkflowRun, Workflow)
+        .join(WorkflowRun, WorkflowNodeRun.run_id == WorkflowRun.id)
+        .join(Workflow, WorkflowRun.workflow_id == Workflow.id)
+        .filter(WorkflowNodeRun.node_type == "approval", WorkflowNodeRun.status == "waiting")
+        .order_by(WorkflowNodeRun.id.desc())
+        .limit(100)
+        .all()
+    )
+    out = []
+    for nr, run, wf in rows:
+        approvers = ((nr.output_json or {}).get("approval") or {}).get("approver_user_ids") or [wf.user_id]
+        if user.role != "admin" and user.id not in approvers and user.id != wf.user_id:
+            continue
+        ap = (nr.output_json or {}).get("approval") or {}
+        out.append({
+            "node_run_id": nr.id, "run_id": run.id, "workflow_id": wf.id,
+            "workflow_name": wf.name, "title": ap.get("title") or "待审批",
+            "detail": ap.get("detail") or "",
+            "started_at": nr.started_at.isoformat(sep=" ") if nr.started_at else None,
+        })
+    return out
 
 
 class AiAssistIn(BaseModel):
@@ -98,6 +134,33 @@ def ai_assist(payload: AiAssistIn, db: Session = Depends(get_db), user: User = D
         return assist_workflow(db, user, payload.description.strip())
     except LLMError as e:
         raise HTTPException(400, str(e))
+
+
+class AiNodeConfigIn(BaseModel):
+    node_type: str
+    description: str
+
+
+@router.post("/ai-node-config")
+def ai_node_config(payload: AiNodeConfigIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """AI 帮我配这个节点：节点类型 + 一句话需求 → 该节点的 config（schema 校验，不落库）。"""
+    from ..services.llm.base import LLMError
+    from ..services.workflow.ai_assist import assist_node_config
+    try:
+        return assist_node_config(db, user, payload.node_type, payload.description)
+    except (LLMError, WorkflowError) as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/{wf_id}/ai-explain")
+def ai_explain(wf_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """AI 流程解读：3-5 句大白话说明这个工作流在干什么（接手别人的流程时用）。"""
+    wf = _get_own(db, wf_id, user)
+    from ..services.workflow.ai_assist import explain_workflow
+    try:
+        return explain_workflow(db, user, wf)
+    except Exception as e:
+        raise HTTPException(400, f"解读失败：{e}")
 
 
 @router.get("")
@@ -192,7 +255,7 @@ def test_run_workflow(wf_id: int, payload: RunIn | None = None, db: Session = De
     if payload.node_id and not any(n.get("id") == payload.node_id for n in (wf.nodes_json or [])):
         raise HTTPException(400, f"节点不存在：{payload.node_id}")
     result = engine.run_now(wf_id, trigger="test", trigger_data={"params": payload.params},
-                            stop_after=payload.node_id)
+                            stop_after=payload.node_id, dry_run=True)   # 试运行沙盒：副作用节点只模拟不真实生效
     return result or {"error": "执行失败"}
 
 
@@ -241,6 +304,7 @@ def get_run(run_id: int, db: Session = Depends(get_db), user: User = Depends(get
                 "id": nr.id, "node_id": nr.node_id, "node_type": nr.node_type,
                 "status": nr.status, "input": nr.input_json, "output": nr.output_json,
                 "tokens_used": nr.tokens_used, "duration_ms": nr.duration_ms, "error": nr.error,
+                "warnings": nr.warnings_json or [],
                 "started_at": nr.started_at.isoformat(sep=" ") if nr.started_at else None,
                 "finished_at": nr.finished_at.isoformat(sep=" ") if nr.finished_at else None,
             }

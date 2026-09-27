@@ -1,9 +1,15 @@
 <template>
-  <!-- LLM 处理节点的任务预设：选中自动填充提示词骨架，可再改 -->
+  <!-- LLM 处理节点的提示词模板：选中自动填充提示词骨架，可再改 -->
   <div v-if="nodeType === 'llm_transform'" class="preset-row">
-    <el-select size="small" placeholder="从任务模板填充（可选）" clearable :model-value="null" @change="applyPreset">
+    <el-select size="small" placeholder="选择提示词模板（可选，填入后可修改）" clearable :model-value="null" @change="applyPreset">
       <el-option v-for="p in AI_PRESETS" :key="p.label" :label="p.label" :value="p.label" />
     </el-select>
+  </div>
+  <!-- 日期计算节点的偏移预设：一键填常用天数 -->
+  <div v-if="nodeType === 'date_calc'" class="preset-row">
+    <span class="preset-label">快捷偏移：</span>
+    <el-link v-for="p in OFFSET_PRESETS" :key="p.label" type="primary" size="small" class="preset-link"
+      @click="set('offset_days', p.days)">{{ p.label }}</el-link>
   </div>
   <el-form label-position="top" size="small" class="schema-form">
     <template v-for="(spec, key) in properties" :key="key">
@@ -19,45 +25,77 @@
       <FiltersEditor v-if="key === 'filters' || key === 'match_filters'" :key="`flt-${fieldsLoading}`"
         :model-value="cfg[key]" :fields="tableFields" :vars="vars"
         @update:model-value="set(key, $event)" />
-      <!-- 条件分支节点的 rules：与 logic 联合编辑；字段是判断对象里的键，用变量选择器提取 -->
-      <FiltersEditor v-else-if="key === 'rules'" :key="`flt-${fieldsLoading}`"
+      <!-- 条件分支节点的 rules：与 logic 联合编辑；字段是判断对象里的键名（自由输入 + ⚡，
+           ⚡ 面板列出判断对象的字段，由 recordFields 推导） -->
+      <FiltersEditor v-else-if="key === 'rules'" :key="`flt-${fieldsLoading}`" field-free
         :model-value="{ logic: cfg.logic || 'AND', rules: cfg.rules || [] }"
-        :fields="tableFields" :vars="vars" @update:model-value="setRules" />
+        :fields="ruleFields" :vars="vars" @update:model-value="setRules" />
       <!-- 多路分支节点的 cases -->
       <CasesEditor v-else-if="key === 'cases'" :key="`cs-${fieldsLoading}`" :model-value="cfg[key]"
-        :fields="tableFields" :vars="vars" @update:model-value="set(key, $event)" />
+        :fields="ruleFields" :vars="vars" @update:model-value="set(key, $event)" />
       <!-- 汇总统计节点的统计项 -->
       <AggsEditor v-else-if="key === 'aggs'" :model-value="cfg[key]" :fields="tableFields"
         @update:model-value="set(key, $event)" />
-      <!-- 字段赋值 -->
-      <FieldMappingEditor v-else-if="key === 'field_mapping'" :key="`fm-${fieldsLoading}`" :model-value="cfg[key]"
+      <!-- 字段赋值。注意不能加 :key 强制重挂载：重挂载会用 modelValue 重建本地行，
+           「选了字段还没填值」（未 emit 过）的行会被丢光——用户看到的就是行突然消失 -->
+      <FieldMappingEditor v-else-if="key === 'field_mapping'" :model-value="cfg[key]"
         :fields="tableFields" :vars="vars" @update:model-value="set(key, $event)" />
-      <!-- 逐条处理的记录列表：只给列表型变量（records/groups 输出），并提示循环体怎么引用当前条目 -->
-      <template v-else-if="key === 'items'">
-        <TemplateInput :rows="3" :model-value="cfg[key]" :vars="listVars"
-          placeholder="必须是列表——点下方「插入变量」选上游节点的「记录列表」输出"
-          @update:model-value="set(key, $event)" />
-        <div v-if="nodeId" class="field-hint">
+      <!-- 记录列表（去重/汇总统计/逐条处理）：下拉选列表型变量（上游 records/groups 输出），
+           allow-create 兼容自定义表达式（如 {trigger.params.list}） -->
+      <template v-else-if="key === 'records' || key === 'items'">
+        <el-select :model-value="cfg[key]" size="small" filterable allow-create default-first-option
+          style="width: 100%" placeholder="选择上游的记录列表，或输入变量表达式"
+          no-data-text="没有列表型变量可选——请先连线一个「查询记录」节点（更新记录/去重/汇总统计的输出也行）"
+          @update:model-value="set(key, $event)">
+          <el-option v-for="o in listOptions" :key="o.value" :label="o.label" :value="o.value" />
+        </el-select>
+        <div class="field-hint">必须是列表（查询/更新/去重/汇总统计的输出）；留空或填非标量执行时会报错</div>
+        <div v-if="key === 'items' && nodeId" class="field-hint">
           下一节点里用 <code>{{ `{nodes.${nodeId}.item.字段名}` }}</code> 引用当前条目
         </div>
       </template>
-      <!-- 记录/记录列表：整体模板注入 -->
-      <TemplateInput v-else-if="key === 'record' || key === 'records'" :rows="3" :model-value="cfg[key]" :vars="vars"
-        placeholder="整体引用，如 {trigger.record} 或 {nodes.q.records}，也可点下方「插入变量」"
+      <!-- 条件/多路分支的「判断对象」：专用选择器（候选 = 循环当前条目/触发记录/上游记录），
+           allow-create 保留手输；未配置过且能推导候选时自动填第一个。
+           不带 clearable：必填字段清空无意义，且清空成 undefined 会被自动回填逻辑反复填回 -->
+      <template v-else-if="key === 'record'">
+        <el-select :model-value="cfg[key]" size="small" filterable allow-create default-first-option
+          placeholder="选择要判断的记录，或输入变量表达式" @update:model-value="set(key, $event)">
+          <el-option v-for="o in recordOptions" :key="o.value" :label="o.label" :value="o.value" />
+        </el-select>
+        <div class="field-hint">要判断哪条记录：通常是刚触发流程的那条（触发记录）；循环体里选「当前条目」。下面规则里的「字段」填这条记录里的键名（如 urgency）</div>
+      </template>
+      <!-- 审批人：与站内通知接收人一致的人员选择器（好友/群组；空 = 工作流归属人） -->
+      <NotifyTargetPicker v-else-if="key === 'approver_user_ids'" :model-value="cfg[key]"
         @update:model-value="set(key, $event)" />
-      <!-- 审批人 id 列表 -->
-      <el-input v-else-if="key === 'approver_user_ids'" :model-value="(cfg[key] || []).join(',')"
-        placeholder="用户 id，逗号分隔；留空 = 工作流归属人" @update:model-value="setIds(key, $event)" />
-      <!-- 排序/去重/分组字段：输入框 + 选择按钮。排序字段可插变量（渲染后是列名）；
-           去重/分组字段只给表字段（变量渲染出来是"值"不是"键名"，给了只会误导） -->
-      <div v-else-if="['order_by', 'field', 'group_by'].includes(key)" class="ob-row">
-        <el-input :model-value="cfg[key]" clearable
-          :placeholder="key === 'order_by' ? '字段名，或点右侧选择（默认按 ID 倒序）' : '记录里的字段名，如 customer'"
-          @update:model-value="set(key, $event)" />
-        <VariablePicker compact :title="key === 'order_by' ? '选择字段或变量' : '选择字段'"
-          empty-text="未找到上游表的字段——请先把查询记录节点连线到本节点"
-          :groups="key === 'order_by' ? fieldPickGroups : fieldOnlyGroups" @insert="set(key, $event)" />
-      </div>
+      <!-- 排序/去重/分组字段：有表字段时下拉选（与筛选条件一致），allow-create 兼容模板变量和历史值；
+           没有字段来源时退回输入框（排序字段可插变量，渲染后是列名；去重/分组只认记录键名）。
+           排序字段与升降序合成一行（字段下拉 + 升/降序按钮组），order_desc 不再单列 -->
+      <template v-else-if="['order_by', 'field', 'group_by'].includes(key)">
+        <div v-if="tableFields.length" class="ob-combo">
+          <el-select :model-value="cfg[key]" clearable filterable allow-create
+            default-first-option class="ob-field"
+            :placeholder="key === 'order_by' ? '选择排序字段（默认按 ID 倒序）' : '选择记录里的字段'"
+            @update:model-value="set(key, $event)">
+            <el-option v-for="f in tableFields" :key="f.field_name" :label="`${f.label}（${f.field_name}）`" :value="f.field_name" />
+            <el-option label="ID" value="id" />
+            <el-option label="创建时间" value="created_at" />
+            <el-option label="更新时间" value="updated_at" />
+          </el-select>
+          <el-radio-group v-if="key === 'order_by'" :model-value="cfg.order_desc ?? true" size="small"
+            @update:model-value="set('order_desc', $event)">
+            <el-radio-button :value="true">降序</el-radio-button>
+            <el-radio-button :value="false">升序</el-radio-button>
+          </el-radio-group>
+        </div>
+        <div v-else class="ob-row">
+          <el-input :model-value="cfg[key]" clearable
+            :placeholder="key === 'order_by' ? '字段名（默认按 ID 倒序）' : '记录里的字段名，如 customer'"
+            @update:model-value="set(key, $event)" />
+          <VariablePicker compact :title="key === 'order_by' ? '选择字段或变量' : '选择字段'"
+            empty-text="未找到上游表的字段——请先把查询记录节点连线到本节点"
+            :groups="key === 'order_by' ? fieldPickGroups : fieldOnlyGroups" @insert="set(key, $event)" />
+        </div>
+      </template>
       <!-- 数据表 / 模型供应商 / 子流程选择器 -->
       <el-select v-else-if="spec.format === 'table-ref'" :model-value="cfg[key]" filterable placeholder="选择数据表"
         @update:model-value="set(key, $event)">
@@ -71,7 +109,12 @@
         @update:model-value="set(key, $event)">
         <el-option v-for="p in providers" :key="p.id" :label="p.name" :value="p.id" />
       </el-select>
-      <!-- 模板 / 多行文本 -->
+      <!-- 模板 / 多行文本；日期计算的基准时间给快捷预设（映射 now 变量） -->
+      <el-select v-else-if="key === 'base' && nodeType === 'date_calc'" :model-value="cfg[key]" size="small" filterable
+        allow-create default-first-option clearable placeholder="留空 = 当前时间，或选快捷基准"
+        @update:model-value="set(key, $event)">
+        <el-option v-for="[label, v] in BASE_PRESETS" :key="label" :label="label" :value="v" />
+      </el-select>
       <TemplateInput v-else-if="spec.format === 'template' || spec.format === 'textarea'" :rows="5"
         :model-value="cfg[key]" :vars="vars" placeholder="可直接输入，或点下方「插入变量」选择上游数据"
         @update:model-value="set(key, $event)" />
@@ -82,10 +125,45 @@
       <el-select v-else-if="spec.enum" :model-value="cfg[key]" @update:model-value="set(key, $event)">
         <el-option v-for="(v, i) in spec.enum" :key="v" :label="(spec.enumNames || [])[i] || v" :value="v" />
       </el-select>
+      <!-- 查询记录的条数上限：数字框 + 「不限制」勾选（= 0 返回全部，引擎侧支持） -->
+      <template v-else-if="key === 'limit' && nodeType === 'query_records'">
+        <div class="ob-combo">
+          <el-input-number :model-value="cfg.limit === 0 ? undefined : cfg.limit" :min="1" :max="500"
+            :disabled="cfg.limit === 0" controls-position="right" size="small" placeholder="条数"
+            @update:model-value="set(key, $event ?? 100)" />
+          <el-checkbox :model-value="cfg.limit === 0" size="small"
+            @update:model-value="set(key, $event ? 0 : 100)">不限制</el-checkbox>
+        </div>
+        <div class="field-hint">默认 100 条，最大 500 条；不限制返回全部记录，数据量大时慎用</div>
+      </template>
       <!-- 布尔 / 数字 -->
       <el-switch v-else-if="spec.type === 'boolean'" :model-value="cfg[key]" @update:model-value="set(key, $event)" />
       <el-input-number v-else-if="spec.type === 'integer' || spec.type === 'number'" :model-value="cfg[key]"
         :min="spec.minimum" :max="spec.maximum" controls-position="right" @update:model-value="set(key, $event)" />
+      <!-- LLM 的 JSON 输出键名：标签式录入，下游变量选择器会列出这些键 -->
+      <el-select v-else-if="key === 'output_keys'" :model-value="cfg[key] || []" multiple filterable allow-create
+        default-first-option placeholder="输入键名后回车，如 category、reason"
+        @update:model-value="set(key, $event)" />
+      <!-- HTTP 请求头：键值对行编辑器（不手写 JSON） -->
+      <KvEditor v-else-if="key === 'headers' && nodeType === 'http_request'" :model-value="cfg[key]" :vars="vars"
+        key-placeholder="Header 名，如 Authorization" @update:model-value="set(key, $event)" />
+      <!-- HTTP 请求体：简单键值对用表单模式，嵌套结构切 JSON 模式 -->
+      <template v-else-if="key === 'body' && nodeType === 'http_request'">
+        <el-radio-group v-model="bodyMode" size="small" class="body-mode">
+          <el-radio-button value="form">表单模式</el-radio-button>
+          <el-radio-button value="json">JSON 模式</el-radio-button>
+        </el-radio-group>
+        <KvEditor v-if="bodyMode === 'form'" :model-value="cfg[key]" :vars="vars"
+          key-placeholder="字段名" @update:model-value="set(key, $event)" />
+        <JsonInput v-else :model-value="cfg[key]" :vars="vars" @update:model-value="set(key, $event)" />
+      </template>
+      <!-- 子流程传参：选定子流程后自动扫描它用到的 {trigger.params.xxx}，预填键名；值用多行文本框（内容可能较长） -->
+      <template v-else-if="key === 'params' && nodeType === 'sub_workflow'">
+        <KvEditor :model-value="cfg[key]" :vars="vars" :preset-keys="subParamKeys" value-textarea
+          key-placeholder="参数名" value-placeholder="值（可较长），或点右侧插入变量"
+          @update:model-value="set(key, $event)" />
+        <div v-if="cfg.workflow_id && !subParamKeys.length" class="field-hint">所选子流程没有用到 {trigger.params.xxx} 变量，可不填</div>
+      </template>
       <!-- 对象/数组：JSON 编辑器（格式化 + 插入变量） -->
       <JsonInput v-else-if="spec.type === 'object' || spec.type === 'array'" :model-value="cfg[key]" :vars="vars"
         @update:model-value="set(key, $event)" />
@@ -98,7 +176,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { QuestionFilled } from '@element-plus/icons-vue'
-import { getTable } from '../../api'
+import { getTable, getWorkflow } from '../../api'
 import FiltersEditor from './FiltersEditor.vue'
 import FieldMappingEditor from './FieldMappingEditor.vue'
 import TemplateInput from './TemplateInput.vue'
@@ -107,14 +185,27 @@ import AggsEditor from './AggsEditor.vue'
 import VariablePicker from './VariablePicker.vue'
 import NotifyTargetPicker from './NotifyTargetPicker.vue'
 import JsonInput from './JsonInput.vue'
+import KvEditor from './KvEditor.vue'
 
 // 发送通知节点：按通道决定接收人相关字段的显隐（站内通知→人员选择器，邮件/短信→接收人，机器人→Webhook 地址）
 function showField(key) {
-  if (props.nodeType !== 'send_message') return true
-  const ch = cfg.channel || 'notify'
-  if (key === 'notify_targets') return ch === 'notify'
-  if (key === 'recipients') return ch === 'email' || ch === 'sms'
-  if (key === 'webhook_url') return ['webhook', 'wecom', 'dingtalk'].includes(ch)
+  if (props.nodeType === 'send_message') {
+    const ch = cfg.channel || 'notify'
+    if (key === 'notify_targets') return ch === 'notify'
+    if (key === 'recipients') return ch === 'email' || ch === 'sms'
+    if (key === 'webhook_url') return ['webhook', 'wecom', 'dingtalk'].includes(ch)
+  }
+  // LLM 节点的 JSON 输出键名只在 JSON 格式下显示
+  if (props.nodeType === 'llm_transform' && key === 'output_keys') {
+    return (cfg.output_format || 'text') === 'json'
+  }
+  // order_desc 已并入排序字段行的「升/降序」按钮组，不再单列
+  if (key === 'order_desc' && 'order_by' in properties.value) return false
+  // 条件分支的「条件组合」（AND/OR）已在条件规则编辑器顶部集成（满足全部/任一），不再单列
+  if (props.nodeType === 'condition' && key === 'logic') return false
+  // 条件/多路分支的「关联数据表」：UI 上不再需要（规则字段已跟随判断对象推导；
+  // 后端 schema 保留——存量配置与 AI 生成仍可用它做类型兜底）
+  if (['condition', 'switch'].includes(props.nodeType) && key === 'table_id') return false
   return true
 }
 function titleOf(key, spec) {
@@ -124,7 +215,7 @@ function titleOf(key, spec) {
   return spec.title || key
 }
 
-// LLM 处理节点的任务预设：选中后填充 prompt/system/output_format 骨架
+// LLM 处理节点的提示词模板：选中后填充 prompt/system/output_format 骨架；JSON 类模板连 output_keys 一起填
 const AI_PRESETS = [
   {
     label: '文本分类',
@@ -132,6 +223,7 @@ const AI_PRESETS = [
       prompt: '请把以下内容分类到其中之一：【类别一 / 类别二 / 类别三】，并给出一句话理由。\n输出 JSON：{"category": "类别名", "reason": "理由"}\n\n内容：{在此插入要分类的内容}',
       system: '你是一个严谨的文本分类器，只输出 JSON。',
       output_format: 'json',
+      output_keys: ['category', 'reason'],
     },
   },
   {
@@ -140,6 +232,7 @@ const AI_PRESETS = [
       prompt: '请从以下内容中提取关键信息，输出 JSON：{"key1": "值", "key2": "值"}（按需要修改要提取的字段）。\n\n内容：{在此插入原文}',
       system: '你是一个信息提取助手，只输出 JSON，没有的字段填 null。',
       output_format: 'json',
+      output_keys: ['key1', 'key2'],
     },
   },
   {
@@ -148,6 +241,7 @@ const AI_PRESETS = [
       prompt: '请把以下内容总结成 3 句话以内的摘要，突出重点数据：\n\n{在此插入内容}',
       system: '你是一个简洁的摘要助手。',
       output_format: 'text',
+      output_keys: [],   // 文本格式没有 JSON 键，清空避免下游变量选择器列出不会存在的键
     },
   },
   {
@@ -156,6 +250,7 @@ const AI_PRESETS = [
       prompt: '请判断以下内容的情感倾向（正面/负面/中性）和紧急程度（高/中/低）。\n输出 JSON：{"sentiment": "...", "urgency": "...", "reason": "一句话理由"}\n\n内容：{在此插入内容}',
       system: '你是一个情感分析助手，只输出 JSON。',
       output_format: 'json',
+      output_keys: ['sentiment', 'urgency', 'reason'],
     },
   },
 ]
@@ -175,18 +270,58 @@ const props = defineProps({
   nodeId: { type: String, default: '' },
   // 可选子流程清单（子流程调用节点的下拉数据源）
   workflows: { type: Array, default: () => [] },
+  // 条件/多路分支的条件规则字段（跟随判断对象，由父组件推导）；null = 退回表字段
+  recordFields: { type: Array, default: null },
 })
 const emit = defineEmits(['update:modelValue'])
 
 const properties = computed(() => props.schema?.properties || {})
 const required = computed(() => props.schema?.required || [])
 
-// 逐条处理的「记录列表」输入：只保留列表型变量（查询/更新的记录列表、汇总的分组列表），
-// 避免用户选到单条记录或计数这类标量
+// 条件规则/分支条件行的字段来源：优先判断对象推导的字段，否则表字段
+const ruleFields = computed(() =>
+  (props.recordFields && props.recordFields.length) ? props.recordFields : tableFields.value
+)
+
+// 条件/多路分支「判断对象」的候选：循环当前条目 > 触发记录（含变更前）> 上游节点输出。
+// 循环体里的判断几乎总是针对「当前条目」，所以 item 候选排最前（自动填充取第一个）
+const recordOptions = computed(() => {
+  const items = []   // {nodes.x.item}：逐条处理的当前条目
+  const trig = []    // {trigger.record} / {trigger.old_record}
+  const rest = []    // {nodes.x.record}（新增记录）/ {nodes.x}（审批等节点的整体输出）
+  for (const g of props.vars) {
+    for (const it of g.items) {
+      // 文案：「组名 · 条目」（去掉「（整体）」后缀），避免「触发记录（整体）（触发器）」这种双层括号
+      const o = { label: `${g.title} · ${it.label.replace(/（整体）$/, '')}`, value: it.expr }
+      if (/\.item\}$/.test(it.expr)) items.push(o)
+      else if (/^\{trigger\.(old_)?record\}$/.test(it.expr)) trig.push(o)
+      else if (/\.record\}$/.test(it.expr) || /^\{nodes\.[a-zA-Z0-9_]+\}$/.test(it.expr)) rest.push(o)
+    }
+  }
+  return [...items, ...trig, ...rest]
+})
+
+// 日期计算：基准时间快捷预设（映射内置 now 变量，留空 = 当前时间）
+const BASE_PRESETS = [
+  ['今天', '{now.today}'], ['昨天', '{now.yesterday}'], ['明天', '{now.tomorrow}'],
+  ['本周一', '{now.week_start}'], ['上周一', '{now.last_week_start}'], ['上周日', '{now.last_week_end}'],
+  ['本月 1 日', '{now.month_start}'], ['上月 1 日', '{now.last_month_start}'], ['上月最后一日', '{now.last_month_end}'],
+]
+const OFFSET_PRESETS = [
+  { label: '+1 天', days: 1 }, { label: '+7 天', days: 7 }, { label: '-1 天', days: -1 }, { label: '-30 天', days: -30 },
+]
+
+// 逐条处理/去重/汇总的「记录列表」输入：只保留列表型变量（查询/更新的记录列表、汇总的分组列表），
+// 避免用户选到单条记录或计数这类标量。
+// 注意表达式带结尾大括号（{nodes.q_1.records}），匹配时必须把 } 算进去——否则永远匹配为空
 const listVars = computed(() =>
   props.vars
-    .map((g) => ({ ...g, items: g.items.filter((it) => /\.(records|groups)$/.test(it.expr)) }))
+    .map((g) => ({ ...g, items: g.items.filter((it) => /\.(records|groups)\}+$/.test(it.expr)) }))
     .filter((g) => g.items.length)
+)
+// 「记录列表」下拉的扁平选项（「组名 · 条目」格式，与判断对象候选一致）
+const listOptions = computed(() =>
+  listVars.value.flatMap((g) => g.items.map((it) => ({ label: `${g.title} · ${it.label}`, value: it.expr })))
 )
 
 // 字段引用类控件需要目标表的字段列表
@@ -227,11 +362,74 @@ async function loadFields(tableId) {
   } catch { tableFields.value = [] } finally { fieldsLoading.value = false }
 }
 
+// HTTP 请求体的编辑模式（表单/JSON）。注意：下面的 cfg watch 是 immediate（setup 中同步执行），
+// 这些状态必须先于它声明，否则首次执行撞 TDZ（Cannot access before initialization）
+const bodyMode = ref('form')
+let bodyModeInited = false
+let lastSubWfId = undefined
+
+// 切换节点时重置模式推断（组件实例跨节点复用）
+watch(() => props.nodeId, () => { bodyModeInited = false })
+
+// 子流程传参：扫描目标子流程全部节点配置里用到的 {trigger.params.键}，预填为键值行
+const subParamKeys = ref([])
+let subParamsSeq = 0
+async function loadSubParams(wfId) {
+  const seq = ++subParamsSeq
+  if (!wfId) { subParamKeys.value = []; return }
+  try {
+    const wf = await getWorkflow(wfId)
+    if (seq !== subParamsSeq) return   // 过期响应丢弃（用户连续切换子流程）
+    const keys = new Set()
+    const re = /\{\s*trigger\.params\.([^{}.\s]+)/g
+    for (const m of JSON.stringify(wf.nodes || []).matchAll(re)) keys.add(m[1])
+    subParamKeys.value = [...keys]
+  } catch {
+    if (seq === subParamsSeq) subParamKeys.value = []
+  }
+}
+
 const cfg = reactive({})
 watch(() => props.modelValue, (v) => {
   Object.keys(cfg).forEach((k) => delete cfg[k])
   Object.assign(cfg, v || {})
   loadFields(cfg.table_id || props.fallbackTableId)
+  // schema 里带 default 的字段（条数上限 100、最多处理 50、超时 30s 等）打开面板即回填，
+  // 让默认值可见、可改，而不是藏在后端
+  const defaults = {}
+  for (const [k, spec] of Object.entries(properties.value)) {
+    if (cfg[k] === undefined && spec.default !== undefined) defaults[k] = spec.default
+  }
+  if (Object.keys(defaults).length) {
+    Object.assign(cfg, defaults)
+    emit('update:modelValue', { ...cfg })
+  }
+  // 判断对象从未配置过（null/undefined）且有候选时自动填第一个（通常是 {trigger.record}）；
+  // 用户清空过（''）不反复回填
+  if (['condition', 'switch'].includes(props.nodeType) && cfg.record == null && recordOptions.value.length) {
+    set('record', recordOptions.value[0].value)
+  }
+  // 审批详情模板：首次配置给骨架（触发记录的前几个字段），有参照比空白好写
+  if (props.nodeType === 'approval' && cfg.detail_template == null) {
+    const trig = props.vars.find((g) => g.title === '触发器')
+    const fields = (trig?.items || []).filter((it) => /^\{trigger\.record\.[a-zA-Z_]/.test(it.expr)).slice(0, 4)
+    if (fields.length) {
+      set('detail_template', fields.map((it) => `${it.label.replace('触发记录·', '')}：${it.expr}`).join('\n'))
+    }
+  }
+  // HTTP 请求体模式：只在进入该节点时按已有 body 推断一次（嵌套结构 → JSON 模式，否则表单模式）。
+  // 不能跟随编辑实时重算：JSON 模式下敲出合法扁平 JSON（如闭合 {}）会被误判而弹回表单模式
+  if (props.nodeType === 'http_request' && !bodyModeInited) {
+    bodyModeInited = true
+    const b = cfg.body
+    bodyMode.value = (b && typeof b === 'object' && Object.values(b).some((x) => x !== null && typeof x === 'object'))
+      ? 'json' : 'form'
+  }
+  // 子流程传参：只在子流程选择变化时重新扫描（deep watch 每次击键都会触发，不能重复拉取）
+  if (props.nodeType === 'sub_workflow' && cfg.workflow_id !== lastSubWfId) {
+    lastSubWfId = cfg.workflow_id
+    loadSubParams(cfg.workflow_id)
+  }
 }, { immediate: true, deep: true })
 
 // 兜底表变化（如画布连线改动）且节点自身没选表时，重新加载字段
@@ -249,11 +447,6 @@ function setRules(v) {
   cfg.rules = v.rules
   emit('update:modelValue', { ...cfg })
 }
-function setIds(key, text) {
-  const ids = String(text || '').replace(/，/g, ',').split(',').map((s) => s.trim()).filter(Boolean)
-    .map(Number).filter((n) => Number.isInteger(n))
-  set(key, ids)
-}
 
 // AI 任务预设：把预设的 prompt/system/output_format 一次性填入配置
 function applyPreset(label) {
@@ -268,8 +461,13 @@ function applyPreset(label) {
 <style scoped>
 .preset-row { margin-bottom: 10px; }
 .preset-row .el-select { width: 100%; }
+.preset-label { font-size: 12px; color: #909399; }
+.preset-link { margin-right: 12px; }
+.body-mode { margin-bottom: 6px; }
 .ob-row { display: flex; align-items: center; gap: 6px; }
 .ob-row .el-select, .ob-row .el-input { flex: 1; }
+.ob-combo { display: flex; align-items: center; gap: 6px; }
+.ob-combo .ob-field { flex: 1; min-width: 0; }
 .hint-icon { margin-left: 4px; color: #c0c4cc; vertical-align: -2px; cursor: help; }
 .schema-form :deep(.el-form-item) { margin-bottom: 14px; }
 .schema-form :deep(.el-form-item__label) { padding-bottom: 2px !important; font-size: 12px; }

@@ -5,7 +5,9 @@ __pycache__/
 
 # 运行时数据
 backend/grt.db
+backend/grt.db.bak-*
 backend/smoke_test.db
+backend/smoke_workflow.db
 backend/server.log
 backend/uploads/
 backend/.secret_key

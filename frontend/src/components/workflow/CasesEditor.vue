@@ -15,7 +15,7 @@
       <el-button link type="danger" size="small" @click="rows.splice(i, 1); sync()">删</el-button>
     </div>
     <el-button link type="primary" size="small" @click="add">+ 添加分支</el-button>
-    <div class="hint">从上到下第一个命中的分支生效；都不命中走「默认」分支。字段可填键名（如 urgency）或点 ⚡ 选变量（如 {nodes.llm_1.data.urgency}）</div>
+    <div class="hint">从上到下第一个命中的分支生效；都不命中走「默认」分支。</div>
   </div>
 </template>
 

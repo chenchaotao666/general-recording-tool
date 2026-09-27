@@ -31,6 +31,7 @@ class NodeContext:
     config: dict                     # 已渲染模板后的本节点配置
     node_id: str = ""                # 本节点 id（foreach 等需定位自身循环状态）
     node_run_id: int = 0             # 本次执行的 NodeRun id（审批节点生成免登链接用）
+    dry_run: bool = False            # 试运行沙盒：有副作用的节点只算效果不真实生效（输出带 simulated 标记）
 
 
 class NodeType:
@@ -41,6 +42,7 @@ class NodeType:
     description: str = ""
     config_schema: dict = {}
     output_schema: dict = {}
+    example_config: dict | None = None      # 节点级示例配置（配置面板「填入示例」的起点，照改比从零配门槛低）
     disabled_branch: str | None = None   # 节点被停用时走的兜底分支（分支类节点）
     is_loop: bool = False                # 逐条处理节点：引擎据此维护循环计数
 

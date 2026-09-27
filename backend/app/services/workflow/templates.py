@@ -19,6 +19,7 @@ from .engine import WorkflowError, validate_definition
 TEMPLATES: list[dict] = [
     {
         "key": "stock_alert",
+        "category": "预警通知",
         "name": "低库存预警",
         "description": "库存数量修改后自动检查，低于安全线立刻通知负责人",
         "scenario": "记录修改 → 条件判断（数量 < 安全线）→ 站内通知",
@@ -48,6 +49,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "feedback_triage",
+        "category": "AI 处理",
         "name": "客户反馈智能分流",
         "description": "新反馈录入后 AI 自动判断紧急程度，紧急的立刻通知，并回写定级结果",
         "scenario": "记录新增 → LLM 定级 → 条件分支（紧急）→ 通知 / 回写级别",
@@ -91,6 +93,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "daily_digest",
+        "category": "数据报表",
         "name": "每日收支日报",
         "description": "每天早上 AI 汇总昨天的收支记录，生成一段分析结论推送给你",
         "scenario": "定时触发 → 查询昨日记录 → LLM 总结 → 站内通知",
@@ -128,6 +131,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "weekly_sales_report",
+        "category": "数据报表",
         "name": "销售业绩周报（汇总统计）",
         "description": "每周一早上汇总上周销售业绩：单数、总额、按销售员分组排名，AI 写成周报推送",
         "scenario": "定时触发 → 查询上周记录 → 汇总统计（分组）→ AI 写周报 → 站内通知",
@@ -173,6 +177,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "feedback_switch",
+        "category": "预警通知",
         "name": "客户反馈三路分流（多路分支）",
         "description": "新反馈录入后 AI 判断紧急程度和情感，按结果走三条路：紧急通知负责人 / 负面标记跟进 / 其余归档",
         "scenario": "记录新增 → AI 分析（JSON）→ 多路分支（紧急 / 负面 / 默认）→ 通知或回写级别",
@@ -226,6 +231,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "stock_wecom_digest",
+        "category": "数据报表",
         "name": "每日库存汇总（企业微信）",
         "description": "每天傍晚统计库存：品种数、总库存量、低于安全线的品名，推送到企业微信群机器人",
         "scenario": "定时触发 → 查询全部库存 → 汇总统计 → 企业微信机器人",
@@ -259,6 +265,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "expense_approval",
+        "category": "审批",
         "name": "报销审批流",
         "description": "新报销单自动进入审批：负责人在通知里一键通过/驳回，结果自动回写状态",
         "scenario": "记录新增 → 人工审批 → 条件分支 → 回写状态 + 通知申请人",
@@ -303,6 +310,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "visit_reminder_loop",
+        "category": "预警通知",
         "name": "客户回访逐条提醒（逐条处理）",
         "description": "每天早上查出到期未回访的客户，逐条发回访提醒，全部发完再发一条汇总",
         "scenario": "定时触发 → 查询到期客户 → 逐条处理（循环体：逐条发提醒）→ 完成 → 汇总通知",
@@ -344,6 +352,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "signup_form",
+        "category": "表单收集",
         "name": "活动报名表单（公开表单）",
         "description": "生成免登录的公开报名表单链接，外部人员填写提交后自动入表并通知你",
         "scenario": "表单提交（公开链接）→ 写入报名表 → 站内通知",
@@ -370,6 +379,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "feedback_form_ai",
+        "category": "表单收集",
         "name": "意见收集 + AI 分析（表单触发）",
         "description": "公开表单收集意见，提交后 AI 立刻判断情感倾向和要点，推送给负责人",
         "scenario": "表单提交（公开链接）→ AI 分析（情感/要点）→ 站内通知负责人",
@@ -403,6 +413,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "notify_sub",
+        "category": "子流程",
         "name": "统一通知子流程（被调用）",
         "description": "可复用的通知子流程：其他工作流用「子流程调用」节点传 title/content 即可发通知",
         "scenario": "被「子流程调用」节点调用 → 站内通知",
@@ -422,6 +433,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "stock_alert_sub",
+        "category": "子流程",
         "name": "库存低量预警（子流程复用）",
         "description": "每天早上查出库存低于预警线的品名，通过「统一通知子流程」发预警",
         "scenario": "定时触发 → 查询低库存 → 子流程调用（复用统一通知）",
@@ -451,6 +463,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "followup_dedupe_loop",
+        "category": "预警通知",
         "name": "客户跟进去重提醒（去重 + 逐条）",
         "description": "每天早上汇总近 3 天的跟进记录，按客户去重后逐条发提醒，避免同一客户轰炸多次",
         "scenario": "定时触发 → 查询近 3 天跟进 → 按客户去重 → 逐条处理（发提醒）→ 汇总通知",
@@ -495,6 +508,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "contract_expire",
+        "category": "预警通知",
         "name": "合同到期提醒（日期计算）",
         "description": "每天早上查未来 30 天内到期的合同，汇总金额并通知，提醒提前续约",
         "scenario": "定时触发 → 日期计算（今天+30 天）→ 查询区间内到期合同 → 汇总 → 通知",
@@ -533,6 +547,7 @@ TEMPLATES: list[dict] = [
     },
     {
         "key": "webhook_alarm",
+        "category": "集成对接",
         "name": "外部告警接入（Webhook 验签）",
         "description": "给外部系统一个 Webhook 地址收告警，自定义响应格式通过验签，告警内容发站内通知",
         "scenario": "Webhook 回调（自定义响应验签）→ 站内通知",
@@ -560,7 +575,7 @@ def list_templates(db: Session, user: User) -> list[dict]:
     return [
         {
             "key": t["key"], "name": t["name"], "description": t["description"],
-            "scenario": t["scenario"], "notes": t["notes"],
+            "scenario": t["scenario"], "category": t.get("category", "其他"), "notes": t["notes"],
             "tables": [{"label": tb["label"], "exists": tb["label"] in owned} for tb in t["tables"]],
         }
         for t in TEMPLATES

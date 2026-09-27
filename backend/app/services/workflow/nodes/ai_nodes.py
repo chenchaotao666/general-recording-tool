@@ -12,14 +12,24 @@ class LlmTransformNode(NodeType):
     name = "LLM 处理"
     category = "ai"
     description = "调用大模型处理文本：总结、分类、提取、生成，可输出结构化 JSON"
+
+    example_config = {"prompt": "请把以下内容分类到其中之一：【类别一 / 类别二 / 类别三】，并给出一句话理由。\n输出 JSON：{\"category\": \"类别名\", \"reason\": \"理由\"}\n\n内容：{trigger.record.feedback}",
+                      "system": "你是一个严谨的文本分类器，只输出 JSON。",
+                      "output_format": "json", "output_keys": ["category", "reason"]}
     config_schema = {
         "type": "object",
         "required": ["prompt"],
         "properties": {
-            "prompt": {"type": "string", "format": "template", "title": "提示词"},
-            "system": {"type": "string", "format": "textarea", "title": "系统提示词"},
+            "prompt": {"type": "string", "format": "template", "title": "提示词",
+                       "description": "提示词 = 给 AI 的具体指令：告诉它要做什么、把要处理的内容用「插入变量」带进来。"
+                                      "例如：请把以下客户反馈分类并给出理由：{trigger.record.feedback}"},
+            "system": {"type": "string", "format": "textarea", "title": "系统提示词",
+                       "description": "系统提示词 = 给 AI 设定的角色和规则（可选），在所有对话中持续生效。"
+                                      "例如：「你是一个严谨的文本分类器，只输出 JSON」。不填则按通用助手处理"},
             "provider_id": {"type": "integer", "format": "provider-ref", "title": "模型供应商（缺省用默认）"},
             "output_format": {"type": "string", "enum": ["text", "json"], "enumNames": ["文本", "JSON"], "default": "text", "title": "输出格式"},
+            "output_keys": {"type": "array", "title": "JSON 输出键名（可选）",
+                            "description": "输出格式为 JSON 时填写预期的键名（如 category、reason），下游节点的「插入变量」会列出它们，不用手写表达式"},
         },
     }
     output_schema = {

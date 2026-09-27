@@ -9,9 +9,19 @@
       <span v-if="model.rules.length < 2" class="unit">（加两条以上条件时生效）</span>
     </div>
     <div v-for="(r, i) in model.rules" :key="i" class="rule-row">
-      <!-- 字段：输入框；选项并进「插入变量」面板（表字段插字段名，上游/内置变量插 {表达式}） -->
-      <el-input v-model="r.field" placeholder="字段名，或点右侧选择" size="small" class="f" />
-      <VariablePicker compact title="选择字段或变量" :groups="fieldGroups" @insert="insertField(i, $event)" />
+      <!-- 字段：数据表筛选场景用下拉（字段来自表结构）；分支判断场景（fieldFree）用自由输入框 + ⚡
+           （字段是判断对象里的键名，键集合是动态的，输入框更贴切；⚡ 面板里列出判断对象的键和变量） -->
+      <el-select v-if="fields.length && !fieldFree" v-model="r.field" size="small" class="f" filterable allow-create
+        default-first-option placeholder="选择字段，或输入变量">
+        <el-option v-for="f in fields" :key="f.field_name" :label="`${f.label}（${f.field_name}）`" :value="f.field_name" />
+        <el-option label="ID" value="id" />
+        <el-option label="创建时间" value="created_at" />
+        <el-option label="更新时间" value="updated_at" />
+      </el-select>
+      <template v-else>
+        <el-input v-model="r.field" placeholder="字段名，或点右侧选择" size="small" class="f" />
+        <VariablePicker compact title="选择字段或变量" :groups="fieldGroups" @insert="insertField(i, $event)" />
+      </template>
       <el-select v-model="r.op" size="small" class="op">
         <el-option v-for="[v, l] in opsFor(r.field)" :key="v" :label="l" :value="v" />
       </el-select>
@@ -54,15 +64,17 @@ const props = defineProps({
   modelValue: { type: Object, default: () => ({ logic: 'AND', rules: [] }) },
   fields: { type: Array, default: () => [] },   // MetaField 列表；字段名也可手填（LLM JSON 键等场景）
   vars: { type: Array, default: () => [] },     // 可插入的变量分组（上游输出 + 内置时间变量）
+  // 分支判断场景（条件分支的 rules）：字段强制为自由输入 + ⚡（键是判断对象的动态键，不走表字段下拉）
+  fieldFree: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue'])
 
-// 字段选择并进插入面板：有表字段时列「表字段」分组（插字段名），后面跟变量分组（插 {表达式}）
+// 字段选择并进插入面板：有字段来源时列字段分组（插字段名），后面跟变量分组（插 {表达式}）
 const fieldGroups = computed(() => {
   const groups = []
   if (props.fields.length) {
     groups.push({
-      title: '表字段',
+      title: props.fieldFree ? '判断对象的字段' : '表字段',
       items: [
         ...props.fields.map((f) => ({ label: f.label, expr: f.field_name })),
         { label: 'ID', expr: 'id' },
@@ -96,7 +108,7 @@ function setCtl(i, mode) {
   if (mode === 'datetime') timeMode[i] = true
 }
 
-// 日期控件选值/清空统一入口。清空：控件类型保持不动（带时间的值清空后仍是日期时间控件）；选完：退出覆盖态
+// 日期控件选值/清空统一入口。清空：控件类型保持不动（带时间的值清空后仍是日期时间控件）
 function onDatePicked(i, v) {
   const r = model.value.rules[i]
   if (!r) return
@@ -106,7 +118,9 @@ function onDatePicked(i, v) {
     if (hadTime) timeMode[i] = true   // 清空了带时间的值 → 控件保持日期时间形态
     return
   }
-  delete ctlMode[i]
+  // 只有字段本身是日期类型时才退出覆盖态——类型驱动的分支能正确区分日期/日期时间；
+  // 字段非日期/未选字段/字段是变量时保留覆盖态，否则会掉回文本框（选完时间控件变输入框）
+  if (isDate(r.field)) delete ctlMode[i]
   delete textMode[i]
   if (typeof v === 'string' && /\s\d{1,2}:\d{2}/.test(v)) timeMode[i] = true
   else delete timeMode[i]
@@ -182,7 +196,9 @@ const withTime = (r, i) =>
 <style scoped>
 .logic-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; color: #909399; }
 .rule-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
-.f { flex: 1 1 140px; min-width: 120px; }
+/* 字段下拉固定宽度：选不同字段时操作符/值控件会变（文本/数字/日期选择器宽度不同），
+   若用 flex 弹性宽度，下拉的渲染宽度会随剩余空间变化而跳动 */
+.f { flex: 0 0 180px; width: 180px; }
 .op { width: 110px; flex-shrink: 0; }
 .v { flex: 1 1 100px; min-width: 90px; }
 .unit { font-size: 12px; color: #909399; }

@@ -18,6 +18,7 @@ _NEW_COLUMNS = [
     ("table_shares", "group_id", "INTEGER"),
     ("table_shares", "status", "VARCHAR(16) DEFAULT 'accepted'"),
     ("report_templates", "filters_json", "JSON"),
+    ("workflow_node_runs", "warnings_json", "JSON"),
 ]
 
 

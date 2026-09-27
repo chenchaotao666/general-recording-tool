@@ -11,17 +11,22 @@ from .base import NodeContext, NodeResult, NodeType, WorkflowNodeError
 
 def query_table(db, table_id: int, filters: dict | None, limit: int,
                 order_by: str | None, order_desc: bool) -> list[dict]:
-    """双存储模式统一的查询路径，语义与 dyn_engine.list_records / pyquery 对齐。"""
+    """双存储模式统一的查询路径，语义与 dyn_engine.list_records / pyquery 对齐。
+    limit：默认 100；正数上限 500（安全阀）；0 = 不限制（返回全部，数据量大时慎用）。"""
     mt, fields = dyn_engine.load_meta(db, table_id)
     fbn = {f.field_name: f for f in fields}
-    limit = max(1, min(int(limit or 100), 500))
+    limit = int(limit or 100)
+    if limit > 0:
+        limit = min(limit, 500)
 
     if mt.storage_mode == "json":
         from ... import json_store
         recs = json_store.all_dicts(db, mt.id, fields, normalized=True)
         recs = [r for r in recs if match_filters(r, fbn, filters)]
         recs = sort_records(recs, order_by, "desc" if order_desc else "asc", fbn)
-        return [{k: dyn_engine.serialize_value(v) for k, v in r.items()} for r in recs[:limit]]
+        if limit > 0:
+            recs = recs[:limit]
+        return [{k: dyn_engine.serialize_value(v) for k, v in r.items()} for r in recs]
 
     _, fields, table = dyn_engine.load_business(db, table_id)
     rules = (filters or {}).get("rules") or []
@@ -30,7 +35,9 @@ def query_table(db, table_id: int, filters: dict | None, limit: int,
         conds = [or_(*conds)]
     stmt = select(table).where(*conds)
     col = table.c[order_by] if order_by and order_by in table.c else table.c.id
-    stmt = stmt.order_by(col.desc() if order_desc else col.asc()).limit(limit)
+    stmt = stmt.order_by(col.desc() if order_desc else col.asc())
+    if limit > 0:
+        stmt = stmt.limit(limit)
     return [dyn_engine.row_to_dict(r) for r in db.execute(stmt).mappings().all()]
 
 
@@ -40,13 +47,17 @@ class QueryRecordsNode(NodeType):
     name = "查询记录"
     category = "data"
     description = "从数据表按条件查询记录，供下游节点使用"
+
+    example_config = {"filters": {"logic": "AND", "rules": [{"field": "created_at", "op": "past_days", "value": 7}]},
+                            "limit": 100, "order_by": "created_at", "order_desc": True}
     config_schema = {
         "type": "object",
         "required": ["table_id"],
         "properties": {
             "table_id": {"type": "integer", "format": "table-ref", "title": "数据表"},
             "filters": {"type": "object", "title": "筛选条件", "description": "{logic: AND|OR, rules: [{field, op, value}]}，field/value 可插入 {模板变量}"},
-            "limit": {"type": "integer", "title": "条数上限", "default": 100, "minimum": 1, "maximum": 500},
+            "limit": {"type": "integer", "title": "条数上限", "default": 100, "minimum": 0, "maximum": 500,
+                      "description": "最多返回多少条，默认 100；勾选「不限制」（= 0）返回全部记录，数据量大时慎用"},
             "order_by": {"type": "string", "title": "排序字段", "description": "字段名，可插入 {模板变量}"},
             "order_desc": {"type": "boolean", "title": "倒序", "default": True},
         },
@@ -74,6 +85,8 @@ class CreateRecordNode(NodeType):
     name = "新增记录"
     category = "data"
     description = "向数据表写入一条新记录，字段值支持模板引用上游数据"
+
+    example_config = {"field_mapping": {"title": "{trigger.record.title}", "status": "待处理"}}
     config_schema = {
         "type": "object",
         "required": ["table_id", "field_mapping"],
@@ -90,6 +103,9 @@ class CreateRecordNode(NodeType):
         if not table_id or not isinstance(mapping, dict) or not mapping:
             raise WorkflowNodeError("未配置数据表或字段赋值")
         data = {k: v for k, v in mapping.items() if v is not None}
+        if ctx.dry_run:
+            # 试运行沙盒：不真实写入，回显将要写入的记录
+            return NodeResult(output={"record": {"id": 0, **data}, "simulated": True})
         record = dyn_engine.create_record(ctx.db, table_id, data, user=ctx.username)
         return NodeResult(output={"record": record})
 
@@ -100,6 +116,9 @@ class UpdateRecordNode(NodeType):
     name = "更新记录"
     category = "data"
     description = "按条件定位数据表记录并更新字段（最多 100 条）"
+
+    example_config = {"match_filters": {"logic": "AND", "rules": [{"field": "id", "op": "eq", "value": "{trigger.record.id}"}]},
+                            "field_mapping": {"status": "已处理"}}
     config_schema = {
         "type": "object",
         "required": ["table_id", "match_filters", "field_mapping"],
@@ -122,6 +141,9 @@ class UpdateRecordNode(NodeType):
         targets = query_table(ctx.db, table_id, ctx.config.get("match_filters"), 100, None, True)
         if not targets:
             return NodeResult(output={"count": 0, "records": []})
+        if ctx.dry_run:
+            # 试运行沙盒：查询是只读的照跑（让用户看到命中了哪些），不真实更新
+            return NodeResult(output={"count": len(targets), "records": targets, "simulated": True})
         data = {k: v for k, v in mapping.items() if v is not None}
         updated = [
             dyn_engine.update_record(ctx.db, table_id, r["id"], data, user=ctx.username)
@@ -195,6 +217,8 @@ class DedupeNode(NodeType):
     name = "去重"
     category = "data"
     description = "对任意列表去重（表记录、LLM 输出的数组、分组统计结果等）：按字段值保留第一条，不填字段则整项完全相同才去重"
+
+    example_config = {"records": "{nodes.q_1.records}", "field": "customer"}
     config_schema = {
         "type": "object",
         "required": ["records"],
@@ -202,7 +226,7 @@ class DedupeNode(NodeType):
             "records": {"type": "string", "format": "template", "title": "记录列表",
                         "description": "整体引用，如 {nodes.q_1.records}"},
             "field": {"type": "string", "title": "去重字段（可选）",
-                      "description": "记录里的字段名（如 customer），按该字段值去重；不是列表变量——列表填在「记录列表」；留空 = 整条记录去重"},
+                      "description": "记录里的字段名（如 customer），按该字段值去重；留空 = 整条记录去重"},
         },
     }
     output_schema = {
@@ -240,6 +264,9 @@ class AggregateNode(NodeType):
     name = "汇总统计"
     category = "data"
     description = "对上游查询出的记录列表做求和/计数/平均等统计，可选按字段分组"
+
+    example_config = {"records": "{nodes.q_1.records}",
+                            "aggs": [{"op": "count", "title": "总数"}, {"op": "sum", "field": "amount", "title": "总金额"}]}
     config_schema = {
         "type": "object",
         "required": ["records", "aggs"],
@@ -247,7 +274,7 @@ class AggregateNode(NodeType):
             "records": {"type": "string", "format": "template", "title": "记录列表",
                         "description": "整体引用，如 {nodes.q_1.records}"},
             "group_by": {"type": "string", "title": "分组字段（可选）",
-                         "description": "记录里的字段名（如 salesperson），按该字段分组统计；不是列表变量"},
+                         "description": "记录里的字段名（如 salesperson），按该字段分组统计"},
             "aggs": {"type": "array", "title": "统计项",
                      "description": "[{op: count|sum|avg|max|min|count_distinct, field, title}]"},
         },

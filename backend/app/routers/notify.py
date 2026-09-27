@@ -71,3 +71,23 @@ def mark_read(payload: ReadIn, db: Session = Depends(get_db), user: User = Depen
     q.update({Notification.read: True}, synchronize_session=False)
     db.commit()
     return {"ok": True}
+
+
+class DeleteIn(BaseModel):
+    ids: list[int] | None = None
+    read_only: bool = False   # True = 清空全部已读
+
+
+@router.post("/delete")
+def delete_notifications(payload: DeleteIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """删除通知：按 id 列表或「清空已读」。两个条件都不给时空跑（防止误清空）。"""
+    q = _my_notifications(db, user)
+    if payload.read_only:
+        q = q.filter_by(read=True)
+    elif payload.ids:
+        q = q.filter(Notification.id.in_(payload.ids))
+    else:
+        return {"ok": True, "deleted": 0}
+    n = q.delete(synchronize_session=False)
+    db.commit()
+    return {"ok": True, "deleted": n}
