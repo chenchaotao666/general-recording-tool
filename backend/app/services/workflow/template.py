@@ -1,10 +1,12 @@
-"""模板渲染：{path.to.value} 点路径语法，沿用 actions.render_template 的单花括号风格。
+"""模板渲染：{path.to.value} 点路径语法，单花括号点路径语法。
 
 根命名空间：trigger / nodes / workflow / run / now。
 - 字符串内插值：解析失败（路径不存在 / 值为 None）渲染为空串，不抛错；
   调用方传入 missing=[] 时，未命中的路径会被收集（引擎据此生成运行警告）；
 - 整体模板（值恰好是一个完整模板表达式）：注入原始对象（dict/list/int 等），
   供 JSON 字段整体引用，如 "record": "{trigger.record}"；
+- 列表渲染过滤器：{nodes.q_1.records | 表格} / {nodes.q_1.records | 列表}，
+  把记录列表渲染成 Markdown 表格 / 编号清单，避免通知里出现原始 JSON；
 - 兼容 {{path}} 双花括号写法（渲染前归一化为单花括号），降低其他平台迁移用户的误用。
 """
 import re
@@ -78,13 +80,75 @@ def _miss(missing: list | None, path: str) -> None:
         missing.append(p)
 
 
+# ---------- 列表渲染过滤器（{路径 | 表格} / {路径 | 列表}） ----------
+
+def split_filter(path: str) -> tuple[str, str]:
+    """拆出过滤器：'nodes.q_1.records | 表格' → ('nodes.q_1.records', '表格')。"""
+    p, _, f = path.partition("|")
+    return p.strip(), f.strip()
+
+
+def _cell(v) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, (dict, list)):
+        import json
+        return json.dumps(v, ensure_ascii=False)
+    if isinstance(v, datetime):
+        return v.isoformat(sep=" ")
+    if isinstance(v, date):
+        return v.isoformat()
+    return str(v)
+
+
+def _render_table(v) -> str:
+    """记录列表 → Markdown 表格（列为字段并集，保持字段顺序）。"""
+    if isinstance(v, list) and v and all(isinstance(r, dict) for r in v):
+        keys = list(v[0].keys())
+        for r in v[1:]:
+            keys.extend(k for k in r.keys() if k not in keys)
+        lines = ["| " + " | ".join(keys) + " |", "|" + " --- |" * len(keys)]
+        lines += ["| " + " | ".join(_cell(r.get(k)) for k in keys) + " |" for r in v]
+        return "\n".join(lines)
+    if isinstance(v, list):
+        return "\n".join(_cell(x) for x in v) or "（无记录）"
+    return _cell(v)
+
+
+def _render_list(v) -> str:
+    """记录列表 → 编号清单：每条一行「1. 字段：值，字段：值」。"""
+    if isinstance(v, list):
+        out = []
+        for i, r in enumerate(v, 1):
+            if isinstance(r, dict):
+                out.append(f"{i}. " + "，".join(f"{k}：{_cell(x)}" for k, x in r.items()))
+            else:
+                out.append(f"{i}. {_cell(r)}")
+        return "\n".join(out) or "（无记录）"
+    return _cell(v)
+
+
+_FILTERS = {"表格": _render_table, "table": _render_table, "列表": _render_list, "list": _render_list}
+
+
+def apply_filter(v, filt: str):
+    """应用过滤器；未知过滤器返回 None（调用方回退到默认字符串化）。"""
+    fn = _FILTERS.get(filt)
+    return fn(v) if fn else None
+
+
 def render_string(context: dict, s: str, missing: list | None = None) -> str:
     """字符串内插值：所有 {path} 替换为字符串形式（None → 空串；路径不存在记入 missing）。"""
     def repl(m):
-        v, found = resolve_path_found(context, m.group(1))
+        path, filt = split_filter(m.group(1))
+        v, found = resolve_path_found(context, path)
         if not found:
-            _miss(missing, m.group(1))
+            _miss(missing, path)
             return ""
+        if filt:
+            out = apply_filter(v, filt)
+            if out is not None:
+                return out
         if v is None:
             return ""
         if isinstance(v, (dict, list)):
@@ -102,10 +166,16 @@ def render_value(context: dict, value, missing: list | None = None):
         stripped = value.strip()
         m = WHOLE_TOKEN_RE.match(stripped) or WHOLE_DOUBLE_TOKEN_RE.match(stripped)
         if m:
-            resolved, found = resolve_path_found(context, m.group(1))
+            path, filt = split_filter(m.group(1))
+            # 带过滤器的整体模板要的是渲染后的文本，不是原始对象
+            resolved, found = resolve_path_found(context, path)
             if not found:
-                _miss(missing, m.group(1))
+                _miss(missing, path)
                 return None
+            if filt:
+                out = apply_filter(resolved, filt)
+                if out is not None:
+                    return out
             # 原始对象（dict/list/int/bool/None）整体注入；纯字符串也直接返回（保留原样不二次转义）
             if resolved is None or isinstance(resolved, (dict, list, int, float, bool)):
                 return resolved

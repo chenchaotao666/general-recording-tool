@@ -156,16 +156,15 @@ class ForeachNode(NodeType):
             "items": {"type": "string", "format": "template", "title": "记录列表",
                       "description": "整体引用上游节点的列表输出，如 {nodes.q_1.records}（查询/更新节点的「记录列表」）"},
             "max_items": {"type": "integer", "title": "最多处理条数", "default": 50,
-                          "minimum": 1, "maximum": 200,
-                          "description": "超出该条数的记录会被截断、不进入循环（硬上限 200）。列表很长时请先用上游查询/筛选收窄"},
+                          "minimum": 0,
+                          "description": "超出该条数的记录会被截断、不进入循环；勾选「不限制」（= 0）处理全部"
+                          "（列表很长时请先用上游查询/筛选收窄；引擎另有单 Run 1000 步总量兜底）"},
         },
     }
     output_schema = {
         "type": "object",
         "properties": {"item": {"type": "object"}, "index": {"type": "integer"}, "count": {"type": "integer"}},
     }
-
-    MAX_ITEMS = 200   # 硬上限：循环每步都落库，防失控
 
     def execute(self, ctx: NodeContext) -> NodeResult:
         items = ctx.config.get("items")
@@ -179,8 +178,11 @@ class ForeachNode(NodeType):
             raise WorkflowNodeError(
                 f"记录列表收到的是{got}，无法逐条处理。请填上游节点的「记录列表」整体引用，如 {{nodes.q_1.records}}"
             )
-        max_items = int(ctx.config.get("max_items") or 50)
-        items = items[: max(1, min(max_items, self.MAX_ITEMS))]
+        raw = ctx.config.get("max_items")
+        max_items = 50 if raw is None else int(raw or 0)
+        # 0 = 不限制（引擎 MAX_STEPS 兜底）；正数截断，至少处理 1 条
+        if max_items > 0:
+            items = items[: max(1, max_items)]
         state = (ctx.context.get("loops") or {}).get(ctx.node_id) or {}
         index = int(state.get("index") or 0)
         count = len(items)
@@ -194,7 +196,7 @@ class DateCalcNode(NodeType):
     type = "date_calc"
     name = "日期计算"
     category = "logic"
-    description = "以某个时间为基准加减天数/小时，输出新的日期（供筛选条件、通知模板引用）"
+    description = "以某个时间为基准加减天数/小时/分钟，输出新的日期（供筛选条件、通知模板引用）"
 
     example_config = {"base": "{now.today}", "offset_days": 7}
     config_schema = {
@@ -204,6 +206,7 @@ class DateCalcNode(NodeType):
                      "description": "如 {now.today} 或 {nodes.q_1.records.0.date}；留空 = 当前时间"},
             "offset_days": {"type": "integer", "title": "加减天数（可负）", "default": 0},
             "offset_hours": {"type": "integer", "title": "加减小时（可负）", "default": 0},
+            "offset_minutes": {"type": "integer", "title": "加减分钟（可负）", "default": 0},
         },
     }
     output_schema = {
@@ -222,7 +225,8 @@ class DateCalcNode(NodeType):
             base = parsed
         days = int(ctx.config.get("offset_days") or 0)
         hours = int(ctx.config.get("offset_hours") or 0)
-        out = base + timedelta(days=days, hours=hours)
+        minutes = int(ctx.config.get("offset_minutes") or 0)
+        out = base + timedelta(days=days, hours=hours, minutes=minutes)
         return NodeResult(output={
             "date": out.date().isoformat(),
             "datetime": out.isoformat(sep=" ", timespec="seconds"),
@@ -241,7 +245,7 @@ class DelayNode(NodeType):
         "type": "object",
         "required": ["minutes"],
         "properties": {
-            "minutes": {"type": "integer", "title": "等待分钟数", "minimum": 1, "maximum": 43200},
+            "minutes": {"type": "integer", "title": "等待分钟数", "default": 60, "minimum": 1, "maximum": 43200},
         },
     }
     output_schema = {"type": "object", "properties": {"until": {"type": "string"}}}

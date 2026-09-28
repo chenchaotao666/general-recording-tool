@@ -1,7 +1,7 @@
 """AI 生成工作流：自然语言需求 → {trigger, nodes, edges}。
 
 流程：节点目录（注册表 schema）+ 用户自有表结构 → LLM → align 清洗 →
-engine.validate_definition 兜底，失败把错误回喂重试一次（与 assist_task 同一套路）。
+engine.validate_definition 兜底，失败把错误回喂重试一次。
 生成结果不落库，由前端画布加载后用户确认保存。
 """
 import difflib
@@ -339,8 +339,11 @@ def assist_workflow(db: Session, user: User, description: str) -> dict:
 NODE_SYSTEM = "你是工作流节点配置助手，把用户的一句话需求转成该节点的配置 JSON。只输出 JSON，不要输出任何解释。"
 
 
-def assist_node_config(db: Session, user: User, node_type: str, description: str) -> dict:
-    """AI 帮我配这个节点：node_type + 一句话需求 → 该节点的 config JSON（schema 校验 + 表权限检查）。"""
+def assist_node_config(db: Session, user: User, node_type: str, description: str,
+                       context: dict | None = None) -> dict:
+    """AI 帮我配这个节点：node_type + 一句话需求 → 该节点的 config JSON（schema 校验 + 表权限检查）。
+    context：前端画布推导的可选上下文（目前用于条件/多路分支的判断对象候选 + 各候选的可用字段），
+    没有它 AI 只能瞎编 record 和字段名。"""
     from . import engine
     cls = REGISTRY.get(node_type)
     if cls is None:
@@ -350,12 +353,31 @@ def assist_node_config(db: Session, user: User, node_type: str, description: str
     provider = get_default_provider(db)
     tables_ctx, table_ids, _ = _tables_context(db, user)
     example = f'\n该节点的示例配置（可参考）：{json.dumps(cls.example_config, ensure_ascii=False)}' if cls.example_config else ''
+
+    # 条件/多路分支：判断对象候选 + 各候选的可用字段（由前端按画布连线推导）
+    record_options = []
+    if node_type in ("condition", "switch"):
+        for o in (context or {}).get("record_options") or []:
+            if isinstance(o, dict) and o.get("expr"):
+                record_options.append({
+                    "expr": str(o["expr"]),
+                    "label": str(o.get("label") or o["expr"]),
+                    "可用字段": [str(f.get("field_name")) for f in (o.get("fields") or [])
+                                 if isinstance(f, dict) and f.get("field_name")][:30],
+                })
+    options_ctx = ""
+    if record_options:
+        options_ctx = (
+            "\n\n判断对象（record）必须原样从以下选项的 expr 中选一个填入；"
+            "条件规则的 field 只能用所选选项「可用字段」里列出的键名（判断对象里的键，不是完整变量路径）：\n"
+            + json.dumps(record_options, ensure_ascii=False)
+        )
     prompt = f"""用户需求：{description.strip()}
 
 节点类型：{node_type}「{cls.name}」——{cls.description}
 
 该节点的 config_schema（必须严格遵守，键名/类型/枚举一致；含 {{ }} 的字符串是模板变量，可引用 trigger/nodes/now）：
-{json.dumps(cls.config_schema, ensure_ascii=False)}{example}
+{json.dumps(cls.config_schema, ensure_ascii=False)}{example}{options_ctx}
 
 可用数据表（table_id 只能从这里选）：
 {tables_ctx}
@@ -363,6 +385,41 @@ def assist_node_config(db: Session, user: User, node_type: str, description: str
 只输出该节点的 config JSON 对象。"""
 
     props = (cls.config_schema or {}).get("properties") or {}
+
+    def repair(data: dict) -> None:
+        """把 AI 输出对齐到判断对象选项：record 按 expr/label 归位；规则字段按可用字段纠正（原地修改）。"""
+        if not record_options:
+            return
+        by_expr = {o["expr"]: o for o in record_options}
+        by_label = {o["label"]: o for o in record_options}
+        rec = str(data.get("record") or "").strip()
+        opt = by_expr.get(rec) or by_label.get(rec)
+        if opt is None:
+            # 模糊匹配：AI 常把 expr 写在引号/空格/双花括号里
+            for o in record_options:
+                if rec.replace(" ", "") in (o["expr"], o["expr"].replace("{", "").replace("}", "")):
+                    opt = o
+                    break
+        if opt is None:
+            raise WorkflowError(f"判断对象 record 必须是给定选项之一（如 {record_options[0]['expr']}），你填的是：{rec or '空'}")
+        data["record"] = opt["expr"]
+        valid = set(opt["可用字段"])
+        if not valid:
+            return   # 选项没有已知字段（如自定义表达式），不强校验
+
+        def fix_rules(rules):
+            for r in rules or []:
+                if not isinstance(r, dict):
+                    continue
+                f = str(r.get("field") or "").strip()
+                if f and f not in valid:
+                    raise WorkflowError(f"条件字段「{f}」不在判断对象的可用字段里（可选：{'、'.join(sorted(valid))}）")
+
+        fix_rules(data.get("rules"))
+        for c in data.get("cases") or []:
+            if isinstance(c, dict):
+                fix_rules([c])
+
     last_err: Exception | None = None
     for attempt in range(2):
         current = prompt if attempt == 0 else (
@@ -374,6 +431,7 @@ def assist_node_config(db: Session, user: User, node_type: str, description: str
             if not isinstance(data, dict):
                 raise ValueError("输出不是 JSON 对象")
             config = {k: v for k, v in data.items() if k in props}   # 丢弃 schema 之外的键
+            repair(config)
             from .registry import validate_config
             errors = validate_config(f"节点 {node_type}", cls.config_schema, config)
             if errors:

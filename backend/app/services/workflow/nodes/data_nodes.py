@@ -10,25 +10,34 @@ from .base import NodeContext, NodeResult, NodeType, WorkflowNodeError
 
 
 def query_table(db, table_id: int, filters: dict | None, limit: int,
-                order_by: str | None, order_desc: bool) -> list[dict]:
+                order_by: str | None, order_desc: bool, fields: list | None = None) -> list[dict]:
     """双存储模式统一的查询路径，语义与 dyn_engine.list_records / pyquery 对齐。
-    limit：默认 100；正数上限 500（安全阀）；0 = 不限制（返回全部，数据量大时慎用）。"""
-    mt, fields = dyn_engine.load_meta(db, table_id)
-    fbn = {f.field_name: f for f in fields}
+    limit：默认 100；正数上限 500（安全阀）；0 = 不限制（返回全部，数据量大时慎用）。
+    fields：输出字段投影（字段名列表）；空 = 全部字段。id 总会保留（更新定位/AI 判断依赖它）。"""
+    mt, meta_fields = dyn_engine.load_meta(db, table_id)
+    fbn = {f.field_name: f for f in meta_fields}
     limit = int(limit or 100)
     if limit > 0:
         limit = min(limit, 500)
+    valid = {f.field_name for f in meta_fields}
+    projection = [f for f in (fields or []) if f in valid or f in ("created_at", "updated_at")] or None
+
+    def project(rec: dict) -> dict:
+        if projection is None:
+            return rec
+        keep = set(projection) | {"id"}
+        return {k: v for k, v in rec.items() if k in keep}
 
     if mt.storage_mode == "json":
         from ... import json_store
-        recs = json_store.all_dicts(db, mt.id, fields, normalized=True)
+        recs = json_store.all_dicts(db, mt.id, meta_fields, normalized=True)
         recs = [r for r in recs if match_filters(r, fbn, filters)]
         recs = sort_records(recs, order_by, "desc" if order_desc else "asc", fbn)
         if limit > 0:
             recs = recs[:limit]
-        return [{k: dyn_engine.serialize_value(v) for k, v in r.items()} for r in recs]
+        return [project({k: dyn_engine.serialize_value(v) for k, v in r.items()}) for r in recs]
 
-    _, fields, table = dyn_engine.load_business(db, table_id)
+    _, meta_fields, table = dyn_engine.load_business(db, table_id)
     rules = (filters or {}).get("rules") or []
     conds = [dyn_engine.build_condition(table, fbn, r) for r in rules]
     if (filters or {}).get("logic") == "OR" and len(conds) > 1:
@@ -38,7 +47,7 @@ def query_table(db, table_id: int, filters: dict | None, limit: int,
     stmt = stmt.order_by(col.desc() if order_desc else col.asc())
     if limit > 0:
         stmt = stmt.limit(limit)
-    return [dyn_engine.row_to_dict(r) for r in db.execute(stmt).mappings().all()]
+    return [project(dyn_engine.row_to_dict(r)) for r in db.execute(stmt).mappings().all()]
 
 
 @register
@@ -56,6 +65,10 @@ class QueryRecordsNode(NodeType):
         "properties": {
             "table_id": {"type": "integer", "format": "table-ref", "title": "数据表"},
             "filters": {"type": "object", "title": "筛选条件", "description": "{logic: AND|OR, rules: [{field, op, value}]}，field/value 可插入 {模板变量}"},
+            "ai_filter": {"type": "string", "title": "AI 筛选（可选）",
+                          "description": "自然语言条件，如「语气明显负面的反馈」。先按筛选条件/排序/条数收窄候选，再由 LLM 分批判断，最多判断前 200 条"},
+            "fields": {"type": "array", "title": "输出字段（可选）",
+                       "description": "只输出选中的字段，留空 = 全部字段。收窄字段能显著降低 AI 筛选/LLM 处理的 token 消耗，通知表格也更清爽；id 总会保留"},
             "limit": {"type": "integer", "title": "条数上限", "default": 100, "minimum": 0, "maximum": 500,
                       "description": "最多返回多少条，默认 100；勾选「不限制」（= 0）返回全部记录，数据量大时慎用"},
             "order_by": {"type": "string", "title": "排序字段", "description": "字段名，可插入 {模板变量}"},
@@ -67,15 +80,27 @@ class QueryRecordsNode(NodeType):
         "properties": {"records": {"type": "array"}, "count": {"type": "integer"}},
     }
 
+    AI_FILTER_CANDIDATE_CAP = 200   # AI 筛选候选硬上限：先经结构化条件/排序/条数收窄，超出部分不参与判断
+
     def execute(self, ctx: NodeContext) -> NodeResult:
         table_id = ctx.config.get("table_id")
         if not table_id:
             raise WorkflowNodeError("未配置数据表")
+        ai_filter = (ctx.config.get("ai_filter") or "").strip()
         records = query_table(
             ctx.db, table_id, ctx.config.get("filters"),
             ctx.config.get("limit") or 100,
             ctx.config.get("order_by"), bool(ctx.config.get("order_desc", True)),
+            ctx.config.get("fields"),
         )
+        if ai_filter and records:
+            # AI 筛选：LLM 分批（20 条/次）判断候选记录是否满足自然语言条件，输出命中子集
+            from ...llm.gateway import judge_records
+            candidates = records[: self.AI_FILTER_CANDIDATE_CAP]
+            _, fields = dyn_engine.load_meta(ctx.db, table_id)
+            field_dicts = [{"field_name": f.field_name, "label": f.label, "data_type": f.data_type} for f in fields]
+            hit_ids = judge_records(ctx.db, ai_filter, field_dicts, candidates)
+            records = [r for r in candidates if r.get("id") in hit_ids]
         return NodeResult(output={"records": records, "count": len(records)})
 
 

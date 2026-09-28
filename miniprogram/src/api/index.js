@@ -138,12 +138,6 @@ export const createRecord = (tid, data) => http.post(`/dyn/${tid}/records`, data
 export const updateRecord = (tid, rid, data) => http.put(`/dyn/${tid}/records/${rid}`, data)
 export const deleteRecord = (tid, rid) => http.del(`/dyn/${tid}/records/${rid}`)
 
-// 任务规则
-export const listTasks = () => http.get('/tasks')
-export const toggleTask = (id) => http.post(`/tasks/${id}/toggle`)
-export const testTask = (id) => http.post(`/tasks/${id}/test`)
-export const runTask = (id) => http.post(`/tasks/${id}/run`)
-export const taskRuns = (id) => http.get(`/tasks/${id}/runs`)
 
 // 报表
 export const listReports = () => http.get('/reports')
@@ -240,9 +234,6 @@ export function recognizeVision(tableId, filePaths, current, recordId) {
 export const adoptVision = (logId, adopted) => http.put(`/vision/logs/${logId}/adopt`, { adopted })
 
 // AI 辅助创建
-export const aiAssistTask = (tableId, description) => http.post('/tasks/ai-assist', { table_id: tableId, description })
-export const createTask = (p) => http.post('/tasks', p)
-export const updateTask = (id, p) => http.put(`/tasks/${id}`, p)
 export const aiAssistReport = (tableId, description) => http.post('/reports/ai-assist', { table_id: tableId, description })
 export const createReport = (p) => http.post('/reports', p)
 export const updateReport = (id, p) => http.put(`/reports/${id}`, p)

@@ -318,7 +318,7 @@ const DAY_OPS = ['older_than_days', 'within_days', 'past_days']
 const OPS = {
   text: [['eq', '等于'], ['ne', '不等于'], ['contains', '包含'], ['startswith', '开头是'], ['null', '为空'], ['not_null', '不为空']],
   number: [['eq', '等于'], ['ne', '不等于'], ['gt', '大于'], ['gte', '至少'], ['lt', '小于'], ['lte', '至多'], ['null', '为空'], ['not_null', '不为空']],
-  date: [['eq', '等于'], ['gte', '不早于'], ['lte', '不晚于'], ['today', '当天'], ['past_days', '过去 N 天'], ['older_than_days', '早于 N 天前'], ['within_days', '未来 N 天内'], ['null', '为空'], ['not_null', '不为空']],
+  date: [['eq', '等于'], ['gte', '不早于（>= 所选日期）'], ['lte', '不晚于（<= 所选日期）'], ['today', '当天'], ['past_days', '过去 N 天（今天-N+1 ~ 今天）'], ['older_than_days', '早于 N 天前（< 今天-N）'], ['within_days', '未来 N 天内'], ['null', '为空'], ['not_null', '不为空']],
   bool: [['eq', '等于'], ['null', '为空'], ['not_null', '不为空']],
   select: [['eq', '等于'], ['ne', '不等于'], ['in', '属于'], ['null', '为空'], ['not_null', '不为空']],
 }

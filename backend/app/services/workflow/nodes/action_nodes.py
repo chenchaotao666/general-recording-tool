@@ -56,10 +56,11 @@ class SendMessageNode(NodeType):
 
     def execute(self, ctx: NodeContext) -> NodeResult:
         channel = ctx.config.get("channel")
-        content = (ctx.config.get("template") or "").strip()
+        # 整体模板引用数字输出（如 {nodes.x.count}）时拿到的是 int，先归一成字符串
+        content = str(ctx.config.get("template") or "").strip()
         if not content:
             raise WorkflowNodeError("未配置内容模板")
-        title = (ctx.config.get("title") or "").strip()
+        title = str(ctx.config.get("title") or "").strip()
         head = f"【{ctx.workflow.name}】{title}" if title else f"【{ctx.workflow.name}】"
 
         if ctx.dry_run:

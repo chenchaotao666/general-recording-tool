@@ -157,6 +157,11 @@ class FakeProvider:
 
 gw.get_default_provider = lambda db: FakeProvider()
 
+
+class JudgeFakeProvider(FakeProvider):
+    def complete(self, prompt, system=None):
+        return '{"matched_ids": [2], "reason": "test"}'
+
 img = Image.new("RGB", (300, 120), "white")
 img_buf = io.BytesIO()
 img.save(img_buf, "PNG")
@@ -179,99 +184,6 @@ assert any(c["field_name"] == "customer_name" for c in vr["conflicts"])  # 与�
 r = client.put(f"/api/vision/logs/{vr['log_id']}/adopt", json={"adopted": ["amount", "next_follow_date"]})
 assert r.status_code == 200, r.text
 
-# 6. 任务引擎：结构化条件 + 站内通知
-r = client.post("/api/tasks", json={
-    "name": "10月前需要跟进的客户",
-    "table_id": tid,
-    "enabled": True,
-    "condition_mode": "structured",
-    "condition": {"logic": "AND", "rules": [
-        {"field": "next_follow_date", "op": "lte", "value": "2026-10-31"},
-        {"field": "is_deal", "op": "eq", "value": False},
-    ]},
-    "schedule": {"type": "interval", "minutes": 60},
-    "action": {"type": "notify", "template": "客户【{customer_name}】计划 {next_follow_date} 跟进",
-               "recipients": {"type": "fixed", "value": ""}},
-    "cooldown_hours": 24,
-})
-assert r.status_code == 200, r.text
-rule = r.json()
-print("任务创建:", rule["name"])
-
-# 试运行：李四未成交且跟进日期<=10-31，命中 1 条
-r = client.post(f"/api/tasks/{rule['id']}/test")
-assert r.status_code == 200, r.text
-tr = r.json()
-print("试运行: 命中", tr["matched"], "将触发", tr["would_fire"])
-assert tr["matched"] == 1 and tr["would_fire"] == 1, tr
-assert tr["samples"][0]["customer_name"] == "李四"
-
-# 手动执行：生成站内通知
-r = client.post(f"/api/tasks/{rule['id']}/run")
-assert r.status_code == 200, r.text
-assert r.json()["fired"] == 1 and r.json()["failed"] == 0, r.text
-r = client.get("/api/notify/unread_count")
-assert r.json()["count"] == 1, r.text
-r = client.get("/api/notify")
-assert "李四" in r.json()[0]["content"] and "2026-10-05" in r.json()[0]["content"], r.text
-
-# 冷却语义：手动执行跳过冷却（设计如此，便于立即验证）；定时调度路径遵守冷却窗口
-r = client.post(f"/api/tasks/{rule['id']}/run")
-assert r.json()["matched"] == 1 and r.json()["fired"] == 1, r.text
-from app.services.task_engine import execute_rule as _exec_rule
-r2 = _exec_rule(rule["id"], trigger="schedule")  # 冷却期内 → 不再触发
-assert r2["matched"] == 1 and r2["fired"] == 0, r2
-
-# 时间操作符：within_days（跟进日期在未来 60 天内 → 两条都命中）
-r = client.post("/api/tasks", json={
-    "name": "历史任务", "table_id": tid,
-    "condition_mode": "structured",
-    "condition": {"logic": "AND", "rules": [{"field": "next_follow_date", "op": "within_days", "value": 60}]},
-    "schedule": {"type": "cron", "expr": "0 9 * * *"},
-    "action": {"type": "notify", "template": "x", "recipients": {"type": "fixed", "value": ""}},
-})
-r2 = client.post(f"/api/tasks/{r.json()['id']}/test")
-assert r2.json()["matched"] == 2, r2.text
-client.delete(f"/api/tasks/{r.json()['id']}")
-
-# older_than_days：created_at 早于 0 天前（即此刻之前创建）→ 两条都命中
-r = client.post("/api/tasks", json={
-    "name": "older", "table_id": tid, "condition_mode": "structured",
-    "condition": {"logic": "AND", "rules": [{"field": "created_at", "op": "older_than_days", "value": 0}]},
-    "schedule": {"type": "interval", "minutes": 60},
-    "action": {"type": "notify", "template": "x", "recipients": {"type": "fixed", "value": ""}},
-})
-r2 = client.post(f"/api/tasks/{r.json()['id']}/test")
-assert r2.json()["matched"] == 2, r2.text
-client.delete(f"/api/tasks/{r.json()['id']}")
-
-# 7. LLM 判断条件（mock provider 返回 matched_ids）
-class JudgeFakeProvider(FakeProvider):
-    def complete(self, prompt, system=None):
-        return '{"matched_ids": [2], "reason": "test"}'
-
-gw.get_default_provider = lambda db: JudgeFakeProvider()
-r = client.post("/api/tasks", json={
-    "name": "LLM判断", "table_id": tid,
-    "condition_mode": "llm",
-    "condition": {"description": "意向金额较高的客户"},
-    "schedule": {"type": "interval", "minutes": 30},
-    "action": {"type": "notify", "template": "高额客户 {customer_name}", "recipients": {"type": "fixed", "value": ""}},
-})
-assert r.status_code == 200, r.text
-r2 = client.post(f"/api/tasks/{r.json()['id']}/test")
-assert r2.json()["matched"] == 1 and r2.json()["samples"][0]["id"] == 2, r2.text
-client.delete(f"/api/tasks/{r.json()['id']}")
-
-# 非法 cron 被拒绝
-r = client.post("/api/tasks", json={
-    "name": "bad", "table_id": tid, "condition_mode": "structured",
-    "condition": {"logic": "AND", "rules": [{"field": "customer_name", "op": "contains", "value": "x"}]},
-    "schedule": {"type": "cron", "expr": "not-a-cron"},
-    "action": {"type": "notify", "template": "x", "recipients": {"type": "fixed", "value": ""}},
-})
-assert r.status_code == 400, r.text
-
 # 8. 通用设置（SMTP 密码保留逻辑）
 r = client.put("/api/settings/general", json={"smtp": {"host": "smtp.example.com", "port": 465, "username": "a@b.com", "password": "secret", "use_ssl": True}})
 assert r.status_code == 200, r.text
@@ -281,17 +193,9 @@ r = client.put("/api/settings/general", json={"smtp": {"host": "smtp2.example.co
 r = client.get("/api/settings/general")
 assert r.json()["smtp"]["host"] == "smtp2.example.com" and r.json()["smtp"]["has_password"]  # 密码保留
 
-# 运行日志（2 次手动 + 1 次定时）
-r = client.get(f"/api/tasks/{rule['id']}/runs")
-assert r.status_code == 200 and len(r.json()) == 3 and r.json()[0]["trigger"] == "schedule", r.text
-
 # 通知已读
 r = client.post("/api/notify/read", json={"all": True})
 assert client.get("/api/notify/unread_count").json()["count"] == 0
-
-# 删除任务
-r = client.delete(f"/api/tasks/{rule['id']}")
-assert r.status_code == 200
 
 # 9. 表列表 + 删除
 r = client.get("/api/tables")
@@ -991,24 +895,26 @@ r = client.post(f"/api/reports/{rep_id}/run")
 assert r.status_code == 200 and r.json()["blocks"][0]["value"] == 4, r.text  # 本周 4 条 PRECS
 client.delete(f"/api/reports/{rep_id}")
 
-# 创建任务规则：chat 意图 → assist_task 生成配置 → 执行落库默认停用
+# 创建工作流：chat 意图 → assist_workflow 生成定义 → 执行落库默认停用
 AssistantFakeProvider.responses = [
-    '{"reply": "任务设计好了", "action": {"type": "create_task", "table_id": %d, "description": "每天早上提醒已成交客户"}}' % tj,
-    '{"name": "成交客户提醒", "condition_mode": "structured",'
-    ' "condition": {"logic": "AND", "rules": [{"field": "is_deal", "op": "eq", "value": true}]},'
-    ' "schedule": {"type": "cron", "expr": "0 9 * * *"},'
-    ' "action": {"type": "notify", "template": "成交客户 {customer_name}", "recipients": {"type": "fixed", "value": ""}},'
-    ' "cooldown_hours": 24, "notes": ""}',
+    '{"reply": "流程设计好了", "action": {"type": "create_workflow", "description": "每天早上查超期客户并发站内通知"}}',
+    '{"name": "超期客户提醒", "description": "每日巡检", "trigger": {"type": "cron", "expr": "0 9 * * *"},'
+    ' "nodes": ['
+    '{"id": "q_1", "type": "query_records", "name": "查超期客户", "config": {"table_id": %d, "filters": {"logic": "AND", "rules": [{"field": "next_follow_date", "op": "older_than_days", "value": 30}]}}},'
+    '{"id": "send_1", "type": "send_message", "name": "发通知", "config": {"channel": "notify", "title": "超期提醒", "template": "有 {nodes.q_1.count} 位客户超期"}}],'
+    ' "edges": [{"from": "q_1", "to": "send_1"}], "notes": ""}' % tj,
 ]
-r = client.post("/api/assistant/chat", json={"message": "帮我创建成交提醒任务", "context": {"table_id": tj}})
+r = client.post("/api/assistant/chat", json={"message": "帮我建一个每天早上提醒超期客户的流程", "context": {"table_id": tj}})
 card = r.json()["action_card"]
-assert card["type"] == "create_task", r.text
-r = client.post("/api/assistant/execute", json={"type": "create_task", "payload": card["payload"]})
-task_id = r.json()["task_id"]
-assert r.status_code == 200 and task_id, r.text
-t = next(x for x in client.get("/api/tasks").json() if x["id"] == task_id)
-assert t["enabled"] is False and t["condition"]["rules"][0]["field"] == "is_deal", t
-client.delete(f"/api/tasks/{task_id}")
+assert card["type"] == "create_workflow" and card["payload"]["name"] == "超期客户提醒", r.text
+r = client.post("/api/assistant/execute", json={"type": "create_workflow", "payload": card["payload"]})
+wf_id = r.json()["workflow_id"]
+assert r.status_code == 200 and wf_id, r.text
+wf = client.get(f"/api/workflows/{wf_id}").json()
+assert wf["enabled"] is False and len(wf["nodes"]) == 2, wf
+r = client.post(f"/api/workflows/{wf_id}/run", json={"params": {}})
+assert r.status_code == 200 and r.json()["status"] == "success", r.text  # 停用也可手动执行
+client.delete(f"/api/workflows/{wf_id}")
 
 # 恢复后续测试使用的 LLM mock（智能判断条件）
 gw.get_default_provider = lambda db: JudgeFakeProvider()
@@ -1201,7 +1107,6 @@ as_user(worker_headers)
 assert client.post(f"/api/dyn/{tj}/records", json={"customer_name": "worker新增", "amount": 1}).status_code == 200
 as_user(outsider_headers)
 assert client.get(f"/api/tables/{tj}").status_code == 404  # 未分享不可见
-assert all(t["table_id"] != tj for t in client.get("/api/tasks").json())
 print("权限矩阵通过")
 
 # 12. VIP 门槛与角色管理
@@ -1236,30 +1141,25 @@ assert r.status_code == 200  # vip 可建独立表
 vip_tid = r.json()["table"]["id"]
 print("VIP 门槛通过")
 
-# 13. 归属隔离：规则/报表/通知按 user_id 隔离
+# 13. 归属隔离：报表/通知按 user_id 隔离
 r = client.post("/api/dyn/{}/records".format(worker_tid), json={"customer_name": "worker客户", "amount": 100, "is_deal": False})
 assert r.status_code == 200, r.text
-r = client.post("/api/tasks", json={
-    "name": "worker规则", "table_id": worker_tid, "enabled": False,
-    "condition_mode": "structured",
-    "condition": {"logic": "AND", "rules": [{"field": "customer_name", "op": "contains", "value": "worker"}]},
-    "schedule": {"type": "interval", "minutes": 60},
-    "action": {"type": "notify", "template": "客户【{customer_name}】", "recipients": {"type": "fixed", "value": ""}},
-})
-assert r.status_code == 200, r.text
-worker_rule = r.json()["id"]
-assert any(t["id"] == worker_rule for t in client.get("/api/tasks").json())
 as_user(outsider_headers)
-assert all(t["id"] != worker_rule for t in client.get("/api/tasks").json())
 assert all(t["id"] != rep_ids[0] for t in client.get("/api/reports").json())
 as_user(outsider_headers)
-assert client.post(f"/api/tasks/{worker_rule}/run").status_code == 404  # 他人规则不可操作
 as_user(outsider_headers)
 client.post("/api/notify/read", json={"all": True})  # 清掉好友申请通知，避免干扰下面的隔离断言
 as_user(worker_headers)
 client.post("/api/notify/read", json={"all": True})
-r = client.post(f"/api/tasks/{worker_rule}/run")
-assert r.status_code == 200 and r.json()["fired"] == 1, r.text
+# 用站内通知验证归属隔离（任务规则已移除，直接调通知服务写入）
+from app.services.notify import notify_user as _notify_user
+from app.database import SessionLocal as _SL
+from app.models import User as _User
+_db = _SL()
+notify_uid = _db.query(_User).filter_by(username="worker").first().id
+_notify_user(_db, notify_uid, "【隔离测试】", "worker 的私密通知")
+_db.commit()
+_db.close()
 assert client.get("/api/notify/unread_count").json()["count"] >= 1  # worker 收到自己的通知
 as_user(outsider_headers)
 assert client.get("/api/notify/unread_count").json()["count"] == 0  # 别人收不到

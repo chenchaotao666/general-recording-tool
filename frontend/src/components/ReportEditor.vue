@@ -240,7 +240,10 @@
                 <el-option label="更新时间" value="updated_at" />
               </el-select>
               <el-select v-model="r.op" placeholder="操作" size="small" style="width: 130px">
-                <el-option v-for="[v, l] in opsFor(r.field)" :key="v" :label="l" :value="v" />
+                <el-option v-for="[v, l] in opsFor(r.field)" :key="v" :label="l" :value="v">
+                  <span>{{ l }}</span>
+                  <span v-if="OP_HINTS[v]" class="op-hint">{{ OP_HINTS[v] }}</span>
+                </el-option>
               </el-select>
               <template v-if="!NO_VALUE_OPS.includes(r.op)">
                 <el-input-number
@@ -410,6 +413,13 @@ const OPS = {
   date: [['eq', '等于'], ['gte', '不早于'], ['lte', '不晚于'], ['today', '当天'], ['past_days', '过去 N 天'], ['older_than_days', '早于 N 天前'], ['within_days', '未来 N 天内'], ['null', '为空'], ['not_null', '不为空']],
   bool: [['eq', '等于'], ['null', '为空'], ['not_null', '不为空']],
   select: [['eq', '等于'], ['ne', '不等于'], ['in', '属于（多选）'], ['null', '为空'], ['not_null', '不为空']],
+}
+// 日期操作符的语义注解：只显示在下拉选项右侧，选中后仍是短 label
+const OP_HINTS = {
+  gte: '>= 所选日期',
+  lte: '<= 所选日期',
+  past_days: '今天-N+1 ~ 今天',
+  older_than_days: '< 今天-N',
 }
 
 const tableFields = ref([])
@@ -610,6 +620,7 @@ async function applyAiResult() {
 
 <style scoped>
 .blocks-box { width: 100%; }
+.op-hint { float: right; margin-left: 16px; font-size: 12px; color: #909399; }
 .block-card { margin-bottom: 10px; }
 .block-head { display: flex; align-items: center; margin-bottom: 8px; }
 .block-id { font-size: 12px; color: #c0c4cc; margin-left: 8px; }

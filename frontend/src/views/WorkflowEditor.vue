@@ -10,12 +10,15 @@
       <div class="spacer" />
       <el-button :disabled="!canUndo" title="撤销（Ctrl+Z）" @click="undo">撤销</el-button>
       <el-button :disabled="!canRedo" title="重做（Ctrl+Y）" @click="redo">重做</el-button>
+      <el-button class="ai-btn" title="用一句话描述流程，AI 生成节点草稿到画布" @click="aiGenVisible = true">
+        <el-icon><MagicStick /></el-icon>AI 生成
+      </el-button>
+      <el-button v-if="wfId" :loading="explaining" @click="explain">流程解读</el-button>
       <el-button @click="tidyUp">整理画布</el-button>
       <el-button :loading="checking" @click="runCheck(true)">检查问题</el-button>
-      <el-button v-if="wfId" @click="openRuns">执行日志</el-button>
-      <el-button v-if="wfId" :loading="explaining" @click="explain">流程解读</el-button>
-      <el-button v-if="wfId" :loading="running" @click="doRun(false)">立即执行</el-button>
       <el-button v-if="wfId" :loading="running" title="沙盒试运行：发通知/HTTP/写表/审批/延迟/子流程只模拟，不真实生效" @click="doRun(true)">试运行</el-button>
+      <el-button v-if="wfId" :loading="running" @click="doRun(false)">立即执行</el-button>
+      <el-button v-if="wfId" @click="openRuns">执行日志</el-button>
       <el-button type="primary" :loading="saving" @click="save">保存</el-button>
     </div>
 
@@ -70,10 +73,14 @@
           <div class="config-head">
             <span class="config-title">{{ selectedNode.data.typeName }} · {{ selectedNode.id }}</span>
             <div>
+              <el-button link type="info" size="small" @click="nodeDocVisible = true">节点说明</el-button>
               <el-button link type="primary" size="small" @click="aiNodeVisible = true">AI 帮我配置</el-button>
               <el-button link type="danger" size="small" @click="removeNode(selectedNode.id)">删除节点</el-button>
             </div>
           </div>
+          <!-- 节点说明：功能/输入/输出（输出变量带当前节点 id 与配置展开的动态键，可复制） -->
+          <NodeDoc v-model="nodeDocVisible" :nt="nodeTypeOf(selectedNode.data.nodeType)" :node-id="selectedNode.id"
+            :config="selectedNode.data.config" />
           <el-input :model-value="selectedNode.data.name" placeholder="节点显示名" size="small" class="mb"
             @update:model-value="patchSelected({ name: $event })" />
           <!-- 节点级示例配置：配置为空且有示例时提供「照改」起点 -->
@@ -148,6 +155,20 @@
       <el-empty v-if="!runsLoading && !runs.length" description="暂无执行记录" />
     </el-drawer>
 
+    <!-- AI 生成整个工作流草稿 -->
+    <el-dialog v-model="aiGenVisible" title="AI 生成工作流" width="560px">
+      <el-input v-model="aiGenDesc" type="textarea" :rows="6"
+        placeholder="用一句话描述你想要的自动化流程，例如：&#10;每天早上 9 点查询库存表里数量低于 10 的记录，AI 生成补货建议，发站内通知给我" />
+      <div class="ai-examples">
+        <span class="hint">试试：</span>
+        <el-link v-for="ex in AI_EXAMPLES" :key="ex" type="primary" size="small" class="ex" @click="aiGenDesc = ex">{{ ex }}</el-link>
+      </div>
+      <template #footer>
+        <el-button @click="aiGenVisible = false">取消</el-button>
+        <el-button type="primary" :loading="aiGenLoading" @click="onAiGenerate">生成到画布</el-button>
+      </template>
+    </el-dialog>
+
     <!-- AI 帮我配这个节点 -->
     <el-dialog v-model="aiNodeVisible" :title="`AI 配置 · ${selectedNode?.data.typeName || ''}`" width="480px">
       <el-input v-model="aiNodeDesc" type="textarea" :rows="4"
@@ -183,7 +204,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ArrowLeft, MagicStick } from '@element-plus/icons-vue'
 import { VueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
@@ -194,14 +215,16 @@ import '@vue-flow/controls/dist/style.css'
 import '@vue-flow/minimap/dist/style.css'
 
 import {
-  aiExplainWorkflow, aiNodeConfig, checkWorkflow, createWorkflow, getTable, getWorkflow, getWorkflowRun,
-  listProviders, listTables, listWorkflows,
+  aiAssistWorkflow, aiExplainWorkflow, aiNodeConfig, checkWorkflow, createWorkflow, getTable, getWorkflow,
+  getWorkflowRun, listProviders, listTables, listWorkflows,
   runWorkflow, testRunWorkflow, updateWorkflow, workflowNodeTypes, workflowRuns,
 } from '../api'
 import FlowNode from '../components/workflow/FlowNode.vue'
 import SchemaForm from '../components/workflow/SchemaForm.vue'
 import TriggerForm from '../components/workflow/TriggerForm.vue'
 import JsonTree from '../components/workflow/JsonTree.vue'
+import { buildRecordOptions } from '../components/workflow/judgeObject'
+import NodeDoc from '../components/workflow/NodeDoc.vue'
 
 const CAT_NAMES = { data: '数据', ai: 'AI', logic: '逻辑', action: '动作', human: '人工' }
 
@@ -390,6 +413,7 @@ function locateIssue(it) {
 
 // ---- AI 帮我配这个节点 ----
 const aiNodeVisible = ref(false)
+const nodeDocVisible = ref(false)
 const aiNodeDesc = ref('')
 const aiNodeLoading = ref(false)
 
@@ -399,7 +423,7 @@ async function applyAiNodeConfig() {
   if (!aiNodeDesc.value.trim()) { ElMessage.warning('请描述你想要的配置'); return }
   aiNodeLoading.value = true
   try {
-    const r = await aiNodeConfig(n.data.nodeType, aiNodeDesc.value.trim())
+    const r = await aiNodeConfig(n.data.nodeType, aiNodeDesc.value.trim(), aiNodeContext())
     patchSelected({ config: { ...(n.data.config || {}), ...(r.config || {}) } })
     aiNodeVisible.value = false
     aiNodeDesc.value = ''
@@ -499,12 +523,19 @@ function startResize(e) {
 // ---- 模板变量：选中节点的上游输出 + 触发器，供「插入变量」面板使用 ----
 // 每种节点类型的输出变量生成器；(node, 该节点数据表的字段清单) => [{label, expr}]
 const OUTPUT_VARS = {
-  query_records: (n, fields) => [
-    { label: '记录数', expr: `{nodes.${n.id}.count}` },
-    { label: '记录列表', expr: `{nodes.${n.id}.records}` },
-    { label: '第一条·ID', expr: `{nodes.${n.id}.records.0.id}` },
-    ...fields.map((f) => ({ label: `第一条·${f.label}`, expr: `{nodes.${n.id}.records.0.${f.field_name}}` })),
-  ],
+  query_records: (n, fields) => {
+    // 配了输出字段投影时，「第一条·字段」只列出投影内的字段（投影外的引用执行时拿到空值）
+    const proj = (n.data.config?.fields || []).filter((f) => typeof f === 'string')
+    const shown = proj.length ? fields.filter((f) => proj.includes(f.field_name)) : fields
+    return [
+      { label: '记录数', expr: `{nodes.${n.id}.count}` },
+      { label: '记录列表', expr: `{nodes.${n.id}.records}` },
+      { label: '记录列表（表格）', expr: `{nodes.${n.id}.records | 表格}` },
+      { label: '记录列表（编号清单）', expr: `{nodes.${n.id}.records | 列表}` },
+      { label: '第一条·ID', expr: `{nodes.${n.id}.records.0.id}` },
+      ...shown.map((f) => ({ label: `第一条·${f.label}`, expr: `{nodes.${n.id}.records.0.${f.field_name}}` })),
+    ]
+  },
   create_record: (n, fields) => [
     { label: '新记录（整体）', expr: `{nodes.${n.id}.record}` },
     { label: '新记录·ID', expr: `{nodes.${n.id}.record.id}` },
@@ -513,6 +544,7 @@ const OUTPUT_VARS = {
   update_record: (n) => [
     { label: '更新条数', expr: `{nodes.${n.id}.count}` },
     { label: '更新后的记录', expr: `{nodes.${n.id}.records}` },
+    { label: '更新后的记录（表格）', expr: `{nodes.${n.id}.records | 表格}` },
   ],
   llm_transform: (n) => {
     // 填了「JSON 输出键名」就展开成完整路径，不用再手改「键名」占位符
@@ -535,11 +567,20 @@ const OUTPUT_VARS = {
     { label: '当前序号（从 0 起）', expr: `{nodes.${n.id}.index}` },
     { label: '总条数', expr: `{nodes.${n.id}.count}` },
   ],
-  aggregate: (n) => [
-    { label: '记录数', expr: `{nodes.${n.id}.count}` },
-    { label: '统计结果（整体）', expr: `{nodes.${n.id}.stats}` },
-    { label: '分组统计（整体）', expr: `{nodes.${n.id}.groups}` },
-  ],
+  aggregate: (n) => {
+    // 统计项展开成单值变量（stats 键 = 显示名，与后端 _run_aggs 一致），比插「整体」再手改路径友好
+    const aggs = (n.data.config?.aggs || []).filter((a) => a && typeof a === 'object')
+    return [
+      { label: '记录数', expr: `{nodes.${n.id}.count}` },
+      ...aggs.map((a) => {
+        const key = String(a.title || '').trim() || (a.field ? `${a.op}_${a.field}` : a.op)
+        return { label: `统计·${key}`, expr: `{nodes.${n.id}.stats.${key}}` }
+      }),
+      { label: '统计结果（整体）', expr: `{nodes.${n.id}.stats}` },
+      { label: '分组统计（表格）', expr: `{nodes.${n.id}.groups | 表格}` },
+      { label: '分组统计（整体）', expr: `{nodes.${n.id}.groups}` },
+    ]
+  },
   dedupe: (n) => [
     { label: '去重后列表', expr: `{nodes.${n.id}.records}` },
     { label: '去重后条数', expr: `{nodes.${n.id}.count}` },
@@ -654,14 +695,11 @@ const upstreamVars = computed(() => {
   groups.push({ title: '时间变量（内置）', items: NOW_VARS, datePicker: true })   // 内置变量放最后，业务变量优先；datePicker = 分组顶部带具体日期选择器
   return groups
 })
-// 条件/多路分支的条件规则字段：**跟随判断对象**（record 配置），不是固定某张表——
-// 判断对象是审批输出时字段就是 approved/comment，是触发记录时是触发表的字段
-const recordRuleFields = computed(() => {
-  const n = selectedNode.value
-  if (!n || !['condition', 'switch'].includes(n.data.nodeType)) return null
-  const rec = (n.data.config?.record || '').trim()
+// 判断对象表达式 → 该对象里的键清单（规则字段/AI 配置上下文共用；空数组 = 推导不出）
+function fieldsForRecordExpr(rec) {
+  rec = (rec || '').trim()
   // {trigger.record} / {trigger.old_record} → 触发器监听的表
-  if (/^\{trigger\.(old_)?record\}$/.test(rec)) return triggerFields.value.length ? triggerFields.value : null
+  if (/^\{trigger\.(old_)?record\}$/.test(rec)) return triggerFields.value
   // {nodes.x}（审批等节点的整体输出）→ 该节点输出键
   const whole = /^\{nodes\.([a-z0-9_]+)\}$/.exec(rec)
   if (whole) {
@@ -673,24 +711,66 @@ const recordRuleFields = computed(() => {
         { field_name: 'approver_id', label: '审批人 ID', data_type: 'int' },
       ]
     }
-    return null
+    return []
   }
   // {nodes.x.record}（新增记录的整条输出）→ 该节点写的表
   const m = /^\{nodes\.([a-z0-9_]+)\.record\}$/.exec(rec)
   if (m) {
     const tid = flowNodes.value.find((x) => x.id === m[1])?.data?.config?.table_id
-    const fs = tid ? (upFields.value[tid] || []) : []
-    return fs.length ? fs : null
+    return tid ? (upFields.value[tid] || []) : []
   }
   // {nodes.x.item}（循环当前条目）→ 循环列表来源表
   const it = /^\{nodes\.([a-z0-9_]+)\.item\}$/.exec(rec)
   if (it) {
     const fe = flowNodes.value.find((x) => x.id === it[1])
-    const fs = fe ? foreachItemFields(fe) : []
-    return fs.length ? fs : null
+    return fe ? foreachItemFields(fe) : []
   }
-  return null   // 自定义表达式：退回兜底表逻辑
+  // {nodes.x.records.0}（列表第一条）→ 该查询节点的表
+  const first = /^\{nodes\.([a-z0-9_]+)\.records\.0\}$/.exec(rec)
+  if (first) {
+    const tid = flowNodes.value.find((x) => x.id === first[1])?.data?.config?.table_id
+    return tid ? (upFields.value[tid] || []) : []
+  }
+  // {nodes.x.stats} / {nodes.x.groups.0}（汇总统计）→ 统计项显示名（分组时另有 key 分组值）
+  const agg = /^\{nodes\.([a-z0-9_]+)\.(stats|groups\.0)\}$/.exec(rec)
+  if (agg) {
+    const cfg = flowNodes.value.find((x) => x.id === agg[1])?.data?.config || {}
+    const fs = (cfg.aggs || []).filter((a) => a && typeof a === 'object').map((a) => {
+      const key = String(a.title || '').trim() || (a.field ? `${a.op}_${a.field}` : a.op)
+      return { field_name: key, label: key, data_type: 'decimal' }
+    })
+    if (agg[2] === 'groups.0') fs.unshift({ field_name: 'key', label: '分组值', data_type: 'varchar' })
+    return fs
+  }
+  // {nodes.x.data}（LLM JSON 输出）→ JSON 输出键名
+  const llm = /^\{nodes\.([a-z0-9_]+)\.data\}$/.exec(rec)
+  if (llm) {
+    return (flowNodes.value.find((x) => x.id === llm[1])?.data?.config?.output_keys || [])
+      .filter((k) => typeof k === 'string' && k.trim())
+      .map((k) => ({ field_name: k.trim(), label: k.trim(), data_type: 'varchar' }))
+  }
+  return []
+}
+
+// 条件/多路分支的条件规则字段：**跟随判断对象**（record 配置），不是固定某张表——
+// 判断对象是审批输出时字段就是 approved/comment，是触发记录时是触发表的字段
+const recordRuleFields = computed(() => {
+  const n = selectedNode.value
+  if (!n || !['condition', 'switch'].includes(n.data.nodeType)) return null
+  const fs = fieldsForRecordExpr(n.data.config?.record)
+  return fs.length ? fs : null   // 推导不出：退回兜底表逻辑
 })
+
+// 「AI 帮我配置」的画布上下文：条件/多路分支必须把判断对象候选 + 各候选的可用字段告诉 AI，
+// 否则它只能瞎编 record 和字段名（record 填不进下拉、rules 字段对不上判断对象）
+function aiNodeContext() {
+  const n = selectedNode.value
+  if (!n || !['condition', 'switch'].includes(n.data.nodeType)) return null
+  const options = buildRecordOptions(upstreamVars.value).map((o) => ({
+    expr: o.value, label: o.label, fields: fieldsForRecordExpr(o.value),
+  }))
+  return options.length ? { record_options: options } : null
+}
 
 const nodeTypeOf = (t) => nodeTypes.value.find((x) => x.type === t)
 const paletteGroups = computed(() => {
@@ -1088,17 +1168,54 @@ function applyDefinition(wf, usePositions = true) {
   }))
 }
 
+// AI 草稿落点：按 DAG 分层铺开 → 自动整理 → 提示确认后保存
+function applyDraft(def) {
+  applyDefinition(def, false)
+  tidyUp()
+  if (def.notes) {
+    ElMessageBox.alert(def.notes, 'AI 生成说明（请确认后保存）', { confirmButtonText: '知道了' })
+  } else {
+    ElMessage.success('AI 已生成工作流草稿，请确认后保存')
+  }
+}
+
 function loadDraft() {
   let def = null
   try { def = JSON.parse(sessionStorage.getItem('grt_wf_draft') || 'null') } catch { def = null }
   if (!def?.nodes?.length) return
   sessionStorage.removeItem('grt_wf_draft')
-  applyDefinition(def, false)
-  tidyUp()   // AI 草稿落点后自动整理一次画布
-  if (def.notes) {
-    ElMessageBox.alert(def.notes, 'AI 生成说明（请确认后保存）', { confirmButtonText: '知道了' })
-  } else {
-    ElMessage.success('AI 已生成工作流草稿，请确认后保存')
+  applyDraft(def)
+}
+
+// ---- 顶栏「AI 生成」：编辑器内直接生成草稿到当前画布 ----
+const aiGenVisible = ref(false)
+const aiGenDesc = ref('')
+const aiGenLoading = ref(false)
+const AI_EXAMPLES = [
+  '每天早上把超期未跟进的客户记录整理成清单发邮件给我',
+  '新增客户反馈时，AI 判断紧急程度，紧急的立刻发站内通知',
+  '每周一生成上周数据汇总，AI 写一段分析结论发通知',
+]
+
+async function onAiGenerate() {
+  if (!aiGenDesc.value.trim()) { ElMessage.warning('请描述你想要的流程'); return }
+  // 画布上已有节点时先确认：生成会整体替换当前内容
+  if (flowNodes.value.length > 1) {
+    try {
+      await ElMessageBox.confirm('AI 生成会替换当前画布上的节点和连线（生成后可 Ctrl+Z 撤销），继续？', 'AI 生成',
+        { confirmButtonText: '继续生成', cancelButtonText: '取消', type: 'warning' })
+    } catch { return }
+  }
+  aiGenLoading.value = true
+  try {
+    const def = await aiAssistWorkflow(aiGenDesc.value.trim())
+    aiGenVisible.value = false
+    aiGenDesc.value = ''
+    applyDraft(def)
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    aiGenLoading.value = false
   }
 }
 
@@ -1142,9 +1259,14 @@ onUnmounted(() => {
   background: #fff; border-bottom: 1px solid #e4e7ed;
 }
 .name-input { width: 220px; }
+/* AI 生成按钮：用 AI 分类的紫色高亮，与主操作「保存」区分 */
+.ai-btn { background: #9b59b6; border-color: #9b59b6; color: #fff; }
+.ai-btn:hover, .ai-btn:focus { background: #8e44ad; border-color: #8e44ad; color: #fff; }
+.ai-examples { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.ai-examples .ex { font-size: 12px; }
 .spacer { flex: 1; }
 .body { flex: 1; display: flex; min-height: 0; }
-.sidebar { width: 250px; background: #fff; border-right: 1px solid #e4e7ed; overflow-y: auto; padding: 12px; }
+.sidebar { width: 180px; background: #fff; border-right: 1px solid #e4e7ed; overflow-y: auto; padding: 10px; }
 .side-section { margin-bottom: 18px; }
 .side-title { font-size: 13px; font-weight: 600; color: #303133; margin-bottom: 8px; }
 .mt { margin-top: 8px; }

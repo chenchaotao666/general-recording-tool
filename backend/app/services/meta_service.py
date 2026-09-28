@@ -301,17 +301,11 @@ def table_out(db: Session, mt: MetaTable, with_fields: bool = True, access: dict
 
 
 def drop_business_table(db: Session, mt: MetaTable) -> None:
-    """删表：物理表（如有）+ 元数据 + 全部关联数据（记录/分享/规则/报表/识别留痕/导入批次）。"""
-    from ..models import (Record, ReportRunLog, ReportTemplate, SharedLink, TableShare, TaskRule, TaskRunLog,
-                          TaskTriggerLog, VisionLog)
+    """删表：物理表（如有）+ 元数据 + 全部关联数据（记录/分享/报表/识别留痕/导入批次）。"""
+    from ..models import (Record, ReportRunLog, ReportTemplate, SharedLink, TableShare, VisionLog)
 
     if mt.storage_mode == "physical" and _physical_exists(mt.name):
         reflect_table(mt.name).drop(engine)
-    rule_ids = [r.id for r in db.query(TaskRule).filter_by(table_id=mt.id).all()]
-    if rule_ids:
-        db.query(TaskTriggerLog).filter(TaskTriggerLog.rule_id.in_(rule_ids)).delete(synchronize_session=False)
-        db.query(TaskRunLog).filter(TaskRunLog.rule_id.in_(rule_ids)).delete(synchronize_session=False)
-        db.query(TaskRule).filter(TaskRule.id.in_(rule_ids)).delete(synchronize_session=False)
     tpl_ids = [t.id for t in db.query(ReportTemplate).filter_by(table_id=mt.id).all()]
     if tpl_ids:
         db.query(ReportRunLog).filter(ReportRunLog.template_id.in_(tpl_ids)).delete(synchronize_session=False)

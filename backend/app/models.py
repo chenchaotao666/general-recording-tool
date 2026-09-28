@@ -210,53 +210,6 @@ class VisionLog(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
-class TaskRule(Base):
-    """任务规则：目标表 + 条件 + 周期 + 动作"""
-    __tablename__ = "task_rules"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(128), nullable=False)
-    table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（多租户）
-    enabled = Column(Boolean, default=False)
-    condition_mode = Column(String(16), default="structured")  # structured / llm
-    condition_json = Column(JSON, default=dict)
-    # structured: {logic: AND|OR, rules: [{field, op, value}]}
-    # llm:        {description: "...", prefilter?: {logic, rules}}
-    schedule_json = Column(JSON, default=dict)   # {type: interval, minutes} | {type: cron, expr}
-    action_json = Column(JSON, default=dict)
-    # {type: notify|email|sms|webhook, template, webhook_url?, recipients: {type: fixed|field, value|field}}
-    cooldown_hours = Column(Integer, default=24)  # 同一记录冷却期；0 = 永不重复触发
-    max_per_run = Column(Integer, default=100)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-
-
-class TaskTriggerLog(Base):
-    """触发去重：同一规则同一记录只记一条，重复触发时更新 fired_at"""
-    __tablename__ = "task_trigger_logs"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    rule_id = Column(Integer, ForeignKey("task_rules.id"), index=True, nullable=False)
-    record_id = Column(Integer, nullable=False)
-    fired_at = Column(DateTime, default=datetime.now)
-
-
-class TaskRunLog(Base):
-    """每次执行（计划/手动/试运行）的日志"""
-    __tablename__ = "task_run_logs"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    rule_id = Column(Integer, ForeignKey("task_rules.id"), index=True, nullable=False)
-    trigger = Column(String(16), default="schedule")   # schedule / manual / test
-    run_at = Column(DateTime, default=datetime.now)
-    matched_count = Column(Integer, default=0)
-    sent_count = Column(Integer, default=0)
-    fail_count = Column(Integer, default=0)
-    detail_json = Column(JSON, default=list)
-    error = Column(Text)
-
-
 class ReportTemplate(Base):
     """报表模板：目标表 + 默认时间口径 + 区块列表 + (可选)定时推送"""
     __tablename__ = "report_templates"

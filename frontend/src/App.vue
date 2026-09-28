@@ -16,9 +16,6 @@
         <el-menu-item index="/reports">
           <el-icon><DataAnalysis /></el-icon><span>报表</span>
         </el-menu-item>
-        <el-menu-item index="/tasks">
-          <el-icon><AlarmClock /></el-icon><span>任务规则</span>
-        </el-menu-item>
         <el-menu-item index="/workflows">
           <el-icon><Connection /></el-icon><span>工作流</span>
         </el-menu-item>
@@ -94,7 +91,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { AlarmClock, Avatar, Bell, Connection, DataAnalysis, Grid, Key, Notebook, Setting, Upload, User, UserFilled } from '@element-plus/icons-vue'
+import { Avatar, Bell, Connection, DataAnalysis, Grid, Key, Notebook, Setting, Upload, User, UserFilled } from '@element-plus/icons-vue'
 import { changePassword as changePasswordApi, unreadCount } from './api'
 import AssistantPanel from './components/AssistantPanel.vue'
 

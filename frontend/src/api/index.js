@@ -129,15 +129,6 @@ export const recognizeForm = (formData) => http.post('/vision/recognize', formDa
 export const adoptVision = (logId, adopted) => http.put(`/vision/logs/${logId}/adopt`, { adopted })
 
 // 任务规则
-export const listTasks = () => http.get('/tasks')
-export const createTask = (p) => http.post('/tasks', p)
-export const updateTask = (id, p) => http.put(`/tasks/${id}`, p)
-export const deleteTask = (id) => http.delete(`/tasks/${id}`)
-export const toggleTask = (id) => http.post(`/tasks/${id}/toggle`)
-export const testTask = (id) => http.post(`/tasks/${id}/test`)
-export const runTask = (id) => http.post(`/tasks/${id}/run`)
-export const taskRuns = (id) => http.get(`/tasks/${id}/runs`)
-export const aiAssistTask = (tableId, description) => http.post('/tasks/ai-assist', { table_id: tableId, description })
 
 // 工作流
 export const listWorkflows = () => http.get('/workflows')
@@ -157,8 +148,8 @@ export const approveWorkflowNode = (nodeRunId, approved, comment = '') =>
 export const listPendingApprovals = () => http.get('/workflows/pending-approvals')
 export const workflowNodeTypes = () => http.get('/workflows/node-types')
 export const aiAssistWorkflow = (description) => http.post('/workflows/ai-assist', { description })
-export const aiNodeConfig = (nodeType, description) =>
-  http.post('/workflows/ai-node-config', { node_type: nodeType, description })
+export const aiNodeConfig = (nodeType, description, context) =>
+  http.post('/workflows/ai-node-config', { node_type: nodeType, description, ...(context ? { context } : {}) })
 export const aiExplainWorkflow = (id) => http.post(`/workflows/${id}/ai-explain`)
 
 // 公开表单（表单触发器，免登录，URL 即凭证）

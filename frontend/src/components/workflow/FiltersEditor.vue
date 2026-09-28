@@ -23,7 +23,10 @@
         <VariablePicker compact title="选择字段或变量" :groups="fieldGroups" @insert="insertField(i, $event)" />
       </template>
       <el-select v-model="r.op" size="small" class="op">
-        <el-option v-for="[v, l] in opsFor(r.field)" :key="v" :label="l" :value="v" />
+        <el-option v-for="[v, l] in opsFor(r.field)" :key="v" :label="l" :value="v">
+          <span>{{ l }}</span>
+          <span v-if="OP_HINTS[v]" class="op-hint">{{ OP_HINTS[v] }}</span>
+        </el-option>
       </el-select>
       <template v-if="!NO_VALUE_OPS.includes(r.op)">
         <!-- 从插入面板点了「日期选择/日期时间选择」：值控件换成对应选择器（优先于模板值——用户明确选了日期）。
@@ -160,6 +163,14 @@ const OPS = {
 const ALL_OPS = [...new Map([...OPS.text, ...OPS.number, ...OPS.date, ...OPS.bool, ...OPS.select]
   .map(([v, l]) => [v, [v, l]])).values()]
 
+// 日期操作符的语义注解：只显示在下拉选项右侧，选中后仍是短 label
+const OP_HINTS = {
+  gte: '>= 所选日期',
+  lte: '<= 所选日期',
+  past_days: '今天-N+1 ~ 今天',
+  older_than_days: '< 今天-N',
+}
+
 const model = computed({
   get: () => props.modelValue || { logic: 'AND', rules: [] },
   set: (v) => emit('update:modelValue', v),
@@ -200,6 +211,7 @@ const withTime = (r, i) =>
    若用 flex 弹性宽度，下拉的渲染宽度会随剩余空间变化而跳动 */
 .f { flex: 0 0 180px; width: 180px; }
 .op { width: 110px; flex-shrink: 0; }
+.op-hint { float: right; margin-left: 16px; font-size: 12px; color: #909399; }
 .v { flex: 1 1 100px; min-width: 90px; }
 .unit { font-size: 12px; color: #909399; }
 </style>

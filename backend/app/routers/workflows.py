@@ -139,6 +139,7 @@ def ai_assist(payload: AiAssistIn, db: Session = Depends(get_db), user: User = D
 class AiNodeConfigIn(BaseModel):
     node_type: str
     description: str
+    context: dict | None = None   # 前端画布推导的上下文（条件/多路分支：判断对象候选 + 可用字段）
 
 
 @router.post("/ai-node-config")
@@ -147,7 +148,7 @@ def ai_node_config(payload: AiNodeConfigIn, db: Session = Depends(get_db), user:
     from ..services.llm.base import LLMError
     from ..services.workflow.ai_assist import assist_node_config
     try:
-        return assist_node_config(db, user, payload.node_type, payload.description)
+        return assist_node_config(db, user, payload.node_type, payload.description, payload.context)
     except (LLMError, WorkflowError) as e:
         raise HTTPException(400, str(e))
 

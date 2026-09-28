@@ -1,11 +1,10 @@
-"""APScheduler 调度器：进程内后台运行，按规则配置注册周期任务，规则变更时重载。"""
+"""APScheduler 调度器：进程内后台运行，按配置注册周期任务（报表推送/工作流定时触发），变更时重载。"""
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from ..database import SessionLocal
-from ..models import TaskRule, Workflow
-from .task_engine import execute_rule
+from ..models import Workflow
 
 scheduler = BackgroundScheduler()
 
@@ -38,18 +37,10 @@ def _register_workflow_poller() -> None:
 
 
 def reload_jobs() -> None:
-    """全量重载任务（规则/报表模板/工作流增删改后调用）。单进程部署下足够简单可靠。"""
+    """全量重载任务（报表模板/工作流增删改后调用）。单进程部署下足够简单可靠。"""
     scheduler.remove_all_jobs()
     db = SessionLocal()
     try:
-        rules = db.query(TaskRule).filter_by(enabled=True).all()
-        for rule in rules:
-            trigger = trigger_of(rule.schedule_json or {})
-            if trigger is not None:
-                scheduler.add_job(
-                    execute_rule, trigger, args=[rule.id, "schedule"],
-                    id=f"rule_{rule.id}", replace_existing=True, misfire_grace_time=300,
-                )
         # 报表定时推送
         from ..models import ReportTemplate
         from .report_engine import push_template
@@ -61,7 +52,7 @@ def reload_jobs() -> None:
                     push_template, trigger, args=[tpl.id, "schedule"],
                     id=f"report_{tpl.id}", replace_existing=True, misfire_grace_time=300,
                 )
-        # 工作流定时触发（trigger_json 与任务模块 schedule_json 同格式：{type: interval|cron, ...}）
+        # 工作流定时触发（trigger_json 格式：{type: interval|cron, ...}）
         from .workflow.engine import run_scheduled
         workflows = db.query(Workflow).filter_by(enabled=True).all()
         for wf in workflows:

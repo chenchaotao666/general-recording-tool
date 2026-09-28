@@ -1,4 +1,4 @@
-"""站内通知写入的统一入口（由调用方负责 commit，与 act_notify 的约定一致）。"""
+"""站内通知写入的统一入口（由调用方负责 commit）。"""
 from sqlalchemy.orm import Session
 
 from ..models import Notification

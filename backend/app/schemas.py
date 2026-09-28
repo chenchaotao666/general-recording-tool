@@ -115,31 +115,6 @@ class ProviderIn(BaseModel):
         return v
 
 
-class TaskRuleIn(BaseModel):
-    name: str
-    table_id: int
-    enabled: bool = False
-    condition_mode: str = "structured"          # structured / llm
-    condition: dict = {}
-    schedule: dict = {}                          # {type: interval, minutes} | {type: cron, expr}
-    action: dict = {}                            # {type, template, webhook_url?, recipients}
-    cooldown_hours: int = 24
-    max_per_run: int = 100
-
-    @field_validator("condition_mode")
-    @classmethod
-    def _check_mode(cls, v: str) -> str:
-        if v not in ("structured", "llm"):
-            raise ValueError("condition_mode 只能是 structured 或 llm")
-        return v
-
-    @field_validator("cooldown_hours", "max_per_run")
-    @classmethod
-    def _check_non_negative(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("不能为负数")
-        return v
-
 
 class ReportTemplateIn(BaseModel):
     name: str

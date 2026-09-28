@@ -157,15 +157,48 @@ def execute_action(db: Session, user: User, type_: str, payload: dict) -> dict:
         return _exec_create_table(db, user, payload or {})
     if type_ == "create_report":
         return _exec_create_report(db, user, payload or {})
-    if type_ == "create_task":
-        return _exec_create_task(db, user, payload or {})
     if type_ == "gen_excel":
         return _exec_gen_excel(db, user, payload or {})
     if type_ == "run_workflow":
         return _exec_run_workflow(db, user, payload or {})
+    if type_ == "create_workflow":
+        return _exec_create_workflow(db, user, payload or {})
     if type_ == "alter_table":
         return _exec_alter_table(db, user, payload or {})
     raise HTTPException(400, f"不支持的动作类型：{type_}")
+
+
+def _exec_create_workflow(db: Session, user: User, payload: dict) -> dict:
+    """创建 AI 生成的工作流（默认停用，到编辑器确认后启用）；落库前再过一次完整定义校验。"""
+    import uuid
+
+    from . import scheduler as sched
+    from .workflow import engine as wf_engine
+    from .workflow.engine import WorkflowError
+
+    trigger = dict(payload.get("trigger") or {"type": "manual"})
+    nodes = payload.get("nodes") or []
+    edges = payload.get("edges") or []
+    if not nodes:
+        raise HTTPException(400, "工作流没有节点")
+    try:
+        wf_engine.validate_definition(db, trigger, nodes, edges, user)
+    except WorkflowError as e:
+        raise HTTPException(400, str(e))
+    if trigger.get("type") in ("webhook", "form") and not trigger.get("secret"):
+        trigger["secret"] = uuid.uuid4().hex
+    wf = Workflow(
+        user_id=user.id,
+        name=str(payload.get("name") or "AI 工作流")[:128],
+        description=str(payload.get("description") or "")[:500],
+        enabled=False,
+        trigger_json=trigger, nodes_json=nodes, edges_json=edges,
+    )
+    db.add(wf)
+    db.commit()
+    db.refresh(wf)
+    sched.reload_jobs()
+    return {"type": "create_workflow", "workflow_id": wf.id, "name": wf.name}
 
 
 def _exec_alter_table(db: Session, user: User, payload: dict) -> dict:
@@ -281,40 +314,6 @@ def _exec_create_report(db: Session, user: User, payload: dict) -> dict:
     db.add(tpl)
     db.commit()
     return {"type": "create_report", "report_id": tpl.id, "name": tpl.name}
-
-
-def _exec_create_task(db: Session, user: User, payload: dict) -> dict:
-    """创建任务规则（默认停用，需到任务页启用），复用任务路由的完整校验。"""
-    from ..models import TaskRule
-    from ..schemas import TaskRuleIn
-
-    access = get_table_access(db, int(payload.get("table_id")), user)
-    try:
-        tin = TaskRuleIn(
-            name=str(payload.get("name") or "AI 任务")[:128],
-            table_id=access.table.id,
-            enabled=False,
-            condition_mode=payload.get("condition_mode") or "structured",
-            condition=payload.get("condition") or {},
-            schedule=payload.get("schedule") or {"type": "cron", "expr": "0 9 * * *"},
-            action=payload.get("action") or {},
-            cooldown_hours=int(payload.get("cooldown_hours") or 24),
-        )
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(400, f"任务配置无效：{e}")
-    from ..routers.tasks import _validate as validate_task  # 延迟导入避免循环依赖
-    validate_task(db, tin, user)
-    rule = TaskRule(
-        user_id=user.id, name=tin.name, table_id=tin.table_id, enabled=False,
-        condition_mode=tin.condition_mode, condition_json=tin.condition,
-        schedule_json=tin.schedule, action_json=tin.action,
-        cooldown_hours=tin.cooldown_hours, max_per_run=tin.max_per_run,
-    )
-    db.add(rule)
-    db.commit()
-    from . import scheduler as sched
-    sched.reload_jobs()
-    return {"type": "create_task", "task_id": rule.id, "name": rule.name}
 
 
 def _exec_gen_excel(db: Session, user: User, payload: dict) -> dict:

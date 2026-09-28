@@ -133,66 +133,6 @@ def build_analyze_prompt(headers: list[str], columns: list[dict]) -> str:
     )
 
 
-TASK_SYSTEM = (
-    "你是自动化任务设计专家。用户会给你一张数据表的字段清单和一句自然语言需求，"
-    "你要设计出任务规则配置（触发条件 + 执行周期 + 通知动作）。只输出 JSON，不要输出任何其他内容。"
-)
-
-_TASK_OUTPUT_EXAMPLE = {
-    "name": "超过30天未跟进客户提醒",
-    "condition_mode": "structured",
-    "condition": {"logic": "AND", "rules": [
-        {"field": "updated_at", "op": "older_than_days", "value": 30},
-        {"field": "customer_grade", "op": "ne", "value": "已流失"},
-    ]},
-    "schedule": {"type": "cron", "expr": "0 9 * * *"},
-    "action": {
-        "type": "email",
-        "template": "客户【{customer_name}】已超过30天未跟进，分级：{customer_grade}，请及时处理。",
-        "recipients": {"type": "fixed", "value": "manager@example.com"},
-    },
-    "cooldown_hours": 24,
-    "notes": "设计说明（可选）",
-}
-
-
-def build_task_prompt(description: str, fields: list[dict]) -> str:
-    """把自然语言需求转成任务规则配置。fields: [{field_name, label, data_type, options}]"""
-    field_desc = []
-    for f in fields:
-        item = {"field_name": f["field_name"], "含义": f["label"], "类型": f["data_type"]}
-        opts = (f.get("options") or {}).get("options")
-        if opts:
-            item["可选值"] = opts
-        field_desc.append(item)
-    return (
-        f"用户的任务需求：{description}\n\n"
-        f"数据表字段（另有系统字段 id / created_at 创建时间 / updated_at 更新时间）：\n"
-        f"{json.dumps(field_desc, ensure_ascii=False, indent=2)}\n\n"
-        "任务规则配置规则：\n"
-        "1. condition_mode 判断方式：\n"
-        "   - structured 结构化条件（优先）：condition = {logic: AND|OR, rules: [{field, op, value}]}。\n"
-        "     op 只能是 eq/ne/gt/gte/lt/lte/contains/startswith/in/null/not_null/"
-        "today（当天，不需要 value）/past_days（过去 N 天含今天，value 为天数）/"
-        "older_than_days（早于 N 天前）/within_days（未来 N 天内）；\n"
-        "     past_days/older_than_days/within_days 的 value 是天数整数；枚举字段 value 必须从可选值中选；null/not_null/today 不需要 value；\n"
-        "     日期字段的值必须是具体日期（YYYY-MM-DD），禁止 today/yesterday 等字面量——「等于今天」用 today 操作符，「过去一周/一个月」用 past_days 且 value=7/30\n"
-        "   - llm 智能判断：条件是语义化、结构化条件表达不了时用，condition = {description: \"自然语言判断条件\"}\n"
-        "2. schedule 执行周期：{type: \"cron\", expr: \"分 时 日 月 周\"}（如每天 9 点 = 0 9 * * *，每周一 9 点 = 0 9 * * 1）"
-        "或 {type: \"interval\", minutes: 间隔分钟数}\n"
-        "3. action 动作：\n"
-        "   - type: notify 站内通知 / email 邮件 / sms 短信 / webhook\n"
-        "   - template 通知内容模板，用 {字段名} 引用记录字段，如：客户【{customer_name}】已超期\n"
-        "   - recipients 接收人：邮件/短信必填。{type: \"fixed\", value: \"邮箱或手机号，逗号分隔\"} 或 "
-        "{type: \"field\", field: \"取记录里某个字段的值作为接收人\"}；用户没明确给出接收地址时 type 用 fixed、value 留空字符串\n"
-        "4. cooldown_hours 同一记录冷却期（小时，默认 24；0 = 永不重复提醒同一条记录）\n"
-        "5. name 给任务起个简洁的名字\n"
-        "6. 只使用字段清单中存在的 field_name\n\n"
-        f"输出 JSON 格式示例：\n{json.dumps(_TASK_OUTPUT_EXAMPLE, ensure_ascii=False, indent=2)}\n\n"
-        "只输出 JSON。"
-    )
-
-
 REPORT_SYSTEM = (
     "你是报表设计专家。用户会给你一张数据表的字段清单和一句自然语言需求，"
     "你要设计出报表的时间口径和区块配置。只输出 JSON，不要输出任何其他内容。"
@@ -355,7 +295,7 @@ def build_assistant_prompt(message: str, history: list[dict], tables: list[dict]
         "5. 系统动作信息不足时不要硬做：action 输出 null，在 reply 里说明缺什么、需要用户补什么。"
         "尤其是建表：用户只说「想建表/创建数据表」而没说清要记录什么业务内容时，不要自行编造表名和字段，"
         "在 reply 里追问——比如「好的，这张表主要用来记录什么？比如客户、库存还是收支？大概需要哪些字段？」"
-        "同样，报表、任务规则、填记录、数据问答、导出都依赖明确的目标表：用户没点名表、当前也不在具体表页、"
+        "同样，报表、填记录、数据问答、导出都依赖明确的目标表：用户没点名表、当前也不在具体表页、"
         "或有多张表都可能匹配时，不要擅自猜一张表，action 输出 null，在 reply 里追问「对哪张表操作？」"
         "并列出用户可访问的表名供选择",
         "6. 只能使用用户可访问数据表清单里的表 id 和字段；sum/avg/max/min 只能用于 int/decimal 字段；"
@@ -390,9 +330,10 @@ def build_assistant_prompt(message: str, history: list[dict], tables: list[dict]
         "5. 创建报表 create_report：{\"type\": \"create_report\", \"table_id\": 表id, \"description\": \"报表需求描述\"}。"
         "用户想基于某张表做报表/周报/月报/看板时使用；description 写清要统计什么（时间口径、指标、分组维度），"
         "系统会自动生成报表配置并让用户预览确认",
-        "6. 创建任务规则 create_task：{\"type\": \"create_task\", \"table_id\": 表id, \"description\": \"任务需求描述\"}。"
-        "用户想要定时提醒/到期通知/自动监控预警时使用；description 写清触发条件、执行周期、通知内容，"
-        "系统会自动生成任务配置并让用户预览确认（创建后默认停用，用户在任务页启用）",
+        "6. 创建工作流 create_workflow：{\"type\": \"create_workflow\", \"description\": \"流程需求描述\"}。"
+        "用户想创建自动化流程时使用：定时提醒/到期通知/监控预警/数据同步/新增记录后自动处理等。"
+        "description 写清触发方式（每天 9 点/记录新增时/webhook）、处理步骤、通知方式与接收人；"
+        "系统会自动生成流程定义并让用户预览确认（创建后默认停用，用户在工作流编辑器里启用）",
         "7. 执行工作流 run_workflow：{\"type\": \"run_workflow\", \"workflow_id\": 工作流id, \"params\": {}}。"
         "用户让你运行某个已配置好的工作流/自动化流程时使用（如「帮我跑一下每日汇总」「执行 XX 流程」）；"
         "只能用上方工作流清单里的 id；params 是手动触发参数（流程里可用 {trigger.params.xxx} 引用），一般给空对象；"

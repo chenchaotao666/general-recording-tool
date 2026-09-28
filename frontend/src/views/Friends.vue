@@ -18,7 +18,7 @@
           @keyup.enter="addFriend"
         />
         <el-button type="primary" :loading="adding" @click="addFriend">发送申请</el-button>
-        <span style="color: #909399; font-size: 12px">对方接受后成为好友，之后才能互相分享数据表</span>
+        <span style="color: #909399; font-size: 12px">对方接受后成为好友，之后才能互相分享数据表，发送站内通知</span>
       </div>
     </el-card>
 

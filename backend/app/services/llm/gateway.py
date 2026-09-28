@@ -11,8 +11,8 @@ from .base import LLMError, LLMProvider
 from .claude import ClaudeProvider
 from .openai_compat import OpenAICompatProvider
 from .prompts import (
-    ANALYZE_SYSTEM, JUDGE_SYSTEM, REPORT_SYSTEM, TASK_SYSTEM, VISION_SYSTEM,
-    build_analyze_prompt, build_judge_prompt, build_report_prompt, build_task_prompt, build_vision_prompt,
+    ANALYZE_SYSTEM, JUDGE_SYSTEM, REPORT_SYSTEM, VISION_SYSTEM,
+    build_analyze_prompt, build_judge_prompt, build_report_prompt, build_vision_prompt,
 )
 
 
@@ -374,119 +374,6 @@ def assist_report(db: Session, fields: list, description: str) -> dict:
     raise LLMError(f"模型输出解析失败：{last_err}")
 
 
-# ---------- 任务规则 AI 辅助 ----------
-
-_TASK_ACTION_TYPES = {"notify", "email", "sms", "webhook"}
-
-
-def align_task_config(data: dict, fields: list) -> dict:
-    """把 LLM 输出的任务配置对齐到真实字段：清洗条件/周期/动作，非法项给默认值并记入 notes。"""
-    from ..dyn_engine import FILTER_OPS, rule_value_ok
-    from ..scheduler import trigger_of
-
-    fields_by_name = {f.field_name: f for f in fields}
-    notes_extra = []
-
-    # 条件
-    mode = data.get("condition_mode") if data.get("condition_mode") in ("structured", "llm") else "structured"
-    cond_in = data.get("condition") or {}
-    if mode == "llm":
-        desc = str(cond_in.get("description") or "").strip()
-        if not desc:
-            mode = "structured"
-            notes_extra.append("LLM 判断条件为空，已改为结构化条件")
-    if mode == "structured":
-        rules = []
-        for r in cond_in.get("rules") or []:
-            if not isinstance(r, dict):
-                continue
-            name, op = r.get("field"), r.get("op")
-            if name not in fields_by_name and name not in _REPORT_SYSTEM_FIELDS:
-                continue
-            if op not in FILTER_OPS:
-                continue
-            if not rule_value_ok(fields_by_name.get(name), op, r.get("value")):
-                notes_extra.append(f"条件「{name} {op}」的值无效已丢弃")
-                continue
-            rules.append({"field": name, "op": op, "value": r.get("value")})
-        if not rules:
-            raise LLMError("模型没有生成任何有效的条件，请换一种描述再试")
-        condition = {"logic": "OR" if cond_in.get("logic") == "OR" else "AND", "rules": rules}
-    else:
-        condition = {"description": desc}
-
-    # 周期
-    sched_in = data.get("schedule") or {}
-    schedule = {"type": sched_in.get("type"), "minutes": sched_in.get("minutes"), "expr": sched_in.get("expr")}
-    if trigger_of(schedule) is None:
-        notes_extra.append("执行周期无效，已改为每天早上 9 点")
-        schedule = {"type": "cron", "expr": "0 9 * * *"}
-    schedule = {k: v for k, v in schedule.items() if v is not None}
-
-    # 动作
-    act_in = data.get("action") or {}
-    act_type = act_in.get("type") if act_in.get("type") in _TASK_ACTION_TYPES else "notify"
-    template = str(act_in.get("template") or "").strip()
-    if not template:
-        template = "有记录命中条件，请及时处理。"
-        notes_extra.append("通知内容模板为空，已使用默认文案")
-    rec_in = act_in.get("recipients") or {}
-    if rec_in.get("type") == "field" and rec_in.get("field") in fields_by_name:
-        recipients = {"type": "field", "value": "", "field": rec_in["field"]}
-    else:
-        if rec_in.get("type") == "field":
-            notes_extra.append(f"接收人字段 {rec_in.get('field')} 无效，已改为固定地址（请补充）")
-        recipients = {"type": "fixed", "value": str(rec_in.get("value") or ""), "field": ""}
-    action = {"type": act_type, "template": template, "recipients": recipients}
-    if act_type == "webhook":
-        action["webhook_url"] = str(act_in.get("webhook_url") or "")
-
-    try:
-        cooldown = max(int(data.get("cooldown_hours", 24)), 0)
-    except (TypeError, ValueError):
-        cooldown = 24
-
-    notes = str(data.get("notes") or "")
-    if notes_extra:
-        notes = (notes + "；" if notes else "") + "；".join(notes_extra)
-    return {
-        "name": str(data.get("name") or "")[:128] or "AI 任务",
-        "condition_mode": mode,
-        "condition": condition,
-        "schedule": schedule,
-        "action": action,
-        "cooldown_hours": cooldown,
-        "notes": notes,
-    }
-
-
-def assist_task(db: Session, fields: list, description: str) -> dict:
-    """LLM 把自然语言需求转成任务规则配置；JSON 解析失败时回喂重试一次。"""
-    provider = get_default_provider(db)
-    field_dicts = [
-        {"field_name": f.field_name, "label": f.label, "data_type": f.data_type, "options": f.options or {}}
-        for f in fields
-    ]
-    prompt = build_task_prompt(description, field_dicts)
-    last_err: Exception | None = None
-    for attempt in range(2):
-        current = prompt if attempt == 0 else (
-            f"你上次的输出无法解析为合法 JSON，错误：{last_err}。"
-            "请重新输出，只输出 JSON。\n\n原始任务：\n" + prompt
-        )
-        try:
-            raw = provider.complete(current, system=TASK_SYSTEM)
-            data = extract_json(raw)
-            if not isinstance(data.get("condition"), dict):
-                raise ValueError("输出缺少 condition 对象")
-            return align_task_config(data, fields)
-        except LLMError:
-            raise
-        except Exception as e:
-            last_err = e
-    raise LLMError(f"模型输出解析失败：{last_err}")
-
-
 JUDGE_BATCH_SIZE = 20
 def judge_records(db: Session, description: str, field_dicts: list[dict], records: list[dict]) -> set[int]:
     """LLM 分批判断记录是否满足自然语言条件，返回命中的记录 id 集合。"""
@@ -533,7 +420,7 @@ _ASSISTANT_HISTORY_CHARS = 2000  # 单条历史截断（联网搜索类长回答
 
 
 def field_dicts_of(fields: list) -> list[dict]:
-    """字段元数据 → 提示词用四元组（与 assist_task/assist_report/recognize 一致）。"""
+    """字段元数据 → 提示词用四元组（与 assist_report/recognize 一致）。"""
     return [
         {"field_name": f.field_name, "label": f.label, "data_type": f.data_type, "options": f.options or {}}
         for f in fields
@@ -695,23 +582,6 @@ def align_assistant_action(db: Session, user, action: dict | None, notes: list) 
             "warnings": notes,
         }
 
-    if t == "create_task":
-        mt, fields = table_ctx(action.get("table_id"))
-        if mt is None:
-            notes.append("目标表不存在或没有查看权限，已忽略创建任务动作")
-            return None
-        desc = str(action.get("description") or "").strip()
-        if not desc:
-            notes.append("缺少任务需求描述，已忽略")
-            return None
-        cfg = assist_task(db, fields, desc)   # 复用任务 AI 辅助管线
-        notes.extend([cfg["notes"]] if cfg.get("notes") else [])
-        return {
-            "type": "create_task", "summary": f"创建任务规则「{cfg['name']}」",
-            "payload": {"table_id": mt.id, "table_label": mt.label, **cfg},
-            "warnings": notes,
-        }
-
     if t == "alter_table":
         import re as _re
 
@@ -809,6 +679,22 @@ def align_assistant_action(db: Session, user, action: dict | None, notes: list) 
         return {
             "type": "run_workflow", "summary": f"执行工作流「{wf.name}」{status_note}",
             "payload": {"workflow_id": wf.id, "workflow_name": wf.name, "params": params},
+            "warnings": notes,
+        }
+
+    if t == "create_workflow":
+        desc = str(action.get("description") or "").strip()
+        if not desc:
+            notes.append("缺少流程需求描述，已忽略")
+            return None
+        from ..workflow.ai_assist import assist_workflow
+        definition = assist_workflow(db, user, desc)   # 生成 + 字段对齐 + 定义校验（含重试）
+        if definition.get("notes"):
+            notes.append(definition["notes"])
+        return {
+            "type": "create_workflow",
+            "summary": f"创建工作流「{definition['name']}」（{len(definition['nodes'])} 个节点）",
+            "payload": definition,
             "warnings": notes,
         }
 

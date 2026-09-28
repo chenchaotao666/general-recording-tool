@@ -2,7 +2,6 @@ import { createRouter, createWebHistory } from 'vue-router'
 import TableList from '../views/TableList.vue'
 import ImportWizard from '../views/ImportWizard.vue'
 import DynamicTable from '../views/DynamicTable.vue'
-import Tasks from '../views/Tasks.vue'
 import Reports from '../views/Reports.vue'
 import Settings from '../views/Settings.vue'
 import Login from '../views/Login.vue'
@@ -29,7 +28,6 @@ const router = createRouter({
     { path: '/t/:id', component: DynamicTable },
     // 懒加载隔离 editorjs 体积
     { path: '/notes', component: () => import('../views/Notes.vue') },
-    { path: '/tasks', component: Tasks },
     // 工作流：编辑器懒加载隔离 vue-flow 体积
     { path: '/workflows', component: () => import('../views/Workflows.vue') },
     { path: '/workflows/new', component: () => import('../views/WorkflowEditor.vue') },

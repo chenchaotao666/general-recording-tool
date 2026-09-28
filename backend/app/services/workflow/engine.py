@@ -21,7 +21,7 @@ from ...utils.access import get_table_access
 from . import nodes  # noqa: F401  — import 即注册全部内置节点类型
 from .nodes.base import NodeContext, NodeResult
 from .registry import REGISTRY, _TYPE_CHECKS, validate_config  # noqa: F401 — validate_config 供外部复用
-from .template import VAR_TOKEN_RE, jsonable, now_vars, render_config, suggest_var
+from .template import VAR_TOKEN_RE, jsonable, now_vars, render_config, split_filter, suggest_var
 
 MAX_STEPS = 1000         # 单 Run 最大节点执行步数（循环每轮计步），兜底防意外死循环
 NODE_ID_RE = re.compile(r"^[a-z0-9_]{1,64}$")
@@ -436,7 +436,7 @@ def lint_definition(db: Session, trigger: dict, nodes: list, edges: list, user: 
         seen_paths = set()
         for key, s in _iter_strings(n.get("config") or {}):
             for m in VAR_TOKEN_RE.finditer(s):
-                p = m.group(1).strip()
+                p = split_filter(m.group(1))[0]   # 剥掉「| 表格」等过滤器再校验路径
                 if not p or p in seen_paths:
                     continue
                 seen_paths.add(p)

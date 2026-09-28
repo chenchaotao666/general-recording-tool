@@ -388,7 +388,22 @@ assert r.json()["status"] == "success", r.text
 r = client.get(f"/api/workflows/runs/{r.json()['id']}")
 dout = r.json()["node_runs"][0]["output"]
 assert dout["date"] == (_date.today() + _td(days=7)).isoformat(), dout
-print("日期计算：基准+7 天输出正确")
+
+# 分钟偏移（可负）：基准 now + (-45 分钟)，输出时间应在 40~50 分钟前
+r = client.put(f"/api/workflows/{dcw}", json={
+    "name": "日期计算", "trigger": {"type": "manual"},
+    "nodes": [{"id": "dc_1", "type": "date_calc", "name": "45 分钟前",
+               "config": {"offset_minutes": -45}}],
+    "edges": []})
+assert r.status_code == 200, r.text
+r = client.post(f"/api/workflows/{dcw}/run", json={"params": {}})
+r = client.get(f"/api/workflows/runs/{r.json()['id']}")
+dout = r.json()["node_runs"][0]["output"]
+from datetime import datetime as _dt
+out_dt = _dt.fromisoformat(dout["datetime"])
+diff = (_dt.now() - out_dt).total_seconds() / 60
+assert 40 <= diff <= 50, f"期望约 45 分钟前，实际差 {diff:.1f} 分钟"
+print("日期计算：基准+7 天、加减分钟（可负）输出正确")
 
 # ---------- 模板市场：两个新模板安装 + 运行 ----------
 r = client.get("/api/workflow-templates")
@@ -490,6 +505,116 @@ engine.process_due_jobs()
 r = client.get(f"/api/workflows/{ww}/runs")
 assert any(x["trigger"] == "webhook" and x["status"] == "success" for x in r.json()), r.json()
 print("Webhook 验签模板：自定义响应正确，告警流程执行成功")
+
+# ---------- 查询记录：AI 筛选 + 模板表格渲染 ----------
+import app.services.llm.gateway as _gw
+
+
+class _JudgeFake:
+    def complete(self, prompt, system=None):
+        return '{"matched_ids": [2], "reason": "test"}'
+
+
+_gw.get_default_provider = lambda db: _JudgeFake()
+
+r = client.post("/api/workflows", json={
+    "name": "AI筛选测试", "enabled": False,
+    "trigger": {"type": "manual"},
+    "nodes": [
+        {"id": "q_1", "type": "query_records", "name": "AI 筛",
+         "config": {"table_id": tid, "limit": 100, "ai_filter": "数量大于 1 的条目"}},
+        {"id": "send_1", "type": "send_message", "name": "通知",
+         "config": {"channel": "notify", "title": "命中",
+                    "template": "命中 {nodes.q_1.count} 条：\n{nodes.q_1.records | 表格}"}},
+    ],
+    "edges": [{"from": "q_1", "to": "send_1"}],
+})
+assert r.status_code == 200, r.text
+wf_ai = r.json()["id"]
+r = client.post(f"/api/workflows/{wf_ai}/run", json={"params": {}})
+assert r.json()["status"] == "success", r.text
+r = client.get(f"/api/workflows/runs/{r.json()['id']}")
+qout = next(nr["output"] for nr in r.json()["node_runs"] if nr["node_id"] == "q_1")
+assert qout["count"] == 1 and qout["records"][0]["id"] == 2, qout  # 只有 id=2 命中
+from app.database import SessionLocal as _SL2
+from app.models import Notification as _Ntf
+_db = _SL2()
+content = _db.query(_Ntf).order_by(_Ntf.id.desc()).first().content
+_db.close()
+assert "| name | qty | done |" in content, content  # 渲染为 Markdown 表格（字段名列头在前）
+assert "| 条目2 | 2 |" in content, content
+assert "{" not in content.split("\n", 1)[-1], content  # 不再是原始 JSON
+print("AI 筛选：命中 id=2；通知内容为 Markdown 表格渲染")
+
+# ---------- 查询记录：输出字段投影 ----------
+r = client.post("/api/workflows", json={
+    "name": "字段投影测试", "enabled": False,
+    "trigger": {"type": "manual"},
+    "nodes": [
+        {"id": "q_1", "type": "query_records", "name": "只取名称",
+         "config": {"table_id": tid, "limit": 10, "fields": ["name", "不存在的字段"]}},
+        {"id": "send_1", "type": "send_message", "name": "通知",
+         "config": {"channel": "notify", "title": "投影",
+                    "template": "{nodes.q_1.records | 表格}"}},
+    ],
+    "edges": [{"from": "q_1", "to": "send_1"}],
+})
+assert r.status_code == 200, r.text
+wf_proj = r.json()["id"]
+r = client.post(f"/api/workflows/{wf_proj}/run", json={"params": {}})
+assert r.json()["status"] == "success", r.text
+r = client.get(f"/api/workflows/runs/{r.json()['id']}")
+rec = next(nr["output"] for nr in r.json()["node_runs"] if nr["node_id"] == "q_1")["records"][0]
+assert set(rec.keys()) == {"name", "id"}, rec  # 只有选中字段 + id；非法字段名被忽略
+_db = _SL2()
+proj_content = _db.query(_Ntf).order_by(_Ntf.id.desc()).first().content
+_db.close()
+assert "| name | id |" in proj_content and "qty" not in proj_content, proj_content  # 表格也只有投影列
+print("输出字段投影：records 只含选中字段 + id，表格渲染同步收窄")
+
+# ---------- 逐条处理：不限制（max_items=0）与截断 ----------
+def _mk_foreach_wf(name, max_items):
+    r = client.post("/api/workflows", json={
+        "name": name, "enabled": False,
+        "trigger": {"type": "manual"},
+        "nodes": [
+            {"id": "q_1", "type": "query_records", "name": "查",
+             "config": {"table_id": tid, "limit": 100, "order_by": "id", "order_desc": False}},
+            {"id": "loop_1", "type": "foreach", "name": "循环",
+             "config": {"items": "{nodes.q_1.records}", "max_items": max_items}},
+            {"id": "u_1", "type": "update_record", "name": "标记",
+             "config": {"table_id": tid,
+                        "match_filters": {"logic": "AND", "rules": [
+                            {"field": "id", "op": "eq", "value": "{nodes.loop_1.item.id}"}]},
+                        "field_mapping": {"done": False}}},
+            {"id": "send_1", "type": "send_message", "name": "完成",
+             "config": {"channel": "notify", "title": "x", "template": "{nodes.loop_1.count}"}},
+        ],
+        "edges": [
+            {"from": "q_1", "to": "loop_1"},
+            {"from": "loop_1", "to": "u_1", "branch": "loop"},
+            {"from": "u_1", "to": "loop_1"},
+            {"from": "loop_1", "to": "send_1", "branch": "done"},
+        ],
+    })
+    assert r.status_code == 200, r.text
+    return r.json()["id"]
+
+
+wf0 = _mk_foreach_wf("循环不限制", 0)
+r = client.post(f"/api/workflows/{wf0}/run", json={"params": {}})
+assert r.json()["status"] == "success", r.text
+r = client.get(f"/api/workflows/runs/{r.json()['id']}")
+total = next(nr["output"] for nr in r.json()["node_runs"] if nr["node_id"] == "q_1")["count"]
+loops = [nr for nr in r.json()["node_runs"] if nr["node_id"] == "loop_1" and nr["output"].get("branch") == "loop"]
+assert len(loops) == total, f"不限制应处理全部 {total} 条，实际 {len(loops)}"   # 0 = 不截断
+
+wf2 = _mk_foreach_wf("循环截断", 2)
+r = client.post(f"/api/workflows/{wf2}/run", json={"params": {}})
+r = client.get(f"/api/workflows/runs/{r.json()['id']}")
+loops = [nr for nr in r.json()["node_runs"] if nr["node_id"] == "loop_1" and nr["output"].get("branch") == "loop"]
+assert len(loops) == min(2, total), f"max_items=2 应只处理 2 条，实际 {len(loops)}"
+print(f"逐条处理：不限制（0）处理全部 {total} 条、正数截断正确")
 
 print("\n全部通过 OK")
 cm.__exit__(None, None, None)
