@@ -26,3 +26,4 @@ docs/*.png
 miniprogram/node_modules/
 miniprogram/dist/
 backend/smoke_workflow.db
+backend/smoke_test.db.bak-*

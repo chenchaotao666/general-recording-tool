@@ -2,11 +2,11 @@
   <div>
     <div class="page-header">
       <h2>报表</h2>
-      <el-button type="primary" :icon="Plus" @click="openCreate">新建报表</el-button>
+      <el-button type="primary" :icon="Plus" @click="createVisible = true">新建报表</el-button>
     </div>
 
     <el-alert type="info" :closable="false" style="margin-bottom: 14px"
-      title="报表模板由区块拼装：统计卡片 / 图表 / 明细表 / 文本。可在线查看、导出 Excel 或 HTML，也可配置定时邮件推送。" />
+      title="报表由多数据源 + 区块 + 栅格布局组成：设计器内拖字段即可成图，可配置定时推送与链接分享。" />
 
     <el-table :data="reports" v-loading="loading" border>
       <el-table-column prop="name" label="报表名称" min-width="90">
@@ -15,7 +15,15 @@
           <div v-if="row.description" style="font-size: 12px; color: #909399">{{ row.description }}</div>
         </template>
       </el-table-column>
-      <el-table-column prop="table_label" label="数据表" width="130" />
+      <el-table-column label="数据源" width="150">
+        <template #default="{ row }">
+          <template v-if="row.datasets?.length">
+            {{ row.datasets[0].name || row.table_label }}
+            <span v-if="row.datasets.length > 1" style="color: #909399"> 等 {{ row.datasets.length }} 个</span>
+          </template>
+          <template v-else>{{ row.table_label }}</template>
+        </template>
+      </el-table-column>
       <el-table-column label="默认口径" width="90">
         <template #default="{ row }">{{ row.range_desc }}</template>
       </el-table-column>
@@ -43,12 +51,12 @@
       <el-table-column label="操作" width="560">
         <template #default="{ row }">
           <el-button text type="primary" size="small" @click="$router.push(`/reports/${row.id}/view`)">查看</el-button>
+          <el-button text type="primary" size="small" @click="$router.push(`/reports/${row.id}/layout`)">设计</el-button>
           <el-button text size="small" @click="exportFile(row, 'xlsx')">导出Excel</el-button>
           <el-button text size="small" @click="exportFile(row, 'html')">导出HTML</el-button>
           <el-button v-if="row.schedule?.type" text size="small" :loading="pushingId === row.id" @click="push(row)">推送</el-button>
           <el-button v-if="row.schedule?.type" text size="small" @click="showRuns(row)">日志</el-button>
           <el-button text size="small" @click="openShare(row)">分享</el-button>
-          <el-button text type="primary" size="small" @click="openEdit(row)">编辑</el-button>
           <el-popconfirm title="确定删除该报表模板？" @confirm="del(row)">
             <template #reference><el-button text type="danger" size="small">删除</el-button></template>
           </el-popconfirm>
@@ -57,11 +65,21 @@
       <template #empty>还没有报表，点击右上角新建</template>
     </el-table>
 
-    <el-dialog v-model="editorVisible" :title="editing ? '编辑报表' : '新建报表'" width="880px" destroy-on-close top="4vh">
-      <ReportEditor v-if="editorVisible" :form="form" :tables="tables" />
+    <!-- 新建：名称 + 初始数据源，创建后直进设计器 -->
+    <el-dialog v-model="createVisible" title="新建报表" width="440px" destroy-on-close>
+      <el-form label-width="80px">
+        <el-form-item label="名称" required>
+          <el-input v-model="createForm.name" placeholder="如：经营周报" />
+        </el-form-item>
+        <el-form-item label="数据源" required>
+          <el-select v-model="createForm.table_id" placeholder="选择第一张数据表（之后可加更多）" style="width: 100%" filterable>
+            <el-option v-for="t in tables" :key="t.id" :label="t.label" :value="t.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
       <template #footer>
-        <el-button @click="editorVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+        <el-button @click="createVisible = false">取消</el-button>
+        <el-button type="primary" :loading="creating" @click="create">创建并设计</el-button>
       </template>
     </el-dialog>
 
@@ -121,34 +139,22 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
   createReport, createReportShareLink, deleteReport, deleteReportShareLink, listReportShareLinks,
-  listReports, listTables, reportExportUrl, reportRuns, testPushReport, toggleReport, updateReport,
+  listReports, listTables, reportExportUrl, reportRuns, testPushReport, toggleReport,
 } from '../api'
-import ReportEditor from '../components/ReportEditor.vue'
 
+const router = useRouter()
 const reports = ref([])
 const tables = ref([])
 const loading = ref(false)
-const editorVisible = ref(false)
-const editing = ref(null)
-const saving = ref(false)
 const pushingId = ref(null)
 const runsVisible = ref(false)
 const runs = ref([])
 const runsTpl = ref(null)
-
-const blankForm = () => ({
-  name: '', description: '', table_id: null, enabled: false,
-  range: { mode: 'this_week', date_field: 'created_at', start: null, end: null },
-  blocks: [],
-  filter_fields: [],
-  schedule: { type: '', minutes: 60, expr: '0 9 * * 1' },
-  push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', webhooks: [] },
-})
-const form = reactive(blankForm())
 
 function scheduleDesc(s) {
   if (s?.type === 'interval') return `每 ${s.minutes} 分钟`
@@ -167,81 +173,36 @@ async function load() {
   }
 }
 
-function openCreate() {
-  editing.value = null
-  Object.assign(form, blankForm())
-  editorVisible.value = true
-}
+// ---------- 新建（直进设计器） ----------
+const createVisible = ref(false)
+const creating = ref(false)
+const createForm = reactive({ name: '', table_id: null })
 
-function openEdit(row) {
-  editing.value = row
-  Object.assign(form, {
-    name: row.name, description: row.description || '', table_id: row.table_id, enabled: row.enabled,
-    range: { mode: 'this_week', date_field: 'created_at', start: null, end: null, ...(row.range || {}) },
-    blocks: (row.blocks || []).map((b) => ({
-      ...b,
-      group: b.group ? { ...b.group } : undefined,
-      filters: { logic: 'AND', ...(b.filters || {}), rules: (b.filters?.rules || []).map((r) => ({ ...r })) },
-      ...(b.type === 'chart' ? { metrics: b.metrics || [], group2: b.group2 || { field: null }, stack: !!b.stack } : {}),
-      ...(b.type === 'pivot' ? {
-        row: { kind: 'field', field: null, ...(b.row || {}) },
-        col: { kind: 'field', field: null, ...(b.col || {}) },
-        row_top_n: b.row_top_n || 30, col_top_n: b.col_top_n || 8,
-        totals: b.totals !== false,
-      } : {}),
-    })),
-    filter_fields: [...(row.filter_fields || [])],
-    schedule: { type: '', minutes: 60, expr: '0 9 * * 1', ...(row.schedule || {}) },
-    push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', webhooks: [], ...(row.push || {}) },
-  })
-  editorVisible.value = true
-}
-
-async function save() {
-  if (!form.name.trim()) return ElMessage.warning('请填写报表名称')
-  if (!form.table_id) return ElMessage.warning('请选择数据表')
-  if (!form.blocks.length) return ElMessage.warning('请至少添加一个区块')
-  if (form.schedule.type && !form.push.recipients.trim()
-      && !(form.push.webhooks || []).some((w) => (w.url || '').trim())) {
-    return ElMessage.warning('定时推送需要至少一个推送渠道（收件邮箱或群机器人）')
-  }
-  const payload = {
-    name: form.name.trim(),
-    description: form.description || null,
-    table_id: form.table_id,
-    enabled: form.schedule.type ? form.enabled : false,
-    range: form.range,
-    blocks: form.blocks.map((b) => {
-      const { series_mode, ...rest } = b  // series_mode 仅编辑器内部使用，不入库
-      return {
-        ...rest,
-        filters: { logic: b.filters.logic, rules: (b.filters.rules || []).filter((r) => r.field && r.op) },
-      }
-    }),
-    filter_fields: form.filter_fields || [],
-    schedule: form.schedule.type === 'interval'
-      ? { type: 'interval', minutes: form.schedule.minutes }
-      : form.schedule.type === 'cron'
-        ? { type: 'cron', expr: form.schedule.expr }
-        : {},
-    push: form.schedule.type
-      ? { ...form.push, webhooks: (form.push.webhooks || []).filter((w) => (w.url || '').trim()) }
-      : {},
-  }
-  saving.value = true
+async function create() {
+  if (!createForm.name.trim()) return ElMessage.warning('请填写报表名称')
+  if (!createForm.table_id) return ElMessage.warning('请选择数据源')
+  const t = tables.value.find((x) => x.id === createForm.table_id)
+  creating.value = true
   try {
-    if (editing.value) {
-      await updateReport(editing.value.id, payload)
-    } else {
-      await createReport(payload)
-    }
-    ElMessage.success('已保存')
-    editorVisible.value = false
-    load()
+    const res = await createReport({
+      name: createForm.name.trim(),
+      table_id: createForm.table_id,
+      range: { mode: 'this_week' },
+      datasets: [{ id: 'd1', name: t?.label || '', base_table_id: createForm.table_id, joins: [], computed_fields: [] }],
+      blocks: [],
+      layout: null,
+      filter_fields: [],
+      schedule: {},
+      push: {},
+    })
+    createVisible.value = false
+    createForm.name = ''
+    createForm.table_id = null
+    router.push(`/reports/${res.id}/layout`)
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
-    saving.value = false
+    creating.value = false
   }
 }
 

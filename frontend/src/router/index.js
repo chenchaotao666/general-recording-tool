@@ -5,7 +5,6 @@ import DynamicTable from '../views/DynamicTable.vue'
 import Reports from '../views/Reports.vue'
 import Settings from '../views/Settings.vue'
 import Login from '../views/Login.vue'
-import ShareView from '../views/ShareView.vue'
 import UsersManage from '../views/UsersManage.vue'
 import RolesManage from '../views/RolesManage.vue'
 import PermissionsManage from '../views/PermissionsManage.vue'
@@ -16,7 +15,8 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: Login },
-    { path: '/share/:token', component: ShareView },  // 公开链接分享，免登录
+    // 公开链接分享，免登录（懒加载隔离 echarts 体积）
+    { path: '/share/:token', component: () => import('../views/ShareView.vue') },
     // 公开表单（工作流表单触发器），免登录
     { path: '/form/:wfId/:secret', component: () => import('../views/PublicForm.vue') },
     // 免登审批（签名链接），免登录
@@ -39,6 +39,8 @@ const router = createRouter({
     { path: '/reports', component: Reports },
     // 懒加载隔离 echarts 体积
     { path: '/reports/:id/view', component: () => import('../views/ReportView.vue') },
+    // 布局设计器：懒加载隔离 grid-layout-plus 体积
+    { path: '/reports/:id/layout', component: () => import('../views/ReportLayoutDesigner.vue') },
     { path: '/settings', component: Settings },
     { path: '/system/users', component: UsersManage, meta: { admin: true } },
     { path: '/system/roles', component: RolesManage, meta: { admin: true } },

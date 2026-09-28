@@ -1407,9 +1407,335 @@ assert client.get(f"/api/tables/{tj2}").status_code == 404
 as_user(admin_headers)
 print("链接分享 + 用户组通过")
 
+# 10.14 报表栅格布局：校验 / run 透传 / 双引擎一致 / 导出分节
+# 专用表对（tj/tp 已被前面章节写入额外数据，不能直接做 parity）
+ltj = make_table("layout-json", "json")
+ltp = make_table("layout-physical", "physical")
+fill(ltj)
+fill(ltp)
+LAYOUT_BLOCKS = [
+    {"id": "b1", "type": "stat", "title": "记录数", "agg": "count", "filters": {"logic": "AND", "rules": []}},
+    {"id": "b2", "type": "chart", "title": "按成交", "chart_type": "bar",
+     "group": {"kind": "field", "field": "is_deal"}, "agg": "count", "filters": {"logic": "AND", "rules": []}},
+    {"id": "b3", "type": "text", "title": "备注", "content": "未放置区块", "filters": {"logic": "AND", "rules": []}},
+]
+LAYOUT_OK = {
+    "version": 1, "grid": {"cols": 24, "row_height": 40},
+    "pages": [
+        {"id": "p1", "title": "总览", "items": [
+            {"block_id": "b1", "x": 0, "y": 0, "w": 6, "h": 4},
+            {"block_id": "b2", "x": 6, "y": 0, "w": 12, "h": 10},
+        ]},
+        {"id": "p2", "title": "明细", "items": []},
+    ],
+}
+
+# 非法布局：悬空引用 / 越界 / 小于最小尺寸 / 重复放置 / 页签超上限
+for bad_layout in (
+    {"pages": [{"id": "p1", "title": "x", "items": [{"block_id": "ghost", "x": 0, "y": 0, "w": 6, "h": 4}]}]},
+    {"pages": [{"id": "p1", "title": "x", "items": [{"block_id": "b1", "x": 20, "y": 0, "w": 6, "h": 4}]}]},
+    {"pages": [{"id": "p1", "title": "x", "items": [{"block_id": "b1", "x": 0, "y": 0, "w": 3, "h": 4}]}]},
+    {"pages": [{"id": "p1", "title": "x", "items": [{"block_id": "b1", "x": 0, "y": 0, "w": 6, "h": 4}]},
+               {"id": "p2", "title": "y", "items": [{"block_id": "b1", "x": 0, "y": 0, "w": 6, "h": 4}]}]},
+    {"pages": [{"id": f"p{i}", "title": "x", "items": []} for i in range(11)]},
+):
+    r = client.post("/api/reports", json={
+        "name": "bad-layout", "table_id": ltj, "range": {"mode": "today"},
+        "blocks": LAYOUT_BLOCKS, "layout": bad_layout,
+    })
+    assert r.status_code == 400, r.text
+
+layout_ids = []
+for t in (ltj, ltp):
+    r = client.post("/api/reports", json={
+        "name": "布局报表", "table_id": t, "enabled": False,
+        "range": {"mode": "today", "date_field": "created_at"},
+        "blocks": LAYOUT_BLOCKS, "layout": LAYOUT_OK, "schedule": {}, "push": {},
+    })
+    assert r.status_code == 200 and r.json()["layout"]["pages"][0]["title"] == "总览", r.text
+    layout_ids.append(r.json()["id"])
+
+# run 透传 layout，未放置区块（b3）仍计算；双引擎结果一致（图表分组计数并列时次序可不同，按 label 对齐比较）
+runs = [client.post(f"/api/reports/{rid}/run").json() for rid in layout_ids]
+for res in runs:
+    assert res["layout"]["pages"][1]["title"] == "明细", res["layout"]
+    assert {b["id"] for b in res["blocks"]} == {"b1", "b2", "b3"}
+e0, e1 = (_blocks_by_id(res) for res in runs)
+assert e0["b1"] == e1["b1"] and e0["b3"] == e1["b3"]
+assert sorted(zip(e0["b2"]["labels"], e0["b2"]["values"])) == sorted(zip(e1["b2"]["labels"], e1["b2"]["values"]))
+
+# xlsx：每个页签一个 sheet + 未放置区块归入"其他"
+import openpyxl
+from io import BytesIO
+r = client.get(f"/api/reports/{layout_ids[0]}/export?format=xlsx&mode=today")
+assert r.status_code == 200, r.text
+wb = openpyxl.load_workbook(BytesIO(r.content))
+assert wb.sheetnames == ["总览", "明细", "其他"], wb.sheetnames
+assert wb["总览"]["A4"].value == "记录数", wb["总览"]["A4"].value   # A1 标题 / A2 口径 / A4 首个区块
+
+# html：分节标题出现
+r = client.get(f"/api/reports/{layout_ids[0]}/export?format=html&mode=today")
+assert 'class="page-sec">总览' in r.text and 'class="page-sec">其他' in r.text, r.text[:500]
+
+# PUT 保留/清除布局：不传 layout 视为清除（前端始终全量提交）
+r = client.put(f"/api/reports/{layout_ids[0]}", json={
+    "name": "布局报表", "table_id": ltj, "enabled": False,
+    "range": {"mode": "today", "date_field": "created_at"},
+    "blocks": LAYOUT_BLOCKS, "layout": None, "filter_fields": [], "schedule": {}, "push": {},
+})
+assert r.status_code == 200 and r.json()["layout"] is None, r.text
+res = client.post(f"/api/reports/{layout_ids[0]}/run").json()
+assert res["layout"] is None  # 无布局回归旧版
+
+for rid in layout_ids:
+    client.delete(f"/api/reports/{rid}")
+print("报表栅格布局通过")
+
+# 10.15 报表二期：计算字段 / 多表关联 / 块级口径 / 仪表盘 / 筛选组件 / 图表联动 / 试运行沙盒
+# （复用 ltj/ltp 表对：4 条 PRECS，金额合计 43500.75，2 条成交）
+
+# --- 计算字段：双引擎 parity ---
+SRC_COMPUTED = {"computed_fields": [
+    {"name": "double_amount", "expr": "amount * 2"},
+    {"name": "deal_score", "expr": "iff(is_deal, 10, 0)", "type": "int"},
+]}
+COMP_BLOCKS = [
+    {"id": "c1", "type": "stat", "title": "双倍金额", "agg": "sum", "field": "double_amount",
+     "filters": {"logic": "AND", "rules": []}},
+    {"id": "c2", "type": "stat", "title": "成交分", "agg": "sum", "field": "deal_score",
+     "filters": {"logic": "AND", "rules": []}},
+]
+comp_ids = []
+for t in (ltj, ltp):
+    r = client.post("/api/reports", json={
+        "name": "计算字段报表", "table_id": t, "range": {"mode": "this_year", "date_field": "created_at"},
+        "blocks": COMP_BLOCKS, "source": SRC_COMPUTED, "schedule": {}, "push": {}})
+    assert r.status_code == 200, r.text
+    comp_ids.append(r.json()["id"])
+runs = [client.post(f"/api/reports/{rid}/run").json() for rid in comp_ids]
+for res in runs:
+    b = _blocks_by_id(res)
+    assert b["c1"]["value"] == round(43500.75 * 2, 2), b["c1"]
+    assert b["c2"]["value"] == 20, b["c2"]
+assert _blocks_by_id(runs[0])["c1"] == _blocks_by_id(runs[1])["c1"]
+
+# 非法数据源：json 基表关联 / 表达式逃逸 / 引用不存在字段 / 缺前缀 / 块级口径带日期字段
+for bad_source in (
+    {"joins": [{"table_id": ltp, "on": [{"left": "id", "right": "id"}], "prefix": "x."}]},   # ltj 是 json 表
+    {"computed_fields": [{"name": "e1", "expr": "__import__('os')"}]},
+    {"computed_fields": [{"name": "e1", "expr": "ghost + 1"}]},
+    {"computed_fields": [{"name": "amount", "expr": "1"}]},
+):
+    r = client.post("/api/reports", json={
+        "name": "bad-source", "table_id": ltj, "range": {"mode": "today"},
+        "blocks": [{"id": "b1", "type": "stat", "agg": "count", "filters": {"logic": "AND", "rules": []}}],
+        "source": bad_source})
+    assert r.status_code == 400, r.text
+r = client.post("/api/reports", json={
+    "name": "bad-source", "table_id": ltp, "range": {"mode": "today"},
+    "blocks": [{"id": "b1", "type": "stat", "agg": "count", "range_override": {"mode": "today", "date_field": "created_at"},
+                "filters": {"logic": "AND", "rules": []}}]})
+assert r.status_code == 400 and "日期字段" in r.text, r.text
+
+# --- 多表左关联（物理表）：订单（ltp）× 客户档案 ---
+r = client.post("/api/tables", json={"label": "客户档案", "storage_mode": "physical", "fields": [
+    {"field_name": "cust_name", "label": "客户", "data_type": "varchar", "length": 64, "nullable": False, "widget": "input"},
+    {"field_name": "level", "label": "等级", "data_type": "varchar", "length": 16, "widget": "select",
+     "options": {"options": ["A", "B"]}},
+]})
+assert r.status_code == 200, r.text
+cust_tid = r.json()["table"]["id"]
+for name, lv in (("张三", "A"), ("李四", "B"), ("王五", "A"), ("赵六", "B")):
+    assert client.post(f"/api/dyn/{cust_tid}/records", json={"cust_name": name, "level": lv}).status_code == 200
+
+JOIN_SRC = {
+    "joins": [{"table_id": cust_tid, "on": [{"left": "customer_name", "right": "cust_name"}], "prefix": "客户."}],
+    "computed_fields": [{"name": "加权金额", "expr": "amount * iff(客户.level == 'A', 2, 1)"}],
+}
+JOIN_BLOCKS = [
+    {"id": "j1", "type": "chart", "title": "等级金额", "chart_type": "bar", "on_click": "link",
+     "group": {"kind": "field", "field": "客户.level"}, "agg": "sum", "field": "amount",
+     "filters": {"logic": "AND", "rules": []}},
+    {"id": "j2", "type": "stat", "title": "加权总额", "agg": "sum", "field": "加权金额",
+     "filters": {"logic": "AND", "rules": []}},
+    {"id": "j3", "type": "table", "title": "明细", "columns": ["customer_name", "客户.level", "amount"],
+     "sort_by": "id", "sort_order": "asc", "limit": 10, "filters": {"logic": "AND", "rules": []}},
+    {"id": "j4", "type": "stat", "title": "A级金额", "agg": "sum", "field": "amount",
+     "filters": {"logic": "AND", "rules": [{"field": "客户.level", "op": "eq", "value": "A"}]}},
+]
+r = client.post("/api/reports", json={
+    "name": "关联报表", "table_id": ltp, "range": {"mode": "this_year", "date_field": "created_at"},
+    "blocks": JOIN_BLOCKS, "source": JOIN_SRC, "schedule": {}, "push": {}})
+assert r.status_code == 200, r.text
+join_rid = r.json()["id"]
+res = client.post(f"/api/reports/{join_rid}/run").json()
+b = _blocks_by_id(res)
+# A：张三15000.5+王五20000.25=35000.75；B：李四8000+赵六500=8500；加权=A*2+B=78501.5
+lv = dict(zip(b["j1"]["labels"], b["j1"]["values"]))
+assert lv == {"A": 35000.75, "B": 8500}, lv
+assert b["j2"]["value"] == 78501.5, b["j2"]
+assert b["j4"]["value"] == 35000.75, b["j4"]
+assert b["j1"]["group_field"] == "客户.level" and b["j1"]["on_click"] == "link"
+assert len(b["j1"]["keys"]) == len(b["j1"]["labels"])
+j3cols = [c["prop"] for c in b["j3"]["columns"]]
+assert "客户.level" in j3cols and b["j3"]["rows"][0]["客户.level"] in ("A", "B")
+# 下钻沿用数据集：点 A 分组 → 2 条，列含关联字段
+ai = b["j1"]["labels"].index("A")
+dr = client.post(f"/api/reports/{join_rid}/drill", json={"block_id": "j1", "group_index": ai}).json()
+assert dr["total"] == 2 and "客户.level" in [c["prop"] for c in dr["columns"]], dr["columns"]
+# 图表联动：links 等值过滤作用于全报表
+res2 = client.post(f"/api/reports/{join_rid}/run", json={"links": [{"field": "客户.level", "value": "A"}]}).json()
+assert _blocks_by_id(res2)["j2"]["value"] == 70001.5   # 加权仅剩 A 级：35000.75*2
+r = client.post(f"/api/reports/{join_rid}/run", json={"links": [{"field": "amount", "value": 1}]})
+assert r.status_code == 400 and "联动" in r.text, r.text
+
+# --- 块级口径覆盖 / 仪表盘 / 筛选组件（复用 ltj，记录都是今天创建） ---
+MISC_BLOCKS = [
+    {"id": "o1", "type": "stat", "title": "今天", "agg": "count", "filters": {"logic": "AND", "rules": []}},
+    {"id": "o2", "type": "stat", "title": "去年", "agg": "count",
+     "range_override": {"mode": "custom", "start": "2025-01-01", "end": "2025-12-31"},
+     "filters": {"logic": "AND", "rules": []}},
+    {"id": "g1", "type": "chart", "chart_type": "gauge", "title": "成交金额", "agg": "sum", "field": "amount",
+     "max": 100000, "filters": {"logic": "AND", "rules": []}},
+    {"id": "f1", "type": "filter", "title": "客户", "field": "customer_name", "filters": {"logic": "AND", "rules": []}},
+]
+r = client.post("/api/reports", json={
+    "name": "二期杂项", "table_id": ltj, "range": {"mode": "today", "date_field": "created_at"},
+    "blocks": MISC_BLOCKS, "schedule": {}, "push": {}})
+assert r.status_code == 200, r.text
+misc_rid = r.json()["id"]
+res = client.post(f"/api/reports/{misc_rid}/run").json()
+b = _blocks_by_id(res)
+assert b["o1"]["value"] == 4 and b["o2"]["value"] == 0          # 块级口径：去年 0 条
+assert b["g1"]["chart_type"] == "gauge" and b["g1"]["value"] == 43500.75 and b["g1"]["max"] == 100000.0
+assert b["f1"]["type"] == "filter" and b["f1"]["field"] == "customer_name" and b["f1"]["widget"] == "input"
+# 筛选组件字段自动开放查看端筛选（无需 filter_fields 声明）
+res2 = client.post(f"/api/reports/{misc_rid}/run", json={
+    "filters": {"logic": "AND", "rules": [{"field": "customer_name", "op": "eq", "value": "张三"}]}}).json()
+assert _blocks_by_id(res2)["o1"]["value"] == 1
+# xlsx 导出：filter 块跳过、gauge 成行（不崩即可）
+r = client.get(f"/api/reports/{misc_rid}/export?format=xlsx&mode=today")
+assert r.status_code == 200 and len(r.content) > 1000
+# 非法筛选组件：字段缺失 / 不在数据集
+for bad_block in (
+    {"id": "f1", "type": "filter", "title": "x"},
+    {"id": "f1", "type": "filter", "title": "x", "field": "ghost"},
+):
+    r = client.post("/api/reports", json={
+        "name": "bad-filter", "table_id": ltj, "range": {"mode": "today"}, "blocks": [bad_block]})
+    assert r.status_code == 400, r.text
+
+# --- 试运行沙盒：draft 不落库，校验后执行 ---
+draft_blocks = MISC_BLOCKS + [{"id": "d1", "type": "stat", "title": "草稿卡", "agg": "count_distinct",
+                               "field": "customer_name", "filters": {"logic": "AND", "rules": []}}]
+r = client.post(f"/api/reports/{misc_rid}/run", json={"draft": {"blocks": draft_blocks}})
+assert r.status_code == 200, r.text
+assert _blocks_by_id(r.json())["d1"]["value"] == 4
+tpl_now = client.get(f"/api/reports/{misc_rid}").json()
+assert len(tpl_now["blocks"]) == len(MISC_BLOCKS)   # 试运行不污染模板
+r = client.post(f"/api/reports/{misc_rid}/run", json={"draft": {"blocks": [{"id": "x", "type": "stat", "agg": "sum"}]}})
+assert r.status_code == 400, r.text   # draft 也过完整校验（sum 缺数值字段）
+
+for rid in comp_ids + [join_rid, misc_rid]:
+    client.delete(f"/api/reports/{rid}")
+print("报表二期（计算字段/关联/块级口径/仪表盘/筛选组件/联动/沙盒）通过")
+
+# 10.16 报表 v3：块级多数据源（json+物理 混合双引擎）/ 逐块口径 / 筛选与联动作用域
+V3_DATASETS = [
+    {"id": "d_json", "name": "JSON表", "base_table_id": ltj, "joins": [], "computed_fields": []},
+    {"id": "d_phy", "name": "物理表", "base_table_id": ltp, "joins": [], "computed_fields": []},
+]
+V3_BLOCKS = [
+    {"id": "m1", "type": "stat", "title": "J记录数", "dataset_id": "d_json", "date_field": "created_at",
+     "agg": "count", "filters": {"logic": "AND", "rules": []}},
+    {"id": "m2", "type": "stat", "title": "P总金额", "dataset_id": "d_phy", "date_field": None,
+     "agg": "sum", "field": "amount", "filters": {"logic": "AND", "rules": []}},
+    {"id": "m3", "type": "chart", "title": "J成交", "dataset_id": "d_json", "date_field": "created_at",
+     "chart_type": "bar", "group": {"kind": "field", "field": "is_deal"}, "agg": "count", "on_click": "link",
+     "filters": {"logic": "AND", "rules": []}},
+    {"id": "m4", "type": "stat", "title": "P去年", "dataset_id": "d_phy", "date_field": "created_at",
+     "range_mode": "custom", "range_start": "2025-01-01", "range_end": "2025-12-31",
+     "agg": "count", "filters": {"logic": "AND", "rules": []}},
+    {"id": "f1", "type": "filter", "title": "客户", "dataset_id": "d_json", "field": "customer_name",
+     "filters": {"logic": "AND", "rules": []}},
+    {"id": "f2", "type": "filter", "title": "成交", "dataset_id": "d_phy", "field": "is_deal",
+     "target": {"mode": "blocks", "block_ids": ["m2"]}, "filters": {"logic": "AND", "rules": []}},
+]
+r = client.post("/api/reports", json={
+    "name": "多数据源报表", "table_id": ltj, "range": {"mode": "today"},
+    "datasets": V3_DATASETS, "blocks": V3_BLOCKS, "schedule": {}, "push": {}})
+assert r.status_code == 200 and len(r.json()["datasets"]) == 2, r.text
+v3_rid = r.json()["id"]
+assert r.json()["table_id"] == ltj  # table_id 反规范化为首个数据集基表
+
+res = client.post(f"/api/reports/{v3_rid}/run").json()
+b = _blocks_by_id(res)
+assert b["m1"]["value"] == 4                       # d_json 跟随全局"今天"
+assert b["m2"]["value"] == 43500.75                # d_phy date_field=null：不随时间过滤
+assert sorted(b["m3"]["values"]) == [2, 2]
+assert b["m4"]["value"] == 0                       # 块级独立口径：去年 0 条
+assert b["m2"]["range_badge"] == "不随时间筛选"     # 口径徽标
+assert b["m4"]["range_badge"].startswith("2025-01-01")
+assert "range_badge" not in b["m1"]                # 跟随全局无徽标
+assert b["f1"]["dataset_id"] == "d_json" and b["f2"]["target"]["block_ids"] == ["m2"]
+
+# 全局口径切换：昨天 → 跟随块变 0，date_field=null 与独立口径块不受影响
+res2 = client.post(f"/api/reports/{v3_rid}/run", json={"range": {"mode": "yesterday"}}).json()
+b2 = _blocks_by_id(res2)
+assert b2["m1"]["value"] == 0 and b2["m2"]["value"] == 43500.75 and b2["m4"]["value"] == 0
+
+# 筛选作用域：d_json 的 filter 只作用同数据集块（m1/m3），不碰 d_phy 的 m2
+res3 = client.post(f"/api/reports/{v3_rid}/run", json={
+    "filters": {"logic": "AND", "rules": [{"dataset": "d_json", "field": "customer_name", "op": "eq", "value": "张三"}]}}).json()
+b3 = _blocks_by_id(res3)
+assert b3["m1"]["value"] == 1 and b3["m2"]["value"] == 43500.75
+# target=blocks 的 filter：只作用 m2
+res4 = client.post(f"/api/reports/{v3_rid}/run", json={
+    "filters": {"logic": "AND", "rules": [{"dataset": "d_phy", "field": "is_deal", "op": "eq", "value": True}]}}).json()
+b4 = _blocks_by_id(res4)
+assert b4["m2"]["value"] == 35000.75 and b4["m1"]["value"] == 4
+# 未声明数据集的筛选被拒
+r = client.post(f"/api/reports/{v3_rid}/run", json={
+    "filters": {"logic": "AND", "rules": [{"dataset": "d_phy", "field": "customer_name", "op": "eq", "value": "张三"}]}})
+assert r.status_code == 400, r.text
+
+# 联动：m3（d_json）点成交 → m1 变 2，m2 不受影响
+res5 = client.post(f"/api/reports/{v3_rid}/run", json={"links": [{"field": "is_deal", "value": True}]}).json()
+b5 = _blocks_by_id(res5)
+assert b5["m1"]["value"] == 2 and b5["m2"]["value"] == 43500.75
+
+# 下钻：json 数据集的图表点分组取明细
+di = res["blocks"][2]["labels"].index("True")
+dr = client.post(f"/api/reports/{v3_rid}/drill", json={"block_id": "m3", "group_index": di}).json()
+assert dr["total"] == 2, dr["total"]
+
+# v3 非法配置：幽灵数据集 / 数据集 id 重复 / filter 目标幽灵块 / date_field 非日期
+for bad_datasets, bad_blocks in (
+    (V3_DATASETS, [{"id": "x", "type": "stat", "dataset_id": "ghost", "agg": "count", "filters": {"logic": "AND", "rules": []}}]),
+    ([V3_DATASETS[0], V3_DATASETS[0]], []),
+    (V3_DATASETS, [{"id": "x", "type": "filter", "dataset_id": "d_json", "field": "customer_name",
+                    "target": {"mode": "blocks", "block_ids": ["ghost"]}, "filters": {"logic": "AND", "rules": []}}]),
+    (V3_DATASETS, [{"id": "x", "type": "stat", "dataset_id": "d_json", "date_field": "customer_name",
+                    "agg": "count", "filters": {"logic": "AND", "rules": []}}]),
+):
+    r = client.post("/api/reports", json={
+        "name": "bad-v3", "table_id": ltj, "range": {"mode": "today"},
+        "datasets": bad_datasets, "blocks": bad_blocks})
+    assert r.status_code == 400, r.text
+
+# v3 沙盒：draft 带 datasets
+r = client.post(f"/api/reports/{v3_rid}/run", json={
+    "draft": {"datasets": V3_DATASETS,
+              "blocks": [{"id": "n1", "type": "stat", "dataset_id": "d_phy", "date_field": None,
+                          "title": "沙盒", "agg": "count", "filters": {"logic": "AND", "rules": []}}]}})
+assert r.status_code == 200 and _blocks_by_id(r.json())["n1"]["value"] == 4, r.text
+
+client.delete(f"/api/reports/{v3_rid}")
+print("报表 v3（块级多数据源/逐块口径/作用域）通过")
+
 # 清理测试表
 as_user(admin_headers)
-for t_ in (tj, tp, worker_tid, vip_tid, tj2, normie_tid):
+for t_ in (tj, tp, worker_tid, vip_tid, tj2, normie_tid, ltj, ltp, cust_tid):
     client.delete(f"/api/tables/{t_}")
 
 print("\nALL SMOKE TESTS PASSED")

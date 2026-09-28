@@ -24,6 +24,7 @@
     "axios": "^1.7.2",
     "echarts": "^5.5.0",
     "element-plus": "^2.7.5",
+    "grid-layout-plus": "^1.1.1",
     "vue": "^3.4.27",
     "vue-router": "^4.3.2"
   },

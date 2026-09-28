@@ -16,6 +16,7 @@ from ..services.llm import LLMError
 from ..services.llm.gateway import assist_report
 from ..services.meta_service import get_meta_fields, get_meta_table
 from ..services.report_engine import drill_chart, push_template, run_template, validate_template
+from ..services import report_dataset as ds_mod
 from ..services.report_export import DEFAULT_ECHARTS_CDN, export_html, export_xlsx
 from ..utils.access import check_owner_or_admin, get_table_access
 from ..utils.auth import get_current_user
@@ -43,6 +44,8 @@ def _out(db: Session, tpl: ReportTemplate) -> dict:
         "table_id": tpl.table_id, "table_label": mt.label if mt else f"表#{tpl.table_id}",
         "enabled": tpl.enabled,
         "range": rng, "blocks": tpl.blocks_json or [],
+        "layout": tpl.layout_json, "source": tpl.source_json,
+        "datasets": tpl.datasets_json or [],
         "filter_fields": tpl.filters_json or [],
         "schedule": tpl.schedule_json or {}, "push": tpl.push_json or {},
         "range_desc": RANGE_MODE_LABELS.get(rng.get("mode") or "this_week", rng.get("mode")),
@@ -60,10 +63,14 @@ def _out(db: Session, tpl: ReportTemplate) -> dict:
 def _apply(rule: ReportTemplate, payload: ReportTemplateIn) -> None:
     rule.name = payload.name.strip()
     rule.description = payload.description
-    rule.table_id = payload.table_id
     rule.enabled = payload.enabled
     rule.range_json = payload.range
     rule.blocks_json = payload.blocks
+    rule.layout_json = payload.layout
+    rule.source_json = payload.source
+    rule.datasets_json = payload.datasets or None
+    # table_id 反规范化：v3 取首个数据集的基表（列表展示/旧逻辑兼容），旧格式原样
+    rule.table_id = payload.datasets[0]["base_table_id"] if payload.datasets else payload.table_id
     rule.filters_json = payload.filter_fields
     rule.schedule_json = payload.schedule
     rule.push_json = payload.push
@@ -106,6 +113,7 @@ def ai_assist(payload: AiAssistIn, db: Session = Depends(get_db), user: User = D
 @router.post("")
 def create_template(payload: ReportTemplateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     get_table_access(db, payload.table_id, user)
+    _check_datasets_access(db, ds_mod.normalize_datasets(payload.datasets or None, payload.table_id, payload.source), user)
     validate_template(db, payload)
     tpl = ReportTemplate(user_id=user.id)
     _apply(tpl, payload)
@@ -122,6 +130,7 @@ def update_template(tpl_id: int, payload: ReportTemplateIn, db: Session = Depend
         raise HTTPException(404, "报表模板不存在")
     check_owner_or_admin(tpl.user_id, user)
     get_table_access(db, payload.table_id, user)
+    _check_datasets_access(db, ds_mod.normalize_datasets(payload.datasets or None, payload.table_id, payload.source), user)
     validate_template(db, payload)
     _apply(tpl, payload)
     db.commit()
@@ -167,16 +176,54 @@ def _range_override(range_cfg: dict | None, mode: str | None, start: str | None,
     return override or None
 
 
+def _check_datasets_access(db: Session, datasets: list, user: User) -> None:
+    """数据集的基表与关联表逐张校验数据权限（防借报表绕过表授权）。"""
+    for d in datasets or []:
+        try:
+            get_table_access(db, int(d.get("base_table_id")), user)
+        except (TypeError, ValueError):
+            raise HTTPException(400, f"数据集基表 id 无效：{d.get('base_table_id')}")
+        for j in d.get("joins") or []:
+            try:
+                get_table_access(db, int(j.get("table_id")), user)
+            except (TypeError, ValueError):
+                raise HTTPException(400, "关联表 id 无效")
+
+
 @router.post("/{tpl_id}/run")
 def run_report(tpl_id: int, payload: dict | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
     check_owner_or_admin(tpl.user_id, user)
-    get_table_access(db, tpl.table_id, user)  # 数据权限跟随表的分享权限（被撤权后不可再跑）
     payload = payload or {}
+    draft = payload.get("draft")
+    if draft is not None:
+        # 试运行沙盒：不落库，完整校验（含数据集权限）后用瞬态模板执行
+        from types import SimpleNamespace
+        if not isinstance(draft, dict):
+            raise HTTPException(400, "draft 必须是对象")
+        tin = ReportTemplateIn(
+            name=tpl.name, table_id=tpl.table_id, enabled=False,
+            range=draft.get("range") or tpl.range_json or {},
+            blocks=draft.get("blocks") if draft.get("blocks") is not None else (tpl.blocks_json or []),
+            layout=draft.get("layout", tpl.layout_json),
+            source=draft.get("source", tpl.source_json),
+            datasets=draft.get("datasets") if draft.get("datasets") is not None else (tpl.datasets_json or []),
+            filter_fields=draft.get("filter_fields") if draft.get("filter_fields") is not None else (tpl.filters_json or []),
+            schedule={}, push={},
+        )
+        validate_template(db, tin)
+        _check_datasets_access(db, ds_mod.normalize_datasets(tin.datasets or None, tin.table_id, tin.source), user)
+        tpl = SimpleNamespace(
+            id=tpl.id, name=tpl.name, table_id=tpl.table_id, user_id=tpl.user_id,
+            range_json=tin.range, blocks_json=tin.blocks, layout_json=tin.layout,
+            source_json=tin.source, datasets_json=tin.datasets or None, filters_json=tin.filter_fields,
+        )
+    else:
+        _check_datasets_access(db, ds_mod.template_datasets(tpl), user)
     return run_template(db, tpl, _range_override(payload.get("range"), None, None, None),
-                        viewer_filters=payload.get("filters"))
+                        viewer_filters=payload.get("filters"), links=payload.get("links"))
 
 
 @router.post("/{tpl_id}/drill")
@@ -199,7 +246,8 @@ def report_drill(tpl_id: int, payload: dict, db: Session = Depends(get_db), user
     except (TypeError, ValueError):
         raise HTTPException(400, "series_index 无效")
     return drill_chart(db, tpl, payload.get("block_id") or "", group_index, series_index,
-                       _range_override(payload.get("range"), None, None, None), payload.get("filters"))
+                       _range_override(payload.get("range"), None, None, None), payload.get("filters"),
+                       payload.get("links"))
 
 
 @router.get("/{tpl_id}/export")
@@ -212,6 +260,7 @@ def export_report(tpl_id: int, format: str = "xlsx", mode: str | None = None,
         raise HTTPException(404, "报表模板不存在")
     check_owner_or_admin(tpl.user_id, user)
     get_table_access(db, tpl.table_id, user)
+    _check_datasets_access(db, ds_mod.template_datasets(tpl), user)
     viewer_filters = None
     if filters:
         try:

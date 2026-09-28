@@ -35,33 +35,7 @@
       <template v-else>
         <div class="page-header"><h2>{{ data.label }}</h2></div>
         <div class="meta">{{ data.report.range.label }} · 生成于 {{ data.report.generated_at }}</div>
-        <template v-for="b in data.report.blocks" :key="b.id">
-          <el-card v-if="b.type === 'stat'" class="block" shadow="never">
-            <div class="stat-title">{{ b.title }}</div>
-            <div class="stat-value">{{ b.value }}</div>
-          </el-card>
-          <el-card v-else-if="b.type === 'chart'" class="block" shadow="never">
-            <div class="block-title">{{ b.title }}</div>
-            <div v-for="(l, i) in b.labels" :key="i" class="bar-row">
-              <span class="bar-label">{{ l }}</span>
-              <div class="bar-track">
-                <div class="bar-fill" :style="{ width: barWidth(b.values, i) }" />
-              </div>
-              <span class="bar-value">{{ b.values[i] }}</span>
-            </div>
-          </el-card>
-          <el-card v-else-if="b.type === 'table'" class="block" shadow="never">
-            <div class="block-title">{{ b.title }}</div>
-            <el-table :data="b.rows" size="small" border>
-              <el-table-column
-                v-for="c in b.columns" :key="c.prop" :prop="c.prop" :label="c.label" show-overflow-tooltip
-              />
-            </el-table>
-          </el-card>
-          <el-card v-else-if="b.type === 'text'" class="block" shadow="never">
-            <div class="text-block">{{ b.content }}</div>
-          </el-card>
-        </template>
+        <ReportDashboard :blocks="data.report.blocks" :layout="data.report.layout" :filterable="false" />
       </template>
     </template>
 
@@ -72,6 +46,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import ReportDashboard from '../components/ReportDashboard.vue'
 
 const route = useRoute()
 const token = route.params.token
@@ -119,29 +94,15 @@ function fmt(f, val) {
   return String(val)
 }
 
-function barWidth(values, i) {
-  const max = Math.max(...values.map((v) => Number(v) || 0), 1)
-  return `${Math.round(((Number(values[i]) || 0) / max) * 100)}%`
-}
-
 onMounted(load)
 </script>
 
 <style scoped>
-.share-page { max-width: 960px; margin: 0 auto; padding: 24px; }
+.share-page { max-width: 1200px; margin: 0 auto; padding: 24px; }
 .pwd-card { max-width: 360px; margin: 120px auto; text-align: center; }
 .pwd-card .title { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
 .error { color: #f56c6c; font-size: 13px; margin-top: 12px; }
 .total { color: #909399; font-size: 13px; }
 .meta { color: #909399; font-size: 12px; margin-bottom: 14px; }
 .block { margin-bottom: 16px; }
-.stat-title { font-size: 13px; color: #909399; }
-.stat-value { font-size: 30px; font-weight: 600; margin-top: 4px; }
-.block-title { font-weight: 600; margin-bottom: 12px; }
-.bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.bar-label { width: 140px; font-size: 13px; color: #606266; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar-track { flex: 1; background: #f0f2f5; border-radius: 4px; height: 16px; }
-.bar-fill { background: #409eff; height: 100%; border-radius: 4px; min-width: 2px; }
-.bar-value { width: 70px; text-align: right; font-size: 13px; }
-.text-block { white-space: pre-wrap; line-height: 1.7; color: #606266; }
 </style>

@@ -224,6 +224,9 @@ class ReportTemplate(Base):
     # {mode: today|yesterday|past_7d|past_30d|this_week|last_week|this_month|last_month|this_quarter|this_year|custom, date_field, start?, end?}
     blocks_json = Column(JSON, default=list)
     # [{id, type: stat|chart|table|text|pivot, title, filters: {logic, rules}, ...}]；stat 支持 agg: ratio（占比）与 compare: 环比；pivot 为行×列交叉聚合
+    layout_json = Column(JSON)                           # None=旧版垂直堆叠；{version, grid:{cols,row_height}, pages:[{id,title,items:[{block_id,x,y,w,h}]}]}
+    source_json = Column(JSON)                           # 数据集：None=单表；{joins:[{table_id,on:[{left,right}],prefix}], computed_fields:[{name,expr,type?}]}
+    datasets_json = Column(JSON)                         # v3 命名数据集 [{id,name,base_table_id,joins,computed_fields}]；空=旧格式运行期合成
     filters_json = Column(JSON, default=list)      # 查看端开放筛选的字段名列表
     schedule_json = Column(JSON, default=dict)   # {type: interval, minutes} | {type: cron, expr}
     push_json = Column(JSON, default=dict)       # {recipients, formats: [html_inline, xlsx], subject}

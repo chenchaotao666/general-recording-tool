@@ -9,6 +9,7 @@
         </span>
       </div>
       <div>
+        <el-button :icon="Grid" @click="$router.push(`/reports/${tplId}/layout`)">设计</el-button>
         <el-button :icon="Download" @click="exportFile('xlsx')">导出 Excel</el-button>
         <el-button :icon="Download" @click="exportFile('html')">导出 HTML</el-button>
       </div>
@@ -59,54 +60,19 @@
     </div>
 
     <template v-if="result">
-      <!-- 统计卡片 -->
-      <div v-if="statBlocks.length" class="stats">
-        <div v-for="b in statBlocks" :key="b.id" class="stat-card">
-          <div class="stat-title">{{ b.title }}</div>
-          <div class="stat-value">{{ b.value }}<span v-if="b.agg === 'ratio'" class="stat-unit">%</span></div>
-          <div v-if="b.compare" class="stat-compare">
-            较上期
-            <span v-if="b.compare.delta_pct !== null" :class="b.compare.delta >= 0 ? 'up' : 'down'">
-              {{ b.compare.delta >= 0 ? '↑' : '↓' }}{{ Math.abs(b.compare.delta_pct) }}%
-            </span>
-            <span v-else style="color: #909399">上期 {{ b.compare.prev }}，无对比基数</span>
-          </div>
-        </div>
+      <!-- 图表联动中的过滤条件 -->
+      <div v-if="linkList.length" class="link-bar">
+        <span style="color: #909399; font-size: 13px">联动</span>
+        <el-tag
+          v-for="l in linkList" :key="l.field" closable size="small" type="warning" effect="plain"
+          @close="clearLink(l.field)"
+        >{{ l.field }} = {{ l.label }}</el-tag>
+        <el-button size="small" text @click="clearAllLinks">清除全部</el-button>
       </div>
-
-      <!-- 其余区块按模板顺序 -->
-      <div v-for="b in otherBlocks" :key="b.id" class="block">
-        <h3>{{ b.title }}</h3>
-        <template v-if="b.type === 'chart'">
-          <div :ref="(el) => chartRef(b.id, el)" class="chart" />
-          <div class="drill-hint">点击图表可查看该分组明细</div>
-        </template>
-        <template v-else-if="b.type === 'pivot'">
-          <el-table
-            :data="pivotRows(b)" size="small" border max-height="480"
-            @cell-click="(row, column) => onPivotCellClick(b, row, column)"
-          >
-            <el-table-column label="行＼列" prop="__label" fixed show-overflow-tooltip />
-            <el-table-column v-for="(cl, ci) in b.col_labels" :key="ci" :label="cl" :prop="'c' + ci" align="right" />
-            <el-table-column v-if="b.totals" label="合计" prop="__rt" align="right" />
-          </el-table>
-          <div class="drill-hint">点击数值单元格可查看明细</div>
-        </template>
-        <template v-else-if="b.type === 'table'">
-          <el-table :data="b.rows" size="small" border max-height="480">
-            <el-table-column
-              v-for="c in b.columns" :key="c.prop" :prop="c.prop" :label="c.label"
-              show-overflow-tooltip
-            />
-          </el-table>
-          <div v-if="b.truncated" style="font-size: 12px; color: #909399; margin-top: 6px">
-            共 {{ b.total }} 条，仅显示前 {{ b.rows.length }} 条
-          </div>
-        </template>
-        <template v-else-if="b.type === 'text'">
-          <div class="text-block">{{ b.content }}</div>
-        </template>
-      </div>
+      <ReportDashboard
+        :blocks="result.blocks" :layout="result.layout" drillable
+        @drill="onDashDrill" @link="onDashLink" @viewer-filter="onViewerFilter"
+      />
       <el-empty v-if="!result.blocks.length" description="该模板还没有区块，去编辑添加" />
     </template>
 
@@ -129,17 +95,12 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Download } from '@element-plus/icons-vue'
-import * as echarts from 'echarts/core'
-import { BarChart, LineChart, PieChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TitleComponent, TooltipComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
+import { ArrowLeft, Download, Grid } from '@element-plus/icons-vue'
 import { reportExportUrl, runReport, drillReport, getReport, getTable } from '../api'
-
-echarts.use([BarChart, LineChart, PieChart, GridComponent, LegendComponent, TitleComponent, TooltipComponent, CanvasRenderer])
+import ReportDashboard from '../components/ReportDashboard.vue'
 
 const RANGE_MODES = [
   ['today', '今天'], ['yesterday', '昨天'], ['past_7d', '近7天'], ['past_30d', '近30天'],
@@ -154,56 +115,60 @@ const result = ref(null)
 const loading = ref(false)
 const rangeMode = ref('this_week')
 const customRange = ref(null)
-const chartEls = new Map()
-let charts = []
 
-const statBlocks = computed(() => (result.value?.blocks || []).filter((b) => b.type === 'stat'))
-const otherBlocks = computed(() => (result.value?.blocks || []).filter((b) => b.type !== 'stat'))
+// ---------- 图表联动 ----------
+const linkFilters = ref({})   // field -> {value, label}
+const linkList = computed(() => Object.entries(linkFilters.value).map(([field, v]) => ({ field, ...v })))
 
-function chartRef(id, el) {
-  if (el) chartEls.set(id, el)
+function onDashLink({ field, value, label }) {
+  // 再点同一个分组 = 取消联动
+  if (linkFilters.value[field]?.value === value) {
+    delete linkFilters.value[field]
+  } else {
+    linkFilters.value = { ...linkFilters.value, [field]: { value, label } }
+  }
+  run()
 }
 
-function renderCharts() {
-  charts.forEach((c) => c.dispose())
-  charts = []
-  for (const b of result.value?.blocks || []) {
-    if (b.type !== 'chart') continue
-    const el = chartEls.get(b.id)
-    if (!el) continue
-    const ch = echarts.init(el)
-    let option
-    if (b.chart_type === 'pie') {
-      option = {
-        tooltip: { trigger: 'item' },
-        legend: { bottom: 0 },
-        series: [{ type: 'pie', radius: ['35%', '65%'], data: b.labels.map((l, i) => ({ name: l, value: b.values[i] })) }],
-      }
-    } else {
-      const seriesList = (b.series?.length ? b.series : [{ name: '', values: b.values }])
-      const stack = b.stack && seriesList.length > 1 ? 'total' : undefined
-      option = {
-        tooltip: { trigger: 'axis' },
-        legend: seriesList.length > 1 ? { bottom: 0 } : undefined,
-        grid: { left: 48, right: 24, top: 24, bottom: seriesList.length > 1 ? 56 : 48 },
-        xAxis: { type: 'category', data: b.labels },
-        yAxis: { type: 'value' },
-        series: seriesList.map((s) => ({
-          name: s.name,
-          type: b.chart_type === 'area' ? 'line' : b.chart_type,
-          data: s.values,
-          barMaxWidth: 40,
-          smooth: true,
-          ...(stack ? { stack } : {}),
-          ...(b.chart_type === 'area' ? { areaStyle: {} } : {}),
-        })),
-      }
-    }
-    ch.setOption(option)
-    ch.off('click')
-    ch.on('click', (p) => onChartClick(b, p))
-    charts.push(ch)
+function clearLink(field) {
+  delete linkFilters.value[field]
+  run()
+}
+
+function clearAllLinks() {
+  linkFilters.value = {}
+  run()
+}
+
+const currentLinks = computed(() =>
+  Object.entries(linkFilters.value).map(([field, v]) => ({ field, value: v.value }))
+)
+
+// ---------- 筛选组件块 ----------
+const blockFilters = ref({})    // block_id -> rules[]
+
+function onViewerFilter({ block_id, field, value, data_type, widget, dataset }) {
+  if (!field) return
+  const empty = value == null || value === '' || (Array.isArray(value) && !value.length)
+  if (empty) {
+    delete blockFilters.value[block_id]
+  } else if (['date', 'datetime'].includes(data_type)) {
+    blockFilters.value[block_id] = [
+      { dataset, field, op: 'gte', value: value[0] },
+      { dataset, field, op: 'lte', value: value[1] },
+    ]
+  } else if (widget === 'select' || data_type === 'bool' || ['int', 'decimal'].includes(data_type)) {
+    blockFilters.value[block_id] = [{ dataset, field, op: 'eq', value }]
+  } else {
+    blockFilters.value[block_id] = [{ dataset, field, op: 'contains', value }]
   }
+  run()
+}
+
+// 工具条筛选 + 筛选组件块 合并（恒 AND）
+function mergedFilters() {
+  const rules = [...(currentFilters()?.rules || []), ...Object.values(blockFilters.value).flat()]
+  return rules.length ? { logic: 'AND', rules } : null
 }
 
 // ---------- 图表下钻 ----------
@@ -214,7 +179,7 @@ async function openDrill(title, payload) {
   try {
     const res = await drillReport(tplId, {
       ...payload,
-      range: currentRange() || { mode: rangeMode.value }, filters: currentFilters(),
+      range: currentRange() || { mode: rangeMode.value }, filters: mergedFilters(), links: currentLinks.value,
     })
     Object.assign(drill.value, { loading: false, ...res })
   } catch (e) {
@@ -224,50 +189,8 @@ async function openDrill(title, payload) {
   }
 }
 
-async function onChartClick(b, p) {
-  if (p.componentType !== 'series' || p.dataIndex == null) return
-  const groupIndex = p.dataIndex
-  // 二级分组图的系列是筛选维度；多指标图的系列只是指标，不影响记录集
-  const seriesIndex = b.group2 && p.seriesIndex != null ? p.seriesIndex : null
-  const seriesName = b.group2 ? b.series?.[p.seriesIndex]?.name : null
-  await openDrill(
-    `${b.title} · ${b.labels[groupIndex]}${seriesName ? ` · ${seriesName}` : ''}`,
-    { block_id: b.id, group_index: groupIndex, series_index: seriesIndex },
-  )
-}
-
-// ---------- 透视表 ----------
-function pivotRows(b) {
-  const rows = b.row_labels.map((rl, i) => {
-    const r = { __label: rl, __ri: i }
-    b.col_labels.forEach((_, ci) => { r['c' + ci] = b.cells[i]?.[ci] })
-    if (b.totals) r.__rt = b.row_totals[i]
-    return r
-  })
-  if (b.totals) {
-    const t = { __label: '合计', __ri: null }
-    b.col_labels.forEach((_, ci) => { t['c' + ci] = b.col_totals[ci] })
-    t.__rt = b.grand_total
-    rows.push(t)
-  }
-  return rows
-}
-
-// 点单元格下钻：数据格=行×列；合计列=整行；合计行=整列；总计格=全部
-async function onPivotCellClick(b, row, column) {
-  const prop = column?.property
-  if (!prop || prop === '__label') return
-  const seriesIndex = prop === '__rt' ? null : Number(prop.slice(1))
-  const groupIndex = row.__ri
-  const rl = groupIndex === null ? '合计行' : b.row_labels[groupIndex]
-  const cl = seriesIndex === null ? '合计' : b.col_labels[seriesIndex]
-  await openDrill(`${b.title} · ${rl} × ${cl}`, {
-    block_id: b.id, group_index: groupIndex, series_index: seriesIndex,
-  })
-}
-
-function onResize() {
-  charts.forEach((c) => c.resize())
+function onDashDrill({ title, ...payload }) {
+  openDrill(title, payload)
 }
 
 function currentRange() {
@@ -319,9 +242,7 @@ async function run() {
   if (!range) return ElMessage.warning('请选择自定义日期范围')
   loading.value = true
   try {
-    result.value = await runReport(tplId, range, currentFilters())
-    await nextTick()
-    renderCharts()
+    result.value = await runReport(tplId, range, mergedFilters(), currentLinks.value)
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
@@ -335,7 +256,7 @@ function onModeChange() {
 
 function exportFile(format) {
   const range = currentRange() || { mode: rangeMode.value }
-  window.open(reportExportUrl(tplId, { format, ...range, filters: currentFilters() }), '_blank')
+  window.open(reportExportUrl(tplId, { format, ...range, filters: mergedFilters() }), '_blank')
 }
 
 onMounted(async () => {
@@ -354,40 +275,17 @@ onMounted(async () => {
         .map((fn) => meta.fields.find((f) => f.field_name === fn))
         .filter(Boolean)
     }
-    await nextTick()
-    renderCharts()
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
     loading.value = false
   }
-  window.addEventListener('resize', onResize)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', onResize)
-  charts.forEach((c) => c.dispose())
 })
 </script>
 
 <style scoped>
 .toolbar { margin-bottom: 16px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 0; }
 .toolbar :deep(.el-radio-group) { flex-wrap: wrap; row-gap: 6px; }
-.stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
-.stat-card {
-  background: #fff; border-radius: 8px; padding: 16px 28px; min-width: 150px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
-}
-.stat-title { font-size: 13px; color: #909399; }
-.stat-value { font-size: 30px; font-weight: 600; margin-top: 4px; color: #303133; }
-.stat-unit { font-size: 16px; font-weight: 400; color: #909399; margin-left: 2px; }
-.stat-compare { font-size: 12px; color: #909399; margin-top: 6px; }
-.stat-compare .up { color: #f56c6c; }
-.stat-compare .down { color: #67c23a; }
 .filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.block { background: #fff; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0, 0, 0, .06); }
-.block h3 { margin: 0 0 12px; font-size: 15px; }
-.chart { width: 100%; height: 340px; }
-.drill-hint { font-size: 12px; color: #c0c4cc; text-align: right; }
-.text-block { color: #606266; line-height: 1.8; white-space: pre-wrap; }
+.link-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 </style>

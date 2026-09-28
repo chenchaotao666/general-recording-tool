@@ -121,9 +121,12 @@ class ReportTemplateIn(BaseModel):
     description: str | None = None
     table_id: int
     enabled: bool = False
-    range: dict = {}       # {mode, date_field, start?, end?}
+    range: dict = {}       # {mode, date_field?, start?, end?}（v3 仅 mode/start/end，date_field 为旧格式兼容）
     blocks: list[dict] = []
-    filter_fields: list[str] = []   # 查看端开放自助筛选的字段
+    layout: dict | None = None   # 栅格布局 {version, grid, pages:[{id,title,items}]}；None=垂直堆叠
+    source: dict | None = None   # 旧格式数据集 {joins, computed_fields}（v3 用 datasets）
+    datasets: list[dict] = []    # v3 命名数据集 [{id, name, base_table_id, joins, computed_fields}]
+    filter_fields: list[str] = []   # 查看端开放自助筛选的字段（旧格式；v3 用 filter 块）
     schedule: dict = {}    # {type: interval, minutes} | {type: cron, expr}
     push: dict = {}        # {recipients, formats, subject}
 
