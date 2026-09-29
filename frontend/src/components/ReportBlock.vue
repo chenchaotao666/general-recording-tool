@@ -269,7 +269,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .rblock.fill { height: 100%; }
-.rblock.fill .block-card { height: 100%; display: flex; flex-direction: column; }
+/* fill 模式必须 border-box：否则 height:100% + 上下 padding 32px 会溢出栅格行高，内容压到下面的块 */
+.rblock.fill .block-card { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; }
 .rblock.fill .block-card .chart { flex: 1; min-height: 0; }
 .rblock.fill .stat-card { height: 100%; box-sizing: border-box; }
 
@@ -296,5 +297,9 @@ onBeforeUnmount(() => {
 }
 .filter-card { display: flex; align-items: center; gap: 10px; padding: 10px 16px; }
 .filter-card .filter-label { flex-shrink: 0; font-size: 13px; color: #606266; }
+/* fill（栅格）模式下 block-card 默认 flex-column，会把筛选 label 挤到控件上方——查看时 label 放左侧更紧凑 */
+.rblock.fill .filter-card { flex-direction: row; }
+/* 日期区间组件默认渲染偏高（45px），对齐到 small 控件的 24px */
+.filter-card :deep(.el-date-editor.el-range-editor) { height: 24px !important; box-sizing: border-box; }
 .rblock.fill .filter-card { height: 100%; box-sizing: border-box; }
 </style>

@@ -531,9 +531,16 @@ def align_assistant_action(db: Session, user, action: dict | None, notes: list) 
             notes.append("没有有效字段，已忽略建表动作")
             return None
         label = str(action.get("label") or "").strip()[:64] or "新建数据表"
+        # 存储方式：默认 JSON；物理表需「创建独立表」权限，没权限降级为 JSON 并提示
+        from ...utils.rbac import has_perm
+        storage_mode = action.get("storage_mode") if action.get("storage_mode") in ("json", "physical") else "json"
+        if storage_mode == "physical" and not has_perm(db, user, "create_physical_table"):
+            storage_mode = "json"
+            notes.append("你没有「创建独立表」权限，已改为 JSON 存储表（如需物理表请联系管理员开通权限）")
+        mode_label = "物理表" if storage_mode == "physical" else "JSON 表"
         return {
-            "type": "create_table", "summary": f"创建表「{label}」（{len(fields)} 个字段）",
-            "payload": {"label": label, "fields": fields}, "warnings": notes,
+            "type": "create_table", "summary": f"创建{mode_label}「{label}」（{len(fields)} 个字段）",
+            "payload": {"label": label, "fields": fields, "storage_mode": storage_mode}, "warnings": notes,
         }
 
     if t == "gen_excel":
@@ -827,8 +834,10 @@ def assist_chat(db: Session, user, message: str, history: list | None, context: 
         for h in (history or []) if isinstance(h, dict)
     ][-_ASSISTANT_HISTORY_MAX:]
     img_bytes = _decode_data_urls(images)
+    from ...utils.rbac import has_perm
     prompt = build_assistant_prompt(message, history, table_briefs, current, datetime.now().strftime("%Y-%m-%d"),
-                                    workflows=wf_briefs)
+                                    workflows=wf_briefs,
+                                    can_physical_table=has_perm(db, user, "create_physical_table"))
     if img_bytes:
         prompt += (f"\n\n注意：用户随消息附上了 {len(img_bytes)} 张图片，请结合图片内容理解需求"
                    "（例如从截图中提取信息填入数据表、根据图片中的表格建表等）。")

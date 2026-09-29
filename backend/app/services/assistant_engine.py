@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..models import MetaTable, User, Workflow
 from ..schemas import TableCreate
 from ..utils.access import check_owner_or_admin, get_table_access
-from ..utils.rbac import perm_value
+from ..utils.rbac import has_perm, perm_value
 from . import dyn_engine, meta_service
 from .dyn_engine import log_audit
 from .records_export import export_blank_xlsx, export_records_xlsx
@@ -270,8 +270,14 @@ def _exec_create_table(db: Session, user: User, payload: dict) -> dict:
         if owned >= limit:
             raise HTTPException(403, f"已达到数据表上限（{limit} 张），请联系管理员提升额度")
     label = str(payload.get("label") or "").strip()[:64] or "新建数据表"
+    storage_mode = payload.get("storage_mode") or "json"
+    if storage_mode not in ("json", "physical"):
+        raise HTTPException(400, "storage_mode 必须是 json 或 physical")
+    # 与建表接口同一道门槛：独立物理表需「创建独立表」权限
+    if storage_mode == "physical" and not has_perm(db, user, "create_physical_table"):
+        raise HTTPException(403, "独立物理表需要「创建独立表」权限")
     try:
-        tc = TableCreate(label=label, fields=payload.get("fields") or [], storage_mode="json")
+        tc = TableCreate(label=label, fields=payload.get("fields") or [], storage_mode=storage_mode)
     except Exception as e:  # noqa: BLE001 — pydantic 校验失败统一 400
         raise HTTPException(400, f"字段定义无效：{e}")
     try:
@@ -279,9 +285,9 @@ def _exec_create_table(db: Session, user: User, payload: dict) -> dict:
     except Exception as e:  # noqa: BLE001
         db.rollback()
         raise HTTPException(400, f"建表失败：{e}")
-    log_audit(db, "create_table", mt.id, after={"name": mt.name, "label": mt.label}, user=user.username)
+    log_audit(db, "create_table", mt.id, after={"name": mt.name, "label": mt.label, "storage_mode": mt.storage_mode}, user=user.username)
     db.commit()
-    return {"type": "create_table", "table_id": mt.id, "table_label": mt.label}
+    return {"type": "create_table", "table_id": mt.id, "table_label": mt.label, "storage_mode": mt.storage_mode}
 
 
 def _exec_create_report(db: Session, user: User, payload: dict) -> dict:

@@ -11,7 +11,7 @@ export const BLOCK_SIZE = {
   pivot: { min: [8, 8], def: [24, 12] },
   table: { min: [8, 6], def: [24, 12] },
   text: { min: [4, 2], def: [12, 4] },
-  filter: { min: [4, 2], def: [6, 2] },
+  filter: { min: [4, 2], def: [4, 2] },
 }
 
 export const BLOCK_TYPE_LABELS = { stat: '统计卡', chart: '图表', pivot: '透视表', table: '明细表', text: '文本', filter: '筛选' }
@@ -77,14 +77,12 @@ export function autoLayout(blocks, title = '总览') {
   }
 }
 
-/** 规范化布局：剔除悬空引用、裁剪越界坐标、补齐缺省字段。返回新对象（不改入参）。 */
+/** 规范化布局：剔除悬空引用、裁剪越界坐标、补齐缺省字段、消解重叠。返回新对象（不改入参）。 */
 export function normalizeLayout(layout, blocks) {
   const byId = new Map(blocks.map((b) => [b.id, b]))
   const seen = new Set()
-  const pages = (layout?.pages || []).map((p) => ({
-    id: p.id,
-    title: p.title || '未命名',
-    items: (p.items || [])
+  const pages = (layout?.pages || []).map((p) => {
+    const items = (p.items || [])
       .filter((it) => {
         const b = byId.get(it.block_id)
         if (!b || seen.has(it.block_id)) return false
@@ -102,8 +100,18 @@ export function normalizeLayout(layout, blocks) {
           w,
           h: Math.max(it.h || min[1], min[1]),
         }
-      }),
-  }))
+      })
+    // 防重叠兜底：查看端按 y,x 顺序把压叠的块逐格下移（坐标被钳制/旧数据异常时仍不叠图）
+    const placed = []
+    for (const it of items.sort((a, b) => a.y - b.y || a.x - b.x)) {
+      let guard = 0
+      while (guard++ < 500 && placed.some((q) => it.x < q.x + q.w && it.x + it.w > q.x && it.y < q.y + q.h && it.y + it.h > q.y)) {
+        it.y += 1
+      }
+      placed.push(it)
+    }
+    return { id: p.id, title: p.title || '未命名', items }
+  })
   return {
     version: 1,
     grid: { cols: GRID_COLS, row_height: layout?.grid?.row_height || ROW_HEIGHT },

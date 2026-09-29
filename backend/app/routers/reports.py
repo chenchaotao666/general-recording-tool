@@ -190,6 +190,27 @@ def _check_datasets_access(db: Session, datasets: list, user: User) -> None:
                 raise HTTPException(400, "关联表 id 无效")
 
 
+class ExprCheckIn(BaseModel):
+    expr: str
+    fields: list[dict] = []   # [{field_name, data_type}]：数据集可用字段（含关联带前缀）
+
+
+@router.post("/expr-check")
+def expr_check(payload: ExprCheckIn, user: User = Depends(get_current_user)):
+    """计算字段表达式实时校验（不落库）：语法 + 字段存在性 + 结果类型推断。"""
+    from types import SimpleNamespace
+
+    from ..services import expr as expr_mod
+    allow = {str(f.get("field_name")) for f in payload.fields if f.get("field_name")}
+    fbn = {str(f.get("field_name")): SimpleNamespace(data_type=f.get("data_type"))
+           for f in payload.fields if f.get("field_name")}
+    try:
+        node = expr_mod.parse(payload.expr, allow_fields=allow)
+        return {"ok": True, "type": expr_mod.infer_type(node, fbn)}
+    except expr_mod.ExprError as e:
+        return {"ok": False, "error": str(e)}
+
+
 @router.post("/{tpl_id}/run")
 def run_report(tpl_id: int, payload: dict | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tpl = db.get(ReportTemplate, tpl_id)

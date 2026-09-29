@@ -72,7 +72,8 @@
           <el-input v-model="createForm.name" placeholder="如：经营周报" />
         </el-form-item>
         <el-form-item label="数据源" required>
-          <el-select v-model="createForm.table_id" placeholder="选择第一张数据表（之后可加更多）" style="width: 100%" filterable>
+          <el-select v-model="createForm.table_ids" multiple collapse-tags :max-collapse-tags="2"
+            placeholder="选择数据表（可多选，之后也可再加）" style="width: 100%" filterable>
             <el-option v-for="t in tables" :key="t.id" :label="t.label" :value="t.id" />
           </el-select>
         </el-form-item>
@@ -176,19 +177,23 @@ async function load() {
 // ---------- 新建（直进设计器） ----------
 const createVisible = ref(false)
 const creating = ref(false)
-const createForm = reactive({ name: '', table_id: null })
+const createForm = reactive({ name: '', table_ids: [] })
 
 async function create() {
   if (!createForm.name.trim()) return ElMessage.warning('请填写报表名称')
-  if (!createForm.table_id) return ElMessage.warning('请选择数据源')
-  const t = tables.value.find((x) => x.id === createForm.table_id)
+  if (!createForm.table_ids.length) return ElMessage.warning('请选择数据源')
   creating.value = true
   try {
+    // 每张选中的表各建一个数据源（d1/d2/...），table_id 取第一张兼容旧字段
+    const datasets = createForm.table_ids.map((tid, i) => {
+      const t = tables.value.find((x) => x.id === tid)
+      return { id: `d${i + 1}`, name: t?.label || '', base_table_id: tid, joins: [], computed_fields: [] }
+    })
     const res = await createReport({
       name: createForm.name.trim(),
-      table_id: createForm.table_id,
+      table_id: createForm.table_ids[0],
       range: { mode: 'this_week' },
-      datasets: [{ id: 'd1', name: t?.label || '', base_table_id: createForm.table_id, joins: [], computed_fields: [] }],
+      datasets,
       blocks: [],
       layout: null,
       filter_fields: [],
@@ -197,7 +202,7 @@ async function create() {
     })
     createVisible.value = false
     createForm.name = ''
-    createForm.table_id = null
+    createForm.table_ids = []
     router.push(`/reports/${res.id}/layout`)
   } catch (e) {
     ElMessage.error(e.message)

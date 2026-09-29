@@ -200,8 +200,16 @@
 
     <!-- 明细表 -->
     <template v-else-if="block.type === 'table'">
-      <el-form-item label="展示列">
-        <el-select v-model="block.columns" multiple filterable placeholder="选择列" class="w-full">
+      <el-form-item>
+        <template #label>
+          <span>展示列</span>
+          <el-checkbox
+            :model-value="allColsSelected" :indeterminate="someColsSelected" size="small" class="col-all"
+            @change="toggleAllCols"
+          >全选</el-checkbox>
+          <span class="col-hint">（不选 = 默认全部字段）</span>
+        </template>
+        <el-select v-model="block.columns" multiple filterable placeholder="不选 = 默认全部字段" class="w-full">
           <el-option label="ID" value="id" />
           <el-option v-for="f in fields" :key="f.field_name" :label="f.label" :value="f.field_name" />
           <el-option label="创建时间" value="created_at" />
@@ -337,6 +345,16 @@ const props = defineProps({
 })
 const block = computed(() => props.block)
 
+// 明细表展示列：全选/半选/清空
+const ALL_COLS = computed(() => ['id', ...props.fields.map((f) => f.field_name), 'created_at', 'updated_at'])
+const allColsSelected = computed(() =>
+  ALL_COLS.value.length > 0 && ALL_COLS.value.every((c) => (props.block.columns || []).includes(c)))
+const someColsSelected = computed(() => (props.block.columns || []).length > 0 && !allColsSelected.value)
+
+function toggleAllCols(v) {
+  props.block.columns = v ? [...ALL_COLS.value] : []
+}
+
 const RANGE_MODES = [
   ['today', '今天'], ['yesterday', '昨天'], ['past_7d', '近7天'], ['past_30d', '近30天'],
   ['this_week', '本周'], ['last_week', '上周'], ['this_month', '本月'], ['last_month', '上月'],
@@ -467,6 +485,8 @@ function setOverrideRange(v) {
 .bcf :deep(.el-form-item__label) { padding-bottom: 2px; line-height: 1.4; font-size: 12px; color: #909399; }
 .w-full { width: 100%; }
 .row { display: flex; align-items: center; gap: 8px; width: 100%; }
+.col-all { margin-left: 12px; }
+.col-hint { font-size: 12px; color: #c0c4cc; font-weight: normal; }
 .sub { font-size: 12px; color: #909399; }
 .hint { font-size: 12px; color: #c0c4cc; margin: -6px 0 10px; }
 .sec-divider { margin: 18px 0 12px; }

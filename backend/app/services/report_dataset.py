@@ -142,7 +142,7 @@ def validate_source(db, source: dict | None, base_table_id: int, base_mt, base_f
         if name in out_names or name in cf_names:
             raise HTTPException(400, f"计算字段重名或与现有字段冲突：{name}")
         cf_names.add(name)
-        ctype = cf.get("type")
+        ctype = cf.get("type") or None   # 前端「自动」是空串，归一为 None
         if ctype is not None and ctype not in COMPUTED_TYPES:
             raise HTTPException(400, f"计算字段类型无效：{ctype}")
         try:

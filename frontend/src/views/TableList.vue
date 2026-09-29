@@ -161,7 +161,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Upload, Download } from '@element-plus/icons-vue'
 import {
@@ -387,6 +387,13 @@ async function respond(row, action) {
 onMounted(() => {
   load()
   loadPending()
+  // AI 助手建表/填数/改结构后即时刷新列表（含各表记录数）
+  window.addEventListener('grt:tables-changed', load)
+  window.addEventListener('grt:records-changed', load)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('grt:tables-changed', load)
+  window.removeEventListener('grt:records-changed', load)
 })
 </script>
 

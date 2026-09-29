@@ -26,20 +26,42 @@
       </div>
 
       <div class="spacer" />
-      <el-button :disabled="!undoStack.length" title="撤销" @click="undo">撤销</el-button>
-      <el-button :disabled="!redoStack.length" title="重做" @click="redo">重做</el-button>
+      <!-- 全局口径：与查看页一致直接可切（设置抽屉里仍是完整的口径/推送配置） -->
+      <template v-if="tpl">
+        <el-select :model-value="tpl.range?.mode || 'this_week'" size="small" class="range-select" title="全局口径"
+          @update:model-value="onGlobalRangeMode">
+          <el-option v-for="[v, l] in RANGE_MODES" :key="v" :label="l" :value="v" />
+        </el-select>
+        <el-date-picker
+          v-if="tpl.range?.mode === 'custom'" v-model="globalRangeCustom" type="daterange" size="small"
+          value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" class="range-dates"
+        />
+      </template>
       <el-button class="ai-btn" title="用一句话描述需求，AI 生成区块草稿" @click="openAi">
         <el-icon><MagicStick /></el-icon>AI 生成
       </el-button>
-      <el-button @click="autoArrange">自动排版</el-button>
-      <el-button :loading="previewLoading" title="沙盒试运行：用当前未保存的配置生成预览，不落库" @click="previewRun">试运行</el-button>
-      <el-button @click="openSettings">设置</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+      <el-button :icon="Grid" @click="autoArrange">自动排版</el-button>
+      <el-button :icon="VideoPlay" :loading="previewLoading" title="沙盒试运行：用当前未保存的配置生成预览，不落库" @click="previewRun">试运行</el-button>
+      <el-button :icon="Setting" @click="openSettings">设置</el-button>
+      <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存</el-button>
     </div>
 
     <div class="body">
-      <!-- 左：数据源树（拖字段成图）+ 未放置区块 -->
+      <!-- 左：区块类型（点击添加）+ 数据源树（拖字段成图）+ 未放置区块 -->
       <div class="sidebar">
+        <div class="side-section">
+          <div class="side-title">区块（点击或拖入画布）</div>
+          <div class="block-palette">
+            <div
+              v-for="t in ['stat', 'chart', 'pivot', 'table', 'text', 'filter']" :key="t"
+              class="palette-item" :title="`点击添加「${BLOCK_TYPE_LABELS[t]}」，或拖到画布任意位置`"
+              draggable="true" @click="addBlock(t)" @dragstart="onBlockDragStart($event, t)"
+            >
+              <el-icon class="pi-icon"><component :is="BLOCK_TYPE_ICONS[t]" /></el-icon>
+              <span>{{ BLOCK_TYPE_LABELS[t] }}</span>
+            </div>
+          </div>
+        </div>
         <div class="side-section">
           <div class="side-title">
             数据源
@@ -48,7 +70,10 @@
           <div v-for="d in datasets" :key="d.id" class="ds-group">
             <div class="ds-head">
               <span class="ds-name">{{ d.name }}</span>
-              <el-icon title="编辑数据集（关联/计算字段）" @click="openDatasetEditor(d)"><Setting /></el-icon>
+              <div class="ds-ops">
+                <el-icon title="编辑数据集（关联/计算字段）" @click="openDatasetEditor(d)"><Setting /></el-icon>
+                <el-icon title="删除数据源" @click="removeDataset(d)"><Delete /></el-icon>
+              </div>
             </div>
             <div
               v-for="f in fieldsOf(d.id)" :key="f.field_name" class="field-chip" draggable="true"
@@ -111,7 +136,8 @@
               <el-option v-for="d in datasets" :key="d.id" :label="d.name" :value="d.id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="日期字段（全局口径作用字段）">
+          <!-- 筛选块是交互控件、自身不查数据：块级日期字段/时间范围对它无意义，不显示 -->
+          <el-form-item v-if="selectedBlock.type !== 'filter'" label="日期字段（全局口径作用字段）">
             <el-select v-model="selectedBlock.date_field" class="w-full" placeholder="日期字段">
               <el-option label="不随时间筛选" :value="null" />
               <el-option label="创建时间" value="created_at" />
@@ -119,7 +145,7 @@
               <el-option v-for="f in dateFieldsOf(selectedBlock.dataset_id)" :key="f.field_name" :label="f.label" :value="f.field_name" />
             </el-select>
           </el-form-item>
-          <el-form-item label="时间范围">
+          <el-form-item v-if="selectedBlock.type !== 'filter'" label="时间范围">
             <el-select v-model="rangeModeOf" class="w-full">
               <el-option label="跟随全局口径" value="" />
               <el-option v-for="[v, l] in RANGE_MODES" :key="v" :label="l" :value="v" />
@@ -162,76 +188,143 @@
     </div>
 
     <!-- 添加数据源 -->
-    <el-dialog v-model="addDatasetVisible" title="添加数据源" width="420px" destroy-on-close>
-      <el-select v-model="newDatasetTableId" placeholder="选择数据表" style="width: 100%" filterable>
-        <el-option v-for="t in tables" :key="t.id" :label="`${t.label}（${t.storage_mode === 'physical' ? '物理' : 'JSON'}）`" :value="t.id" />
+    <el-dialog v-model="addDatasetVisible" title="添加数据源" width="440px" destroy-on-close>
+      <el-select v-model="newDatasetTableIds" multiple collapse-tags :max-collapse-tags="2"
+        placeholder="选择数据表（可多选，已添加的不可重复）" style="width: 100%" filterable>
+        <el-option
+          v-for="t in tables" :key="t.id" :value="t.id"
+          :label="`${t.label}（${t.storage_mode === 'physical' ? '物理' : 'JSON'}）${datasets.some((d) => d.base_table_id === t.id) ? ' · 已添加' : ''}`"
+          :disabled="datasets.some((d) => d.base_table_id === t.id)"
+        />
       </el-select>
       <template #footer>
         <el-button @click="addDatasetVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="!newDatasetTableId" @click="addDataset">添加</el-button>
+        <el-button type="primary" :disabled="!newDatasetTableIds.length" @click="addDataset">添加</el-button>
       </template>
     </el-dialog>
 
     <!-- 数据集编辑：多表关联 + 计算字段 -->
-    <el-drawer v-model="dsEditorVisible" :title="`数据集：${editingDs?.name || ''}`" size="560px">
+    <el-drawer v-model="dsEditorVisible" size="640px" class="ds-drawer">
+      <template #header>
+        <div class="dsd-head">
+          <span class="dsd-title">数据集设置</span>
+          <el-input v-if="editingDs" v-model="editingDs.name" maxlength="32" class="dsd-name" placeholder="数据集名称" />
+        </div>
+      </template>
       <template v-if="editingDs">
-        <el-form label-width="80px">
-          <el-form-item label="名称">
-            <el-input v-model="editingDs.name" maxlength="32" style="width: 240px" />
-          </el-form-item>
-        </el-form>
+        <!-- 关联表 -->
         <div class="src-sec">
-          <div class="src-title">
-            关联表（左连接，最多 3 张，仅物理存储表）
-            <el-button text type="primary" size="small" :disabled="editingDs.joins.length >= 3" @click="editingDs.joins.push({ table_id: null, prefix: '', on: [{ left: null, right: null }] })">+ 添加</el-button>
+          <div class="src-sec-head">
+            <div class="src-sec-title">🔗 关联表</div>
+            <el-button text type="primary" size="small" :disabled="editingDs.joins.length >= 3"
+              @click="editingDs.joins.push({ table_id: null, prefix: '', on: [{ left: null, right: null }] })">+ 添加关联</el-button>
           </div>
+          <div class="src-sec-desc">以本表为主表左连接其他表（最多 3 张，仅物理存储表），关联后可以使用对方的字段</div>
+
           <div v-for="(j, ji) in editingDs.joins" :key="ji" class="join-card">
-            <div class="join-row">
-              <el-select
-                v-model="j.table_id" size="small" placeholder="选择表" style="width: 170px" filterable
-                @change="onJoinTableChange(j)"
-              >
-                <el-option v-for="t in joinableTables" :key="t.id" :label="t.label" :value="t.id" />
-              </el-select>
-              <el-input v-model="j.prefix" size="small" placeholder="字段前缀，如：客户." style="width: 150px" />
+            <div class="join-head">
+              <span class="join-no">关联表 {{ ji + 1 }}</span>
               <el-button text type="danger" size="small" @click="editingDs.joins.splice(ji, 1)">删除</el-button>
             </div>
-            <div v-for="(o, oi) in j.on" :key="oi" class="join-row">
-              <el-select v-model="o.left" size="small" placeholder="本表字段" style="width: 170px" filterable>
-                <el-option v-for="f in baseFieldsOf(editingDs.base_table_id)" :key="f.field_name" :label="f.label" :value="f.field_name" />
-                <el-option label="ID" value="id" />
-              </el-select>
-              <span style="color: #909399">=</span>
-              <el-select v-model="o.right" size="small" placeholder="关联表字段" style="width: 170px" filterable>
-                <el-option label="ID" value="id" />
-                <el-option v-for="f in joinFieldsOf(j.table_id)" :key="f.field_name" :label="f.label" :value="f.field_name" />
-              </el-select>
-              <el-button text type="danger" size="small" :disabled="j.on.length <= 1" @click="j.on.splice(oi, 1)">删条件</el-button>
+            <div class="join-body">
+              <div class="join-field">
+                <span class="jf-label">关联哪张表</span>
+                <el-select v-model="j.table_id" size="small" placeholder="选择表" filterable class="jf-grow"
+                  @change="onJoinTableChange(j)">
+                  <el-option v-for="t in joinableTables" :key="t.id" :label="t.label" :value="t.id" />
+                </el-select>
+              </div>
+              <div class="join-field">
+                <span class="jf-label">字段前缀
+                  <el-tooltip content="关联表的字段名会加上此前缀，避免与主表字段重名，如填「客户.」" placement="top">
+                    <el-icon class="hint-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-input v-model="j.prefix" size="small" placeholder="如：客户." style="width: 140px" />
+              </div>
+              <div class="join-conds">
+                <span class="jf-label">关联条件</span>
+                <div class="join-cond-list">
+                  <div v-for="(o, oi) in j.on" :key="oi" class="join-cond">
+                    <el-select v-model="o.left" size="small" placeholder="本表字段" filterable class="jf-grow">
+                      <el-option v-for="f in baseFieldsOf(editingDs.base_table_id)" :key="f.field_name" :label="`本表·${f.label}`" :value="f.field_name" />
+                      <el-option label="本表·ID" value="id" />
+                    </el-select>
+                    <span class="join-eq">=</span>
+                    <el-select v-model="o.right" size="small" placeholder="关联表字段" filterable class="jf-grow">
+                      <el-option label="关联表·ID" value="id" />
+                      <el-option v-for="f in joinFieldsOf(j.table_id)" :key="f.field_name" :label="`关联表·${f.label}`" :value="f.field_name" />
+                    </el-select>
+                    <el-button text type="danger" size="small" :disabled="j.on.length <= 1" @click="j.on.splice(oi, 1)">删</el-button>
+                  </div>
+                </div>
+                <el-button text size="small" type="primary" @click="j.on.push({ left: null, right: null })">+ 关联条件</el-button>
+              </div>
             </div>
-            <el-button text size="small" @click="j.on.push({ left: null, right: null })">+ 关联条件</el-button>
           </div>
-          <el-empty v-if="!editingDs.joins.length" description="暂无关联，单表可留空" :image-size="40" />
+          <div v-if="!editingDs.joins.length" class="src-empty">单表使用可不添加关联</div>
         </div>
 
+        <!-- 计算字段 -->
         <div class="src-sec">
-          <div class="src-title">
-            计算字段（行内表达式）
-            <el-button text type="primary" size="small" @click="editingDs.computed_fields.push({ name: '', expr: '', type: '' })">+ 添加</el-button>
+          <div class="src-sec-head">
+            <div class="src-sec-title">🧮 计算字段</div>
+            <el-button text type="primary" size="small"
+              @click="editingDs.computed_fields.push({ name: '', expr: '', type: '' })">+ 添加字段</el-button>
           </div>
-          <div v-for="(c, ci) in editingDs.computed_fields" :key="ci" class="cf-row">
-            <el-input v-model="c.name" size="small" placeholder="字段名" style="width: 110px" />
-            <el-input v-model="c.expr" size="small" placeholder="表达式，如：amount * 0.13" style="flex: 1" />
-            <el-select v-model="c.type" size="small" placeholder="自动" clearable style="width: 90px">
-              <el-option label="整数" value="int" />
-              <el-option label="小数" value="decimal" />
-              <el-option label="布尔" value="bool" />
-              <el-option label="文本" value="varchar" />
-            </el-select>
-            <el-button text type="danger" size="small" @click="editingDs.computed_fields.splice(ci, 1)">删</el-button>
+          <div class="src-sec-desc">用表达式从现有字段算出新字段，随每行数据实时计算</div>
+
+          <div v-for="(c, ci) in editingDs.computed_fields" :key="ci" class="cf-card">
+            <div class="cf-row2">
+              <el-input v-model="c.name" size="small" placeholder="字段名，如：不良率" style="width: 150px" />
+              <el-select v-model="c.type" size="small" placeholder="类型（自动）" clearable style="width: 120px">
+                <el-option label="整数" value="int" />
+                <el-option label="小数" value="decimal" />
+                <el-option label="布尔" value="bool" />
+                <el-option label="文本" value="varchar" />
+              </el-select>
+              <el-button text type="danger" size="small" @click="editingDs.computed_fields.splice(ci, 1)">删</el-button>
+            </div>
+            <!-- 表达式 + 插入字段：不用背字段名，点了插到光标处；输入时实时校验语法/字段/类型 -->
+            <div class="cf-expr-row">
+              <el-input
+                v-model="c.expr" size="small" placeholder="表达式，如：actual / plan * 100" class="cf-expr"
+                :ref="(el) => (cfExprRefs[ci] = el)" @focus="cfExprFocused[ci] = true" @input="checkExprNow(ci)"
+              />
+              <VariablePicker
+                compact title="插入字段或函数" :groups="dsExprGroups" empty-text="主表字段加载后可用"
+                @insert="(n) => insertCfField(ci, n)"
+              />
+            </div>
+            <div v-if="cfCheck[ci]" class="cf-check" :class="cfCheck[ci].state">
+              <template v-if="cfCheck[ci].state === 'checking'">校验中…</template>
+              <template v-else-if="cfCheck[ci].state === 'ok'">✓ 表达式有效，结果类型：{{ CF_TYPE_LABELS[cfCheck[ci].type] || cfCheck[ci].type }}</template>
+              <template v-else>✗ {{ cfCheck[ci].error }}</template>
+            </div>
           </div>
-          <div class="src-tip">
-            支持 + - * /、比较、and/or、iff(条件,a,b)、coalesce、abs、round、floor、ceil、min、max、year、month、day、datediff；
-            引用关联字段用「前缀.字段名」，如：iff(客户.level == 'A', 1, 0)
+          <div v-if="!editingDs.computed_fields.length" class="src-empty">没有计算字段时可留空</div>
+
+          <el-collapse class="cf-help">
+            <el-collapse-item title="可用的运算符和函数（点击展开）" name="1">
+              <div class="cf-help-body">
+                支持 <code>+ - * /</code>、比较、<code>and/or</code>、<code>iff(条件,a,b)</code>、<code>coalesce</code>、<code>concat</code>、<code>abs</code>、<code>round</code>、<code>floor</code>、<code>ceil</code>、<code>min</code>、<code>max</code>、<code>year</code>、<code>month</code>、<code>day</code>、<code>datediff</code><br>
+                <code>+</code> 只做数值加法，<b>字符串拼接必须用 concat</b>，如：<code>concat(operator, '-', production_date)</code><br>
+                引用关联字段用「前缀.字段名」，如：<code>iff(客户.level == 'A', 1, 0)</code>；<br>
+                字段名含 - 空格等特殊字符时（如「生产记录表-物理.」前缀），用括号引用：<code>[生产记录表-物理.operator]</code>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+
+        <!-- 结果字段预览 -->
+        <div class="src-sec">
+          <div class="src-sec-head">
+            <div class="src-sec-title">👁 结果字段预览</div>
+          </div>
+          <div class="src-sec-desc">按当前配置，数据集最终提供的字段</div>
+          <div class="dsd-preview">
+            <el-tag v-for="f in dsPreviewFields" :key="f.key" size="small" :type="f.kind" effect="plain">{{ f.label }}</el-tag>
+            <span v-if="!dsPreviewFields.length" class="src-empty">主表字段加载后显示</span>
           </div>
         </div>
       </template>
@@ -349,21 +442,26 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft, ArrowLeftBold, ArrowRightBold, Close, EditPen, MagicStick, Plus, Setting,
+  ArrowLeft, ArrowLeftBold, ArrowRightBold, Calendar, Check, CircleCheck, Close, Coin, Delete, Document,
+  EditPen, Filter, Grid, Histogram, MagicStick, Odometer, Plus, QuestionFilled, Setting, Tickets, VideoPlay,
 } from '@element-plus/icons-vue'
 import { GridLayout, GridItem } from 'grid-layout-plus'
-import { aiAssistReport, getReport, getTable, listTables, runReport, updateReport } from '../api'
+import { aiAssistReport, checkExpr, getReport, getTable, listTables, runReport, updateReport } from '../api'
 import ReportDashboard from '../components/ReportDashboard.vue'
+import VariablePicker from '../components/workflow/VariablePicker.vue'
 import ReportBlock from '../components/ReportBlock.vue'
 import BlockConfigForm from '../components/BlockConfigForm.vue'
 import {
   BLOCK_SIZE, BLOCK_TYPE_LABELS, GRID_COLS, GRID_MARGIN, PAGES_MAX, ROW_HEIGHT,
   autoLayout, defaultItem, nextPageId, normalizeLayout, smartBlockForField,
 } from '../utils/reportLayout'
+
+// 区块类型图标（侧栏区块面板用）
+const BLOCK_TYPE_ICONS = { stat: Odometer, chart: Histogram, pivot: Grid, table: Tickets, text: Document, filter: Filter }
 
 const RANGE_MODES = [
   ['today', '今天'], ['yesterday', '昨天'], ['past_7d', '近7天'], ['past_30d', '近30天'],
@@ -483,17 +581,49 @@ async function refreshAllFields() {
 
 // 添加数据源
 const addDatasetVisible = ref(false)
-const newDatasetTableId = ref(null)
+const newDatasetTableIds = ref([])
 
 async function addDataset() {
-  const t = tables.value.find((x) => x.id === newDatasetTableId.value)
-  const d = { id: nextDatasetId(), name: t?.label || '', base_table_id: newDatasetTableId.value, joins: [], computed_fields: [] }
-  datasets.value.push(d)
+  // 多选添加；同一张表只允许一个数据源（下拉里已添加的被禁用，这里再兜底）
+  const added = []
+  for (const tid of newDatasetTableIds.value) {
+    if (datasets.value.some((d) => d.base_table_id === tid)) continue
+    const t = tables.value.find((x) => x.id === tid)
+    const d = { id: nextDatasetId(), name: t?.label || '', base_table_id: tid, joins: [], computed_fields: [] }
+    datasets.value.push(d)
+    added.push(d)
+  }
   addDatasetVisible.value = false
-  newDatasetTableId.value = null
-  await refreshFields(d.id)
+  newDatasetTableIds.value = []
+  for (const d of added) await refreshFields(d.id)
+  if (added.length) {
+    dirty.value = true
+    ElMessage.success(`已添加 ${added.length} 个数据源，拖字段到画布即可成图`)
+  }
+}
+
+// 删除数据源：引用它的区块一并移除（画布/布局同步清理）
+async function removeDataset(d) {
+  const used = tpl.value.blocks.filter((b) => b.dataset_id === d.id)
+  try {
+    await ElMessageBox.confirm(
+      used.length
+        ? `删除数据源「${d.name}」将同时移除 ${used.length} 个使用它的区块，确定？`
+        : `确定删除数据源「${d.name}」？`,
+      '删除数据源', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch { return }
+  datasets.value = datasets.value.filter((x) => x.id !== d.id)
+  if (used.length) {
+    const ids = new Set(used.map((b) => b.id))
+    tpl.value.blocks = tpl.value.blocks.filter((b) => !ids.has(b.id))
+    for (const p of pages.value) p.items = p.items.filter((it) => !ids.has(it.block_id))
+    if (ids.has(selectedBlockId.value)) selectedBlockId.value = null
+    layoutVersion.value++
+    refreshData(true)
+  }
   dirty.value = true
-  ElMessage.success(`已添加数据源「${d.name}」，拖字段到画布即可成图`)
+  ElMessage.success('已删除数据源')
 }
 
 // 数据集编辑抽屉
@@ -524,6 +654,120 @@ async function onJoinTableChange(j) {
     const t = tables.value.find((x) => x.id === j.table_id)
     j.prefix = t ? `${t.label}.` : ''
   }
+}
+
+// 结果字段预览：主表字段 + 关联字段（带前缀）+ 计算字段（kind 用于 tag 颜色区分来源）
+const dsPreviewFields = computed(() => {
+  const d = editingDs.value
+  if (!d) return []
+  const out = baseFieldsOf(d.base_table_id).map((f) => ({ key: f.field_name, label: f.label, kind: 'primary' }))
+  for (const j of d.joins || []) {
+    if (!j.table_id) continue
+    const prefix = j.prefix || ''
+    for (const f of joinFieldsOf(j.table_id)) {
+      out.push({ key: `${prefix}${f.field_name}`, label: `${prefix}${f.label}`, kind: 'success' })
+    }
+  }
+  for (const c of d.computed_fields || []) {
+    if (c.name?.trim()) out.push({ key: c.name.trim(), label: c.name.trim(), kind: 'warning' })
+  }
+  return out
+})
+
+// 计算字段表达式的「插入字段」面板：主表字段 + 各关联表的字段（带前缀），点击插到光标处
+// 字段名含 - 空格 等标识符非法字符时（如「生产记录表-物理.」前缀），插入括号引用形式 [任意字段名]
+const IDENT_SEG = /^[A-Za-z_一-龥][\w一-龥]*$/
+const exprText = (name) => (name.split('.').every((s) => IDENT_SEG.test(s)) ? name : `[${name}]`)
+
+// 常用函数骨架（点了插入占位模板，再逐个替换占位符；比背函数签名快）
+const FUNC_SNIPPETS = [
+  { label: '拼接 concat（文本+文本）', expr: "concat(字段1, '-', 字段2)" },
+  { label: '条件分支 iff', expr: 'iff(条件, 值1, 值2)' },
+  { label: '空值兜底 coalesce', expr: 'coalesce(字段, 0)' },
+  { label: '保留小数 round', expr: 'round(字段, 2)' },
+  { label: '相差天数 datediff', expr: 'datediff(日期字段1, 日期字段2)' },
+  { label: '取年份 year', expr: 'year(日期字段)' },
+  { label: '取月份 month', expr: 'month(日期字段)' },
+  { label: '绝对值 abs', expr: 'abs(字段)' },
+  { label: '多值最小 min', expr: 'min(字段1, 字段2)' },
+  { label: '多值最大 max', expr: 'max(字段1, 字段2)' },
+]
+
+const dsExprGroups = computed(() => {
+  const d = editingDs.value
+  if (!d) return []
+  const groups = [{
+    title: '常用函数',
+    items: FUNC_SNIPPETS,
+  }, {
+    title: `主表字段（${d.name}）`,
+    items: baseFieldsOf(d.base_table_id).map((f) => ({ label: f.label, expr: exprText(f.field_name) })),
+  }]
+  for (const j of d.joins || []) {
+    if (!j.table_id) continue
+    const t = tables.value.find((x) => x.id === j.table_id)
+    const prefix = j.prefix || ''
+    groups.push({
+      title: `关联字段（${t?.label || ''}）`,
+      items: joinFieldsOf(j.table_id).map((f) => ({ label: `${prefix}${f.label}`, expr: exprText(`${prefix}${f.field_name}`) })),
+    })
+  }
+  return groups
+})
+
+// 实时校验用的字段集（与后端 out_names 同源：主表 + 关联带前缀 + 已定义的计算字段）
+const cfCheckFields = computed(() => {
+  const d = editingDs.value
+  if (!d) return []
+  const out = baseFieldsOf(d.base_table_id).map((f) => ({ field_name: f.field_name, data_type: f.data_type }))
+  for (const j of d.joins || []) {
+    if (!j.table_id) continue
+    const prefix = j.prefix || ''
+    for (const f of joinFieldsOf(j.table_id)) {
+      out.push({ field_name: `${prefix}${f.field_name}`, data_type: f.data_type })
+    }
+  }
+  for (const c of d.computed_fields || []) {
+    if (c.name?.trim()) out.push({ field_name: c.name.trim(), data_type: c.type || 'decimal' })
+  }
+  return out
+})
+
+const cfExprRefs = reactive({})
+const cfExprFocused = reactive({})
+const cfCheck = reactive({})   // ci -> { state: 'checking'|'ok'|'err', type?, error? }
+const CF_TYPE_LABELS = { int: '整数', decimal: '小数', bool: '布尔', varchar: '文本', date: '日期', datetime: '日期时间' }
+const cfCheckTimers = {}
+
+function checkExprNow(ci) {
+  const c = editingDs.value?.computed_fields?.[ci]
+  const expr = (c?.expr || '').trim()
+  clearTimeout(cfCheckTimers[ci])
+  if (!expr) { cfCheck[ci] = null; return }
+  cfCheck[ci] = { state: 'checking' }
+  cfCheckTimers[ci] = setTimeout(async () => {
+    try {
+      const r = await checkExpr({ expr, fields: cfCheckFields.value })
+      cfCheck[ci] = r.ok ? { state: 'ok', type: r.type } : { state: 'err', error: r.error }
+    } catch { cfCheck[ci] = null }
+  }, 450)
+}
+
+function insertCfField(ci, name) {
+  const c = editingDs.value.computed_fields[ci]
+  const el = cfExprRefs[ci]?.input || cfExprRefs[ci]?.$el?.querySelector('input')
+  const v = c.expr || ''
+  if (el && cfExprFocused[ci]) {
+    const start = el.selectionStart ?? v.length
+    c.expr = v.slice(0, start) + name + v.slice(el.selectionEnd ?? start)
+    nextTick(() => {
+      el.focus()
+      el.selectionStart = el.selectionEnd = start + name.length
+    })
+  } else {
+    c.expr = v ? `${v} ${name}` : name
+  }
+  checkExprNow(ci)   // 插入后即时校验
 }
 
 async function applyDatasetEditor() {
@@ -616,7 +860,7 @@ async function removeBlock(blockId) {
   const b = blockOf(blockId)
   if (!b) return
   try {
-    await ElMessageBox.confirm(`确定删除区块「${b.title || b.id}」？删除后不可恢复（可撤销保存前的修改）。`, '删除区块', { type: 'warning' })
+    await ElMessageBox.confirm(`确定删除区块「${b.title || b.id}」？`, '删除区块', { type: 'warning' })
   } catch { return }
   tpl.value.blocks = blocks.value.filter((x) => x.id !== b.id)
   for (const p of pages.value) p.items = p.items.filter((it) => it.block_id !== b.id)
@@ -632,6 +876,12 @@ const canvasEl = ref(null)
 
 function onFieldDragStart(e, d, f) {
   dragPayload = { did: d.id, field: f }
+  e.dataTransfer.effectAllowed = 'copy'
+}
+
+// 侧栏区块类型拖入画布
+function onBlockDragStart(e, type) {
+  dragPayload = { blockType: type }
   e.dataTransfer.effectAllowed = 'copy'
 }
 
@@ -655,7 +905,8 @@ function dropPosition(e, w, h) {
 }
 
 function ftypeShort(f) {
-  return { int: '数', decimal: '数', date: '期', datetime: '期', bool: '否' }[f.data_type] || '文'
+  // 字段类型单字标记：图=文本（拖入画布生成图表）、数=数值（生成统计卡）、期=日期（生成趋势图）、否=布尔
+  return { int: '数', decimal: '数', date: '期', datetime: '期', bool: '否' }[f.data_type] || '图'
 }
 
 function ftypeClass(f) {
@@ -668,6 +919,16 @@ function ftypeClass(f) {
 function onFieldDrop(e) {
   e.preventDefault()
   if (!dragPayload || !activePage.value) return
+  // 拖的是区块类型（侧栏区块面板）：按默认配置建块，落在鼠标位置
+  if (dragPayload.blockType) {
+    const b = buildBlock(dragPayload.blockType)
+    dragPayload = null
+    if (!b) return
+    const { def } = BLOCK_SIZE[b.type] || BLOCK_SIZE.text
+    mountBlock(b, dropPosition(e, ...def) || null)
+    ElMessage.success(`已添加「${b.title}」，在右侧完善配置`)
+    return
+  }
   const b = {
     id: nextBlockId(), ...smartBlockForField(dragPayload.field),
     dataset_id: dragPayload.did,
@@ -700,10 +961,22 @@ const blockResults = ref({})   // block_id -> run 结果块
 const dataLoading = ref(false)
 
 function buildDraft() {
+  // 未配置完成的块不进草稿：后端校验严格，半成品块（筛选没选字段/透视表维度没选字段等）
+  // 会让整个草稿运行 400，画布上其他块也绘不出来。这些块留在画布上作占位，配好即自动参与绘制
+  const ready = (b) => {
+    if (b.type === 'filter') return !!b.field
+    if (b.type === 'pivot') return !!(b.row?.field) && !!(b.col?.field)
+    if (b.type === 'chart') return b.chart_type === 'gauge' || !!(b.group?.field)
+    return true
+  }
+  const draftBlocks = blocks.value.filter(ready)
+  const readyIds = new Set(draftBlocks.map((b) => b.id))
+  const layout = layoutData()
+  for (const p of layout.pages) p.items = p.items.filter((it) => readyIds.has(it.block_id))
   return {
     datasets: cleanedDatasets(),
-    blocks: cleanedBlocks(blocks.value),
-    layout: layoutData(),
+    blocks: cleanedBlocks(draftBlocks),
+    layout,
     range: { mode: tpl.value.range?.mode || 'this_week', start: tpl.value.range?.start, end: tpl.value.range?.end },
   }
 }
@@ -749,45 +1022,63 @@ function onLayoutUpdated(arr) {
   commit()
 }
 
-// ---------- 撤销 / 重做 ----------
-const undoStack = ref([])
-const redoStack = ref([])
-let lastCommitted = ''
-
-const snapshot = () => JSON.stringify(pages.value)
-
+// ---------- 结构变更标脏 ----------
 function commit() {
-  const cur = snapshot()
-  if (cur === lastCommitted) return
-  undoStack.value.push(lastCommitted)
-  if (undoStack.value.length > 50) undoStack.value.shift()
-  lastCommitted = cur
-  redoStack.value = []
   dirty.value = true
-}
-
-function restore(json) {
-  pages.value = JSON.parse(json)
-  if (!pages.value.some((p) => p.id === activePageId.value)) activePageId.value = pages.value[0]?.id || ''
-  dirty.value = true
-  layoutVersion.value++
-}
-
-function undo() {
-  if (!undoStack.value.length) return
-  redoStack.value.push(lastCommitted)
-  lastCommitted = undoStack.value.pop()
-  restore(lastCommitted)
-}
-
-function redo() {
-  if (!redoStack.value.length) return
-  undoStack.value.push(lastCommitted)
-  lastCommitted = redoStack.value.pop()
-  restore(lastCommitted)
 }
 
 // ---------- 区块放置 ----------
+
+// 手动加块的默认配置（点击/拖拽共用）
+const BLOCK_DEFS = {
+  stat: { title: '统计卡', agg: 'count', field: null },
+  chart: {
+    title: '图表', chart_type: 'bar', group: { kind: 'month', field: 'created_at' },
+    agg: 'count', field: null, top_n: 30, metrics: [], group2: { field: null }, stack: false, on_click: 'drill',
+  },
+  pivot: {
+    title: '透视表', row: { kind: 'field', field: null }, col: { kind: 'month', field: 'created_at' },
+    agg: 'count', field: null, totals: true,
+  },
+  table: { title: '明细表', columns: [], limit: 100 },
+  text: { title: '文本', content: '' },
+  filter: { title: '筛选', field: null, target: { mode: 'same_dataset' } },
+}
+
+function buildBlock(type) {
+  if (type !== 'text' && !datasets.value.length) {
+    ElMessage.warning('先在左侧添加数据源')
+    return null
+  }
+  const ds = datasets.value[0]
+  const base = { id: nextBlockId(), dataset_id: ds?.id, date_field: 'created_at', filters: { logic: 'AND', rules: [] } }
+  const b = { ...base, type, ...BLOCK_DEFS[type] }
+  if (type === 'text') { delete b.dataset_id; delete b.date_field }   // 文本块不依赖数据源
+  if (type === 'filter') delete b.date_field                          // 筛选块自身不查数据，日期字段无意义
+  return b
+}
+
+// 落块：加到当前页签（pos 缺省追加到底部）并选中，右侧配置面板随即展开
+function mountBlock(b, pos) {
+  tpl.value.blocks.push(b)
+  // pos 来自 dropPosition 只有坐标，必须补 block_id（GridLayout 以它为 key，缺了不渲染）
+  const item = pos ? { block_id: b.id, ...pos } : defaultItem(b, activePage.value.items)
+  activePage.value.items.push(item)
+  selectedBlockId.value = b.id
+  commit()
+  layoutVersion.value++
+  if (b.type !== 'text') refreshData(true)
+}
+
+// 侧栏点击加块
+function addBlock(type) {
+  if (!activePage.value) return
+  const b = buildBlock(type)
+  if (!b) return
+  mountBlock(b, null)
+  ElMessage.success(`已添加「${b.title}」，在右侧完善配置`)
+}
+
 function place(block) {
   if (!activePage.value) return
   activePage.value.items.push(defaultItem(block, activePage.value.items))
@@ -846,6 +1137,27 @@ function movePage(pi, dir) {
   const arr = pages.value
   ;[arr[pi], arr[pi + dir]] = [arr[pi + dir], arr[pi]]
   commit()
+}
+
+// ---------- 顶栏全局口径（与查看页一致；改后标脏并用草稿重绘画布） ----------
+const globalRangeCustom = computed({
+  get: () => (tpl.value?.range?.start && tpl.value?.range?.end ? [tpl.value.range.start, tpl.value.range.end] : null),
+  set: (v) => {
+    if (!tpl.value) return
+    tpl.value.range = { ...tpl.value.range, start: v?.[0] || null, end: v?.[1] || null }
+    if (v?.[0] && v?.[1]) onGlobalRangeApplied()
+  },
+})
+
+function onGlobalRangeMode(v) {
+  if (!tpl.value) return
+  tpl.value.range = { mode: v, start: null, end: null }
+  if (v !== 'custom') onGlobalRangeApplied()   // custom 等日期选完再重绘
+}
+
+function onGlobalRangeApplied() {
+  dirty.value = true
+  refreshData(true)
 }
 
 // ---------- 模板设置 ----------
@@ -951,7 +1263,6 @@ async function aiApply() {
   aiVisible.value = false
   settingsVisible.value = false
   dirty.value = true
-  lastCommitted = snapshot()
   layoutVersion.value++
   ElMessage.success('已应用，可继续调整后保存')
   refreshData(true)   // AI 生成后立即绘制
@@ -968,9 +1279,6 @@ async function load() {
       : autoLayout(tpl.value.blocks || [])
     pages.value = layoutData.pages
     activePageId.value = pages.value[0]?.id || ''
-    undoStack.value = []
-    redoStack.value = []
-    lastCommitted = snapshot()
     dirty.value = !tpl.value.datasets?.length  // 旧模板升级后未落库，提示保存
     await refreshAllFields()
     refreshData(true)   // 打开即绘制真实数据
@@ -1051,7 +1359,10 @@ function layoutData() {
 function cleanedBlocks(list) {
   return list.map((b) => {
     const { series_mode, ...rest } = b
-    return { ...rest, filters: { logic: b.filters.logic, rules: (b.filters.rules || []).filter((r) => r.field && r.op) } }
+    // filters 可能缺失（AI 生成/旧数据/API 直接建的块），缺省给空条件组——否则这里抛 TypeError，
+    // 被 refreshData(silent) 吞掉后画布全是「点右侧应用并绘制」占位
+    const f = b.filters || {}
+    return { ...rest, filters: { logic: f.logic || 'AND', rules: (f.rules || []).filter((r) => r.field && r.op) } }
   })
 }
 
@@ -1079,7 +1390,6 @@ async function save() {
   try {
     tpl.value = await updateReport(tplId, buildPayload())
     dirty.value = false
-    lastCommitted = snapshot()
     ElMessage.success('已保存')
   } catch (e) {
     ElMessage.error(e.message)
@@ -1147,6 +1457,8 @@ onBeforeUnmount(() => {
 }
 .name-input { width: 220px; }
 .spacer { flex: 1; }
+.range-select { width: 118px; flex-shrink: 0; }
+.range-dates { width: 230px; flex-shrink: 0; }
 .ai-btn { background: #9b59b6; border-color: #9b59b6; color: #fff; }
 .ai-btn:hover, .ai-btn:focus { background: #8e44ad; border-color: #8e44ad; color: #fff; }
 
@@ -1174,13 +1486,24 @@ onBeforeUnmount(() => {
 .ds-group { margin-bottom: 12px; }
 .ds-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px; margin-bottom: 4px; }
 .ds-name { font-size: 12px; font-weight: 600; color: #909399; }
-.ds-head .el-icon { color: #909399; cursor: pointer; }
-.ds-head .el-icon:hover { color: #409eff; }
+.ds-ops { display: inline-flex; gap: 8px; }
+.ds-ops .el-icon { color: #909399; cursor: pointer; }
+.ds-ops .el-icon:hover { color: #409eff; }
 .field-chip {
   display: flex; align-items: center; gap: 6px; padding: 6px 10px; margin-bottom: 4px; cursor: grab;
   border: 1px solid #e4e7ed; border-radius: 6px; font-size: 12px; background: #fff;
 }
 .field-chip:hover { border-color: #409eff; background: #ecf5ff; }
+/* 区块类型面板：两列网格，点击添加 */
+.block-palette { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.block-palette .palette-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 0 8px; font-size: 12px; color: #303133; cursor: pointer;
+  border: 1px solid #e4e7ed; border-radius: 6px; background: #fff;
+}
+.block-palette .palette-item:hover { border-color: #409eff; background: #ecf5ff; color: #409eff; }
+.block-palette .pi-icon { font-size: 18px; color: #909399; }
+.block-palette .palette-item:hover .pi-icon { color: #409eff; }
 .fc-type { flex-shrink: 0; width: 18px; height: 18px; border-radius: 4px; font-size: 11px; text-align: center; line-height: 18px; color: #fff; }
 .fc-type.num { background: #e6a23c; }
 .fc-type.date { background: #67c23a; }
@@ -1198,6 +1521,8 @@ onBeforeUnmount(() => {
   display: flex; flex-direction: column; overflow: hidden; cursor: pointer;
 }
 .gi-card.selected { border-color: #409eff; box-shadow: 0 0 0 2px rgba(64, 158, 255, .25); }
+/* 画布卡片头（gi-head）已显示标题，隐藏筛选块控件上方的重复标题（查看页没有卡片头，仍需显示） */
+.gi-real :deep(.filter-label) { display: none; }
 .gi-head {
   display: flex; align-items: center; gap: 8px; padding: 8px 10px;
   border-bottom: 1px solid #f0f2f5; font-size: 13px;
@@ -1234,12 +1559,56 @@ onBeforeUnmount(() => {
 .mb { margin-bottom: 10px; }
 .w-full { width: 100%; }
 
+/* ---------- 数据集设置抽屉 ---------- */
+/* 抽屉标题与正文的间距收紧（el-drawer 标题默认 32px 太大；EP 不透传自定义 class 到抽屉根，按页面作用域统一收紧） */
+.rp-designer :deep(.el-drawer__header) { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #f2f6fc; }
+.dsd-head { display: flex; align-items: center; gap: 14px; }
+.dsd-title { font-size: 16px; font-weight: 600; color: #303133; }
+.dsd-name { width: 220px; }
 .src-sec { margin-bottom: 22px; }
-.src-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
-.join-card { border: 1px solid #e4e7ed; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
-.join-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.cf-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.src-tip { font-size: 12px; color: #909399; line-height: 1.7; }
+.src-sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.src-sec-title { font-size: 14px; font-weight: 600; color: #303133; }
+.src-sec-desc { font-size: 12px; color: #909399; margin-bottom: 10px; line-height: 1.6; }
+.src-empty { padding: 14px; text-align: center; font-size: 12px; color: #c0c4cc; background: #fafafa; border-radius: 8px; }
+
+/* 关联表卡片 */
+.join-card { border: 1px solid #e4e7ed; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+.join-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 12px; background: #f5f7fa; border-bottom: 1px solid #ebeef5;
+}
+.join-no { font-size: 12px; font-weight: 600; color: #606266; }
+.join-body { padding: 10px 12px; }
+.join-field { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.jf-label { flex-shrink: 0; width: 64px; font-size: 12px; color: #909399; display: inline-flex; align-items: center; gap: 2px; }
+.jf-grow { flex: 1; min-width: 0; }
+.hint-icon { color: #c0c4cc; cursor: help; font-size: 13px; }
+.join-conds { display: flex; gap: 8px; align-items: flex-start; }
+.join-cond-list { flex: 1; min-width: 0; }
+.join-cond { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.join-eq { color: #909399; flex-shrink: 0; }
+
+/* 计算字段卡片 */
+.cf-card { border: 1px solid #e4e7ed; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.cf-row2 { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cf-expr { font-family: monospace; }
+.cf-expr-row { display: flex; align-items: center; gap: 4px; }
+.cf-expr-row .el-input { flex: 1; }
+.cf-check { margin-top: 4px; font-size: 12px; line-height: 1.6; }
+.cf-check.ok { color: #67c23a; }
+.cf-check.err { color: #f56c6c; }
+.cf-check.checking { color: #c0c4cc; }
+.cf-help { margin-top: 8px; border: none; }
+.cf-help :deep(.el-collapse-item__header) { font-size: 12px; color: #909399; height: 32px; border: none; }
+.cf-help :deep(.el-collapse-item__wrap) { border: none; }
+.cf-help-body { font-size: 12px; color: #606266; line-height: 1.9; }
+.cf-help-body code { background: #f5f7fa; border: 1px solid #e4e7ed; border-radius: 4px; padding: 0 4px; }
+
+/* 结果字段预览 */
+.dsd-preview {
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 12px;
+  background: #fafafa; border: 1px dashed #e4e7ed; border-radius: 8px; max-height: 160px; overflow-y: auto;
+}
 
 :deep(.vgl-item--placeholder) { background: #409eff !important; opacity: .2; }
 </style>

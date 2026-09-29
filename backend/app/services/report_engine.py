@@ -367,10 +367,8 @@ def validate_template(db: Session, payload) -> None:
             _check_top_n(b, "row_top_n", *PIVOT_ROW_TOP_N[:2])
             _check_top_n(b, "col_top_n", *PIVOT_COL_TOP_N[:2])
         elif t == "table":
-            cols = b.get("columns") or []
-            if not cols:
-                raise HTTPException(400, "明细表区块至少需要一列")
-            for c in cols:
+            # 空列 = 默认全部字段（运行期展开），合法；配置了列则必须都存在
+            for c in b.get("columns") or []:
                 if c not in fields_by_name and c not in SYSTEM_FIELDS:
                     raise HTTPException(400, f"明细列不存在：{c}")
 
@@ -706,6 +704,9 @@ def _eval_pivot(db, table, fields_by_name, block, date_field, start, end, viewer
 def _eval_table(db, table, fields_by_name, block, date_field, start, end, viewer_rules=None) -> dict:
     conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end, viewer_rules)
     cols = block.get("columns") or []
+    if not cols:
+        # 默认全选：未配置展示列时输出全部业务字段 + 创建/更新时间（空列只显示 ID 没有使用价值）
+        cols = [f.field_name for f in fields_by_name.values()] + ["created_at", "updated_at"]
     limit = min(max(int(block.get("limit") or 100), 1), TABLE_LIMIT_MAX)
     total = db.execute(select(func.count()).select_from(table).where(*conds)).scalar() or 0
 
@@ -997,6 +998,9 @@ def _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules=Non
     def eval_table(block):
         rows = base_recs(block, *block_time(block))
         cols = block.get("columns") or []
+        if not cols:
+            # 默认全选：未配置展示列时输出全部业务字段 + 创建/更新时间
+            cols = [f.field_name for f in fields_by_name.values()] + ["created_at", "updated_at"]
         limit = min(max(int(block.get("limit") or 100), 1), TABLE_LIMIT_MAX)
         total = len(rows)
         sort_by = block.get("sort_by")

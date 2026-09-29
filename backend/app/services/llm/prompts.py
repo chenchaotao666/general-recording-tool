@@ -258,13 +258,19 @@ _ASSISTANT_OUTPUT_EXAMPLE = {
 
 def build_assistant_prompt(message: str, history: list[dict], tables: list[dict],
                            current_table: dict | None, today: str,
-                           workflows: list[dict] | None = None) -> str:
+                           workflows: list[dict] | None = None,
+                           can_physical_table: bool = False) -> str:
     """AI 助手对话提示词。tables: [{id, label, fields?: [{field_name,label,data_type,options}]}]（前 N 张表带字段简报）；
-    current_table: {id, label} 用户当前正在查看的表；workflows: [{id, name, description, enabled}] 用户的工作流。"""
+    current_table: {id, label} 用户当前正在查看的表；workflows: [{id, name, description, enabled}] 用户的工作流；
+    can_physical_table: 用户是否有「创建独立表」权限（决定建表动作能否用 physical 存储）。"""
     lines = [
         f"今天日期：{today}",
         "",
         f"用户可访问的数据表（含字段清单）：\n{json.dumps(tables, ensure_ascii=False, indent=2)}",
+        "",
+        "注意：上面的数据表清单和工作流清单是本次请求实时查询的**最新状态**，"
+        "历史对话中出现的表清单/工作流清单可能已经过期（表可能新建、改名或删除），一律以最新清单为准；"
+        "用户问「有哪些表/某张表是否存在」时，直接查最新清单回答，不要引用历史消息里的旧清单。",
     ]
     if workflows:
         wf_lines = "、".join(
@@ -311,10 +317,17 @@ def build_assistant_prompt(message: str, history: list[dict], tables: list[dict]
         "日期值用 YYYY-MM-DD；金额等数值给数字不要带单位；最多 50 条",
         "2. 建表 create_table：{\"type\": \"create_table\", \"label\": \"表名\", \"fields\": [{\"field_name\": \"snake_case\", "
         "\"label\": \"中文名\", \"data_type\": \"varchar|text|int|decimal|date|datetime|bool\", \"widget\": \"控件\", "
-        "\"nullable\": true, \"options\": {}}]}。用户想新建一个业务表/让你设计表结构时使用；"
+        "\"nullable\": true, \"options\": {}}], \"storage_mode\": \"json\"}。用户想新建一个业务表/让你设计表结构时使用；"
         "data_type 从 varchar/text/int/decimal/date/datetime/bool/image 中选（image 仅当用户明确要存照片/图片附件时用）；"
         "有固定取值集合的字段 widget 用 select 且 "
-        "options 填 {\"options\": [\"值1\", \"值2\"]}；其余 widget 用 input/number/date-picker/switch 等与类型匹配的",
+        "options 填 {\"options\": [\"值1\", \"值2\"]}；其余 widget 用 input/number/date-picker/switch 等与类型匹配的；"
+        + (
+            "storage_mode 默认 \"json\"；用户明确要求建**物理表/独立表**时填 \"physical\"（独立物理表，"
+            "适合数据量大或需要直接访问底层表的场景）——你有创建物理表的权限，可以放心用"
+            if can_physical_table else
+            "storage_mode 只能填 \"json\"；你没有创建物理表的权限，若用户要求物理表/独立表，"
+            "在 reply 里说明需要管理员开通「创建独立表」权限（或用 JSON 表替代）"
+        ),
         "3. 生成 Excel gen_excel 两种模式："
         "{\"type\": \"gen_excel\", \"mode\": \"blank\", \"label\": \"表名\", \"fields\": [同 create_table], "
         "\"sample_rows\": [[示例行值...]]} 用于用户想要空白模板/示例表格；"

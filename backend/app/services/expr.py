@@ -2,16 +2,17 @@
 
 支持：四则运算 / 比较 / and·or·not / 括号 / 数字·字符串·布尔·null 常量；
 函数白名单：iff(cond,a,b) coalesce ifnull abs round floor ceil min max year month day datediff；
-字段引用：字段名（标识符）或 前缀.字段名（关联字段）。
+字段引用：字段名（标识符）或 前缀.字段名（关联字段）；字段名含 - 空格等特殊字符时用括号引用 [任意字段名]。
 """
 import ast
+import re
 from datetime import date, datetime
 
 from sqlalchemy import Integer, and_, case, cast, func, literal, or_
 
 # 函数白名单：参数个数（None=不限，至少 1）
 FUNCS = {
-    "iff": 3, "coalesce": None, "ifnull": 2,
+    "iff": 3, "coalesce": None, "ifnull": 2, "concat": None,
     "abs": 1, "round": None, "floor": 1, "ceil": 1,
     "min": None, "max": None,
     "year": 1, "month": 1, "day": 1, "datediff": 2,
@@ -35,12 +36,28 @@ def _field_name(node) -> str | None:
     return None
 
 
+_BRACKET_RE = re.compile(r"\[([^\[\]]+)\]")
+
+
 def parse(expr: str, allow_fields: set[str] | None = None) -> ast.AST:
-    """解析并白名单校验表达式，返回 AST。allow_fields 给定时校验字段引用存在。"""
+    """解析并白名单校验表达式，返回 AST。allow_fields 给定时校验字段引用存在。
+    括号引用：[任意字段名] —— 关联前缀含 - 空格 等 Python 标识符非法字符时，只能这样引用
+    （先替换成占位标识符走 ast 解析，再还原为真实字段名；AST 只供自研求值器使用，Name.id 可为任意字符串）。"""
+    mapping: dict[str, str] = {}
+
+    def repl(m):
+        key = f"FLDREF{len(mapping)}"
+        mapping[key] = m.group(1).strip()
+        return key
+
+    src = _BRACKET_RE.sub(repl, (expr or "").strip())
     try:
-        tree = ast.parse((expr or "").strip(), mode="eval")
+        tree = ast.parse(src, mode="eval")
     except SyntaxError as e:
         raise ExprError(f"表达式语法错误：{e.msg}") from e
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in mapping:
+            node.id = mapping[node.id]
     _check(tree.body, allow_fields)
     return tree.body
 
@@ -169,6 +186,11 @@ def evaluate(node, row: dict):
             return args[1] if _truth(args[0]) else args[2]
         if name in ("coalesce", "ifnull"):
             return next((a for a in args if a is not None), None)
+        if name == "concat":
+            # 字符串拼接：任一为 None 则整体 None（对齐 SQL || 三值逻辑）
+            if any(a is None for a in args):
+                return None
+            return "".join(str(a) for a in args)
         if name in ("min", "max"):
             if any(a is None for a in args):
                 return None
@@ -249,6 +271,14 @@ def to_sql(node, resolve, dialect: str = "sqlite"):
             return case((args[0], args[1]), else_=args[2])
         if name in ("coalesce", "ifnull"):
             return func.coalesce(*args)
+        if name == "concat":
+            # SQLite 用 || 拼接（NULL 传染，与 evaluate 语义一致）；其他方言用标准 concat
+            if dialect == "sqlite":
+                out = args[0]
+                for a in args[1:]:
+                    out = out.op("||")(a)
+                return out
+            return func.concat(*args)
         if name == "min":
             return func.min(*args) if dialect == "sqlite" else func.least(*args)
         if name == "max":
@@ -298,6 +328,8 @@ def infer_type(node, fields_by_name: dict) -> str:
         name = node.func.id
         if name in ("year", "month", "day", "datediff", "floor", "ceil"):
             return "int"
+        if name == "concat":
+            return "varchar"
         if name == "iff":
             ts = {infer_type(node.args[1], fields_by_name), infer_type(node.args[2], fields_by_name)}
         else:

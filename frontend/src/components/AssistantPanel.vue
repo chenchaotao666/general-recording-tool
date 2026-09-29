@@ -1,7 +1,7 @@
 <template>
-  <!-- 全局 AI 助手：悬浮按钮 + 聊天抽屉 -->
-  <el-tooltip content="AI 助手" placement="left" :show-after="300">
-    <button class="ai-fab" @click="open">✨</button>
+  <!-- 全局 AI 助手：悬浮按钮（可拖动，位置记忆在浏览器）+ 聊天抽屉 -->
+  <el-tooltip content="AI 助手（可拖动）" placement="left" :show-after="300">
+    <button class="ai-fab" :class="{ dragging: fabDragging }" :style="fabStyle" @mousedown.prevent="onFabDown" @click="onFabClick">✨</button>
   </el-tooltip>
   <el-drawer v-model="visible" size="min(920px, 94vw)" destroy-on-close>
     <template #header>
@@ -56,7 +56,12 @@
 
               <!-- 动作卡片：建表 -->
               <div v-else-if="m.card?.type === 'create_table'" class="card">
-                <div class="card-title">🧱 {{ m.card.summary }}</div>
+                <div class="card-title">
+                  🧱 {{ m.card.summary }}
+                  <el-tag size="small" effect="plain" :type="m.card.payload.storage_mode === 'physical' ? 'warning' : 'info'" style="margin-left: 6px">
+                    {{ m.card.payload.storage_mode === 'physical' ? '物理表' : 'JSON 表' }}
+                  </el-tag>
+                </div>
                 <el-input v-model="m.card.payload.label" size="small" :disabled="!!m.done" style="margin-bottom: 6px" />
                 <div v-for="(f, fi) in m.card.payload.fields" :key="fi" class="field-row">
                   <el-input v-model="f.label" size="small" :disabled="!!m.done" style="width: 110px" />
@@ -220,7 +225,7 @@
 </template>
 
 <script setup>
-import { computed, h, nextTick, ref, watch } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Promotion, CirclePlus } from '@element-plus/icons-vue'
@@ -361,6 +366,66 @@ function open() {
   visible.value = true
   if (!messages.value.length) loadHistory()
   loadPins()
+  // 打开即滚到最新一条（抽屉 destroy-on-close 会重建列表；动画约 300ms，结束后再校一次确保到底）
+  scrollBottom()
+  setTimeout(scrollBottom, 320)
+}
+
+// ---------- 悬浮球拖动：位移 < 6px 视为点击打开；拖动结束位置记忆到 localStorage ----------
+const FAB_SIZE = 52
+const fabPos = ref(null)        // {x, y} 左上角坐标；null = 默认右下角（CSS）
+const fabDragging = ref(false)
+let fabDragEndAt = 0            // 上次拖动松手时间：尾随 click 按时间窗吞掉（事件序在浏览器间有差异，时间戳最稳）
+
+const fabStyle = computed(() => fabPos.value
+  ? { left: fabPos.value.x + 'px', top: fabPos.value.y + 'px', right: 'auto', bottom: 'auto' }
+  : {})
+
+function clampFab(x, y) {
+  return {
+    x: Math.min(Math.max(x, 4), window.innerWidth - FAB_SIZE - 4),
+    y: Math.min(Math.max(y, 4), window.innerHeight - FAB_SIZE - 4),
+  }
+}
+
+function restoreFabPos() {
+  try {
+    const p = JSON.parse(localStorage.getItem('grt_ai_fab_pos') || 'null')
+    if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) fabPos.value = clampFab(p.x, p.y)
+  } catch { /* 忽略坏数据 */ }
+}
+
+function onFabDown(e) {
+  const startX = e.clientX
+  const startY = e.clientY
+  // 起点：已自定义位置用当前值，否则从默认右下角换算
+  const origin = fabPos.value || {
+    x: window.innerWidth - 28 - FAB_SIZE,
+    y: window.innerHeight - 32 - FAB_SIZE,
+  }
+  let moved = false
+  const onMove = (ev) => {
+    if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return
+    moved = true
+    fabDragging.value = true
+    fabPos.value = clampFab(origin.x + ev.clientX - startX, origin.y + ev.clientY - startY)
+  }
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+    fabDragging.value = false
+    if (moved) {
+      fabDragEndAt = Date.now()
+      try { localStorage.setItem('grt_ai_fab_pos', JSON.stringify(fabPos.value)) } catch { /* 隐私模式 */ }
+    }
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
+
+function onFabClick() {
+  if (Date.now() - fabDragEndAt < 250) return   // 拖动松手后的尾随 click 不打开抽屉
+  open()
 }
 
 function loadHistory() {
@@ -533,7 +598,9 @@ async function confirm(m) {
       // 广播给打开中的数据表页即时刷新（无需等 15s 轮询）
       window.dispatchEvent(new CustomEvent('grt:records-changed', { detail: { table_id: res.table_id } }))
     } else if (res.type === 'create_table') {
-      m.done = `✅ 已创建「${res.table_label}」 · <a href="/t/${res.table_id}" class="dl-link">去使用</a>`
+      m.done = `✅ 已创建${res.storage_mode === 'physical' ? '物理表' : '表'}「${res.table_label}」 · <a href="/t/${res.table_id}" class="dl-link">去使用</a>`
+      // 广播给表列表页即时刷新（新建的表立即出现）
+      window.dispatchEvent(new CustomEvent('grt:tables-changed', { detail: { table_id: res.table_id } }))
     } else if (res.type === 'create_report') {
       m.done = `✅ 已创建报表「${res.name}」 · <a href="/reports/${res.report_id}/view" class="dl-link">查看报表</a>`
     } else if (res.type === 'create_workflow') {
@@ -563,6 +630,17 @@ async function confirm(m) {
 
 // 路由变化时 context 自动更新；跨账号登录切换时重载历史与常用问题
 watch(storageKey, () => { messages.value = []; if (visible.value) { loadHistory(); loadPins() } })
+
+// 悬浮球位置：挂载时恢复记忆位置；窗口缩放时重新夹回可视区内
+onMounted(() => {
+  restoreFabPos()
+  window.addEventListener('resize', onFabResize)
+})
+onBeforeUnmount(() => window.removeEventListener('resize', onFabResize))
+
+function onFabResize() {
+  if (fabPos.value) fabPos.value = clampFab(fabPos.value.x, fabPos.value.y)
+}
 </script>
 
 <style scoped>
@@ -574,8 +652,11 @@ watch(storageKey, () => { messages.value = []; if (visible.value) { loadHistory(
   background: linear-gradient(135deg, #409eff, #7b5cff);
   box-shadow: 0 6px 16px rgba(80, 110, 255, .45);
   transition: transform .2s ease, box-shadow .2s ease;
+  touch-action: none;   /* 拖动时页面不滚动 */
 }
 .ai-fab:hover { transform: translateY(-3px) scale(1.05); box-shadow: 0 10px 22px rgba(80, 110, 255, .5); }
+/* 拖动中：禁掉悬停位移/过渡，跟手；光标抓手 */
+.ai-fab.dragging { transition: none; transform: none; cursor: grabbing; box-shadow: 0 10px 24px rgba(80, 110, 255, .55); }
 
 /* 抽屉头 */
 .ai-header { display: flex; align-items: center; gap: 10px; }

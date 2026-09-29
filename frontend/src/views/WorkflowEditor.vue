@@ -8,18 +8,18 @@
       <el-input v-model="meta.name" placeholder="工作流名称" class="name-input" />
       <el-switch v-model="meta.enabled" active-text="启用" />
       <div class="spacer" />
-      <el-button :disabled="!canUndo" title="撤销（Ctrl+Z）" @click="undo">撤销</el-button>
-      <el-button :disabled="!canRedo" title="重做（Ctrl+Y）" @click="redo">重做</el-button>
+      <el-button :icon="RefreshLeft" :disabled="!canUndo" title="撤销（Ctrl+Z）" @click="undo">撤销</el-button>
+      <el-button :icon="RefreshRight" :disabled="!canRedo" title="重做（Ctrl+Y）" @click="redo">重做</el-button>
       <el-button class="ai-btn" title="用一句话描述流程，AI 生成节点草稿到画布" @click="aiGenVisible = true">
         <el-icon><MagicStick /></el-icon>AI 生成
       </el-button>
-      <el-button v-if="wfId" :loading="explaining" @click="explain">流程解读</el-button>
-      <el-button @click="tidyUp">整理画布</el-button>
-      <el-button :loading="checking" @click="runCheck(true)">检查问题</el-button>
-      <el-button v-if="wfId" :loading="running" title="沙盒试运行：发通知/HTTP/写表/审批/延迟/子流程只模拟，不真实生效" @click="doRun(true)">试运行</el-button>
-      <el-button v-if="wfId" :loading="running" @click="doRun(false)">立即执行</el-button>
-      <el-button v-if="wfId" @click="openRuns">执行日志</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+      <el-button v-if="wfId" :icon="Reading" :loading="explaining" @click="explain">流程解读</el-button>
+      <el-button :icon="Grid" @click="tidyUp">整理画布</el-button>
+      <el-button :icon="CircleCheck" :loading="checking" @click="runCheck(true)">检查问题</el-button>
+      <el-button v-if="wfId" :icon="VideoPlay" :loading="running" title="沙盒试运行：发通知/HTTP/写表/审批/延迟/子流程只模拟，不真实生效" @click="doRun(true)">试运行</el-button>
+      <el-button v-if="wfId" :icon="Promotion" :loading="running" @click="doRun(false)">立即执行</el-button>
+      <el-button v-if="wfId" :icon="Document" @click="openRuns">执行日志</el-button>
+      <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存</el-button>
     </div>
 
     <div class="body">
@@ -204,7 +204,9 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, MagicStick } from '@element-plus/icons-vue'
+import {
+  ArrowLeft, Check, CircleCheck, Document, Grid, MagicStick, Promotion, Reading, RefreshLeft, RefreshRight, VideoPlay,
+} from '@element-plus/icons-vue'
 import { VueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'

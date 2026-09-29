@@ -832,6 +832,20 @@ assert r.status_code == 200 and new_tid, r.text
 t_meta = client.get(f"/api/tables/{new_tid}").json()
 assert t_meta["label"] == "供应商台账" and len(t_meta["fields"]) == 2, t_meta
 
+# AI 建物理表：storage_mode=physical 透传（admin 有权限）；无权限用户降级 JSON 并提示
+AssistantFakeProvider.responses = [
+    '{"reply": "好", "action": {"type": "create_table", "label": "物理台账", "storage_mode": "physical", "fields": ['
+    '{"field_name": "item", "label": "条目", "data_type": "varchar", "nullable": false}]}}'
+]
+r = client.post("/api/assistant/chat", json={"message": "帮我建一个物理表台账"})
+card = r.json()["action_card"]
+assert card["payload"]["storage_mode"] == "physical", card
+r = client.post("/api/assistant/execute", json={"type": "create_table", "payload": card["payload"]})
+phy_tid = r.json()["table_id"]
+assert r.status_code == 200 and r.json()["storage_mode"] == "physical", r.text
+t_meta = client.get(f"/api/tables/{phy_tid}").json()
+assert t_meta["storage_mode"] == "physical", t_meta
+
 # 数据问答：stat 受控聚合（全部时间 count = 4 条 PRECS）
 AssistantFakeProvider.responses = [
     '{"reply": "查一下", "action": {"type": "query", "table_id": %d, "spec": {"kind": "stat", "agg": "sum", "field": "amount"}}}' % tj
@@ -1108,6 +1122,19 @@ assert client.post(f"/api/dyn/{tj}/records", json={"customer_name": "worker新�
 as_user(outsider_headers)
 assert client.get(f"/api/tables/{tj}").status_code == 404  # 未分享不可见
 print("权限矩阵通过")
+
+# AI 建物理表（无权限降级）：worker 要求物理表 → 降级 JSON + 提示
+as_user(worker_headers)
+gw.get_default_provider = lambda db: AssistantFakeProvider()   # 上文已切到 JudgeFakeProvider，切回来
+AssistantFakeProvider.responses = [
+    '{"reply": "好", "action": {"type": "create_table", "label": "worker物理表", "storage_mode": "physical", "fields": ['
+    '{"field_name": "item", "label": "条目", "data_type": "varchar", "nullable": false}]}}'
+]
+r = client.post("/api/assistant/chat", json={"message": "帮我建一个物理表"})
+card = r.json()["action_card"]
+assert card["payload"]["storage_mode"] == "json", card
+assert any("创建独立表" in w for w in card["warnings"]), card
+as_user(admin_headers)
 
 # 12. VIP 门槛与角色管理
 as_user(worker_headers)
