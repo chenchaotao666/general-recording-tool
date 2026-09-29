@@ -18,7 +18,11 @@
     </div>
       <div v-if="block.agg === 'ratio'" class="hint">满足筛选的记录数 ÷ 口径内总数</div>
       <el-form-item>
-        <el-checkbox v-model="block.compare">环比上期</el-checkbox>
+        <el-checkbox v-model="block.compare">对比</el-checkbox>
+        <el-select v-if="block.compare" v-model="block.compare_type" style="margin-left: 10px; width: 150px" size="small">
+          <el-option label="环比（上一期）" value="mom" />
+          <el-option label="同比（去年同期）" value="yoy" />
+        </el-select>
       </el-form-item>
     </template>
 
@@ -30,6 +34,8 @@
           <el-radio-button value="line">折线</el-radio-button>
           <el-radio-button value="area">面积</el-radio-button>
           <el-radio-button value="pie">饼图</el-radio-button>
+          <el-radio-button value="funnel">漏斗</el-radio-button>
+          <el-radio-button value="mixed">组合</el-radio-button>
           <el-radio-button value="gauge">仪表盘</el-radio-button>
         </el-radio-group>
       </el-form-item>
@@ -57,7 +63,7 @@
       <template v-else>
         <el-form-item label="分组方式">
           <div class="row">
-            <el-select v-model="block.group.kind" style="width: 110px">
+            <el-select v-model="block.group.kind" style="width: 110px" @change="onGroupKindChange">
               <el-option label="按字段" value="field" />
               <el-option label="按日" value="day" />
               <el-option label="按周" value="week" />
@@ -84,31 +90,81 @@
         <div v-if="needsField(block.agg) && block.agg !== 'count_distinct' && !numericFields.length" class="hint">
       该数据源没有数值字段，求和/平均/最值不可用，可改用「计数」或「去重计数」
     </div>
-        <el-form-item v-if="block.chart_type === 'pie'" label="取前 N 项（其余合并「其他」）">
+        <el-form-item v-if="['pie', 'funnel'].includes(block.chart_type)" label="取前 N 项（其余合并「其他」）">
           <el-input-number v-model="block.top_n" :min="2" :max="30" controls-position="right" class="w-full" />
         </el-form-item>
-        <el-form-item v-if="block.group.kind === 'field'" label="点击图表">
-          <el-select v-model="block.on_click" class="w-full">
-            <el-option label="下钻查看明细" value="drill" />
-            <el-option label="联动过滤其他区块" value="link" />
+        <!-- 占比快速计算：柱/线/面积/组合图可切换为占总计百分比 -->
+        <el-form-item v-if="['bar', 'line', 'area', 'mixed'].includes(block.chart_type)" label="数值显示">
+          <el-select v-model="block.quick_calc" class="w-full">
+            <el-option label="原始值" value="" />
+            <el-option label="占总计百分比" value="pct" />
           </el-select>
         </el-form-item>
+        <!-- 对比：时间分组图表叠加一条虚线的上期/去年同期系列 -->
+        <el-form-item
+          v-if="['day', 'week', 'month'].includes(block.group.kind) && ['bar', 'line', 'area', 'mixed'].includes(block.chart_type)"
+          label="对比"
+        >
+          <el-select v-model="block.compare" class="w-full">
+            <el-option label="无" value="" />
+            <el-option label="环比（上一期）" value="mom" />
+            <el-option label="同比（去年同期）" value="yoy" />
+          </el-select>
+          <div v-if="block.compare" class="item-hint">按桶位对齐（本周一 vs 上周一…），对比系列为虚线折线</div>
+        </el-form-item>
+        <el-form-item label="点击图表">
+          <el-select v-model="block.on_click" class="w-full" @change="onClickActionChange">
+            <el-option label="下钻查看明细" value="drill" />
+            <!-- 联动/跳转需要按字段分组（backend 才回传 group_field），时间分组时只提供下钻 -->
+            <el-option v-if="block.group.kind === 'field'" label="联动过滤其他区块" value="link" />
+            <el-option v-if="block.group.kind === 'field'" label="跳转其他报表（带分组值过滤）" value="jump" />
+          </el-select>
+          <div v-if="block.group.kind !== 'field'" class="item-hint">按日/周/月分组时点柱子/点即可下钻该时段明细</div>
+        </el-form-item>
+        <!-- 跳转目标：点分组后带着该值跳到目标报表（作为其联动过滤） -->
+        <el-form-item v-if="block.on_click === 'jump'" label="目标报表">
+          <el-select v-model="block.jump_report_id" class="w-full" filterable placeholder="选择要跳转的报表">
+            <el-option v-for="r in reportOptions" :key="r.id" :label="r.name" :value="r.id" />
+          </el-select>
+          <div class="item-hint">目标报表里需有按「{{ groupFieldLabel }}」字段分组的图表，才能接住跳转的过滤值</div>
+        </el-form-item>
+        <!-- 层级钻取：点分组后本图换成下一层字段（如 区域 → 城市）并过滤上级值 -->
+        <el-form-item
+          v-if="block.group.kind === 'field' && (!block.on_click || block.on_click === 'drill') && ['bar', 'line', 'area'].includes(block.chart_type)"
+          label="层级钻取"
+        >
+          <el-select
+            :model-value="block.drill_down?.field || ''" class="w-full" clearable placeholder="不启用"
+            @update:model-value="setDrillDown"
+          >
+            <el-option v-for="f in drillDownFields" :key="f.field_name" :label="f.label" :value="f.field_name" />
+          </el-select>
+          <div v-if="block.drill_down?.field" class="item-hint">查看页点击分组，本图切换为按该字段分组并只保留上级值（面包屑可返回）</div>
+        </el-form-item>
 
-        <!-- 多系列 -->
-        <template v-if="block.chart_type !== 'pie'">
+        <!-- 多系列（饼图/漏斗单系列；组合图强制多指标） -->
+        <template v-if="!['pie', 'funnel'].includes(block.chart_type)">
           <el-form-item label="系列">
             <div class="row" style="align-items: center">
               <el-radio-group :model-value="seriesMode(block)" @change="(v) => setSeriesMode(block, v)">
-                <el-radio-button value="single">单指标</el-radio-button>
+                <el-radio-button value="single" :disabled="block.chart_type === 'mixed'">单指标</el-radio-button>
                 <el-radio-button value="metrics">多指标</el-radio-button>
-                <el-radio-button value="group2">二级分组</el-radio-button>
+                <el-radio-button value="group2" :disabled="block.chart_type === 'mixed'">二级分组</el-radio-button>
               </el-radio-group>
-              <el-checkbox v-if="seriesMode(block) !== 'single'" v-model="block.stack" style="margin-left: 10px">堆叠</el-checkbox>
+              <el-checkbox
+                v-if="seriesMode(block) !== 'single' && block.chart_type !== 'mixed'"
+                v-model="block.stack" style="margin-left: 10px"
+              >堆叠</el-checkbox>
             </div>
+            <div v-if="block.chart_type === 'mixed'" class="item-hint">组合图：每个指标可选画成柱状（左轴）或折线（右轴）</div>
           </el-form-item>
           <template v-if="seriesMode(block) === 'metrics'">
             <div v-for="(m, mi) in block.metrics" :key="mi" class="metric-card">
               <div class="row">
+                <el-select v-if="block.chart_type === 'mixed'" v-model="m.chart" style="width: 76px">
+                  <el-option label="柱状" value="bar" />
+                  <el-option label="折线" value="line" />
+                </el-select>
                 <el-select v-model="m.agg" style="width: 100px" @change="onMetricAgg(m)">
                   <el-option v-for="[v, l] in CHART_AGGS" :key="v" :label="l" :value="v" />
                 </el-select>
@@ -124,7 +180,7 @@
             </div>
             <el-button
               text type="primary" :disabled="(block.metrics || []).length >= 5"
-              @click="block.metrics.push({ agg: 'count', field: null, title: '' })"
+              @click="block.metrics.push({ agg: 'count', field: null, title: '', ...(block.chart_type === 'mixed' ? { chart: 'line' } : {}) })"
             >+ 添加指标（最多 5 个）</el-button>
           </template>
           <el-form-item v-if="seriesMode(block) === 'group2'" label="二级分组字段">
@@ -202,12 +258,14 @@
     <template v-else-if="block.type === 'table'">
       <el-form-item>
         <template #label>
-          <span>展示列</span>
-          <el-checkbox
-            :model-value="allColsSelected" :indeterminate="someColsSelected" size="small" class="col-all"
-            @change="toggleAllCols"
-          >全选</el-checkbox>
-          <span class="col-hint">（不选 = 默认全部字段）</span>
+          <span class="col-label">
+            <span>展示列</span>
+            <el-checkbox
+              :model-value="allColsSelected" :indeterminate="someColsSelected" size="small" class="col-all"
+              @change="toggleAllCols"
+            >全选</el-checkbox>
+            <span class="col-hint">（不选 = 默认全部字段）</span>
+          </span>
         </template>
         <el-select v-model="block.columns" multiple filterable placeholder="不选 = 默认全部字段" class="w-full">
           <el-option label="ID" value="id" />
@@ -229,23 +287,27 @@
           </el-select>
         </div>
       </el-form-item>
-      <el-form-item label="行数上限">
-        <el-input-number v-model="block.limit" :min="1" :max="500" controls-position="right" class="w-full" />
-      </el-form-item>
     </template>
 
     <!-- 文本 -->
     <template v-else-if="block.type === 'text'">
       <el-form-item label="内容">
-        <el-input v-model="block.content" type="textarea" :rows="3" placeholder="支持占位符：{range_label} 时间范围、{b1} 引用统计卡片的值" />
+        <el-input
+          ref="textContentEl" v-model="block.content" type="textarea" :rows="3"
+          placeholder="写报表说明/小结，下面点变量即可插入，不用记语法"
+        />
       </el-form-item>
-      <el-form-item v-if="statBlocks.length" label="插入统计卡值">
+      <el-form-item label="插入变量">
         <div>
           <el-tag
-            v-for="s in statBlocks" :key="s.id" size="small"
-            style="margin: 0 6px 4px 0; cursor: pointer"
-            @click="block.content += `{${s.id}}`"
-          >{{ s.title || s.id }}</el-tag>
+            v-for="v in TEXT_VARS" :key="v.expr" size="small" type="info" effect="plain"
+            class="var-tag" :title="v.expr" @click="insertTextVar(v.expr)"
+          >{{ v.label }}</el-tag>
+          <el-tag
+            v-for="s in statBlocks" :key="s.id" size="small" type="warning" effect="plain"
+            class="var-tag" :title="`{${s.id}}`" @click="insertTextVar(`{${s.id}}`)"
+          >{{ s.title || s.id }}的值</el-tag>
+          <div class="item-hint">点一下插入到光标处；查看/推送时会替换成真实值（橙色 = 对应统计卡的数值）</div>
         </div>
       </el-form-item>
     </template>
@@ -335,8 +397,9 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { Delete } from '@element-plus/icons-vue'
+import { listReports } from '../api'
 
 const props = defineProps({
   block: { type: Object, required: true },      // 就地修改
@@ -344,6 +407,64 @@ const props = defineProps({
   statBlocks: { type: Array, default: () => [] }, // 文本占位符引用的统计卡列表
 })
 const block = computed(() => props.block)
+
+// ---------- 跳转其他报表 / 层级钻取 ----------
+const reportOptions = ref([])
+let reportsLoaded = false
+
+// 选中「跳转其他报表」时懒加载报表列表
+watch(() => props.block.on_click, async (v) => {
+  if (v === 'jump' && !reportsLoaded) {
+    reportsLoaded = true
+    try { reportOptions.value = await listReports() } catch { /* 列表加载失败下拉为空 */ }
+  }
+}, { immediate: true })
+
+const groupFieldLabel = computed(() =>
+  props.fields.find((f) => f.field_name === props.block.group?.field)?.label || props.block.group?.field || '分组'
+)
+
+// 层级钻取字段：同数据集的其它字段（不能是分组字段本身，日期字段意义不大但允许）
+const drillDownFields = computed(() =>
+  props.fields.filter((f) => f.field_name !== props.block.group?.field)
+)
+
+function setDrillDown(v) {
+  if (v) {
+    props.block.drill_down = { field: v }
+  } else {
+    delete props.block.drill_down
+  }
+}
+
+// 联动/跳转与层级钻取互斥（后端校验同样拦截）
+function onClickActionChange(v) {
+  if (v === 'link' || v === 'jump') delete props.block.drill_down
+}
+
+// ---------- 文本块：插入变量（系统变量 + 各统计卡的值；点击插到光标处，不用记 {b1} 语法） ----------
+const TEXT_VARS = [
+  { label: '时间范围', expr: '{range_label}' },
+  { label: '开始日期', expr: '{start}' },
+  { label: '结束日期', expr: '{end}' },
+]
+const textContentEl = ref(null)
+
+function insertTextVar(expr) {
+  const b = props.block
+  const v = b.content || ''
+  const el = textContentEl.value?.textarea ?? textContentEl.value?.$el?.querySelector('textarea')
+  if (!el) {
+    b.content = v + expr
+    return
+  }
+  const start = el.selectionStart ?? v.length
+  b.content = v.slice(0, start) + expr + v.slice(el.selectionEnd ?? start)
+  nextTick(() => {
+    el.focus()
+    el.selectionStart = el.selectionEnd = start + expr.length
+  })
+}
 
 // 明细表展示列：全选/半选/清空
 const ALL_COLS = computed(() => ['id', ...props.fields.map((f) => f.field_name), 'created_at', 'updated_at'])
@@ -401,14 +522,29 @@ function setSeriesMode(b, mode) {
 }
 
 function onChartTypeChange(v) {
-  if (v === 'pie') setSeriesMode(props.block, 'single')
+  const b = props.block
+  if (['pie', 'funnel'].includes(v)) setSeriesMode(b, 'single')
+  if (v === 'mixed') {
+    // 组合图强制多指标：从单指标带入第一个指标，再补一个折线指标占位
+    if (seriesMode(b) !== 'metrics') setSeriesMode(b, 'metrics')
+    b.metrics.forEach((m, i) => { m.chart = m.chart || (i === 0 ? 'bar' : 'line') })
+    if (b.metrics.length < 2) b.metrics.push({ agg: 'count', field: null, title: '', chart: 'line' })
+    b.stack = false
+  }
+  if (['pie', 'funnel', 'gauge'].includes(v)) b.quick_calc = ''   // 占比对饼/漏斗/仪表盘无意义
   if (v === 'gauge') {
-    const b = props.block
     b.metrics = []
     b.group2 = { field: null }
     b.stack = false
     b.max = b.max || 100
+    b.compare = ''
   }
+}
+
+// 分组方式切换的联动清理：联动/跳转需要按字段分组；对比（环比/同比）需要时间分组
+function onGroupKindChange(v) {
+  if (v !== 'field' && ['link', 'jump'].includes(props.block.on_click)) props.block.on_click = 'drill'
+  if (v === 'field') props.block.compare = ''
 }
 
 function needsField(agg) {
@@ -485,11 +621,16 @@ function setOverrideRange(v) {
 .bcf :deep(.el-form-item__label) { padding-bottom: 2px; line-height: 1.4; font-size: 12px; color: #909399; }
 .w-full { width: 100%; }
 .row { display: flex; align-items: center; gap: 8px; width: 100%; }
-.col-all { margin-left: 12px; }
+/* 明细表「展示列」标签行：文本与 checkbox 水平对齐（checkbox 默认固定高度会顶起整行） */
+.col-label { display: inline-flex; align-items: center; }
+.col-all { margin-left: 12px; height: auto; }
 .col-hint { font-size: 12px; color: #c0c4cc; font-weight: normal; }
 .sub { font-size: 12px; color: #909399; }
 .hint { font-size: 12px; color: #c0c4cc; margin: -6px 0 10px; }
+/* form-item 内部的提示（el-form-item__content 是 flex，需独占一行并给正常间距） */
+.item-hint { width: 100%; font-size: 12px; color: #c0c4cc; line-height: 1.5; margin-top: 4px; }
 .sec-divider { margin: 18px 0 12px; }
 .metric-card { border: 1px solid #e4e7ed; border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+.var-tag { margin: 0 6px 4px 0; cursor: pointer; }
 .rule-card { border: 1px solid #e4e7ed; border-radius: 6px; padding: 8px; margin-bottom: 8px; background: #fafafa; }
 </style>

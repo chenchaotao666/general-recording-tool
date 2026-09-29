@@ -1,10 +1,10 @@
 <template>
-  <div class="page">
-    <div class="page-head">
+  <div>
+    <div class="page-header">
       <h2>工作流</h2>
       <div>
         <el-button @click="openTemplates">模板市场</el-button>
-        <el-button @click="aiVisible = true">AI 生成</el-button>
+        <el-button class="ai-btn" @click="aiVisible = true">AI 生成</el-button>
         <el-button type="primary" @click="$router.push('/workflows/new')">新建工作流</el-button>
       </div>
     </div>
@@ -86,7 +86,7 @@
       <span class="hint">{{ filteredRows.length }} 个工作流</span>
     </div>
 
-    <el-table :data="pagedRows" v-loading="loading" @row-dblclick="(r) => $router.push(`/workflows/${r.id}/edit`)">
+    <el-table :data="pagedRows" v-loading="loading" border @row-dblclick="(r) => $router.push(`/workflows/${r.id}/edit`)">
       <el-table-column prop="name" label="名称" min-width="150">
         <template #default="{ row }">
           <el-link type="primary" @click="$router.push(`/workflows/${row.id}/edit`)">{{ row.name }}</el-link>
@@ -118,14 +118,19 @@
           <span v-else class="desc">未执行</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="240" fixed="right">
+      <el-table-column label="操作" width="300" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" :loading="runningId === row.id" @click="onRun(row)">执行</el-button>
-          <el-button link type="primary" size="small" @click="$router.push(`/workflows/${row.id}/edit`)">编辑</el-button>
-          <el-button link type="primary" size="small" @click="openRuns(row)">日志</el-button>
-          <el-button link type="danger" size="small" @click="onDelete(row)">删除</el-button>
+          <el-button text type="primary" size="small" :loading="runningId === row.id" @click="onRun(row)">执行</el-button>
+          <el-button text type="primary" size="small" @click="$router.push(`/workflows/${row.id}/edit`)">编辑</el-button>
+          <el-button text type="primary" size="small" @click="openRuns(row)">日志</el-button>
+          <el-popconfirm title="将删除该工作流及其执行记录，确定？" width="240" @confirm="onDelete(row)">
+            <template #reference>
+              <el-button text type="danger" size="small">删除</el-button>
+            </template>
+          </el-popconfirm>
         </template>
       </el-table-column>
+      <template #empty>还没有工作流，点击右上角新建或从模板市场安装</template>
     </el-table>
     <el-pagination
       v-if="filteredRows.length > pageSize" v-model:current-page="listPage" :page-size="pageSize"
@@ -135,7 +140,7 @@
 
     <!-- 执行日志抽屉 -->
     <el-drawer v-model="runsVisible" :title="`执行日志 · ${runsRow?.name || ''}`" size="720px">
-      <el-table :data="runs" size="small">
+      <el-table :data="runs" size="small" border>
         <el-table-column label="时间" width="150">
           <template #default="{ row }">
             <el-link type="primary" @click="$router.push(`/workflows/runs/${row.id}`)">{{ row.started_at }}</el-link>
@@ -334,7 +339,6 @@ async function openRuns(row) {
 }
 
 async function onDelete(row) {
-  await ElMessageBox.confirm(`确定删除工作流「${row.name}」？`, '删除确认', { type: 'warning' })
   await deleteWorkflow(row.id)
   ElMessage.success('已删除')
   load()
@@ -344,9 +348,6 @@ onMounted(load)
 </script>
 
 <style scoped>
-.page { padding: 20px; }
-.page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.page-head h2 { margin: 0; }
 .desc { font-size: 12px; color: #909399; }
 .last-time { margin-left: 8px; font-size: 12px; color: #909399; }
 .tokens { margin-left: 8px; font-size: 12px; color: #9b59b6; }

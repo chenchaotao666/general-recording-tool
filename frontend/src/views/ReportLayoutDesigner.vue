@@ -1,14 +1,20 @@
 <template>
   <div v-loading="loading" class="rp-designer">
-    <!-- 顶栏（与工作流编辑器一致：白底通栏、名称内联编辑、操作按钮右排） -->
+    <!-- 顶栏（与工作流编辑器一致：白底通栏、名称内联编辑、操作按钮右排）
+         分组：返回+名称 ｜ 页签 ｜（弹性空白）｜ 全局时间 ｜ 操作按钮 -->
     <div class="topbar">
-      <el-button link @click="goBack">
-        <el-icon><ArrowLeft /></el-icon>返回
-      </el-button>
-      <el-input v-model="tplName" placeholder="报表名称" class="name-input" @input="dirty = true" />
-      <el-tag v-if="dirty" size="small" type="warning" effect="plain">未保存</el-tag>
+      <!-- 组1：返回 + 名称 -->
+      <div class="tb-group">
+        <el-button link @click="goBack">
+          <el-icon><ArrowLeft /></el-icon>返回
+        </el-button>
+        <el-input v-model="tplName" placeholder="报表名称" class="name-input" @input="dirty = true" />
+        <el-tag v-if="dirty" size="small" type="warning" effect="plain">未保存</el-tag>
+      </div>
 
-      <!-- 页签：顶栏居中（可横向滚动） -->
+      <div class="tb-divider" />
+
+      <!-- 组2：页签（可横向滚动） -->
       <div class="page-bar">
         <div
           v-for="(p, pi) in pages" :key="p.id" class="page-tab" :class="{ active: p.id === activePageId }"
@@ -26,24 +32,36 @@
       </div>
 
       <div class="spacer" />
-      <!-- 全局口径：与查看页一致直接可切（设置抽屉里仍是完整的口径/推送配置） -->
+
+      <!-- 组3：全局口径（与查看页一致直接可切；设置抽屉里仍是完整的口径/推送配置） -->
       <template v-if="tpl">
-        <el-select :model-value="tpl.range?.mode || 'this_week'" size="small" class="range-select" title="全局口径"
-          @update:model-value="onGlobalRangeMode">
-          <el-option v-for="[v, l] in RANGE_MODES" :key="v" :label="l" :value="v" />
-        </el-select>
-        <el-date-picker
-          v-if="tpl.range?.mode === 'custom'" v-model="globalRangeCustom" type="daterange" size="small"
-          value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" class="range-dates"
-        />
+        <div class="tb-group">
+          <span class="tb-label">全局时间</span>
+          <el-select :model-value="tpl.range?.mode || 'this_week'" size="small" class="range-select" title="全局口径"
+            @update:model-value="onGlobalRangeMode">
+            <el-option v-for="[v, l] in RANGE_MODES" :key="v" :label="l" :value="v" />
+          </el-select>
+          <el-date-picker
+            v-if="tpl.range?.mode === 'custom'" v-model="globalRangeCustom" type="daterange" size="small"
+            value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" class="range-dates"
+          />
+        </div>
+        <div class="tb-divider" />
       </template>
-      <el-button class="ai-btn" title="用一句话描述需求，AI 生成区块草稿" @click="openAi">
-        <el-icon><MagicStick /></el-icon>AI 生成
-      </el-button>
-      <el-button :icon="Grid" @click="autoArrange">自动排版</el-button>
-      <el-button :icon="VideoPlay" :loading="previewLoading" title="沙盒试运行：用当前未保存的配置生成预览，不落库" @click="previewRun">试运行</el-button>
-      <el-button :icon="Setting" @click="openSettings">设置</el-button>
-      <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存</el-button>
+
+      <!-- 组4：操作按钮 -->
+      <div class="tb-group">
+        <el-button :icon="RefreshLeft" :disabled="!canUndo" title="撤销（Ctrl+Z）" @click="undo">撤销</el-button>
+        <el-button :icon="RefreshRight" :disabled="!canRedo" title="重做（Ctrl+Y）" @click="redo">重做</el-button>
+        <el-button class="ai-btn" title="用一句话描述需求，AI 生成区块草稿" @click="openAi">
+          <el-icon><MagicStick /></el-icon>AI 生成
+        </el-button>
+        <el-button :icon="Grid" @click="autoArrange">自动排版</el-button>
+        <el-button :icon="VideoPlay" :loading="previewLoading" title="沙盒试运行：用当前未保存的配置生成预览，不落库" @click="previewRun">试运行</el-button>
+        <el-button :icon="View" title="打开报表查看页（已保存的内容）" @click="onGoView">查看</el-button>
+        <el-button :icon="Setting" @click="openSettings">设置</el-button>
+        <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存</el-button>
+      </div>
     </div>
 
     <div class="body">
@@ -64,7 +82,7 @@
         </div>
         <div class="side-section">
           <div class="side-title">
-            数据源
+            数据源（点击或拖入画布）
             <el-button link type="primary" size="small" style="float: right" @click="addDatasetVisible = true">+ 添加</el-button>
           </div>
           <div v-for="d in datasets" :key="d.id" class="ds-group">
@@ -77,7 +95,8 @@
             </div>
             <div
               v-for="f in fieldsOf(d.id)" :key="f.field_name" class="field-chip" draggable="true"
-              :title="`${f.label}（${f.data_type}）— 拖入画布成图`" @dragstart="onFieldDragStart($event, d, f)"
+              :title="`${f.label}（${f.data_type}）— 点击或拖入画布成图`"
+              @click="onFieldClick(d, f)" @dragstart="onFieldDragStart($event, d, f)"
             >
               <span class="fc-type" :class="ftypeClass(f)">{{ ftypeShort(f) }}</span>
               <span class="fc-label">{{ f.label }}</span>
@@ -97,18 +116,22 @@
             v-for="item in glItems" :key="item.i" v-bind="item"
             drag-allow-from=".gi-head" drag-ignore-from="button, a"
           >
-            <div class="gi-card" :class="{ selected: item.i === selectedBlockId }" @click.stop="selectedBlockId = item.i">
+            <div class="gi-card" :class="{ selected: item.i === selectedBlockId, invalid: invalidIds.includes(item.i) }" @click.stop="selectedBlockId = item.i">
               <div class="gi-head">
                 <span class="gi-type">{{ BLOCK_TYPE_LABELS[blockOf(item.i)?.type] || '区块' }}</span>
                 <span class="gi-title">{{ blockOf(item.i)?.title || '未命名' }}</span>
                 <span v-if="dsOf(blockOf(item.i))" class="gi-ds">{{ dsOf(blockOf(item.i)).name }}</span>
+                <el-button text size="small" :icon="CopyDocument" title="复制区块" @click.stop="duplicateBlock(item.i)" />
                 <el-button text size="small" :icon="Close" title="删除区块" @click.stop="removeBlock(item.i)" />
               </div>
-              <!-- 真实数据渲染（draft 沙盒取数）；无数据时显示占位提示 -->
+              <!-- 真实数据渲染（draft 沙盒取数）；无数据时显示占位提示（半成品块列出缺失项） -->
               <div v-if="blockResults[item.i]" class="gi-real">
-                <ReportBlock :block="blockResults[item.i]" fill />
+                <ReportBlock :block="blockResults[item.i]" fill @page="onTablePage" @table-sort="onTableSort" />
               </div>
-              <div v-else class="gi-body">{{ dataLoading ? '绘制中…' : '点右侧「应用并绘制」加载数据' }}</div>
+              <div v-else class="gi-body">
+                <template v-if="missingOf(item.i).length">还差：{{ missingOf(item.i).join('、') }}</template>
+                <template v-else>{{ dataLoading ? '绘制中…' : '等待数据…' }}</template>
+              </div>
             </div>
           </GridItem>
         </GridLayout>
@@ -121,6 +144,7 @@
         <div class="config-head">
           <span class="config-title">{{ BLOCK_TYPE_LABELS[selectedBlock.type] }}配置</span>
           <div>
+            <el-button link class="ai-link" size="small" @click="openBlockAi">✨ AI 帮我设置</el-button>
             <el-button link type="danger" size="small" @click="removeBlock(selectedBlock.id)">删除区块</el-button>
             <el-button link type="info" size="small" @click="selectedBlockId = null">收起</el-button>
           </div>
@@ -179,11 +203,7 @@
 
         <el-divider content-position="left">图表配置</el-divider>
         <BlockConfigForm :block="selectedBlock" :fields="fieldsOf(selectedBlock.dataset_id)" :stat-blocks="statBlocks" />
-        <el-button
-          type="primary" size="small" class="w-full" style="margin-top: 14px"
-          :loading="dataLoading" @click="refreshData()"
-        >应用并绘制</el-button>
-        <div class="panel-tip">改完点「应用并绘制」刷新画布数据；顶栏「保存」才会写入报表</div>
+        <div class="panel-tip">改配置会立即自动重绘；顶栏「保存」（Ctrl+S）才会写入报表，误操作可 Ctrl+Z 撤销</div>
       </div>
     </div>
 
@@ -334,24 +354,11 @@
       </template>
     </el-drawer>
 
-    <!-- 模板设置：口径/推送（名称在顶栏编辑，AI 生成在顶栏） -->
+    <!-- 模板设置：描述 + 定时推送（名称/全局时间在顶栏编辑，AI 生成在顶栏） -->
     <el-drawer v-model="settingsVisible" title="报表设置" size="520px">
       <el-form label-width="90px">
         <el-form-item label="描述">
           <el-input v-model="settingsForm.description" placeholder="选填" />
-        </el-form-item>
-        <el-form-item label="全局口径">
-          <el-select v-model="settingsForm.range.mode" style="width: 140px">
-            <el-option v-for="[v, l] in RANGE_MODES" :key="v" :label="l" :value="v" />
-          </el-select>
-          <el-date-picker
-            v-if="settingsForm.range.mode === 'custom'" v-model="settingsRangeCustom" type="daterange"
-            value-format="YYYY-MM-DD" style="margin-left: 8px; width: 240px"
-            start-placeholder="开始" end-placeholder="结束"
-          />
-          <div style="font-size: 12px; color: #909399; margin-top: 4px">
-            各区块按自己的日期字段套用该时间范围；块可单独覆盖或设为"不随时间筛选"
-          </div>
         </el-form-item>
 
         <el-divider content-position="left">定时推送（可选）</el-divider>
@@ -402,21 +409,46 @@
         </template>
       </el-form>
       <template #footer>
+        <el-button :loading="pushPreviewLoading" @click="onPreviewPush">预览推送内容</el-button>
         <el-button type="primary" @click="applySettings">应用</el-button>
       </template>
     </el-drawer>
+
+    <!-- 推送内容预览：邮件 HTML / 群机器人 Markdown（不实际发送） -->
+    <el-dialog v-model="pushPreviewVisible" title="推送内容预览（按已保存的配置生成，不发送）" width="760px" top="6vh">
+      <div v-loading="pushPreviewLoading" style="min-height: 200px">
+        <template v-if="pushPreview">
+          <div class="pp-subject">主题：{{ pushPreview.subject }}</div>
+          <el-tabs>
+            <el-tab-pane label="邮件正文">
+              <iframe :srcdoc="pushPreview.html" class="pp-frame" sandbox="" />
+            </el-tab-pane>
+            <el-tab-pane label="群机器人（Markdown）">
+              <pre class="pp-md">{{ pushPreview.markdown }}</pre>
+            </el-tab-pane>
+          </el-tabs>
+        </template>
+      </div>
+    </el-dialog>
 
     <!-- AI 辅助 -->
     <el-dialog v-model="aiVisible" title="AI 辅助生成报表" width="640px" destroy-on-close>
       <el-select v-model="aiTableId" placeholder="基于哪张表生成" style="width: 100%; margin-bottom: 10px" filterable>
         <el-option v-for="t in tables" :key="t.id" :label="t.label" :value="t.id" />
       </el-select>
+      <!-- 已有区块时默认追加意图：AI 只生成本次要求的区块，不重新设计整表 -->
+      <el-radio-group v-if="blocks.length" v-model="aiAppend" size="small" style="margin-bottom: 10px">
+        <el-radio-button :value="true">在现有报表上追加</el-radio-button>
+        <el-radio-button :value="false">重新设计整张报表</el-radio-button>
+      </el-radio-group>
       <el-input
         v-model="aiDescription" type="textarea" :rows="4"
-        placeholder="用自然语言描述你想要的报表，如：做一个上周的客户跟进周报，包含新增客户数、客户分级占比、每日新增趋势、客户明细和一段小结"
+        :placeholder="aiAppend
+          ? '描述要追加的内容，如：再增加一个按产品分组的金额合计图表'
+          : '用自然语言描述你想要的报表，如：做一个上周的客户跟进周报，包含新增客户数、客户分级占比、每日新增趋势、客户明细和一段小结'"
       />
       <div style="margin: 10px 0">
-        <el-button type="primary" :loading="aiGenerating" :disabled="!aiTableId || !aiDescription.trim()" @click="aiGenerate">
+        <el-button class="ai-btn" :loading="aiGenerating" :disabled="!aiTableId || !aiDescription.trim()" @click="aiGenerate">
           {{ aiResult ? '重新生成' : '生成' }}
         </el-button>
         <span v-if="aiGenerating" style="margin-left: 10px; font-size: 12px; color: #909399">AI 设计中，可能需要十几秒…</span>
@@ -425,10 +457,28 @@
         <el-alert type="success" :closable="false" style="margin-bottom: 10px"
           :title="`已生成「${aiResult.name}」：${aiResult.blocks.length} 个区块`" />
         <el-alert v-if="aiResult.notes" type="warning" :closable="false" :title="aiResult.notes" style="margin-bottom: 10px" />
+        <!-- 应用方式：有存量区块时可选追加（追加不重排现有布局） -->
+        <el-radio-group v-model="aiMode" size="small" style="margin-bottom: 4px">
+          <el-radio-button value="replace">替换全部区块</el-radio-button>
+          <el-radio-button value="append_page" :disabled="!blocks.length">追加为新页签</el-radio-button>
+          <el-radio-button value="append_current" :disabled="!blocks.length">追加到当前页</el-radio-button>
+        </el-radio-group>
       </template>
       <template #footer>
         <el-button @click="aiVisible = false">取消</el-button>
-        <el-button v-if="aiResult" type="primary" @click="aiApply">应用（替换全部区块）</el-button>
+        <el-button v-if="aiResult" class="ai-btn" @click="aiApply">
+          {{ aiMode === 'replace' ? '应用（替换全部区块）' : '应用（追加）' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- AI 帮我设置这个区块（与工作流节点的「AI 帮我配置」同款） -->
+    <el-dialog v-model="aiBlockVisible" :title="`AI 设置 · ${BLOCK_TYPE_LABELS[selectedBlock?.type] || ''}`" width="480px">
+      <el-input v-model="aiBlockDesc" type="textarea" :rows="4"
+        placeholder="用一句话描述你想要的效果，例如：按产品分组看金额合计，只要本月已完成的" />
+      <template #footer>
+        <el-button @click="aiBlockVisible = false">取消</el-button>
+        <el-button class="ai-btn" :loading="aiBlockLoading" @click="applyBlockAi">生成并填入</el-button>
       </template>
     </el-dialog>
 
@@ -446,11 +496,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft, ArrowLeftBold, ArrowRightBold, Calendar, Check, CircleCheck, Close, Coin, Delete, Document,
-  EditPen, Filter, Grid, Histogram, MagicStick, Odometer, Plus, QuestionFilled, Setting, Tickets, VideoPlay,
+  ArrowLeft, ArrowLeftBold, ArrowRightBold, Calendar, Check, CircleCheck, Close, Coin, CopyDocument, Delete, Document,
+  EditPen, Filter, Grid, Histogram, MagicStick, Odometer, Plus, QuestionFilled, RefreshLeft, RefreshRight, Setting, Tickets, VideoPlay, View,
 } from '@element-plus/icons-vue'
 import { GridLayout, GridItem } from 'grid-layout-plus'
-import { aiAssistReport, checkExpr, getReport, getTable, listTables, runReport, updateReport } from '../api'
+import { aiAssistBlock, aiAssistReport, checkExpr, getReport, getTable, listTables, previewPushReport, runReport, updateReport } from '../api'
 import ReportDashboard from '../components/ReportDashboard.vue'
 import VariablePicker from '../components/workflow/VariablePicker.vue'
 import ReportBlock from '../components/ReportBlock.vue'
@@ -781,6 +831,8 @@ async function applyDatasetEditor() {
 // ---------- 选中区块的内联编辑 ----------
 const selectedBlockId = ref(null)
 const selectedBlock = computed(() => blockOf(selectedBlockId.value))
+// 保存校验未通过的区块（画布上红框标记；再次编辑即清除）
+const invalidIds = ref([])
 
 const rangeModeOf = computed({
   get: () => selectedBlock.value?.range_mode || '',
@@ -853,6 +905,22 @@ function onBlockDatasetChange(block, did) {
   }
   dirty.value = true
   if (dropped.length) ElMessage.warning(`换源后部分配置因字段不存在已清空：${dropped.join('、')}`)
+}
+
+// 复制区块：克隆配置为新块（标题加「副本」），放到当前页底部并选中
+function duplicateBlock(blockId) {
+  const src = blockOf(blockId)
+  if (!src || !activePage.value) return
+  const b = JSON.parse(JSON.stringify(src))
+  b.id = nextBlockId()
+  b.title = `${src.title || BLOCK_TYPE_LABELS[src.type]} 副本`
+  tpl.value.blocks.push(b)
+  activePage.value.items.push(defaultItem(b, activePage.value.items))
+  selectedBlockId.value = b.id
+  commit()
+  layoutVersion.value++
+  ElMessage.success(`已复制为「${b.title}」`)
+  if (b.type !== 'text') refreshData(true)
 }
 
 // 真删除区块（画布 ✕ 与面板按钮共用）：从模板与所有页签移除
@@ -929,21 +997,32 @@ function onFieldDrop(e) {
     ElMessage.success(`已添加「${b.title}」，在右侧完善配置`)
     return
   }
+  // 拖字段成图：先按字段类型推断块类型取默认尺寸，再按鼠标落点换算栅格坐标
+  const probe = smartBlockForField(dragPayload.field)
+  const { def } = BLOCK_SIZE[probe.type] || BLOCK_SIZE.text
+  addFieldBlock(dragPayload.did, dragPayload.field, dropPosition(e, ...def))
+  dragPayload = null
+}
+
+// 侧栏字段点击添加：与拖入画布同一套建块逻辑，缺省落到当前页底部
+function onFieldClick(d, f) {
+  if (!activePage.value) return
+  addFieldBlock(d.id, f, null)
+}
+
+// 侧栏字段成块共用逻辑：拖入画布（带落点 pos）与点击添加（落当前页底部）
+function addFieldBlock(did, f, pos) {
   const b = {
-    id: nextBlockId(), ...smartBlockForField(dragPayload.field),
-    dataset_id: dragPayload.did,
-    date_field: ['date', 'datetime'].includes(dragPayload.field.data_type) ? dragPayload.field.field_name : 'created_at',
+    id: nextBlockId(), ...smartBlockForField(f),
+    dataset_id: did,
+    date_field: ['date', 'datetime'].includes(f.data_type) ? f.field_name : 'created_at',
   }
   tpl.value.blocks.push(b)
-  const { def } = BLOCK_SIZE[b.type] || BLOCK_SIZE.text
-  const pos = dropPosition(e, ...def) || defaultItem(b, activePage.value.items)
-  activePage.value.items.push({ block_id: b.id, x: pos.x, y: pos.y, w: pos.w, h: pos.h })
+  activePage.value.items.push(pos ? { block_id: b.id, ...pos } : defaultItem(b, activePage.value.items))
   selectedBlockId.value = b.id
-  dirty.value = true
   commit()
   layoutVersion.value++
   ElMessage.success(`已生成「${b.title}」`)
-  dragPayload = null
   refreshData(true)   // 新块立即绘制
 }
 
@@ -953,6 +1032,14 @@ function onCanvasBackdropClick(e) {
 }
 
 function onKeydown(e) {
+  const tag = e.target?.tagName
+  const typing = tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable
+  if ((e.ctrlKey || e.metaKey) && !typing) {
+    const k = e.key.toLowerCase()
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }
+    if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); return }
+    if (k === 's') { e.preventDefault(); save(); return }
+  }
   if (e.key === 'Escape' && selectedBlockId.value) selectedBlockId.value = null
 }
 
@@ -960,16 +1047,66 @@ function onKeydown(e) {
 const blockResults = ref({})   // block_id -> run 结果块
 const dataLoading = ref(false)
 
-function buildDraft() {
-  // 未配置完成的块不进草稿：后端校验严格，半成品块（筛选没选字段/透视表维度没选字段等）
-  // 会让整个草稿运行 400，画布上其他块也绘不出来。这些块留在画布上作占位，配好即自动参与绘制
-  const ready = (b) => {
-    if (b.type === 'filter') return !!b.field
-    if (b.type === 'pivot') return !!(b.row?.field) && !!(b.col?.field)
-    if (b.type === 'chart') return b.chart_type === 'gauge' || !!(b.group?.field)
-    return true
+// 明细表服务端分页（与查看页一致：每页 50 条；配置变更回第 1 页）
+const TABLE_PAGE_SIZE = 50
+const tablePages = ref({})
+// 点列头排序的临时覆盖（预览用，不写入配置；配置里的排序在右侧面板改）
+const sortOverrides = ref({})
+
+function tablePagesParam() {
+  const out = {}
+  for (const b of blocks.value) {
+    if (b.type === 'table') out[b.id] = { page: tablePages.value[b.id] || 1, page_size: TABLE_PAGE_SIZE }
   }
-  const draftBlocks = blocks.value.filter(ready)
+  return Object.keys(out).length ? out : null
+}
+
+function onTablePage({ block_id, page }) {
+  tablePages.value = { ...tablePages.value, [block_id]: page }
+  refreshData(true)
+}
+
+function onTableSort({ block_id, sort_by, sort_order }) {
+  const s = { ...sortOverrides.value }
+  if (sort_by) s[block_id] = { sort_by, sort_order }
+  else delete s[block_id]
+  sortOverrides.value = s
+  const p = { ...tablePages.value }
+  delete p[block_id]
+  tablePages.value = p
+  refreshData(true)
+}
+
+// 半成品块缺什么（画布占位提示 + 草稿过滤共用的单一事实源）：
+// 未配置完成的块不进草稿——后端校验严格，半成品块会让整个草稿运行 400，画布上其他块也绘不出来
+function blockMissing(b) {
+  const miss = []
+  const needsNum = (agg) => agg && !['count', 'ratio'].includes(agg)
+  if (b.type === 'filter') {
+    if (!b.field) miss.push('选择筛选字段')
+  } else if (b.type === 'pivot') {
+    if (!b.row?.field) miss.push('选择行维度')
+    if (!b.col?.field) miss.push('选择列维度')
+  } else if (b.type === 'chart') {
+    if (b.chart_type !== 'gauge' && !b.group?.field) miss.push('选择分组字段')
+    if ((b.metrics || []).some((m) => needsNum(m.agg || 'count') && !m.field)) miss.push('补全指标的数值字段')
+    if (b.chart_type === 'mixed' && (b.metrics || []).filter((m) => m.agg).length < 2) miss.push('组合图至少 2 个指标')
+    if (b.on_click === 'jump' && !b.jump_report_id) miss.push('选择跳转的目标报表')
+  }
+  // 单指标/统计卡/透视表：求和等数值聚合必须选字段（多指标模式下走 metrics，上面已查）
+  if (['stat', 'chart', 'pivot'].includes(b.type) && needsNum(b.agg) && !b.field && !(b.metrics || []).length) {
+    miss.push('选择数值字段')
+  }
+  return miss
+}
+
+function missingOf(blockId) {
+  const b = blockOf(blockId)
+  return b ? blockMissing(b) : []
+}
+
+function buildDraft() {
+  const draftBlocks = blocks.value.filter((b) => blockMissing(b).length === 0)
   const readyIds = new Set(draftBlocks.map((b) => b.id))
   const layout = layoutData()
   for (const p of layout.pages) p.items = p.items.filter((it) => readyIds.has(it.block_id))
@@ -988,7 +1125,8 @@ async function refreshData(silent = false) {
   }
   dataLoading.value = true
   try {
-    const res = await runReport(tplId, null, null, null, buildDraft())
+    const res = await runReport(tplId, null, null, null, buildDraft(), tablePagesParam(),
+      Object.keys(sortOverrides.value).length ? sortOverrides.value : undefined)
     blockResults.value = Object.fromEntries((res.blocks || []).map((b) => [b.id, b]))
   } catch (e) {
     if (!silent) ElMessage.error(`绘制失败：${e.message}`)
@@ -996,6 +1134,18 @@ async function refreshData(silent = false) {
     dataLoading.value = false
   }
 }
+
+// 配置变更自动重绘（防抖 800ms）：右侧面板改配置即自动刷新画布；
+// 非静默——绘制失败要弹错误（原「应用并绘制」按钮的报错职责移到这里）
+let redrawTimer = null
+watch(blocks, () => {
+  if (!tpl.value) return
+  invalidIds.value = []   // 任何配置变更都清除校验红框（重新保存时再判定）
+  tablePages.value = {}   // 明细表回第 1 页
+  sortOverrides.value = {}   // 排序临时覆盖一并清掉（配置里的排序在右侧面板改）
+  clearTimeout(redrawTimer)
+  redrawTimer = setTimeout(() => refreshData(), 800)
+}, { deep: true })
 
 // GridLayout 内部态与 pages 解耦（关键：库在拖动时不发 update:layout，只在 dragend/resizeend 发 layout-updated）：
 // ① 结构变化（换页/撤销/放置/排版/删除）→ layoutVersion++ → syncGlItems 重建布局数组；
@@ -1015,16 +1165,73 @@ watch([activePageId, layoutVersion], syncGlItems, { immediate: true })
 function onLayoutUpdated(arr) {
   if (!activePage.value) return
   const byI = new Map(arr.map((it) => [it.i, it]))
+  // grid-layout-plus 在挂载/布局同步后也会回调一次；坐标没实际变化时不算修改（否则刚进页面就提示未保存）
+  let changed = false
   activePage.value.items = activePage.value.items.map((it) => {
     const g = byI.get(it.block_id)
-    return g ? { block_id: it.block_id, x: g.x, y: g.y, w: g.w, h: g.h } : it
+    if (!g) return it
+    if (g.x !== it.x || g.y !== it.y || g.w !== it.w || g.h !== it.h) changed = true
+    return { block_id: it.block_id, x: g.x, y: g.y, w: g.w, h: g.h }
   })
-  commit()
+  if (changed) commit()
 }
 
-// ---------- 结构变更标脏 ----------
+// ---------- 结构变更标脏 + 撤销/重做 ----------
+// 快照栈约定：所有结构性变更都是「先改状态、后调 commit()」，所以 commit 时把
+// 「上一次提交后的快照」压入撤销栈——那正是本次变更前的状态。
+const undoStack = ref([])
+const redoStack = ref([])
+const HISTORY_MAX = 50
+let lastSnap = null
+
+const canUndo = computed(() => undoStack.value.length > 0)
+const canRedo = computed(() => redoStack.value.length > 0)
+
+function snapshot() {
+  return JSON.stringify({
+    name: tpl.value?.name,
+    blocks: tpl.value?.blocks || [],
+    datasets: datasets.value,
+    pages: pages.value,
+  })
+}
+
 function commit() {
+  if (!tpl.value) { dirty.value = true; return }
+  if (lastSnap !== null) {
+    undoStack.value.push(lastSnap)
+    if (undoStack.value.length > HISTORY_MAX) undoStack.value.shift()
+    redoStack.value = []
+  }
+  lastSnap = snapshot()
   dirty.value = true
+}
+
+function applySnap(s) {
+  const d = JSON.parse(s)
+  tpl.value.name = d.name
+  tpl.value.blocks = d.blocks
+  datasets.value = d.datasets
+  pages.value = d.pages
+  // 恢复后当前页签/选中块可能已不存在，收敛到合法状态
+  if (!pages.value.some((p) => p.id === activePageId.value)) activePageId.value = pages.value[0]?.id || ''
+  if (selectedBlockId.value && !d.blocks.some((b) => b.id === selectedBlockId.value)) selectedBlockId.value = null
+  lastSnap = snapshot()
+  dirty.value = true
+  layoutVersion.value++
+  refreshData(true)
+}
+
+function undo() {
+  if (!undoStack.value.length) return
+  redoStack.value.push(snapshot())
+  applySnap(undoStack.value.pop())
+}
+
+function redo() {
+  if (!redoStack.value.length) return
+  undoStack.value.push(snapshot())
+  applySnap(redoStack.value.pop())
 }
 
 // ---------- 区块放置 ----------
@@ -1040,7 +1247,7 @@ const BLOCK_DEFS = {
     title: '透视表', row: { kind: 'field', field: null }, col: { kind: 'month', field: 'created_at' },
     agg: 'count', field: null, totals: true,
   },
-  table: { title: '明细表', columns: [], limit: 100 },
+  table: { title: '明细表', columns: [], limit: 100 },   // limit 已废弃：明细表不再限条数（前端分页），保留字段兼容旧数据
   text: { title: '文本', content: '' },
   filter: { title: '筛选', field: null, target: { mode: 'same_dataset' } },
 }
@@ -1161,27 +1368,18 @@ function onGlobalRangeApplied() {
 }
 
 // ---------- 模板设置 ----------
+// 全局口径在顶栏「全局时间」直接编辑，设置抽屉只管描述 + 定时推送
 const settingsVisible = ref(false)
 const settingsForm = reactive({
   name: '', description: '', enabled: false,
-  range: { mode: 'this_week', start: null, end: null },
   schedule: { type: '', minutes: 60, expr: '0 9 * * 1' },
   push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', webhooks: [] },
-})
-
-const settingsRangeCustom = computed({
-  get: () => (settingsForm.range.start && settingsForm.range.end ? [settingsForm.range.start, settingsForm.range.end] : null),
-  set: (v) => {
-    settingsForm.range.start = v?.[0] || null
-    settingsForm.range.end = v?.[1] || null
-  },
 })
 
 function openSettings() {
   const t = tpl.value
   Object.assign(settingsForm, {
     description: t.description || '', enabled: t.enabled,
-    range: { mode: t.range?.mode || 'this_week', start: t.range?.start || null, end: t.range?.end || null },
     schedule: { type: '', minutes: 60, expr: '0 9 * * 1', ...(t.schedule || {}) },
     push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', webhooks: [], ...(t.push || {}) },
   })
@@ -1191,7 +1389,6 @@ function openSettings() {
 function applySettings() {
   tpl.value.description = settingsForm.description
   tpl.value.enabled = settingsForm.schedule.type ? settingsForm.enabled : false
-  tpl.value.range = { mode: settingsForm.range.mode, start: settingsForm.range.start, end: settingsForm.range.end }
   tpl.value.schedule = settingsForm.schedule.type
     ? (settingsForm.schedule.type === 'interval'
       ? { type: 'interval', minutes: settingsForm.schedule.minutes }
@@ -1205,15 +1402,39 @@ function applySettings() {
   ElMessage.success('设置已应用，保存后生效')
 }
 
+// ---------- 推送预览（按已保存的配置渲染，不发送） ----------
+const pushPreviewVisible = ref(false)
+const pushPreviewLoading = ref(false)
+const pushPreview = ref(null)
+
+async function onPreviewPush() {
+  if (dirty.value) ElMessage.warning('预览基于已保存的配置；当前修改未保存，内容可能不一致')
+  pushPreviewVisible.value = true
+  pushPreviewLoading.value = true
+  pushPreview.value = null
+  try {
+    pushPreview.value = await previewPushReport(tplId)
+  } catch (e) {
+    pushPreviewVisible.value = false
+    ElMessage.error(e.message)
+  } finally {
+    pushPreviewLoading.value = false
+  }
+}
+
 // ---------- AI 辅助 ----------
 const aiVisible = ref(false)
 const aiTableId = ref(null)
 const aiDescription = ref('')
 const aiGenerating = ref(false)
 const aiResult = ref(null)
+const aiMode = ref('replace')   // replace 替换全部 / append_page 追加为新页签 / append_current 追加到当前页
+const aiAppend = ref(true)      // 生成意图：true=只生成本次要求的区块（追加）；false=重新设计整表
 
 function openAi() {
   aiResult.value = null
+  aiMode.value = 'replace'
+  aiAppend.value = !!blocks.value.length   // 有存量默认追加意图
   aiTableId.value = datasets.value[0]?.base_table_id || null
   aiVisible.value = true
 }
@@ -1221,7 +1442,9 @@ function openAi() {
 async function aiGenerate() {
   aiGenerating.value = true
   try {
-    aiResult.value = await aiAssistReport(aiTableId.value, aiDescription.value.trim())
+    aiResult.value = await aiAssistReport(aiTableId.value, aiDescription.value.trim(), aiAppend.value)
+    // 追加意图生成的就是增量区块，应用方式默认「追加为新页签」
+    aiMode.value = aiAppend.value && blocks.value.length ? 'append_page' : 'replace'
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
@@ -1230,7 +1453,7 @@ async function aiGenerate() {
 }
 
 async function aiApply() {
-  if (blocks.value.length) {
+  if (aiMode.value === 'replace' && blocks.value.length) {
     try {
       await ElMessageBox.confirm('应用将替换当前全部区块并重排布局，确定继续？', 'AI 辅助', { type: 'warning' })
     } catch { return }
@@ -1244,7 +1467,7 @@ async function aiApply() {
     await refreshFields(dset.id)
   }
   const df = aiResult.value.range?.date_field || 'created_at'
-  tpl.value.blocks = aiResult.value.blocks.map((b) => ({
+  const mapped = aiResult.value.blocks.map((b) => ({
     ...b,
     filters: b.filters || { logic: 'AND', rules: [] },
     group: b.group ? { ...b.group } : undefined,
@@ -1256,16 +1479,74 @@ async function aiApply() {
       totals: b.totals !== false,
     } : {}),
   }))
-  pages.value = autoLayout(tpl.value.blocks).pages
-  activePageId.value = pages.value[0]?.id || ''
-  tpl.value.range = { mode: aiResult.value.range?.mode || 'this_week', start: null, end: null }
-  if (!tpl.value.name.trim()) tpl.value.name = aiResult.value.name
+
+  if (aiMode.value === 'replace') {
+    tpl.value.blocks = mapped
+    pages.value = autoLayout(tpl.value.blocks).pages
+    activePageId.value = pages.value[0]?.id || ''
+    tpl.value.range = { mode: aiResult.value.range?.mode || 'this_week', start: null, end: null }
+    if (!tpl.value.name.trim()) tpl.value.name = aiResult.value.name
+  } else {
+    // 追加模式：AI 生成的块 id（b1/b2…）可能与现有冲突，统一重新分配；不动现有布局
+    for (const b of mapped) b.id = nextBlockId()
+    tpl.value.blocks.push(...mapped)
+    if (aiMode.value === 'append_page') {
+      const page = { id: nextPageId(pages.value), title: `${aiResult.value.name || 'AI 生成'}`.slice(0, 20), items: [] }
+      page.items = autoLayout(mapped).pages[0].items
+      pages.value.push(page)
+      activePageId.value = page.id
+    } else {
+      // append_current：追加到当前页底部
+      for (const b of mapped) activePage.value.items.push(defaultItem(b, activePage.value.items))
+    }
+  }
   aiVisible.value = false
   settingsVisible.value = false
   dirty.value = true
+  commit()
   layoutVersion.value++
-  ElMessage.success('已应用，可继续调整后保存')
+  ElMessage.success(aiMode.value === 'replace' ? '已应用，可继续调整后保存' : '已追加，可继续调整后保存')
   refreshData(true)   // AI 生成后立即绘制
+}
+
+// ---- AI 帮我设置这个区块（与工作流节点「AI 帮我配置」同款：一句话 → 配置 patch，合并后自动重绘） ----
+const aiBlockVisible = ref(false)
+const aiBlockDesc = ref('')
+const aiBlockLoading = ref(false)
+
+function openBlockAi() {
+  aiBlockDesc.value = ''
+  aiBlockVisible.value = true
+}
+
+async function applyBlockAi() {
+  const b = selectedBlock.value
+  if (!b) return
+  if (!aiBlockDesc.value.trim()) { ElMessage.warning('请描述你想要的效果'); return }
+  aiBlockLoading.value = true
+  try {
+    // 数据集字段（含关联/计算字段）作为 AI 的可用字段清单
+    const fields = (fieldsOf(b.dataset_id) || []).map((f) => ({
+      field_name: f.field_name, label: f.label, data_type: f.data_type, options: f.options || {},
+    }))
+    // 当前配置一并给 AI（编辑语义：如「增加一个指标」= 在现有 metrics 上加，而不是重生成一份）
+    const current = cleanedBlocks([b]).map(({ id, dataset_id, date_field, type, ...rest }) => rest)[0]
+    // 文本块：附上统计卡变量映射（{b3}=成交总额），AI 才能写出能真实取值的占位符
+    if (b.type === 'text') {
+      current.stats = statBlocks.value.map((s) => ({ ref: `{${s.id}}`, label: s.title || s.id }))
+    }
+    const r = await aiAssistBlock(b.type, aiBlockDesc.value.trim(), fields, current)
+    // 合并 patch（不动 id/dataset_id/type/date_field）；blocks 的 watch 会自动重绘
+    Object.assign(b, r.config || {})
+    aiBlockVisible.value = false
+    aiBlockDesc.value = ''
+    commit()   // 进撤销栈，误填可 Ctrl+Z
+    ElMessage.success(r.notes ? `已填入 AI 配置（${r.notes}），请检查后保存` : '已填入 AI 生成的配置，请检查后保存')
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    aiBlockLoading.value = false
+  }
 }
 
 // ---------- 加载 / 保存 ----------
@@ -1282,6 +1563,10 @@ async function load() {
     dirty.value = !tpl.value.datasets?.length  // 旧模板升级后未落库，提示保存
     await refreshAllFields()
     refreshData(true)   // 打开即绘制真实数据
+    // 撤销/重做基线：加载完成的状态作为第一个快照，历史清空
+    lastSnap = snapshot()
+    undoStack.value = []
+    redoStack.value = []
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
@@ -1360,7 +1645,7 @@ function cleanedBlocks(list) {
   return list.map((b) => {
     const { series_mode, ...rest } = b
     // filters 可能缺失（AI 生成/旧数据/API 直接建的块），缺省给空条件组——否则这里抛 TypeError，
-    // 被 refreshData(silent) 吞掉后画布全是「点右侧应用并绘制」占位
+    // 被 refreshData 吞掉后画布全是「等待数据…」占位
     const f = b.filters || {}
     return { ...rest, filters: { logic: f.logic || 'AND', rules: (f.rules || []).filter((r) => r.field && r.op) } }
   })
@@ -1386,16 +1671,38 @@ function buildPayload() {
 }
 
 async function save() {
+  invalidIds.value = []
+  // 本地预检：半成品块直接标红并定位，不发请求（与草稿过滤同一套 blockMissing 规则）
+  const bad = blocks.value.filter((b) => blockMissing(b).length)
+  if (bad.length) {
+    invalidIds.value = bad.map((b) => b.id)
+    locateBlock(bad[0].id)
+    ElMessage.error(`有 ${bad.length} 个区块未配置完成（已红框标出）：「${bad[0].title || bad[0].id}」${blockMissing(bad[0]).join('、')}`)
+    return
+  }
   saving.value = true
   try {
     tpl.value = await updateReport(tplId, buildPayload())
     dirty.value = false
     ElMessage.success('已保存')
   } catch (e) {
+    // 后端校验错误统一带「区块 <id>（标题）：原因」，解析出来在画布标红定位
+    const m = /区块\s+([A-Za-z0-9_]+)/.exec(e.message || '')
+    if (m && blockOf(m[1])) {
+      invalidIds.value = [m[1]]
+      locateBlock(m[1])
+    }
     ElMessage.error(e.message)
   } finally {
     saving.value = false
   }
+}
+
+// 跳到指定区块：切到所在页签 + 选中（配置面板展开）
+function locateBlock(blockId) {
+  const pg = pages.value.find((p) => p.items.some((it) => it.block_id === blockId))
+  if (pg) activePageId.value = pg.id
+  selectedBlockId.value = blockId
 }
 
 // ---------- 试运行（draft 沙盒，不落库） ----------
@@ -1428,6 +1735,17 @@ function goBack() {
   }
 }
 
+function onGoView() {
+  // 查看页展示的是已保存内容：有未保存修改时先提示，避免"设计器里看到的和查看页不一样"
+  if (dirty.value) {
+    ElMessageBox.confirm('有未保存的修改，查看页只能看到已保存的内容，确定离开？', '提示', { type: 'warning' })
+      .then(() => router.push(`/reports/${tplId}/view`))
+      .catch(() => {})
+  } else {
+    router.push(`/reports/${tplId}/view`)
+  }
+}
+
 function onBeforeUnload(e) {
   if (dirty.value) e.preventDefault()
 }
@@ -1442,6 +1760,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(redrawTimer)
   window.removeEventListener('beforeunload', onBeforeUnload)
   window.removeEventListener('keydown', onKeydown)
 })
@@ -1452,15 +1771,18 @@ onBeforeUnmount(() => {
    高度用 100%（填满 el-main 内容区），不能用 100vh：外层还有顶栏 + el-main padding。 */
 .rp-designer { height: 100%; display: flex; flex-direction: column; background: #f5f7fa; }
 .topbar {
-  display: flex; align-items: center; gap: 12px; padding: 8px 16px;
+  display: flex; align-items: center; gap: 14px; padding: 8px 16px;
   background: #fff; border-bottom: 1px solid #e4e7ed;
 }
+/* 顶栏分组：组内紧凑，组间竖杆分隔 */
+.tb-group { display: flex; align-items: center; gap: 8px; }
+.tb-divider { width: 1px; height: 20px; background: #dcdfe6; flex-shrink: 0; }
+.tb-label { font-size: 12px; color: #909399; flex-shrink: 0; }
 .name-input { width: 220px; }
 .spacer { flex: 1; }
 .range-select { width: 118px; flex-shrink: 0; }
 .range-dates { width: 230px; flex-shrink: 0; }
-.ai-btn { background: #9b59b6; border-color: #9b59b6; color: #fff; }
-.ai-btn:hover, .ai-btn:focus { background: #8e44ad; border-color: #8e44ad; color: #fff; }
+/* .ai-btn 紫色样式已上移 App.vue 全局 */
 
 /* 页签：顶栏居中、可横向滚动 */
 .page-bar {
@@ -1521,6 +1843,8 @@ onBeforeUnmount(() => {
   display: flex; flex-direction: column; overflow: hidden; cursor: pointer;
 }
 .gi-card.selected { border-color: #409eff; box-shadow: 0 0 0 2px rgba(64, 158, 255, .25); }
+/* 保存校验未通过的区块红框标记（编辑后自动清除） */
+.gi-card.invalid { border-color: #f56c6c; box-shadow: 0 0 0 2px rgba(245, 108, 108, .25); }
 /* 画布卡片头（gi-head）已显示标题，隐藏筛选块控件上方的重复标题（查看页没有卡片头，仍需显示） */
 .gi-real :deep(.filter-label) { display: none; }
 .gi-head {
@@ -1556,6 +1880,9 @@ onBeforeUnmount(() => {
 .panel-resizer:hover { background: rgba(64, 158, 255, .35); }
 .config-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .config-title { font-size: 13px; font-weight: 600; }
+/* 配置面板的 AI 入口：蓝色文字链 */
+.ai-link { color: #409eff; }
+.ai-link:hover, .ai-link:focus { color: #337ecc; }
 .mb { margin-bottom: 10px; }
 .w-full { width: 100%; }
 
@@ -1608,6 +1935,14 @@ onBeforeUnmount(() => {
 .dsd-preview {
   display: flex; flex-wrap: wrap; gap: 6px; padding: 12px;
   background: #fafafa; border: 1px dashed #e4e7ed; border-radius: 8px; max-height: 160px; overflow-y: auto;
+}
+
+/* 推送预览 */
+.pp-subject { font-size: 13px; color: #606266; margin-bottom: 8px; }
+.pp-frame { width: 100%; height: 56vh; border: 1px solid #e4e7ed; border-radius: 6px; background: #fff; }
+.pp-md {
+  margin: 0; padding: 12px; max-height: 56vh; overflow: auto; white-space: pre-wrap;
+  background: #f5f7fa; border-radius: 6px; font-size: 12px; color: #606266;
 }
 
 :deep(.vgl-item--placeholder) { background: #409eff !important; opacity: .2; }

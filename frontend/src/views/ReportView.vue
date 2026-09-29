@@ -70,8 +70,10 @@
         <el-button size="small" text @click="clearAllLinks">清除全部</el-button>
       </div>
       <ReportDashboard
-        :blocks="result.blocks" :layout="result.layout" drillable
+        :blocks="result.blocks" :layout="result.layout" drillable :drill-paths="drillPaths"
         @drill="onDashDrill" @link="onDashLink" @viewer-filter="onViewerFilter"
+        @drill-level="onDrillLevel" @drill-back="clearOverride" @jump="onJump"
+        @swap-pivot="onSwapPivot" @page="onTablePage" @table-sort="onTableSort"
       />
       <el-empty v-if="!result.blocks.length" description="该模板还没有区块，去编辑添加" />
     </template>
@@ -79,14 +81,20 @@
     <!-- 图表下钻明细 -->
     <el-dialog v-model="drill.visible" :title="drill.title" width="80%" top="8vh">
       <div v-loading="drill.loading">
-        <el-table :data="drill.rows" size="small" border max-height="55vh">
+        <el-table :data="drillPageRows" size="small" border max-height="55vh">
           <el-table-column
             v-for="c in drill.columns" :key="c.prop" :prop="c.prop" :label="c.label"
             show-overflow-tooltip
           />
         </el-table>
-        <div v-if="drill.truncated" style="font-size: 12px; color: #909399; margin-top: 6px">
-          共 {{ drill.total }} 条，仅显示前 {{ drill.rows.length }} 条
+        <div class="drill-foot">
+          <el-pagination
+            v-if="drill.rows.length > DRILL_PAGE_SIZE" v-model:current-page="drillPage"
+            small background layout="total, prev, pager, next" :page-size="DRILL_PAGE_SIZE" :total="drill.rows.length"
+          />
+          <span v-if="drill.truncated" class="drill-truncated">
+            共 {{ drill.total }} 条，仅加载前 {{ drill.rows.length }} 条
+          </span>
         </div>
         <el-empty v-if="!drill.loading && !drill.rows.length" description="该分组暂无记录" :image-size="60" />
       </div>
@@ -95,8 +103,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Download, Grid } from '@element-plus/icons-vue'
 import { reportExportUrl, runReport, drillReport, getReport, getTable } from '../api'
@@ -109,12 +117,15 @@ const RANGE_MODES = [
 ]
 
 const route = useRoute()
-const tplId = route.params.id
+const router = useRouter()
+// 响应式 tplId：同组件跳转（报表间跳转）时 params/query 变化但组件复用，需监听路由重新初始化
+const tplId = computed(() => route.params.id)
 
 const result = ref(null)
 const loading = ref(false)
 const rangeMode = ref('this_week')
 const customRange = ref(null)
+const tplBlocks = ref([])   // 模板区块配置（层级钻取/行列互换的覆盖基准）
 
 // ---------- 图表联动 ----------
 const linkFilters = ref({})   // field -> {value, label}
@@ -174,10 +185,18 @@ function mergedFilters() {
 // ---------- 图表下钻 ----------
 const drill = ref({ visible: false, loading: false, title: '', columns: [], rows: [], total: 0, truncated: false })
 
+// 下钻明细分页（客户端，每页 50 条；后端截断时提示只加载了前 N 条）
+const DRILL_PAGE_SIZE = 50
+const drillPage = ref(1)
+const drillPageRows = computed(() =>
+  drill.value.rows.slice((drillPage.value - 1) * DRILL_PAGE_SIZE, drillPage.value * DRILL_PAGE_SIZE)
+)
+
 async function openDrill(title, payload) {
   drill.value = { visible: true, loading: true, columns: [], rows: [], total: 0, truncated: false, title }
+  drillPage.value = 1
   try {
-    const res = await drillReport(tplId, {
+    const res = await drillReport(tplId.value, {
       ...payload,
       range: currentRange() || { mode: rangeMode.value }, filters: mergedFilters(), links: currentLinks.value,
     })
@@ -237,12 +256,97 @@ function clearFilters() {
   run()
 }
 
-async function run() {
+// ---------- 明细表服务端分页 ----------
+const TABLE_PAGE_SIZE = 50
+const tablePages = ref({})   // block_id -> 当前页（改筛选/口径时重置回第 1 页）
+
+function blockPagesParam() {
+  const out = {}
+  for (const b of tplBlocks.value.length ? tplBlocks.value : (result.value?.blocks || [])) {
+    if (b.type === 'table') out[b.id] = { page: tablePages.value[b.id] || 1, page_size: TABLE_PAGE_SIZE }
+  }
+  return Object.keys(out).length ? out : null
+}
+
+function onTablePage({ block_id, page }) {
+  tablePages.value = { ...tablePages.value, [block_id]: page }
+  run(true)
+}
+
+// 明细表点列头排序：走 block_overrides 服务端排序（排序后回第 1 页）
+function onTableSort({ block_id, sort_by, sort_order }) {
+  const o = { ...blockOverrides.value }
+  if (sort_by) {
+    o[block_id] = { ...o[block_id], sort_by, sort_order }
+  } else if (o[block_id]) {
+    delete o[block_id].sort_by
+    delete o[block_id].sort_order
+    if (!Object.keys(o[block_id]).length) delete o[block_id]
+  }
+  blockOverrides.value = o
+  const p = { ...tablePages.value }
+  delete p[block_id]
+  tablePages.value = p
+  run(true)
+}
+
+// ---------- 层级钻取 / 透视表行列互换（临时覆盖块配置，不落库） ----------
+const blockOverrides = ref({})  // block_id -> {group?, row?, col?, filters?}
+const drillPaths = ref({})      // block_id -> [{field, value, label}]
+
+function overridesParam() {
+  return Object.keys(blockOverrides.value).length ? blockOverrides.value : null
+}
+
+function clearOverride(block_id) {
+  const o = { ...blockOverrides.value }
+  const p = { ...drillPaths.value }
+  delete o[block_id]
+  delete p[block_id]
+  blockOverrides.value = o
+  drillPaths.value = p
+  run(true)
+}
+
+function onDrillLevel({ block_id, field, value, label }) {
+  const b = tplBlocks.value.find((x) => x.id === block_id)
+  const dd = b?.drill_down?.field
+  if (!dd) return
+  drillPaths.value = { ...drillPaths.value, [block_id]: [{ field, value, label }] }
+  blockOverrides.value = {
+    ...blockOverrides.value,
+    [block_id]: {
+      group: { kind: 'field', field: dd },
+      filters: { logic: 'AND', rules: [...(b.filters?.rules || []), { field, op: 'eq', value }] },
+    },
+  }
+  run(true)
+}
+
+function onSwapPivot(block_id) {
+  if (blockOverrides.value[block_id]?.row) return clearOverride(block_id)   // 已互换，再点还原
+  const b = tplBlocks.value.find((x) => x.id === block_id)
+  if (!b?.row || !b?.col) return
+  blockOverrides.value = { ...blockOverrides.value, [block_id]: { row: b.col, col: b.row } }
+  run(true)
+}
+
+// ---------- 报表间跳转：带着点击的分组值跳目标报表（作为其联动过滤） ----------
+function onJump({ report_id, field, value, label }) {
+  router.push({
+    path: `/reports/${report_id}/view`,
+    query: { link_field: field, link_value: String(value), link_label: label },
+  })
+}
+
+async function run(keepPages = false) {
   const range = currentRange()
   if (!range) return ElMessage.warning('请选择自定义日期范围')
+  if (!keepPages) tablePages.value = {}   // 筛选/口径/联动变化：明细表回第 1 页
   loading.value = true
   try {
-    result.value = await runReport(tplId, range, mergedFilters(), currentLinks.value)
+    result.value = await runReport(tplId.value, range, mergedFilters(), currentLinks.value,
+      undefined, blockPagesParam(), overridesParam())
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
@@ -256,15 +360,27 @@ function onModeChange() {
 
 function exportFile(format) {
   const range = currentRange() || { mode: rangeMode.value }
-  window.open(reportExportUrl(tplId, { format, ...range, filters: mergedFilters() }), '_blank')
+  window.open(reportExportUrl(tplId.value, { format, ...range, filters: mergedFilters() }), '_blank')
 }
 
-onMounted(async () => {
+async function init() {
   // 初始口径跟随模板默认值；工具条回填模板口径
   loading.value = true
+  // 重新进入时清空交互状态（联动/筛选/钻取/分页都随之复位）
+  blockOverrides.value = {}
+  drillPaths.value = {}
+  tablePages.value = {}
+  linkFilters.value = {}
   try {
-    const [r, t] = await Promise.all([runReport(tplId), getReport(tplId)])
-    result.value = r
+    const t = await getReport(tplId.value)
+    tplBlocks.value = t.blocks || []
+    // 报表间跳转入口：?link_field=xx&link_value=yy 作为初始联动过滤
+    if (route.query.link_field && route.query.link_value != null) {
+      linkFilters.value = {
+        [route.query.link_field]: { value: route.query.link_value, label: route.query.link_label || route.query.link_value },
+      }
+    }
+    result.value = await runReport(tplId.value, null, null, currentLinks.value, undefined, blockPagesParam())
     rangeMode.value = t.range?.mode || 'this_week'
     if (rangeMode.value === 'custom' && t.range?.start && t.range?.end) {
       customRange.value = [t.range.start, t.range.end]
@@ -274,12 +390,21 @@ onMounted(async () => {
       filterDefs.value = t.filter_fields
         .map((fn) => meta.fields.find((f) => f.field_name === fn))
         .filter(Boolean)
+    } else {
+      filterDefs.value = []
     }
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
     loading.value = false
   }
+}
+
+onMounted(init)
+
+// 同组件路由变化（报表间跳转：/reports/6/view?link_... → /reports/8/view?...）：重新初始化
+watch(() => route.fullPath, () => {
+  if (route.path === `/reports/${route.params.id}/view`) init()
 })
 </script>
 
@@ -288,4 +413,8 @@ onMounted(async () => {
 .toolbar :deep(.el-radio-group) { flex-wrap: wrap; row-gap: 6px; }
 .filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .link-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+/* 下钻明细底栏：分页居右 + 截断提示居左 */
+.drill-foot { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.drill-foot .el-pagination { margin-left: auto; }
+.drill-truncated { font-size: 12px; color: #909399; }
 </style>

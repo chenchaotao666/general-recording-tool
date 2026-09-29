@@ -18,13 +18,15 @@ BLOCK_TYPES = {"stat", "chart", "table", "text", "pivot", "filter"}
 AGG_TYPES = {"count", "count_distinct", "sum", "avg", "max", "min", "ratio"}
 CHART_AGG_TYPES = AGG_TYPES - {"ratio"}   # ratio（占比）仅统计卡：满足区块筛选数 / 口径内总数
 NUMERIC_TYPES = {"int", "decimal"}
-CHART_TYPES = {"bar", "line", "pie", "area", "gauge"}
+CHART_TYPES = {"bar", "line", "pie", "area", "gauge", "mixed", "funnel"}
 GROUP_KINDS = {"field", "day", "week", "month"}
 RANGE_MODES = {"today", "yesterday", "past_7d", "past_30d", "this_week", "last_week",
                "this_month", "last_month", "this_quarter", "this_year", "custom"}
+COMPARE_MODES = {"mom", "yoy"}   # mom 环比（等长上一期）/ yoy 同比（去年同期）
+QUICK_CALCS = {"pct"}            # 快速计算：pct 占总计百分比
 SYSTEM_FIELDS = {"id", "created_at", "updated_at"}
 TABLE_LIMIT_MAX = 500
-CHART_TOP_N_DEFAULT = {"pie": 8, "bar": 30, "line": 30, "area": 30}
+CHART_TOP_N_DEFAULT = {"pie": 8, "funnel": 8, "bar": 30, "line": 30, "area": 30, "mixed": 30}
 SERIES_MAX = 5          # 多指标图表的指标上限
 GROUP2_TOP_N = 8        # 二级分组系列上限，其余合并为"其他"系列
 METRIC_AGG_LABELS = {"count": "记录数", "count_distinct": "去重计数", "sum": "求和",
@@ -104,12 +106,19 @@ def resolve_time_range(cfg: dict, now: datetime | None = None) -> tuple[datetime
     raise ReportError(f"不支持的时间口径：{mode}")
 
 
+def _end_date_exclusive(end: datetime):
+    """date 类型字段的排他右边界：end 是午夜（期界，如「上周」的右端本周一 00:00、自定义口径的 +1 天）
+    时当天排除；end 是日间时刻（进行中的口径 end=now，如「本月」「近7天」）时当天应包含。"""
+    midnight = end == end.replace(hour=0, minute=0, second=0, microsecond=0)
+    return end.date() if midnight else end.date() + timedelta(days=1)
+
+
 def _time_conds(table, fields_by_name: dict, date_field: str, start: datetime, end: datetime):
     """时间区间条件；date 类型字段与 date 比较。"""
     col = table.c[date_field]
     f = fields_by_name.get(date_field)
     if f is not None and f.data_type == "date":
-        return [col >= start.date(), col < end.date()]
+        return [col >= start.date(), col < _end_date_exclusive(end)]
     return [col >= start, col < end]
 
 
@@ -282,95 +291,146 @@ def validate_template(db: Session, payload) -> None:
             raise HTTPException(400, "区块 id 缺失或重复")
         ids.add(bid)
         block_types[bid] = t
-        # 块所属数据集（text 块可无）
-        did = b.get("dataset_id") or default_did
-        if t != "text" and (not did or did not in ds_fields):
-            raise HTTPException(400, f"区块 {bid} 引用的数据集不存在：{b.get('dataset_id')}")
-        fields_by_name = {f.field_name: f for f in ds_fields.get(did, [])}
-        _validate_filters(fields_by_name, b.get("filters"))
-        # 块级口径：v3 range_mode 或旧 range_override；date_field 必须是该数据集的日期字段
-        bdf = b.get("date_field")
-        if bdf is not None and t != "text":
-            bf = fields_by_name.get(bdf)
-            if bdf not in ("created_at", "updated_at") and (bf is None or bf.data_type not in ("date", "datetime")):
-                raise HTTPException(400, f"区块 {bid} 的日期字段无效：{bdf}")
-        if b.get("range_mode") and b["range_mode"] not in RANGE_MODES:
-            raise HTTPException(400, f"区块 {bid} 的口径无效：{b.get('range_mode')}")
-        ov = b.get("range_override") or {}
-        if ov.get("mode"):
-            if ov["mode"] not in RANGE_MODES:
-                raise HTTPException(400, f"区块 {bid} 的口径覆盖无效：{ov['mode']}")
-            if ov.get("date_field"):
-                raise HTTPException(400, "块级口径覆盖不支持更换日期字段")
-        if t == "filter":
-            ffield = b.get("field")
-            if not ffield or ffield not in fields_by_name:
-                raise HTTPException(400, f"筛选组件必须选择数据集内字段：{ffield}")
-            tgt = b.get("target") or {}
-            tmode = tgt.get("mode") or "same_dataset"
-            if tmode not in ("same_dataset", "blocks"):
-                raise HTTPException(400, f"筛选组件的作用域无效：{tmode}")
-            if tmode == "blocks":
-                filter_targets.append((bid, list(tgt.get("block_ids") or [])))
-        elif t == "stat":
-            if b.get("agg") not in AGG_TYPES:
-                raise HTTPException(400, f"不支持的聚合方式：{b.get('agg')}")
-            _check_numeric_field(fields_by_name, b["agg"], b.get("field"))
-        elif t == "chart":
-            ctype = b.get("chart_type")
-            if ctype not in CHART_TYPES:
-                raise HTTPException(400, f"不支持的图表类型：{ctype}")
-            if ctype == "gauge":
-                # 仪表盘：单聚合值 + max，无分组/系列
-                gagg = b.get("agg") or "count"
-                if gagg not in CHART_AGG_TYPES:
-                    raise HTTPException(400, f"仪表盘不支持的聚合方式：{gagg}")
-                _check_numeric_field(fields_by_name, gagg, b.get("field"))
-                gmax = b.get("max")
-                if gmax is not None and (not isinstance(gmax, (int, float)) or gmax <= 0):
-                    raise HTTPException(400, "仪表盘 max 必须是正数")
-            else:
-                metrics = [m for m in (b.get("metrics") or []) if m.get("agg")]
-                g2field = (b.get("group2") or {}).get("field")
-                if metrics and g2field:
-                    raise HTTPException(400, "多指标与二级分组不能同时使用")
-                if len(metrics) > SERIES_MAX:
-                    raise HTTPException(400, f"多指标最多 {SERIES_MAX} 个")
-                if ctype == "pie" and (metrics or g2field):
-                    raise HTTPException(400, "饼图不支持多系列（多指标/二级分组）")
-                if b.get("stack") and ctype not in ("bar", "line", "area"):
-                    raise HTTPException(400, "堆叠仅支持柱状/折线/面积图")
-                for m in metrics or [{"agg": b.get("agg") or "count", "field": b.get("field")}]:
-                    if (m.get("agg") or "count") not in CHART_AGG_TYPES:
-                        raise HTTPException(400, f"图表不支持的聚合方式：{m.get('agg')}")
-                    _check_numeric_field(fields_by_name, m.get("agg") or "count", m.get("field"))
-                group = b.get("group") or {}
-                _check_group_dim(fields_by_name, group)
-                if g2field:
-                    g2f = fields_by_name.get(g2field)
-                    if g2f is None:
-                        raise HTTPException(400, f"二级分组字段不存在：{g2field}")
-                    if g2f.data_type in ("date", "datetime"):
-                        raise HTTPException(400, "二级分组不支持日期类型字段")
-                if b.get("on_click") not in (None, "drill", "link"):
-                    raise HTTPException(400, f"图表点击行为无效：{b.get('on_click')}")
-        elif t == "pivot":
-            row, col = b.get("row") or {}, b.get("col") or {}
-            _check_group_dim(fields_by_name, row, "行")
-            _check_group_dim(fields_by_name, col, "列")
-            if (row.get("kind") or "field") == (col.get("kind") or "field") and row.get("field") == col.get("field"):
-                raise HTTPException(400, "行维度与列维度不能使用同一分组")
-            agg = b.get("agg")
-            if agg not in CHART_AGG_TYPES:
-                raise HTTPException(400, f"透视表不支持的聚合方式：{agg}")
-            _check_numeric_field(fields_by_name, agg, b.get("field"))
-            _check_top_n(b, "row_top_n", *PIVOT_ROW_TOP_N[:2])
-            _check_top_n(b, "col_top_n", *PIVOT_COL_TOP_N[:2])
-        elif t == "table":
-            # 空列 = 默认全部字段（运行期展开），合法；配置了列则必须都存在
-            for c in b.get("columns") or []:
-                if c not in fields_by_name and c not in SYSTEM_FIELDS:
-                    raise HTTPException(400, f"明细列不存在：{c}")
+        # 逐块校验：任何错误统一带上区块 id 与标题，前端据此在画布上标红定位
+        try:
+            # 块所属数据集（text 块可无）
+            did = b.get("dataset_id") or default_did
+            if t != "text" and (not did or did not in ds_fields):
+                raise HTTPException(400, f"引用的数据集不存在：{b.get('dataset_id')}")
+            fields_by_name = {f.field_name: f for f in ds_fields.get(did, [])}
+            _validate_filters(fields_by_name, b.get("filters"))
+            # 块级口径：v3 range_mode 或旧 range_override；date_field 必须是该数据集的日期字段
+            bdf = b.get("date_field")
+            if bdf is not None and t != "text":
+                bf = fields_by_name.get(bdf)
+                if bdf not in ("created_at", "updated_at") and (bf is None or bf.data_type not in ("date", "datetime")):
+                    raise HTTPException(400, f"日期字段无效：{bdf}")
+            if b.get("range_mode") and b["range_mode"] not in RANGE_MODES:
+                raise HTTPException(400, f"口径无效：{b.get('range_mode')}")
+            ov = b.get("range_override") or {}
+            if ov.get("mode"):
+                if ov["mode"] not in RANGE_MODES:
+                    raise HTTPException(400, f"口径覆盖无效：{ov['mode']}")
+                if ov.get("date_field"):
+                    raise HTTPException(400, "块级口径覆盖不支持更换日期字段")
+            if t == "filter":
+                ffield = b.get("field")
+                if not ffield or ffield not in fields_by_name:
+                    raise HTTPException(400, f"筛选组件必须选择数据集内字段：{ffield}")
+                tgt = b.get("target") or {}
+                tmode = tgt.get("mode") or "same_dataset"
+                if tmode not in ("same_dataset", "blocks"):
+                    raise HTTPException(400, f"筛选组件的作用域无效：{tmode}")
+                if tmode == "blocks":
+                    filter_targets.append((bid, list(tgt.get("block_ids") or [])))
+            elif t == "stat":
+                if b.get("agg") not in AGG_TYPES:
+                    raise HTTPException(400, f"不支持的聚合方式：{b.get('agg')}")
+                _check_numeric_field(fields_by_name, b["agg"], b.get("field"))
+                ct = b.get("compare_type")
+                if ct and ct not in COMPARE_MODES:
+                    raise HTTPException(400, f"统计卡对比方式无效：{ct}")
+            elif t == "chart":
+                ctype = b.get("chart_type")
+                if ctype not in CHART_TYPES:
+                    raise HTTPException(400, f"不支持的图表类型：{ctype}")
+                if ctype == "gauge":
+                    # 仪表盘：单聚合值 + max，无分组/系列
+                    gagg = b.get("agg") or "count"
+                    if gagg not in CHART_AGG_TYPES:
+                        raise HTTPException(400, f"仪表盘不支持的聚合方式：{gagg}")
+                    _check_numeric_field(fields_by_name, gagg, b.get("field"))
+                    gmax = b.get("max")
+                    if gmax is not None and (not isinstance(gmax, (int, float)) or gmax <= 0):
+                        raise HTTPException(400, "仪表盘 max 必须是正数")
+                else:
+                    metrics = [m for m in (b.get("metrics") or []) if m.get("agg")]
+                    g2field = (b.get("group2") or {}).get("field")
+                    if metrics and g2field:
+                        raise HTTPException(400, "多指标与二级分组不能同时使用")
+                    if len(metrics) > SERIES_MAX:
+                        raise HTTPException(400, f"多指标最多 {SERIES_MAX} 个")
+                    if ctype in ("pie", "funnel") and (metrics or g2field):
+                        raise HTTPException(400, "饼图/漏斗图不支持多系列（多指标/二级分组）")
+                    if ctype == "mixed":
+                        # 组合图（柱线双轴）：多指标，每个指标选柱状/折线；不支持二级分组/堆叠
+                        if g2field:
+                            raise HTTPException(400, "组合图不支持二级分组（用多指标并分别选柱状/折线）")
+                        if b.get("stack"):
+                            raise HTTPException(400, "组合图不支持堆叠")
+                        if len(metrics) < 2:
+                            raise HTTPException(400, "组合图需要至少 2 个指标")
+                        for m in metrics:
+                            if (m.get("chart") or "") not in ("", "bar", "line"):
+                                raise HTTPException(400, f"指标「{m.get('title') or m.get('agg')}」的图形只能是柱状/折线")
+                    if b.get("stack") and ctype not in ("bar", "line", "area"):
+                        raise HTTPException(400, "堆叠仅支持柱状/折线/面积图")
+                    qc = b.get("quick_calc")
+                    if qc and qc not in QUICK_CALCS:
+                        raise HTTPException(400, f"不支持的数值显示方式：{qc}")
+                    if qc == "pct" and ctype in ("pie", "funnel"):
+                        raise HTTPException(400, "饼图/漏斗图本身就是占比，无需占比显示")
+                    cmp_ = b.get("compare")
+                    if cmp_ and cmp_ not in COMPARE_MODES:
+                        raise HTTPException(400, f"图表对比方式无效：{cmp_}")
+                    if cmp_ and qc == "pct":
+                        raise HTTPException(400, "占比显示与对比不能同时使用")
+                    for m in metrics or [{"agg": b.get("agg") or "count", "field": b.get("field")}]:
+                        if (m.get("agg") or "count") not in CHART_AGG_TYPES:
+                            raise HTTPException(400, f"图表不支持的聚合方式：{m.get('agg')}")
+                        _check_numeric_field(fields_by_name, m.get("agg") or "count", m.get("field"))
+                    group = b.get("group") or {}
+                    _check_group_dim(fields_by_name, group)
+                    if cmp_ and (group.get("kind") or "field") not in ("day", "week", "month"):
+                        raise HTTPException(400, "对比（环比/同比）仅支持按日/周/月分组的图表")
+                    if g2field:
+                        g2f = fields_by_name.get(g2field)
+                        if g2f is None:
+                            raise HTTPException(400, f"二级分组字段不存在：{g2field}")
+                        if g2f.data_type in ("date", "datetime"):
+                            raise HTTPException(400, "二级分组不支持日期类型字段")
+                    if b.get("on_click") not in (None, "drill", "link", "jump"):
+                        raise HTTPException(400, f"图表点击行为无效：{b.get('on_click')}")
+                    # 层级钻取：按字段分组时再下钻到下一层字段（如 区域 → 城市）
+                    dd = b.get("drill_down") or {}
+                    if dd.get("field"):
+                        if (group.get("kind") or "field") != "field":
+                            raise HTTPException(400, "层级钻取仅支持按字段分组的图表")
+                        if ctype in ("gauge", "funnel"):
+                            raise HTTPException(400, "仪表盘/漏斗图不支持层级钻取")
+                        ddf = dd["field"]
+                        if ddf not in fields_by_name and ddf not in SYSTEM_FIELDS:
+                            raise HTTPException(400, f"层级钻取字段不存在：{ddf}")
+                        if ddf == group.get("field"):
+                            raise HTTPException(400, "层级钻取字段不能与分组字段相同")
+                        if b.get("on_click") in ("link", "jump"):
+                            raise HTTPException(400, "层级钻取与联动/跳转不能同时使用")
+                    # 跳转其他报表：带着点击的分组值作为目标报表的联动过滤
+                    if b.get("on_click") == "jump":
+                        if (group.get("kind") or "field") != "field":
+                            raise HTTPException(400, "跳转其他报表需要按字段分组（点击的值作为联动条件）")
+                        rid = b.get("jump_report_id")
+                        if not isinstance(rid, int) or db.get(ReportTemplate, rid) is None:
+                            raise HTTPException(400, "跳转的目标报表不存在")
+            elif t == "pivot":
+                row, col = b.get("row") or {}, b.get("col") or {}
+                _check_group_dim(fields_by_name, row, "行")
+                _check_group_dim(fields_by_name, col, "列")
+                if (row.get("kind") or "field") == (col.get("kind") or "field") and row.get("field") == col.get("field"):
+                    raise HTTPException(400, "行维度与列维度不能使用同一分组")
+                agg = b.get("agg")
+                if agg not in CHART_AGG_TYPES:
+                    raise HTTPException(400, f"透视表不支持的聚合方式：{agg}")
+                _check_numeric_field(fields_by_name, agg, b.get("field"))
+                _check_top_n(b, "row_top_n", *PIVOT_ROW_TOP_N[:2])
+                _check_top_n(b, "col_top_n", *PIVOT_COL_TOP_N[:2])
+            elif t == "table":
+                # 空列 = 默认全部字段（运行期展开），合法；配置了列则必须都存在
+                for c in b.get("columns") or []:
+                    if c not in fields_by_name and c not in SYSTEM_FIELDS:
+                        raise HTTPException(400, f"明细列不存在：{c}")
+        except HTTPException as e:
+            raise HTTPException(e.status_code, f"区块 {bid}（{b.get('title') or b.get('type')}）：{e.detail}")
 
     # 筛选组件的目标区块必须存在
     for fb_id, targets in filter_targets:
@@ -479,19 +539,36 @@ def _stat_value_sql(db, table, fields_by_name: dict, block: dict, date_field: st
     return _round_num(v if v is not None else 0)
 
 
-def _compare_payload(cur, prev) -> dict:
-    """环比：当前值 vs 等长上一期。prev 为 0 时无法计算百分比，返回 None。"""
+def _shift_range(start: datetime, end: datetime, mode: str) -> tuple[datetime, datetime]:
+    """对比期位移：mom 环比 = 等长上一期；yoy 同比 = 去年同期（2/29 回落 2/28）。"""
+    if mode == "yoy":
+        def back1y(d: datetime) -> datetime:
+            try:
+                return d.replace(year=d.year - 1)
+            except ValueError:
+                return d.replace(year=d.year - 1, day=28)
+        return back1y(start), back1y(end)
+    span = end - start
+    return start - span, start
+
+
+COMPARE_SUFFIX = {"mom": "上期", "yoy": "去年同期"}
+
+
+def _compare_payload(cur, prev, cmp_type: str = "mom") -> dict:
+    """环比/同比：当前值 vs 对比期。prev 为 0 时无法计算百分比，返回 None。"""
     delta = _round_num(cur - prev)
-    return {"prev": prev, "delta": delta, "delta_pct": round(delta / prev * 100, 1) if prev else None}
+    return {"prev": prev, "delta": delta, "delta_pct": round(delta / prev * 100, 1) if prev else None, "type": cmp_type}
 
 
 def _eval_stat(db, table, fields_by_name, block, date_field, start, end, viewer_rules=None) -> dict:
     v = _stat_value_sql(db, table, fields_by_name, block, date_field, start, end, viewer_rules)
     out = {"id": block["id"], "type": "stat", "title": block.get("title") or "", "value": v, "agg": block["agg"]}
     if block.get("compare") and start is not None:
-        span = end - start  # 环比：等长上一期
-        prev = _stat_value_sql(db, table, fields_by_name, block, date_field, start - span, start, viewer_rules)
-        out["compare"] = _compare_payload(v, prev)
+        ctype = block.get("compare_type") or "mom"
+        ps, pe = _shift_range(start, end, ctype)
+        prev = _stat_value_sql(db, table, fields_by_name, block, date_field, ps, pe, viewer_rules)
+        out["compare"] = _compare_payload(v, prev, ctype)
     return out
 
 
@@ -510,7 +587,8 @@ def _chart_metrics(block: dict, fields_by_name: dict) -> list[dict]:
             else:
                 f = fields_by_name.get(m.get("field") or "")
                 name = f"{f.label if f else m.get('field')}{METRIC_AGG_LABELS.get(agg, agg)}"
-        out.append({"agg": agg, "field": m.get("field"), "name": name})
+        out.append({"agg": agg, "field": m.get("field"), "name": name,
+                    "chart": m.get("chart") if m.get("chart") in ("bar", "line") else None})
     return out
 
 
@@ -601,16 +679,54 @@ def _eval_chart(db, table, fields_by_name, block, date_field, start, end, viewer
     else:
         series = [{"name": m["name"], "values": align(query_map(m["agg"], m["field"]))} for m in metrics]
 
+    # 组合图（柱线双轴）：系列带图形标记（bar/line），前端据此分配左右轴
+    if block.get("chart_type") == "mixed":
+        for s, m in zip(series, metrics):
+            s["chart"] = m.get("chart") or "bar"
+
+    # 时间分组的对比系列：环比（上期）/ 同比（去年同期）。按桶位对齐（本周一 vs 上周一…），
+    # 前端渲染为虚线折线覆盖。占比显示与对比互斥（校验期已拦）
+    cmp_mode = block.get("compare")
+    if cmp_mode in COMPARE_MODES and gkind in ("day", "week", "month") and not g2field and start is not None:
+        ps, pe = _shift_range(start, end, cmp_mode)
+        cmp_conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, ps, pe, viewer_rules)
+
+        def cmp_query_map(agg, field):
+            q = select(gexpr.label("g"), _agg_expr(table, agg, field).label("v")).select_from(table).where(*cmp_conds)
+            return {r.g: (r.v or 0) for r in db.execute(q.group_by(gexpr)).all()}
+
+        cmp_keys = sorted(cmp_query_map("count", None), key=lambda k: (k is None, str(k or "")))
+        suffix = COMPARE_SUFFIX[cmp_mode]
+        for m in metrics:
+            mp = cmp_query_map(m["agg"], m["field"])
+            vals = [_round_num(mp.get(k, 0)) for k in cmp_keys]
+            # 与本期桶按位置对齐：对比期桶多/少时截断或补 None
+            vals = vals[:len(master_keys)] + [None] * max(0, len(master_keys) - len(vals))
+            series.append({"name": f"{m['name']}·{suffix}", "values": vals, "chart": "line", "compare": True})
+
+    # 快速计算：占比（每系列 ÷ 自身合计 × 100）
+    unit = None
+    if block.get("quick_calc") == "pct":
+        for s in series:
+            if s.get("compare"):
+                continue
+            total = sum(v for v in s["values"] if v) or 0
+            s["values"] = [round(v / total * 100, 1) if total else 0 for v in s["values"]]
+        unit = "%"
+
     return {
         "id": block["id"], "type": "chart", "title": block.get("title") or "",
         "chart_type": block.get("chart_type"), "labels": labels,
         "series": series, "values": series[0]["values"] if series else [],
         "agg": metrics[0]["agg"], "stack": bool(block.get("stack")),
-        "group2": bool(g2field),
+        "group2": bool(g2field), "unit": unit,
         # 图表联动用：原始分组 key（与 labels 对齐，"其他"桶为 None）+ 字段名 + 点击行为
         "keys": [dyn_engine.serialize_value(k) for k in master_keys] + ([None] if rest_keys else []),
         "group_field": gfield if gkind == "field" else None,
         "on_click": block.get("on_click") or "drill",
+        # 层级钻取/报表跳转配置透传（前端渲染的是求值后的块，配置不随块返回会丢）
+        "drill_down": (block.get("drill_down") or {}).get("field") or None,
+        "jump_report_id": block.get("jump_report_id"),
     }
 
 
@@ -701,13 +817,13 @@ def _eval_pivot(db, table, fields_by_name, block, date_field, start, end, viewer
     return out
 
 
-def _eval_table(db, table, fields_by_name, block, date_field, start, end, viewer_rules=None) -> dict:
+def _eval_table(db, table, fields_by_name, block, date_field, start, end, viewer_rules=None,
+                page: tuple | None = None) -> dict:
     conds = _base_conds(table, fields_by_name, block.get("filters"), date_field, start, end, viewer_rules)
     cols = block.get("columns") or []
     if not cols:
         # 默认全选：未配置展示列时输出全部业务字段 + 创建/更新时间（空列只显示 ID 没有使用价值）
         cols = [f.field_name for f in fields_by_name.values()] + ["created_at", "updated_at"]
-    limit = min(max(int(block.get("limit") or 100), 1), TABLE_LIMIT_MAX)
     total = db.execute(select(func.count()).select_from(table).where(*conds)).scalar() or 0
 
     sort_by = block.get("sort_by")
@@ -717,9 +833,11 @@ def _eval_table(db, table, fields_by_name, block, date_field, start, end, viewer
     else:
         order = table.c.id.desc()
     sel_cols = [table.c[c] for c in cols] + [table.c.id]
-    rows = db.execute(
-        select(*sel_cols).select_from(table).where(*conds).order_by(order).limit(limit)
-    ).mappings().all()
+    q = select(*sel_cols).select_from(table).where(*conds).order_by(order)
+    # 服务端分页：前端翻页时带 (page, page_size)；不带则全量返回（兼容导出/推送/旧前端）
+    if page:
+        q = q.limit(page[1]).offset((page[0] - 1) * page[1])
+    rows = db.execute(q).mappings().all()
 
     def col_label(c):
         f = fields_by_name.get(c)
@@ -734,11 +852,14 @@ def _eval_table(db, table, fields_by_name, block, date_field, start, end, viewer
         for c, f in select_fields.items():
             d[c] = _option_label(f, d.get(c)) if d.get(c) is not None else d.get(c)
         out_rows.append(d)
-    return {
+    out = {
         "id": block["id"], "type": "table", "title": block.get("title") or "",
         "columns": [{"prop": c, "label": col_label(c)} for c in cols],
-        "rows": out_rows, "total": total, "truncated": total > limit,
+        "rows": out_rows, "total": total, "truncated": False,
     }
+    if page:
+        out["page"], out["page_size"] = page
+    return out
 
 
 def _eval_text(block: dict, context: dict) -> dict:
@@ -772,8 +893,10 @@ def _py_agg(rows: list[dict], agg: str, field: str | None):
     return min(vals)
 
 
-def _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules=None, rules_of=None) -> dict:
-    """json 引擎求值。viewer_rules 平铺作用于全部块；rules_of(block) 按块给规则（v3 数据集作用域）。"""
+def _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules=None, rules_of=None,
+            cascade_rules: dict | None = None, block_pages: dict | None = None) -> dict:
+    """json 引擎求值。viewer_rules 平铺作用于全部块；rules_of(block) 按块给规则（v3 数据集作用域）；
+    cascade_rules(filter块id) 级联选项用的其它查看端规则；block_pages 明细表服务端分页。"""
     from . import json_store
     from .pyquery import match_filters, sort_records
 
@@ -804,7 +927,7 @@ def _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules=Non
                 return False  # SQL 三值逻辑：NULL 比较即排除
             try:
                 if dfx is not None and dfx.data_type == "date":
-                    return s.date() <= v < e.date()
+                    return s.date() <= v < _end_date_exclusive(e)
                 return s <= v < e
             except TypeError:
                 return False
@@ -826,9 +949,10 @@ def _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules=Non
         v = _round_num(stat_value(block, df, bs, be))
         out = {"id": block["id"], "type": "stat", "title": block.get("title") or "", "value": v, "agg": block["agg"]}
         if block.get("compare") and bs is not None:
-            span = be - bs  # 环比：等长上一期
-            prev = _round_num(stat_value(block, df, bs - span, bs))
-            out["compare"] = _compare_payload(v, prev)
+            ctype = block.get("compare_type") or "mom"
+            ps, pe = _shift_range(bs, be, ctype)
+            prev = _round_num(stat_value(block, df, ps, pe))
+            out["compare"] = _compare_payload(v, prev, ctype)
         return out
 
     def eval_chart(block):
@@ -907,16 +1031,50 @@ def _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules=Non
                 if rest_keys:
                     vals.append(_round_num(agg_rows(rest_rows, m)))
                 series.append({"name": m["name"], "values": vals})
+
+        # 组合图：系列带图形标记（与 SQL 路径一致）
+        if block.get("chart_type") == "mixed":
+            for s, m in zip(series, metrics):
+                s["chart"] = m.get("chart") or "bar"
+
+        # 时间分组对比系列（环比/同比，按桶位对齐；与 SQL 路径一致）
+        cmp_mode = block.get("compare")
+        df0, bs0, be0 = block_time(block)
+        if cmp_mode in COMPARE_MODES and gkind in ("day", "week", "month") and not g2field and bs0 is not None:
+            ps, pe = _shift_range(bs0, be0, cmp_mode)
+            cmp_rows = base_recs(block, df0, ps, pe)
+            cmp_buckets: dict = {}
+            for r in cmp_rows:
+                cmp_buckets.setdefault(bucket_key(r), []).append(r)
+            cmp_keys = sorted(cmp_buckets, key=lambda k: (k is None, str(k or "")))
+            suffix = COMPARE_SUFFIX[cmp_mode]
+            for m in metrics:
+                vals = [_round_num(agg_rows(cmp_buckets[k], m)) for k in cmp_keys]
+                vals = vals[:len(master_keys)] + [None] * max(0, len(master_keys) - len(vals))
+                series.append({"name": f"{m['name']}·{suffix}", "values": vals, "chart": "line", "compare": True})
+
+        # 快速计算：占比（与 SQL 路径一致）
+        unit = None
+        if block.get("quick_calc") == "pct":
+            for s in series:
+                if s.get("compare"):
+                    continue
+                total = sum(v for v in s["values"] if v) or 0
+                s["values"] = [round(v / total * 100, 1) if total else 0 for v in s["values"]]
+            unit = "%"
         return {
             "id": block["id"], "type": "chart", "title": block.get("title") or "",
             "chart_type": block.get("chart_type"), "labels": labels,
             "series": series, "values": series[0]["values"] if series else [],
             "agg": m0["agg"], "stack": bool(block.get("stack")),
-            "group2": bool(g2field),
+            "group2": bool(g2field), "unit": unit,
             # 图表联动用：原始分组 key（与 labels 对齐，"其他"桶为 None）+ 字段名 + 点击行为
             "keys": [dyn_engine.serialize_value(k) for k in master_keys] + ([None] if rest_keys else []),
             "group_field": gfield if gkind == "field" else None,
             "on_click": block.get("on_click") or "drill",
+            # 层级钻取/报表跳转配置透传
+            "drill_down": (block.get("drill_down") or {}).get("field") or None,
+            "jump_report_id": block.get("jump_report_id"),
         }
 
     def eval_pivot(block):
@@ -1001,11 +1159,12 @@ def _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules=Non
         if not cols:
             # 默认全选：未配置展示列时输出全部业务字段 + 创建/更新时间
             cols = [f.field_name for f in fields_by_name.values()] + ["created_at", "updated_at"]
-        limit = min(max(int(block.get("limit") or 100), 1), TABLE_LIMIT_MAX)
         total = len(rows)
         sort_by = block.get("sort_by")
         rows = sort_records(rows, sort_by if sort_by in (set(fields_by_name) | SYSTEM_FIELDS) else None,
                             block.get("sort_order"), fields_by_name)
+        # 服务端分页（与 SQL 路径一致：不带 page 时全量返回）
+        pg = (block_pages or {}).get(block["id"])
 
         def col_label(c):
             f = fields_by_name.get(c)
@@ -1014,25 +1173,58 @@ def _run_py(db, mt, fields, tpl, date_field, start, end, label, viewer_rules=Non
         select_fields = {c: fields_by_name[c] for c in cols
                          if c in fields_by_name and fields_by_name[c].widget == "select"}
         out_rows = []
-        for r in rows[:limit]:
+        for r in (rows[(pg[0] - 1) * pg[1]:pg[0] * pg[1]] if pg else rows):
             d = {c: dyn_engine.serialize_value(r.get(c)) for c in cols}
             d["id"] = r["id"]
             for c, f in select_fields.items():
                 if d.get(c) is not None:
                     d[c] = _option_label(f, d.get(c))
             out_rows.append(d)
-        return {
+        out = {
             "id": block["id"], "type": "table", "title": block.get("title") or "",
             "columns": [{"prop": c, "label": col_label(c)} for c in cols],
-            "rows": out_rows, "total": total, "truncated": total > limit,
+            "rows": out_rows, "total": total, "truncated": False,
         }
+        if pg:
+            out["page"], out["page_size"] = pg
+        return out
+
+    def eval_filter(block):
+        """筛选组件块 + 级联可选项：select 型按「其它查看端规则 + 时间口径」过滤可选值。"""
+        out = _filter_block_out(block, fields_by_name)
+        rules = (cascade_rules or {}).get(block["id"])
+        f = fields_by_name.get(block.get("field") or "")
+        if rules is not None and f is not None and f.widget == "select":
+            df, s, e = block_time(block)
+            vf = {"logic": "AND", "rules": rules}
+            if df is None or s is None:
+                rows = [r for r in recs if match_filters(r, fields_by_name, vf)]
+            else:
+                dfx = fields_by_name.get(df)
+                end_ex = _end_date_exclusive(e)
+
+                def in_range(r):
+                    v = r.get(df)
+                    if v is None:
+                        return False
+                    try:
+                        if dfx is not None and dfx.data_type == "date":
+                            return s.date() <= v < end_ex
+                        return s <= v < e
+                    except TypeError:
+                        return False
+
+                rows = [r for r in recs if match_filters(r, fields_by_name, vf) and in_range(r)]
+            present = {r.get(block["field"]) for r in rows}
+            out["available"] = _filter_available(f, present)
+        return out
 
     blocks = tpl.blocks_json or []
     results_by_id, stat_values = {}, {}
     for b in blocks:
         t = b.get("type")
         if t == "filter":
-            results_by_id[b["id"]] = _filter_block_out(b, fields_by_name)
+            results_by_id[b["id"]] = eval_filter(b)
         elif t == "stat":
             r = eval_stat(b)
             stat_values[b["id"]] = r["value"]
@@ -1068,6 +1260,14 @@ def _filter_block_out(block: dict, fields_by_name: dict) -> dict:
         "data_type": getattr(f, "data_type", None), "widget": getattr(f, "widget", None),
         "options": getattr(f, "options", None) or {},
     }
+
+
+def _filter_available(f, present: set) -> list | None:
+    """级联后的可选项：select 型筛选按元数据顺序过滤出当前可选值（保持 {value,label} 形态）。"""
+    opts = (getattr(f, "options", None) or {}).get("options") or []
+    if not opts:
+        return None
+    return [o for o in opts if (o.get("value") if isinstance(o, dict) else o) in present]
 
 
 def _block_range_spec(block: dict) -> dict | None:
@@ -1159,7 +1359,9 @@ def _tagged_viewer_rules(db: Session, tpl, datasets: list, viewer_filters: dict 
             raise HTTPException(400, f"筛选值无效（{name}）")
         tagged.append({**r, "_dataset": did, "_targets": declared[(did, name)]})
 
-    # 图表联动：field 必须是某图表的字段型主分组，数据集取该图表的数据集（联动恒同数据集）
+    # 图表联动/报表间跳转：field 优先是某图表的字段型主分组（图表点击联动）；
+    # 否则只要是某数据集的字段也接受（报表间跳转带值过滤，目标报表可能没有对应分组图），
+    # 数据集取首个包含该字段的数据集（联动恒作用于同数据集区块）
     group_map: dict[str, str] = {}
     for b in (tpl.blocks_json or []):
         if b.get("type") == "chart" and ((b.get("group") or {}).get("kind") or "field") == "field":
@@ -1168,12 +1370,14 @@ def _tagged_viewer_rules(db: Session, tpl, datasets: list, viewer_filters: dict 
                 group_map.setdefault(gf, b.get("dataset_id") or default_did)
     for l in (links or [])[:10]:
         name = l.get("field")
-        if name not in group_map:
-            raise HTTPException(400, f"该字段不支持联动过滤：{name}")
+        did = group_map.get(name)
+        if did is None:
+            did = next((d["id"] for d in datasets if name in fbn_of(d["id"])), None)
+        if did is None:
+            raise HTTPException(400, f"联动/跳转的字段在报表数据集中不存在：{name}")
         value = l.get("value")
         if value is None:
             continue  # 空值桶不联动
-        did = group_map[name]
         if not dyn_engine.rule_value_ok(fbn_of(did).get(name), "eq", value):
             raise HTTPException(400, f"联动值无效（{name}）")
         tagged.append({"field": name, "op": "eq", "value": value, "_dataset": did, "_targets": None})
@@ -1181,9 +1385,12 @@ def _tagged_viewer_rules(db: Session, tpl, datasets: list, viewer_filters: dict 
 
 
 def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None = None,
-                 viewer_filters: dict | None = None, links: list | None = None) -> dict:
+                 viewer_filters: dict | None = None, links: list | None = None,
+                 block_pages: dict | None = None, block_overrides: dict | None = None) -> dict:
     """执行报表模板，返回结构化结果（前端渲染 / 导出共用）。
-    v3：区块经 dataset_id 各自绑定数据集（旧模板运行期合成 _default），全局口径逐块套用各自的 date_field。"""
+    v3：区块经 dataset_id 各自绑定数据集（旧模板运行期合成 _default），全局口径逐块套用各自的 date_field。
+    block_pages：{块id: [page, page_size]}，明细表服务端分页；
+    block_overrides：{块id: {group/row/col/filters}}，层级钻取/透视表行列互换的临时覆盖（不落库）。"""
     datasets = ds.template_datasets(tpl)
     ds_by_id = {d["id"]: d for d in datasets}
     default_did = datasets[0]["id"] if datasets else "_default"
@@ -1217,6 +1424,31 @@ def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None =
     def rules_of(block) -> list:
         return rules_by_block.get(block.get("id"), [])
 
+    # 筛选块级联：除本字段外的其它查看端规则，用于收缩该筛选块的可选项
+    cascade_rules: dict[str, list] = {}
+    for b in (tpl.blocks_json or []):
+        if b.get("type") == "filter" and b.get("field"):
+            bd = did_of(b)
+            cascade_rules[b["id"]] = [
+                {k: v for k, v in r.items() if not k.startswith("_")}
+                for r in tagged if r["_dataset"] == bd and r["field"] != b["field"]
+            ]
+
+    # 明细表服务端分页参数（钳制范围，防滥用）
+    def page_of(bid: str) -> tuple | None:
+        pg = (block_pages or {}).get(bid)
+        if not pg:
+            return None
+        try:
+            p, s = int(pg.get("page") or 1), int(pg.get("page_size") or 50)
+        except (TypeError, ValueError, AttributeError):
+            return None
+        return (max(p, 1), min(max(s, 1), 200))
+
+    # 区块临时覆盖（层级钻取/透视表互换/明细表点列头排序）：仅放行白名单键，逐块校验分组/筛选字段存在
+    OVERRIDE_KEYS = {"group", "row", "col", "filters", "sort_by", "sort_order"}
+    overridden: set[str] = set()
+
     # 数据集解析缓存：同 dataset 的区块共享子查询/记录集
     meta_cache: dict = {}
 
@@ -1238,6 +1470,17 @@ def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None =
         return sql_cache[did]
 
     blocks = tpl.blocks_json or []
+    if block_overrides:
+        applied = []
+        for b in blocks:
+            ov = block_overrides.get(b.get("id"))
+            if isinstance(ov, dict):
+                ov = {k: v for k, v in ov.items() if k in OVERRIDE_KEYS}
+                if ov:
+                    b = {**b, **ov}
+                    overridden.add(b["id"])
+            applied.append(b)
+        blocks = applied
     results_by_id, stat_values = {}, {}
     json_groups: dict[str, list] = {}   # did -> blocks（json 引擎按数据集分组批处理）
 
@@ -1252,11 +1495,33 @@ def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None =
             continue
         table, fields = resolve_sql(did)
         fields_by_name = {f.field_name: f for f in fields}
+        if b["id"] in overridden:
+            # 临时覆盖的块：校验分组维度/筛选字段合法（覆盖来自前端交互，不落库不信任）
+            if b.get("type") == "chart":
+                _check_group_dim(fields_by_name, b.get("group"))
+            elif b.get("type") == "pivot":
+                _check_group_dim(fields_by_name, b.get("row"), "行")
+                _check_group_dim(fields_by_name, b.get("col"), "列")
+            elif b.get("type") == "table":
+                sb = b.get("sort_by")
+                if sb and sb not in fields_by_name and sb not in SYSTEM_FIELDS:
+                    raise HTTPException(400, f"明细表排序字段不存在：{sb}")
+                if b.get("sort_order") not in (None, "asc", "desc"):
+                    raise HTTPException(400, "排序方向只能是 asc/desc")
+            _validate_filters(fields_by_name, b.get("filters"))
         df, bs, be = _block_time(b, legacy_df, g_start, g_end)
         vrules = rules_of(b)
         if t == "filter":
             out = _filter_block_out(b, fields_by_name)
             out["dataset_id"], out["target"] = did, b.get("target")
+            # 级联可选项：select 型筛选按「其它查看端规则 + 时间口径」收缩可选值
+            f = fields_by_name.get(b.get("field") or "")
+            if f is not None and f.widget == "select" and b["id"] in cascade_rules:
+                conds = _base_conds(table, fields_by_name, None, df, bs, be, cascade_rules[b["id"]] or None)
+                present = {r[0] for r in db.execute(
+                    select(table.c[b["field"]]).select_from(table).where(*conds).distinct().limit(500)
+                ).all()}
+                out["available"] = _filter_available(f, present)
             results_by_id[b["id"]] = out
         elif t == "stat":
             r = _eval_stat(db, table, fields_by_name, b, df, bs, be, vrules)
@@ -1267,7 +1532,8 @@ def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None =
         elif t == "pivot":
             results_by_id[b["id"]] = _eval_pivot(db, table, fields_by_name, b, df, bs, be, vrules)
         elif t == "table":
-            results_by_id[b["id"]] = _eval_table(db, table, fields_by_name, b, df, bs, be, vrules)
+            results_by_id[b["id"]] = _eval_table(db, table, fields_by_name, b, df, bs, be, vrules,
+                                                 page=page_of(b["id"]))
         badge = _range_badge(b, df)
         if badge and b["id"] in results_by_id:
             results_by_id[b["id"]]["range_badge"] = badge
@@ -1275,11 +1541,30 @@ def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None =
     # json 引擎：按数据集分组走 _run_py 批处理（同一数据集只加载一次记录）
     for did, group in json_groups.items():
         d, mt, base_fields = meta_of(did)
+        # 临时覆盖的块（json 路径）：同样先校验分组/筛选字段
+        if overridden:
+            fields_by_name_j = {f.field_name: f for f in ds.dataset_fields(db, base_fields, ds.dataset_source(d))}
+            for b in group:
+                if b["id"] in overridden:
+                    if b.get("type") == "chart":
+                        _check_group_dim(fields_by_name_j, b.get("group"))
+                    elif b.get("type") == "pivot":
+                        _check_group_dim(fields_by_name_j, b.get("row"), "行")
+                        _check_group_dim(fields_by_name_j, b.get("col"), "列")
+                    elif b.get("type") == "table":
+                        sb = b.get("sort_by")
+                        if sb and sb not in fields_by_name_j and sb not in SYSTEM_FIELDS:
+                            raise HTTPException(400, f"明细表排序字段不存在：{sb}")
+                        if b.get("sort_order") not in (None, "asc", "desc"):
+                            raise HTTPException(400, "排序方向只能是 asc/desc")
+                    _validate_filters(fields_by_name_j, b.get("filters"))
         proxy = SimpleNamespace(
             id=tpl.id, name=tpl.name, blocks_json=group,
             source_json=ds.dataset_source(d), layout_json=None, filters_json=[],
         )
-        sub = _run_py(db, mt, base_fields, proxy, legacy_df, g_start, g_end, label, rules_of=rules_of)
+        sub = _run_py(db, mt, base_fields, proxy, legacy_df, g_start, g_end, label, rules_of=rules_of,
+                      cascade_rules=cascade_rules,
+                      block_pages={b["id"]: page_of(b["id"]) for b in group if page_of(b["id"])})
         by_id = {x.get("id"): x for x in group}
         for sb in sub["blocks"]:
             if sb.get("type") == "stat":
@@ -1719,7 +2004,8 @@ def render_markdown(result: dict, max_rows: int = 10) -> str:
             cell = f"**{b['title']}**：{b['value']}{'%' if b.get('agg') == 'ratio' else ''}"
             cmp_ = b.get("compare")
             if cmp_:
-                cell += f"（较上期 {'↑' if cmp_['delta'] >= 0 else '↓'}{abs(cmp_['delta_pct'])}%）" if cmp_["delta_pct"] is not None else "（上期无对比基数）"
+                cmp_label = "较去年同期" if cmp_.get("type") == "yoy" else "较上期"
+                cell += f"（{cmp_label} {'↑' if cmp_['delta'] >= 0 else '↓'}{abs(cmp_['delta_pct'])}%）" if cmp_["delta_pct"] is not None else "（对比期无基数）"
             lines.append(f"- {cell}")
 
     def block_md(b) -> None:

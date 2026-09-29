@@ -2,8 +2,88 @@
   <div>
     <div class="page-header">
       <h2>报表</h2>
-      <el-button type="primary" :icon="Plus" @click="createVisible = true">新建报表</el-button>
+      <div>
+        <el-button @click="openTemplates">模板市场</el-button>
+        <el-button class="ai-btn" :icon="MagicStick" @click="openAi">AI 生成</el-button>
+        <el-button type="primary" :icon="Plus" @click="createVisible = true">新建报表</el-button>
+      </div>
     </div>
+
+    <!-- AI 生成：选表 + 一句话需求 → 生成配置 → 创建并进设计器 -->
+    <el-dialog v-model="aiVisible" title="AI 生成报表" width="640px" destroy-on-close>
+      <el-select v-model="aiTableId" placeholder="基于哪张表生成" style="width: 100%; margin-bottom: 10px" filterable>
+        <el-option v-for="t in tables" :key="t.id" :label="t.label" :value="t.id" />
+      </el-select>
+      <el-input
+        v-model="aiDescription" type="textarea" :rows="4"
+        placeholder="用自然语言描述你想要的报表，如：做一个上周的客户跟进周报，包含新增客户数、客户分级占比、每日新增趋势、客户明细和一段小结"
+      />
+      <div style="margin: 10px 0">
+        <el-button class="ai-btn" :loading="aiGenerating" :disabled="!aiTableId || !aiDescription.trim()" @click="aiGenerate">
+          {{ aiResult ? '重新生成' : '生成' }}
+        </el-button>
+        <span v-if="aiGenerating" style="margin-left: 10px; font-size: 12px; color: #909399">AI 设计中，可能需要十几秒…</span>
+      </div>
+      <template v-if="aiResult">
+        <el-alert type="success" :closable="false" style="margin-bottom: 10px"
+          :title="`已生成「${aiResult.name}」：${aiResult.blocks.length} 个区块`" />
+        <el-alert v-if="aiResult.notes" type="warning" :closable="false" :title="aiResult.notes" style="margin-bottom: 10px" />
+      </template>
+      <template #footer>
+        <el-button @click="aiVisible = false">取消</el-button>
+        <el-button v-if="aiResult" class="ai-btn" :loading="aiCreating" @click="aiCreate">创建并进入设计器</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 模板市场对话框（与工作流模板市场同一交互：搜索/分类/一键安装） -->
+    <el-dialog v-model="tplVisible" title="模板市场 · 一键安装场景报表" width="720px">
+      <div class="tpl-filter">
+        <el-input v-model="tplKw" placeholder="搜索模板名称 / 描述 / 场景" clearable size="small" class="tpl-search" />
+        <el-select v-model="tplCat" placeholder="全部分类" clearable size="small" style="width: 140px">
+          <el-option v-for="c in tplCategories" :key="c" :label="c" :value="c" />
+        </el-select>
+      </div>
+      <div class="tpl-grid" v-loading="tplLoading">
+        <el-card v-for="t in filteredTemplates" :key="t.key" shadow="hover" class="tpl-card">
+          <div class="tpl-name">
+            {{ t.name }}
+            <el-tag v-if="t.category" size="small" effect="plain" type="warning" class="tpl-cat">{{ t.category }}</el-tag>
+          </div>
+          <div class="tpl-desc">{{ t.description }}</div>
+          <div class="tpl-scenario">{{ t.scenario }}</div>
+          <div class="tpl-tables">
+            <span v-for="tb in t.tables" :key="tb.label" class="tpl-table">
+              <el-tag size="small" :type="tb.exists ? 'success' : 'info'" effect="plain">
+                {{ tb.label }}{{ tb.exists ? '（已有，复用）' : '（将自动创建）' }}
+              </el-tag>
+            </span>
+          </div>
+          <el-button type="primary" size="small" @click="onInstall(t)">
+            安装到我的报表
+          </el-button>
+        </el-card>
+      </div>
+      <el-empty v-if="!tplLoading && !filteredTemplates.length" description="没有匹配的模板" />
+    </el-dialog>
+
+    <!-- 安装确认：明确让用户选择是否要示例数据 -->
+    <el-dialog v-model="confirmVisible" :title="`安装「${installTarget?.name || ''}」`" width="440px" append-to-body>
+      <div class="cf-tables">
+        <span v-for="tb in installTarget?.tables || []" :key="tb.label" class="tpl-table">
+          <el-tag size="small" :type="tb.exists ? 'success' : 'info'" effect="plain">
+            {{ tb.label }}{{ tb.exists ? '（已有，复用）' : '（将自动创建）' }}
+          </el-tag>
+        </span>
+      </div>
+      <el-checkbox v-model="installDemoData" class="cf-cb">
+        为新建的表生成 50 条示例数据（装完即可看到真实图表）
+      </el-checkbox>
+      <div class="tpl-hint">复用的已有表不会写入任何数据</div>
+      <template #footer>
+        <el-button @click="confirmVisible = false">取消</el-button>
+        <el-button type="primary" :loading="installing" @click="doInstall">确认安装</el-button>
+      </template>
+    </el-dialog>
 
     <el-alert type="info" :closable="false" style="margin-bottom: 14px"
       title="报表由多数据源 + 区块 + 栅格布局组成：设计器内拖字段即可成图，可配置定时推送与链接分享。" />
@@ -48,7 +128,7 @@
           <span v-else style="color: #c0c4cc">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="560">
+      <el-table-column label="操作" width="630">
         <template #default="{ row }">
           <el-button text type="primary" size="small" @click="$router.push(`/reports/${row.id}/view`)">查看</el-button>
           <el-button text type="primary" size="small" @click="$router.push(`/reports/${row.id}/layout`)">设计</el-button>
@@ -57,6 +137,7 @@
           <el-button v-if="row.schedule?.type" text size="small" :loading="pushingId === row.id" @click="push(row)">推送</el-button>
           <el-button v-if="row.schedule?.type" text size="small" @click="showRuns(row)">日志</el-button>
           <el-button text size="small" @click="openShare(row)">分享</el-button>
+          <el-button text size="small" @click="duplicate(row)">复制</el-button>
           <el-popconfirm title="确定删除该报表模板？" @confirm="del(row)">
             <template #reference><el-button text type="danger" size="small">删除</el-button></template>
           </el-popconfirm>
@@ -111,6 +192,9 @@
           <span style="margin-left: 6px; color: #909399">天（留空永久）</span>
         </el-form-item>
         <el-form-item>
+          <el-checkbox v-model="linkForm.allow_interact">允许查看者筛选 / 切换时间口径</el-checkbox>
+        </el-form-item>
+        <el-form-item>
           <el-button type="primary" :loading="linkSaving" @click="createLink">生成链接</el-button>
         </el-form-item>
       </el-form>
@@ -120,6 +204,12 @@
         </el-table-column>
         <el-table-column label="密码" width="70" align="center">
           <template #default="{ row }">{{ row.has_password ? '有' : '—' }}</template>
+        </el-table-column>
+        <el-table-column label="交互" width="70" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.allow_interact" size="small" type="success" effect="plain">可筛选</el-tag>
+            <span v-else>—</span>
+          </template>
         </el-table-column>
         <el-table-column label="有效期至" width="150">
           <template #default="{ row }">{{ row.expires_at || '永久' }}</template>
@@ -139,12 +229,13 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { MagicStick, Plus } from '@element-plus/icons-vue'
 import {
-  createReport, createReportShareLink, deleteReport, deleteReportShareLink, listReportShareLinks,
+  aiAssistReport, createReport, createReportShareLink, deleteReport, deleteReportShareLink, duplicateReport,
+  installReportTemplate, listReportShareLinks, listReportTemplates,
   listReports, listTables, reportExportUrl, reportRuns, testPushReport, toggleReport,
 } from '../api'
 
@@ -211,6 +302,136 @@ async function create() {
   }
 }
 
+// ---------- AI 生成（列表页直生成 → 创建 → 进设计器） ----------
+const aiVisible = ref(false)
+const aiTableId = ref(null)
+const aiDescription = ref('')
+const aiGenerating = ref(false)
+const aiCreating = ref(false)
+const aiResult = ref(null)
+
+function openAi() {
+  aiResult.value = null
+  aiTableId.value = tables.value[0]?.id || null
+  aiVisible.value = true
+}
+
+async function aiGenerate() {
+  aiGenerating.value = true
+  try {
+    aiResult.value = await aiAssistReport(aiTableId.value, aiDescription.value.trim())
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    aiGenerating.value = false
+  }
+}
+
+async function aiCreate() {
+  // 与设计器 aiApply 同一套映射：单数据源 d1、块级日期字段取 AI 建议
+  aiCreating.value = true
+  try {
+    const t = tables.value.find((x) => x.id === aiTableId.value)
+    const df = aiResult.value.range?.date_field || 'created_at'
+    const blocks = aiResult.value.blocks.map((b) => ({
+      ...b,
+      filters: b.filters || { logic: 'AND', rules: [] },
+      group: b.group ? { ...b.group } : undefined,
+      dataset_id: 'd1',
+      date_field: df,
+      ...(b.type === 'pivot' ? {
+        row: { kind: 'field', field: null, ...(b.row || {}) },
+        col: { kind: 'field', field: null, ...(b.col || {}) },
+        totals: b.totals !== false,
+      } : {}),
+    }))
+    const res = await createReport({
+      name: aiResult.value.name || 'AI 报表',
+      table_id: aiTableId.value,
+      range: { mode: aiResult.value.range?.mode || 'this_week' },
+      datasets: [{ id: 'd1', name: t?.label || '', base_table_id: aiTableId.value, joins: [], computed_fields: [] }],
+      blocks,
+      layout: null,   // 设计器打开时自动排版
+      filter_fields: [],
+      schedule: {},
+      push: {},
+    })
+    aiVisible.value = false
+    ElMessage.success(`已创建「${res.name}」`)
+    router.push(`/reports/${res.id}/layout`)
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    aiCreating.value = false
+  }
+}
+
+// ---------- 模板市场 ----------
+const tplVisible = ref(false)
+const tplLoading = ref(false)
+const templates = ref([])
+const tplKw = ref('')
+const tplCat = ref('')
+const installing = ref(false)
+const confirmVisible = ref(false)
+const installTarget = ref(null)
+const installDemoData = ref(true)   // 默认生成示例数据，每次安装时都会弹出确认框让用户选
+
+const tplCategories = computed(() => [...new Set(templates.value.map((t) => t.category).filter(Boolean))])
+const filteredTemplates = computed(() => {
+  const k = tplKw.value.trim().toLowerCase()
+  return templates.value.filter((t) => {
+    if (tplCat.value && t.category !== tplCat.value) return false
+    if (k && !(`${t.name} ${t.description} ${t.scenario}`.toLowerCase().includes(k))) return false
+    return true
+  })
+})
+
+async function openTemplates() {
+  tplVisible.value = true
+  tplLoading.value = true
+  try { templates.value = await listReportTemplates() } finally { tplLoading.value = false }
+}
+
+function onInstall(t) {
+  installTarget.value = t
+  installDemoData.value = true
+  confirmVisible.value = true
+}
+
+async function doInstall() {
+  const t = installTarget.value
+  if (!t) return
+  installing.value = true
+  try {
+    const res = await installReportTemplate(t.key, installDemoData.value)
+    confirmVisible.value = false
+    tplVisible.value = false
+    await load()
+    await ElMessageBox.alert(
+      res.notes || '已安装',
+      `已安装「${res.name}」`,
+      { confirmButtonText: '去设计器查看' },
+    )
+    router.push(`/reports/${res.report_id}/layout`)
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.message || e)
+  } finally {
+    installing.value = false
+  }
+}
+
+// ---------- 复制 ----------
+async function duplicate(row) {
+  try {
+    const res = await duplicateReport(row.id)
+    ElMessage.success(`已复制为「${res.name}」（推送配置未复制，需要请到副本里重新设置）`)
+    load()
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
 async function toggle(row) {
   try {
     await toggleReport(row.id)
@@ -263,7 +484,7 @@ const shareVisible = ref(false)
 const shareTpl = ref(null)
 const links = ref([])
 const linkSaving = ref(false)
-const linkForm = reactive({ password: '', expires_in_days: null })
+const linkForm = reactive({ password: '', expires_in_days: null, allow_interact: false })
 
 function linkUrl(token) {
   return `${location.origin}/share/${token}`
@@ -274,6 +495,7 @@ async function openShare(row) {
   shareVisible.value = true
   linkForm.password = ''
   linkForm.expires_in_days = null
+  linkForm.allow_interact = false
   await loadLinks()
 }
 
@@ -291,10 +513,12 @@ async function createLink() {
     await createReportShareLink(shareTpl.value.id, {
       password: linkForm.password || null,
       expires_in_days: linkForm.expires_in_days || null,
+      allow_interact: linkForm.allow_interact,
     })
     ElMessage.success('链接已生成')
     linkForm.password = ''
     linkForm.expires_in_days = null
+    linkForm.allow_interact = false
     await loadLinks()
   } catch (e) {
     ElMessage.error(e.message)
@@ -324,3 +548,19 @@ async function removeLink(row) {
 
 onMounted(load)
 </script>
+
+<style scoped>
+/* 模板市场（与工作流列表页同款卡片网格） */
+.tpl-filter { display: flex; gap: 10px; margin-bottom: 12px; }
+.tpl-search { flex: 1; }
+.tpl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tpl-card { font-size: 13px; }
+.tpl-name { font-weight: 600; margin-bottom: 4px; }
+.tpl-cat { margin-left: 6px; }
+.tpl-desc { color: #606266; margin-bottom: 6px; }
+.tpl-scenario { font-size: 12px; color: #909399; margin-bottom: 8px; }
+.tpl-tables { margin-bottom: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.cf-tables { margin-bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+.cf-cb { margin-bottom: 4px; }
+.tpl-hint { font-size: 12px; color: #909399; }
+</style>

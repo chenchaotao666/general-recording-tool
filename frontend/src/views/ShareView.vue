@@ -35,7 +35,17 @@
       <template v-else>
         <div class="page-header"><h2>{{ data.label }}</h2></div>
         <div class="meta">{{ data.report.range.label }} · 生成于 {{ data.report.generated_at }}</div>
-        <ReportDashboard :blocks="data.report.blocks" :layout="data.report.layout" :filterable="false" />
+        <!-- 开放交互的链接：查看者可切换口径；筛选组件块也可用了 -->
+        <div v-if="data.allow_interact" class="share-toolbar">
+          <el-radio-group v-model="rangeMode" size="small" @change="onModeChange">
+            <el-radio-button v-for="[v, l] in RANGE_MODES" :key="v" :value="v">{{ l }}</el-radio-button>
+          </el-radio-group>
+        </div>
+        <ReportDashboard
+          :blocks="data.report.blocks" :layout="data.report.layout"
+          :filterable="!!data.allow_interact" @viewer-filter="onViewerFilter" @page="onTablePage"
+          @table-sort="onTableSort"
+        />
       </template>
     </template>
 
@@ -58,12 +68,87 @@ const error = ref('')
 const data = ref(null)
 const page = ref(1)
 
+// 开放交互的分享：口径切换 + 筛选组件块（与查看页同一套 viewer-filter 协议）
+const RANGE_MODES = [
+  ['', '默认口径'], ['today', '今天'], ['past_7d', '近7天'], ['past_30d', '近30天'],
+  ['this_week', '本周'], ['last_week', '上周'], ['this_month', '本月'], ['last_month', '上月'], ['this_year', '今年'],
+]
+const rangeMode = ref('')
+const blockFilters = ref({})   // block_id -> rules[]
+
+// 明细表服务端分页（纯展示层参数，未开放交互的链接也可用）
+const TABLE_PAGE_SIZE = 50
+const tablePages = ref({})   // block_id -> 当前页
+
+function onTablePage({ block_id, page }) {
+  tablePages.value = { ...tablePages.value, [block_id]: page }
+  load()
+}
+
+// 点列头排序（纯展示层参数，后端只放行排序键）
+const tableSorts = ref({})   // block_id -> {sort_by, sort_order}
+
+function onTableSort({ block_id, sort_by, sort_order }) {
+  const s = { ...tableSorts.value }
+  if (sort_by) s[block_id] = { sort_by, sort_order }
+  else delete s[block_id]
+  tableSorts.value = s
+  const p = { ...tablePages.value }
+  delete p[block_id]
+  tablePages.value = p
+  load()
+}
+
+function blockPagesParam() {
+  const out = {}
+  for (const b of data.value?.report?.blocks || []) {
+    if (b.type === 'table') out[b.id] = { page: tablePages.value[b.id] || 1, page_size: TABLE_PAGE_SIZE }
+  }
+  return Object.keys(out).length ? out : null
+}
+
+function onModeChange() {
+  tablePages.value = {}   // 口径变化回第 1 页
+  load()
+}
+
+function onViewerFilter({ block_id, field, value, data_type, widget, dataset }) {
+  if (!field) return
+  const empty = value == null || value === '' || (Array.isArray(value) && !value.length)
+  if (empty) {
+    delete blockFilters.value[block_id]
+  } else if (['date', 'datetime'].includes(data_type)) {
+    blockFilters.value[block_id] = [
+      { dataset, field, op: 'gte', value: value[0] },
+      { dataset, field, op: 'lte', value: value[1] },
+    ]
+  } else if (widget === 'select' || data_type === 'bool' || ['int', 'decimal'].includes(data_type)) {
+    blockFilters.value[block_id] = [{ dataset, field, op: 'eq', value }]
+  } else {
+    blockFilters.value[block_id] = [{ dataset, field, op: 'contains', value }]
+  }
+  tablePages.value = {}   // 筛选变化回第 1 页
+  load()
+}
+
+function mergedFilters() {
+  const rules = Object.values(blockFilters.value).flat()
+  return rules.length ? { logic: 'AND', rules } : null
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
     const params = new URLSearchParams({ page: page.value, page_size: 50 })
     if (password.value) params.set('password', password.value)
+    // 仅开放交互的链接会生效（后端按链接的 allow_interact 判定，未开放时忽略）
+    if (rangeMode.value) params.set('mode', rangeMode.value)
+    const f = mergedFilters()
+    if (f) params.set('filters', JSON.stringify(f))
+    const bp = blockPagesParam()
+    if (bp) params.set('block_pages', JSON.stringify(bp))
+    if (Object.keys(tableSorts.value).length) params.set('block_overrides', JSON.stringify(tableSorts.value))
     const res = await fetch(`/api/share/${token}?${params}`)
     if (res.status === 401) {
       needPassword.value = true
@@ -104,5 +189,8 @@ onMounted(load)
 .error { color: #f56c6c; font-size: 13px; margin-top: 12px; }
 .total { color: #909399; font-size: 13px; }
 .meta { color: #909399; font-size: 12px; margin-bottom: 14px; }
+.share-toolbar { margin-bottom: 12px; }
+/* 口径按钮多时换行而不是横向滚动（overflow-x 会连带裁掉按钮底部边框） */
+.share-toolbar :deep(.el-radio-group) { flex-wrap: wrap; row-gap: 6px; }
 .block { margin-bottom: 16px; }
 </style>

@@ -12,8 +12,12 @@
         <div v-if="showBlock(it.block_id)" class="grid-item" :style="narrow ? {} : itemStyle(it)">
           <ReportBlock
             :block="blockOf(it.block_id)" :drillable="drillable" fill
+            :drill-path="drillPaths[it.block_id] || []"
             v-bind="filterProps(it.block_id)"
             @drill="(pl) => emit('drill', pl)" @link="(pl) => emit('link', pl)"
+            @drill-level="(pl) => emit('drill-level', pl)" @drill-back="(id) => emit('drill-back', id)"
+            @jump="(pl) => emit('jump', pl)" @swap-pivot="(id) => emit('swap-pivot', id)"
+            @page="(pl) => emit('page', pl)" @table-sort="(pl) => emit('table-sort', pl)"
           />
         </div>
       </template>
@@ -27,8 +31,12 @@
       <div class="flow">
         <ReportBlock
           v-for="b in unplaced" :key="b.id" :block="b" :drillable="drillable"
+          :drill-path="drillPaths[b.id] || []"
           v-bind="filterProps(b.id)"
           @drill="(pl) => emit('drill', pl)" @link="(pl) => emit('link', pl)"
+          @drill-level="(pl) => emit('drill-level', pl)" @drill-back="(id) => emit('drill-back', id)"
+          @jump="(pl) => emit('jump', pl)" @swap-pivot="(id) => emit('swap-pivot', id)"
+          @page="(pl) => emit('page', pl)" @table-sort="(pl) => emit('table-sort', pl)"
         />
       </div>
     </template>
@@ -45,8 +53,9 @@ const props = defineProps({
   layout: { type: Object, default: null },      // 模板 layout（可空，空则自动布局）
   drillable: { type: Boolean, default: false },
   filterable: { type: Boolean, default: true }, // 只读场景（分享页）隐藏筛选组件块
+  drillPaths: { type: Object, default: () => ({}) },  // block_id -> [{field,label}] 层级钻取面包屑
 })
-const emit = defineEmits(['drill', 'link', 'viewer-filter'])
+const emit = defineEmits(['drill', 'link', 'viewer-filter', 'drill-level', 'drill-back', 'jump', 'swap-pivot', 'page', 'table-sort'])
 
 // 筛选组件在只读场景不渲染（控件无法生效）
 function showBlock(blockId) {

@@ -23,6 +23,27 @@ from ..utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
+# 报表模板市场（与工作流模板市场同一模式：/api/report-templates）
+templates_router = APIRouter(prefix="/api/report-templates", tags=["report-templates"])
+
+
+@templates_router.get("")
+def list_report_templates(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    from ..services.report_templates import list_templates
+    return list_templates(db, user)
+
+
+class InstallIn(BaseModel):
+    with_demo_data: bool = False   # 为新建的表生成 50 条示例数据
+
+
+@templates_router.post("/{key}/install")
+def install_report_template(key: str, payload: InstallIn | None = None,
+                            db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """一键安装报表模板：复用/建表（可选示例数据）→ 校验 → 落库（默认停用推送）。"""
+    from ..services.report_templates import install_template
+    return install_template(db, user, key, with_demo_data=(payload or InstallIn()).with_demo_data)
+
 RANGE_MODE_LABELS = {
     "today": "今天", "yesterday": "昨天", "past_7d": "近7天", "past_30d": "近30天",
     "this_week": "本周", "last_week": "上周", "this_month": "本月",
@@ -95,6 +116,7 @@ def get_template(tpl_id: int, db: Session = Depends(get_db), user: User = Depend
 class AiAssistIn(BaseModel):
     table_id: int
     description: str
+    append: bool = False   # 已有报表上的追加意图：只生成本次要求的区块
 
 
 @router.post("/ai-assist")
@@ -105,7 +127,7 @@ def ai_assist(payload: AiAssistIn, db: Session = Depends(get_db), user: User = D
     get_table_access(db, payload.table_id, user)
     fields = get_meta_fields(db, payload.table_id)
     try:
-        return assist_report(db, fields, payload.description.strip())
+        return assist_report(db, fields, payload.description.strip(), append=payload.append)
     except LLMError as e:
         raise HTTPException(400, str(e))
 
@@ -152,6 +174,26 @@ def delete_template(tpl_id: int, db: Session = Depends(get_db), user: User = Dep
     return {"ok": True}
 
 
+@router.post("/{tpl_id}/duplicate")
+def duplicate_template(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """复制报表：区块/布局/数据集全量克隆；推送配置不复制（避免副本自动发推送），默认停用。"""
+    tpl = db.get(ReportTemplate, tpl_id)
+    if not tpl:
+        raise HTTPException(404, "报表模板不存在")
+    check_owner_or_admin(tpl.user_id, user)
+    new = ReportTemplate(
+        user_id=user.id, name=f"{tpl.name}（副本）", description=tpl.description, enabled=False,
+        table_id=tpl.table_id,
+        range_json=tpl.range_json, blocks_json=tpl.blocks_json, layout_json=tpl.layout_json,
+        source_json=tpl.source_json, datasets_json=tpl.datasets_json, filters_json=tpl.filters_json,
+        schedule_json={}, push_json={},
+    )
+    db.add(new)
+    db.commit()
+    db.refresh(new)
+    return _out(db, new)
+
+
 @router.post("/{tpl_id}/toggle")
 def toggle_template(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tpl = db.get(ReportTemplate, tpl_id)
@@ -188,6 +230,35 @@ def _check_datasets_access(db: Session, datasets: list, user: User) -> None:
                 get_table_access(db, int(j.get("table_id")), user)
             except (TypeError, ValueError):
                 raise HTTPException(400, "关联表 id 无效")
+
+
+class AiBlockConfigIn(BaseModel):
+    block_type: str
+    description: str
+    fields: list[dict] = []   # 前端数据集字段 [{field_name, label, data_type, options}]（含关联/计算字段）
+    current: dict | None = None   # 区块当前配置（编辑语义：按需求修改，其余保留）
+
+
+@router.post("/ai-block-config")
+def ai_block_config(payload: AiBlockConfigIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """AI 帮我设置这个区块：区块类型 + 一句话需求 → 该区块的配置 patch（不落库，前端合并后保存）。"""
+    if not payload.description.strip():
+        raise HTTPException(400, "请描述你想要的配置")
+    from types import SimpleNamespace
+    fields = [SimpleNamespace(
+        field_name=str(f.get("field_name") or ""), label=str(f.get("label") or f.get("field_name") or ""),
+        data_type=str(f.get("data_type") or "varchar"),
+        options=f.get("options") if isinstance(f.get("options"), dict) else {},
+    ) for f in payload.fields if f.get("field_name")]
+    # 文本块没有数据集（不需要字段清单）；其余类型必须有字段
+    if not fields and payload.block_type != "text":
+        raise HTTPException(400, "缺少数据集字段信息")
+    from ..services.llm.gateway import assist_block_config
+    try:
+        return assist_block_config(db, fields, payload.block_type, payload.description.strip(),
+                                   current=payload.current)
+    except LLMError as e:
+        raise HTTPException(400, str(e))
 
 
 class ExprCheckIn(BaseModel):
@@ -244,7 +315,8 @@ def run_report(tpl_id: int, payload: dict | None = None, db: Session = Depends(g
     else:
         _check_datasets_access(db, ds_mod.template_datasets(tpl), user)
     return run_template(db, tpl, _range_override(payload.get("range"), None, None, None),
-                        viewer_filters=payload.get("filters"), links=payload.get("links"))
+                        viewer_filters=payload.get("filters"), links=payload.get("links"),
+                        block_pages=payload.get("block_pages"), block_overrides=payload.get("block_overrides"))
 
 
 @router.post("/{tpl_id}/drill")
@@ -308,6 +380,22 @@ def export_report(tpl_id: int, format: str = "xlsx", mode: str | None = None,
             headers={"Content-Disposition": f"attachment; filename*=utf-8''{filename}"},
         )
     raise HTTPException(400, "format 只能是 xlsx 或 html")
+
+
+@router.post("/{tpl_id}/preview-push")
+def preview_push(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """推送内容预览：运行报表并渲染邮件 HTML / 机器人 Markdown，不实际发送、不写日志。"""
+    tpl = db.get(ReportTemplate, tpl_id)
+    if not tpl:
+        raise HTTPException(404, "报表模板不存在")
+    check_owner_or_admin(tpl.user_id, user)
+    get_table_access(db, tpl.table_id, user)
+    from ..services.report_engine import render_email_html, render_markdown
+    result = run_template(db, tpl)
+    push = tpl.push_json or {}
+    subject = (push.get("subject") or "【{name}】{range_label}") \
+        .replace("{name}", tpl.name).replace("{range_label}", result["range"]["label"])
+    return {"subject": subject, "html": render_email_html(result), "markdown": render_markdown(result)}
 
 
 @router.post("/{tpl_id}/test-push")

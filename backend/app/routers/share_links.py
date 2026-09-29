@@ -19,6 +19,7 @@ router = APIRouter(prefix="/api", tags=["share-links"])
 class ShareLinkIn(BaseModel):
     password: str | None = None
     expires_in_days: int | None = None   # 有效期（天），空 = 永久
+    allow_interact: bool = False         # 报表：允许查看者筛选/切换时间口径
 
 
 def _table_access_dep():
@@ -43,6 +44,7 @@ def _link_out(db: Session, link: SharedLink) -> dict:
     return {
         "id": link.id, "token": link.token, "resource_type": link.resource_type,
         "has_password": bool(link.password_hash),
+        "allow_interact": bool(link.allow_interact),
         "expires_at": link.expires_at.isoformat(sep=" ") if link.expires_at else None,
         "created_at": link.created_at.isoformat(sep=" ") if link.created_at else None,
     }
@@ -59,6 +61,7 @@ def _create_link(db: Session, resource_type: str, resource_id: int, payload: Sha
         resource_id=resource_id,
         password_hash=hash_password(payload.password) if payload.password else None,
         expires_at=datetime.now() + timedelta(days=payload.expires_in_days) if payload.expires_in_days else None,
+        allow_interact=bool(payload.allow_interact),
         created_by=user.id,
     )
     db.add(link)
@@ -130,9 +133,17 @@ def visit_share(
     password: str = Query(default=""),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    mode: str | None = Query(default=None),
+    start: str | None = Query(default=None),
+    end: str | None = Query(default=None),
+    filters: str | None = Query(default=None),
+    block_pages: str | None = Query(default=None),
+    overrides_raw: str | None = Query(default=None, alias="block_overrides"),
     db: Session = Depends(get_db),
 ):
-    """公开只读访问：表 → 元数据+记录；报表 → 运行结果。支持密码和有效期。"""
+    """公开只读访问：表 → 元数据+记录；报表 → 运行结果。支持密码和有效期。
+    报表链接开启 allow_interact 时，查看者可带 mode/start/end（口径）与 filters（JSON 筛选）；
+    block_pages（JSON 明细表分页）是纯展示层参数，恒可用。"""
     link = db.query(SharedLink).filter_by(token=token).first()
     if not link:
         raise HTTPException(404, "分享链接不存在")
@@ -163,4 +174,48 @@ def visit_share(
     tpl = db.get(ReportTemplate, link.resource_id)
     if not tpl:
         raise HTTPException(404, "报表不存在")
-    return {"resource_type": "report", "label": tpl.name, "report": run_template(db, tpl)}
+    pages = None
+    overrides = None
+    if block_pages:
+        import json
+        try:
+            pages = json.loads(block_pages)
+        except ValueError:
+            raise HTTPException(400, "block_pages 参数不是合法 JSON")
+        if not isinstance(pages, dict):
+            raise HTTPException(400, "block_pages 必须是对象")
+    # 明细表点列头排序：纯展示层参数（只放行排序键，不给外部改分组/筛选语义）
+    if overrides_raw:
+        import json
+        try:
+            ov = json.loads(overrides_raw)
+        except ValueError:
+            raise HTTPException(400, "block_overrides 参数不是合法 JSON")
+        if isinstance(ov, dict):
+            overrides = {
+                bid: {k: v for k, v in o.items() if k in ("sort_by", "sort_order")}
+                for bid, o in ov.items() if isinstance(o, dict)
+            }
+    interact = bool(link.allow_interact)
+    range_override, viewer_filters = None, None
+    if interact:
+        rng = {}
+        if mode:
+            from ..services.report_engine import RANGE_MODES
+            if mode not in RANGE_MODES:
+                raise HTTPException(400, "不支持的时间口径")
+            rng["mode"] = mode
+        if start:
+            rng["start"] = start
+        if end:
+            rng["end"] = end
+        range_override = rng or None
+        if filters:
+            import json
+            try:
+                viewer_filters = json.loads(filters)
+            except ValueError:
+                raise HTTPException(400, "filters 参数不是合法 JSON")
+    result = run_template(db, tpl, range_override, viewer_filters=viewer_filters,
+                          block_pages=pages, block_overrides=overrides)
+    return {"resource_type": "report", "label": tpl.name, "report": result, "allow_interact": interact}

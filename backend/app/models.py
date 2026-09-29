@@ -142,7 +142,7 @@ class Friendship(Base):
 
 
 class SharedLink(Base):
-    """链接分享：免登录只读访问表/报表，可设密码和有效期"""
+    """链接分享：免登录只读访问表/报表，可设密码和有效期；报表可选开放筛选/口径切换"""
     __tablename__ = "shared_links"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -151,6 +151,7 @@ class SharedLink(Base):
     resource_id = Column(Integer, nullable=False)         # table_id 或 report_template.id
     password_hash = Column(String(256))
     expires_at = Column(DateTime)
+    allow_interact = Column(Boolean, default=False)       # 报表：允许查看者筛选/切口径
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.now)
 

@@ -1262,8 +1262,7 @@ onUnmounted(() => {
 }
 .name-input { width: 220px; }
 /* AI 生成按钮：用 AI 分类的紫色高亮，与主操作「保存」区分 */
-.ai-btn { background: #9b59b6; border-color: #9b59b6; color: #fff; }
-.ai-btn:hover, .ai-btn:focus { background: #8e44ad; border-color: #8e44ad; color: #fff; }
+/* .ai-btn 紫色样式已上移 App.vue 全局 */
 .ai-examples { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .ai-examples .ex { font-size: 12px; }
 .spacer { flex: 1; }

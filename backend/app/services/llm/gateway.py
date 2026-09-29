@@ -191,7 +191,7 @@ def recognize_form(db: Session, images: list[bytes], fields: list, current: dict
 
 _REPORT_RANGE_MODES = {"this_week", "last_week", "this_month", "last_month"}
 _REPORT_AGGS = {"count", "sum", "avg", "max", "min"}
-_REPORT_CHARTS = {"bar", "line", "pie"}
+_REPORT_CHARTS = {"bar", "line", "pie", "area", "gauge", "mixed", "funnel"}
 _REPORT_GROUP_KINDS = {"field", "day", "week", "month"}
 _REPORT_SYSTEM_FIELDS = {"id", "created_at", "updated_at"}
 _REPORT_DATE_SYSTEM_FIELDS = {"created_at", "updated_at"}
@@ -252,6 +252,11 @@ def align_report_config(data: dict, fields: list) -> dict:
             out["id"] = f"b{stat_seq}"   # text 占位符按 stat 顺序编号
             numeric_or_count(b, out)
             out["filters"] = clean_filters(b.get("filters"))
+            # 对比透传（环比/同比）
+            if b.get("compare"):
+                out["compare"] = True
+                if b.get("compare_type") in ("mom", "yoy"):
+                    out["compare_type"] = b["compare_type"]
         elif t == "chart":
             chart_type = b.get("chart_type") if b.get("chart_type") in _REPORT_CHARTS else "bar"
             group = b.get("group") or {}
@@ -271,11 +276,54 @@ def align_report_config(data: dict, fields: list) -> dict:
                 "chart_type": chart_type, "group": {"kind": gkind, "field": gfield},
                 "filters": clean_filters(b.get("filters")),
             })
-            if chart_type == "pie":
+            # 多指标清洗（饼图/漏斗不支持多系列）：agg/字段逐个校验，无效聚合降级为计数。
+            # 原来只在 mixed 分支保留 metrics，导致柱/线/面积图的 AI 多指标被静默丢弃
+            ms_in = [m for m in (b.get("metrics") or []) if isinstance(m, dict) and m.get("agg")]
+            if ms_in and chart_type not in ("pie", "funnel", "gauge"):
+                ms = []
+                for m in ms_in[:5]:
+                    mo = {}
+                    numeric_or_count(m, mo)
+                    mo["title"] = str(m.get("title") or "")[:32]
+                    if chart_type == "mixed" and m.get("chart") in ("bar", "line"):
+                        mo["chart"] = m["chart"]
+                    ms.append(mo)
+                if chart_type == "mixed" and len(ms) < 2:
+                    # 指标不足 2 个降级为柱状图
+                    out["chart_type"] = "bar"
+                    notes_extra.append(f"「{out['title'] or '图表'}」组合图指标不足，已改为柱状图")
+                elif ms:
+                    out["metrics"] = ms
+                    if chart_type == "mixed":
+                        out.pop("agg", None)
+                        out.pop("field", None)
+            # 二级分组：字段存在且非日期类型（与 metrics 互斥）
+            g2 = (b.get("group2") or {}).get("field")
+            if g2 and chart_type not in ("pie", "funnel", "gauge", "mixed") and not out.get("metrics"):
+                gf2 = fields_by_name.get(g2)
+                if gf2 is None or gf2.data_type in ("date", "datetime"):
+                    notes_extra.append(f"「{out['title'] or '图表'}」的二级分组字段无效，已忽略")
+                else:
+                    out["group2"] = {"field": g2}
+            # 堆叠/对比/占比/点击行为的合法透传
+            if b.get("stack") and chart_type in ("bar", "line", "area") and (out.get("metrics") or out.get("group2")):
+                out["stack"] = True
+            if b.get("compare") in ("mom", "yoy") and gkind in ("day", "week", "month"):
+                out["compare"] = b["compare"]
+            if b.get("quick_calc") == "pct" and chart_type in ("bar", "line", "area", "mixed"):
+                out["quick_calc"] = "pct"
+            if b.get("on_click") in ("drill", "link"):
+                out["on_click"] = b["on_click"]
+            if chart_type in ("pie", "funnel"):
                 try:
                     out["top_n"] = min(max(int(b.get("top_n") or 8), 2), 30)
                 except (TypeError, ValueError):
                     out["top_n"] = 8
+            if chart_type == "gauge":
+                try:
+                    out["max"] = float(b.get("max") or 100)
+                except (TypeError, ValueError):
+                    out["max"] = 100
         elif t == "pivot":
             dims = {}
             for axis, axis_label in (("row", "行"), ("col", "列")):
@@ -347,14 +395,15 @@ def align_report_config(data: dict, fields: list) -> dict:
     }
 
 
-def assist_report(db: Session, fields: list, description: str) -> dict:
-    """LLM 把自然语言需求转成报表配置；JSON 解析失败时回喂重试一次。"""
+def assist_report(db: Session, fields: list, description: str, append: bool = False) -> dict:
+    """LLM 把自然语言需求转成报表配置；JSON 解析失败时回喂重试一次。
+    append=True：用户已有报表、只追加本次要求的区块（不重新设计整表）。"""
     provider = get_default_provider(db)
     field_dicts = [
         {"field_name": f.field_name, "label": f.label, "data_type": f.data_type, "options": f.options or {}}
         for f in fields
     ]
-    prompt = build_report_prompt(description, field_dicts)
+    prompt = build_report_prompt(description, field_dicts, append=append)
     last_err: Exception | None = None
     for attempt in range(2):
         current = prompt if attempt == 0 else (
@@ -367,6 +416,71 @@ def assist_report(db: Session, fields: list, description: str) -> dict:
             if not isinstance(data.get("blocks"), list):
                 raise ValueError("输出缺少 blocks 数组")
             return align_report_config(data, fields)
+        except LLMError:
+            raise
+        except Exception as e:
+            last_err = e
+    raise LLMError(f"模型输出解析失败：{last_err}")
+
+
+def assist_block_config(db: Session, fields: list, block_type: str, description: str,
+                        current: dict | None = None) -> dict:
+    """单区块 AI 配置：类型 + 一句话需求 → 该区块的配置 patch（align 清洗，不落库）。
+    current 为该区块当前配置（编辑语义：按需求改、其余保留）；清洗复用整表管线的 align_report_config。"""
+    from ..report_engine import BLOCK_TYPES
+    from .prompts import build_block_config_prompt
+
+    if block_type not in BLOCK_TYPES:
+        raise LLMError(f"不支持的区块类型：{block_type}")
+    provider = get_default_provider(db)
+    field_dicts = [
+        {"field_name": f.field_name, "label": f.label, "data_type": f.data_type, "options": f.options or {}}
+        for f in fields
+    ]
+    prompt = build_block_config_prompt(block_type, field_dicts, description, current=current)
+    last_err: Exception | None = None
+    for attempt in range(2):
+        # 注意不能叫 current：会遮蔽同名参数（文本块分支要用它拿当前内容）
+        cur_prompt = prompt if attempt == 0 else (
+            f"你上次的输出无法解析为合法 JSON，错误：{last_err}。"
+            "请重新输出，只输出 JSON。\n\n原始任务：\n" + prompt
+        )
+        try:
+            # 文本块是散文：不走 JSON 协议（模型见到散文容易直接输出文本导致 extract_json 失败），
+            # 直接产出内容本身，剥掉常见的代码围栏/首尾引号
+            if block_type == "text":
+                from .prompts import build_text_content_prompt
+                raw = provider.complete(
+                    build_text_content_prompt(description, current=current), system=REPORT_SYSTEM)
+                content = raw.strip()
+                if content.startswith("```"):
+                    content = content.strip("`")
+                    content = content.split("\n", 1)[-1] if "\n" in content else ""
+                    content = content.rsplit("```", 1)[0].strip()
+                if len(content) >= 2 and content[0] == content[-1] and content[0] in "\"'":
+                    content = content[1:-1]
+                if not content:
+                    raise LLMError("模型没有产出文本内容，请换个说法再试")
+                return {"config": {"content": content}, "notes": ""}
+            raw = provider.complete(cur_prompt, system=REPORT_SYSTEM)
+            data = extract_json(raw)
+            if not isinstance(data, dict):
+                raise ValueError("输出不是 JSON 对象")
+            # 筛选组件只有 field 一个实质配置，直接清洗（align_report_config 不支持 filter 块）
+            if block_type == "filter":
+                fname = data.get("field")
+                if fname not in {f.field_name for f in fields} and fname not in _REPORT_SYSTEM_FIELDS:
+                    raise LLMError(f"AI 选择的筛选字段不存在：{fname}")
+                cfg = {"field": fname}
+                if data.get("title"):
+                    cfg["title"] = str(data["title"])[:64]
+                return {"config": cfg, "notes": ""}
+            wrapped = align_report_config(
+                {"name": data.get("title") or "", "blocks": [{**data, "type": block_type}]}, fields)
+            if not wrapped["blocks"]:
+                raise LLMError(wrapped.get("notes") or "AI 生成的配置无效，请换个说法再试")
+            cfg = {k: v for k, v in wrapped["blocks"][0].items() if k not in ("id", "type")}
+            return {"config": cfg, "notes": wrapped.get("notes") or ""}
         except LLMError:
             raise
         except Exception as e:

@@ -366,7 +366,7 @@ runs = [client.post(f"/api/reports/{rid}/run").json() for rid in p0_ids]
 for res in runs:
     b = _blocks_by_id(res)
     assert res["range"]["label"].startswith("今天"), res["range"]
-    assert b["b1"]["value"] == 4 and b["b1"]["compare"] == {"prev": 0, "delta": 4, "delta_pct": None}, b["b1"]
+    assert b["b1"]["value"] == 4 and b["b1"]["compare"] == {"prev": 0, "delta": 4, "delta_pct": None, "type": "mom"}, b["b1"]
     assert b["b2"]["value"] == 4      # 4 个不同客户名
     assert b["b3"]["value"] == 50.0   # 4 条中 2 条成交
     assert sorted(b["b4"]["values"]) == [2, 2]
@@ -1614,7 +1614,11 @@ assert dr["total"] == 2 and "客户.level" in [c["prop"] for c in dr["columns"]]
 res2 = client.post(f"/api/reports/{join_rid}/run", json={"links": [{"field": "客户.level", "value": "A"}]}).json()
 assert _blocks_by_id(res2)["j2"]["value"] == 70001.5   # 加权仅剩 A 级：35000.75*2
 r = client.post(f"/api/reports/{join_rid}/run", json={"links": [{"field": "amount", "value": 1}]})
-assert r.status_code == 400 and "联动" in r.text, r.text
+# 放宽后（报表间跳转）：数据集里存在的字段即可联动，amount=1 无记录 → 加权为 0
+assert r.status_code == 200 and _blocks_by_id(r.json())["j2"]["value"] == 0, r.text
+# 数据集里完全不存在的字段仍被拒
+r = client.post(f"/api/reports/{join_rid}/run", json={"links": [{"field": "not_a_field", "value": 1}]})
+assert r.status_code == 400, r.text
 
 # --- 块级口径覆盖 / 仪表盘 / 筛选组件（复用 ltj，记录都是今天创建） ---
 MISC_BLOCKS = [
@@ -1759,6 +1763,292 @@ assert r.status_code == 200 and _blocks_by_id(r.json())["n1"]["value"] == 4, r.t
 
 client.delete(f"/api/reports/{v3_rid}")
 print("报表 v3（块级多数据源/逐块口径/作用域）通过")
+
+# ---------- 报表表达力：组合图/漏斗/同比/占比/分享交互/推送预览 ----------
+as_user(admin_headers)
+from datetime import date as _date, timedelta as _td
+
+_today = _date.today()
+_ly = _today.replace(year=_today.year - 1)   # 去年同期同一天
+CE_FIELDS = [
+    {"field_name": "d", "label": "日期", "data_type": "date", "widget": "date-picker"},
+    {"field_name": "v", "label": "数量", "data_type": "int", "widget": "number"},
+    {"field_name": "c", "label": "渠道", "data_type": "varchar"},
+]
+CE_RECS = [
+    {"d": _today.isoformat(), "v": 10, "c": "A"},
+    {"d": _today.isoformat(), "v": 30, "c": "B"},
+    {"d": (_today - _td(days=2)).isoformat(), "v": 20, "c": "A"},
+    {"d": _ly.isoformat(), "v": 5, "c": "A"},
+    {"d": (_ly - _td(days=2)).isoformat(), "v": 15, "c": "B"},
+]
+ce_tids = {}
+for mode in ("json", "physical"):
+    r = client.post("/api/tables", json={"label": f"图表增强-{mode}", "storage_mode": mode, "fields": CE_FIELDS})
+    assert r.status_code == 200, r.text
+    ce_tids[mode] = r.json()["table"]["id"]
+    for rec in CE_RECS:
+        assert client.post(f"/api/dyn/{ce_tids[mode]}/records", json=rec).status_code == 200
+
+CE_BLOCKS = [
+    {"id": "s1", "type": "stat", "title": "本月数量", "agg": "sum", "field": "v", "date_field": "d",
+     "compare": True, "compare_type": "yoy", "filters": {"logic": "AND", "rules": []}},
+    {"id": "m1", "type": "chart", "title": "组合图", "chart_type": "mixed", "date_field": "d",
+     "group": {"kind": "day", "field": "d"},
+     "metrics": [{"agg": "sum", "field": "v", "title": "销量", "chart": "bar"},
+                 {"agg": "count", "title": "单数", "chart": "line"}],
+     "filters": {"logic": "AND", "rules": []}},
+    {"id": "f1", "type": "chart", "title": "渠道漏斗", "chart_type": "funnel", "date_field": "d",
+     "group": {"kind": "field", "field": "c"}, "agg": "count", "filters": {"logic": "AND", "rules": []}},
+    {"id": "p1", "type": "chart", "title": "渠道占比", "chart_type": "bar", "date_field": "d",
+     "group": {"kind": "field", "field": "c"}, "agg": "sum", "field": "v", "quick_calc": "pct",
+     "filters": {"logic": "AND", "rules": []}},
+    {"id": "c1", "type": "chart", "title": "环比趋势", "chart_type": "line", "date_field": "d",
+     "group": {"kind": "day", "field": "d"}, "agg": "count", "compare": "mom",
+     "filters": {"logic": "AND", "rules": []}},
+    {"id": "fl1", "type": "filter", "title": "渠道", "field": "c", "target": {"mode": "same_dataset"}},
+]
+for mode, tid in ce_tids.items():
+    payload = {
+        "name": f"图表增强报表-{mode}", "table_id": tid, "enabled": False,
+        "range": {"mode": "this_month"}, "blocks": CE_BLOCKS, "layout": None,
+        "datasets": [{"id": "d1", "name": "主表", "base_table_id": tid, "joins": [], "computed_fields": []}],
+        "filter_fields": [], "schedule": {}, "push": {},
+    }
+    r = client.post("/api/reports", json=payload)
+    assert r.status_code == 200, (mode, r.text)
+    ce_rid = r.json()["id"]
+    r = client.post(f"/api/reports/{ce_rid}/run", json={})
+    assert r.status_code == 200, (mode, r.text)
+    b = _blocks_by_id(r.json())
+    # 同比：本月 60 vs 去年同月 20
+    assert b["s1"]["value"] == 60 and b["s1"]["compare"]["type"] == "yoy" and b["s1"]["compare"]["prev"] == 20, (mode, b["s1"])
+    # 组合图：系列带图形标记
+    assert b["m1"]["series"][0]["chart"] == "bar" and b["m1"]["series"][1]["chart"] == "line", (mode, b["m1"])
+    assert b["m1"]["labels"], (mode, b["m1"])
+    # 漏斗：labels/values 与饼图同构
+    assert set(b["f1"]["labels"]) == {"A", "B"} and sum(b["f1"]["values"]) == 3, (mode, b["f1"])
+    # 占比：合计 100%
+    assert abs(sum(b["p1"]["series"][0]["values"]) - 100) < 0.2 and b["p1"]["unit"] == "%", (mode, b["p1"])
+    # 环比对比系列：多一条 compare 虚线系列
+    assert any(s.get("compare") for s in b["c1"]["series"]), (mode, b["c1"])
+
+    # 校验拒绝：组合图指标不足 / 饼图占比 / 字段分组开对比
+    for bad_blocks, kw in [
+        ([{**CE_BLOCKS[1], "id": "x1", "metrics": [{"agg": "sum", "field": "v"}]}], "至少 2 个指标"),
+        ([{**CE_BLOCKS[3], "id": "x2", "chart_type": "pie"}], "饼图"),
+        ([{**CE_BLOCKS[4], "id": "x3", "group": {"kind": "field", "field": "c"}}], "仅支持按日/周/月"),
+    ]:
+        rr = client.post("/api/reports", json={**payload, "name": "负例", "blocks": bad_blocks})
+        assert rr.status_code == 400 and kw in rr.json()["detail"], (mode, kw, rr.text)
+        assert f"区块 {bad_blocks[0]['id']}" in rr.json()["detail"]   # 错误带区块 id（画布标红用）
+
+    # 分享交互：allow_interact 链接可带口径/筛选
+    r = client.post(f"/api/reports/{ce_rid}/share-links", json={"allow_interact": True})
+    assert r.status_code == 200 and r.json()["allow_interact"] is True, r.text
+    token = r.json()["token"]
+    r = client.get(f"/api/share/{token}", params={"mode": "past_30d"})
+    assert r.status_code == 200 and r.json()["allow_interact"] is True, r.text
+    assert "近30天" in r.json()["report"]["range"]["label"] or "近 30 天" in r.json()["report"]["range"]["label"], r.json()["report"]["range"]
+    r = client.get(f"/api/share/{token}", params={"filters": '{"logic":"AND","rules":[{"field":"c","op":"eq","value":"A"}]}'})
+    assert r.status_code == 200, r.text
+    fb = _blocks_by_id(r.json()["report"])["f1"]
+    assert fb["labels"] == ["A"], fb   # 漏斗只剩 A 渠道
+    # 未开放交互的链接忽略口径参数
+    r2 = client.post(f"/api/reports/{ce_rid}/share-links", json={})
+    r3 = client.get(f"/api/share/{r2.json()['token']}", params={"mode": "today"})
+    assert r3.status_code == 200 and r3.json()["allow_interact"] is False
+    assert "本月" in r3.json()["report"]["range"]["label"], r3.json()["report"]["range"]
+
+    # 推送预览：返回主题/邮件 HTML/机器人 Markdown，不发送
+    r = client.post(f"/api/reports/{ce_rid}/preview-push")
+    assert r.status_code == 200, r.text
+    pv = r.json()
+    assert "图表增强报表" in pv["subject"] and "<" in pv["html"] and "###" in pv["markdown"], pv.keys()
+
+    client.delete(f"/api/reports/{ce_rid}")
+
+# AI 清洗层（align_report_config）透传回归：多指标/二级分组/堆叠/对比/占比不能再被静默丢弃
+# （存量 bug：metrics 只在 mixed 分支保留，柱/线/面积图的 AI 多指标清洗后消失）
+from app.database import SessionLocal
+from app.services.llm.gateway import align_report_config
+from app.services.meta_service import get_meta_fields
+
+_db = SessionLocal()
+try:
+    _fields = get_meta_fields(_db, ce_tids["json"])
+    _al = align_report_config({"name": "t", "blocks": [{
+        "type": "chart", "title": "多指标", "chart_type": "bar",
+        "group": {"kind": "day", "field": "d"},
+        "metrics": [{"agg": "count"}, {"agg": "sum", "field": "v", "title": "销量"}],
+        "compare": "mom", "quick_calc": "pct", "stack": True,
+    }]}, _fields)
+    _mb = _al["blocks"][0]
+    assert len(_mb["metrics"]) == 2 and _mb["metrics"][1]["field"] == "v", _al
+    assert _mb["compare"] == "mom" and _mb["quick_calc"] == "pct" and _mb["stack"] is True, _mb
+    _al2 = align_report_config({"name": "t", "blocks": [{
+        "type": "chart", "title": "二级分组", "chart_type": "bar",
+        "group": {"kind": "day", "field": "d"}, "agg": "count", "group2": {"field": "c"}}]}, _fields)
+    assert _al2["blocks"][0]["group2"]["field"] == "c", _al2
+    # 组合图指标不足降级柱状；饼图丢多指标
+    _al3 = align_report_config({"name": "t", "blocks": [{
+        "type": "chart", "title": "组合", "chart_type": "mixed",
+        "group": {"kind": "day", "field": "d"}, "metrics": [{"agg": "count"}]}]}, _fields)
+    assert _al3["blocks"][0]["chart_type"] == "bar" and "metrics" not in _al3["blocks"][0], _al3
+finally:
+    _db.close()
+print("AI 清洗层多指标/二级分组透传通过")
+
+for tid in ce_tids.values():
+    client.delete(f"/api/tables/{tid}")
+print("报表表达力（组合图/漏斗/同比/占比/分享交互/推送预览）通过")
+
+# ---------- P2：明细表服务端分页 / 筛选级联 / 层级钻取覆盖 / 透视表互换 ----------
+as_user(admin_headers)
+p2_tids = {}
+for mode in ("json", "physical"):
+    r = client.post("/api/tables", json={
+        "label": f"P2测试-{mode}", "storage_mode": mode,
+        "fields": [
+            {"field_name": "region", "label": "区域", "data_type": "varchar",
+             "widget": "select", "options": {"options": ["华东", "华北"]}},
+            {"field_name": "city", "label": "城市", "data_type": "varchar",
+             "widget": "select", "options": {"options": ["上海", "杭州", "北京"]}},
+            {"field_name": "v", "label": "数量", "data_type": "int", "widget": "number"},
+        ]})
+    assert r.status_code == 200, r.text
+    p2_tids[mode] = r.json()["table"]["id"]
+    # 60 条华东（上海/杭州各 30）+ 20 条华北（北京）
+    for i in range(60):
+        assert client.post(f"/api/dyn/{p2_tids[mode]}/records",
+                           json={"region": "华东", "city": "上海" if i < 30 else "杭州", "v": i + 1}).status_code == 200
+    for i in range(20):
+        assert client.post(f"/api/dyn/{p2_tids[mode]}/records",
+                           json={"region": "华北", "city": "北京", "v": i + 1}).status_code == 200
+
+for mode, tid in p2_tids.items():
+    P2_BLOCKS = [
+        {"id": "t1", "type": "table", "title": "明细", "columns": ["region", "city", "v"],
+         "date_field": None, "filters": {"logic": "AND", "rules": []}},
+        {"id": "fa", "type": "filter", "title": "区域", "field": "region", "target": {"mode": "same_dataset"}},
+        {"id": "fb", "type": "filter", "title": "城市", "field": "city", "target": {"mode": "same_dataset"}},
+        {"id": "ch", "type": "chart", "title": "区域分布", "chart_type": "bar", "date_field": None,
+         "group": {"kind": "field", "field": "region"}, "agg": "count", "drill_down": {"field": "city"},
+         "filters": {"logic": "AND", "rules": []}},
+        {"id": "pv", "type": "pivot", "title": "交叉", "date_field": None,
+         "row": {"kind": "field", "field": "region"}, "col": {"kind": "field", "field": "city"},
+         "agg": "count", "filters": {"logic": "AND", "rules": []}},
+    ]
+    payload = {
+        "name": f"P2-{mode}", "table_id": tid, "enabled": False,
+        "range": {"mode": "this_month"}, "blocks": P2_BLOCKS, "layout": None,
+        "datasets": [{"id": "d1", "name": "主表", "base_table_id": tid, "joins": [], "computed_fields": []}],
+        "filter_fields": [], "schedule": {}, "push": {},
+    }
+    r = client.post("/api/reports", json=payload)
+    assert r.status_code == 200, (mode, r.text)
+    p2_rid = r.json()["id"]
+
+    # 明细表服务端分页：第 2 页 50 条 → 30 条，total 80；不带参数全量 80
+    r = client.post(f"/api/reports/{p2_rid}/run", json={"block_pages": {"t1": {"page": 2, "page_size": 50}}})
+    assert r.status_code == 200, (mode, r.text)
+    b = _blocks_by_id(r.json())
+    assert b["t1"]["total"] == 80 and len(b["t1"]["rows"]) == 30 and b["t1"]["page"] == 2, (mode, b["t1"]["total"], len(b["t1"]["rows"]))
+    r = client.post(f"/api/reports/{p2_rid}/run", json={})
+    assert len(_blocks_by_id(r.json())["t1"]["rows"]) == 80, mode
+
+    # 筛选级联：区域=华东时，城市筛选块的可选项只剩 上海/杭州
+    r = client.post(f"/api/reports/{p2_rid}/run", json={
+        "filters": {"logic": "AND", "rules": [{"dataset": "d1", "field": "region", "op": "eq", "value": "华东"}]}})
+    b = _blocks_by_id(r.json())
+    assert sorted(b["fb"]["available"]) == ["上海", "杭州"], (mode, b["fb"].get("available"))
+    assert b["fa"]["available"] is None or sorted(b["fa"]["available"]) == ["华东", "华北"], (mode, b["fa"].get("available"))
+
+    # 层级钻取覆盖：块 ch 换成按 city 分组 + 过滤 region=华东（不落库）
+    r = client.post(f"/api/reports/{p2_rid}/run", json={
+        "block_overrides": {"ch": {"group": {"kind": "field", "field": "city"},
+                                   "filters": {"logic": "AND", "rules": [{"field": "region", "op": "eq", "value": "华东"}]}}}})
+    b = _blocks_by_id(r.json())
+    assert sorted(b["ch"]["labels"]) == ["上海", "杭州"], (mode, b["ch"]["labels"])
+    # 覆盖不合法的字段被拒
+    r = client.post(f"/api/reports/{p2_rid}/run", json={"block_overrides": {"ch": {"group": {"kind": "field", "field": "nope"}}}})
+    assert r.status_code == 400, (mode, r.text)
+
+    # 透视表行列互换覆盖
+    r = client.post(f"/api/reports/{p2_rid}/run", json={
+        "block_overrides": {"pv": {"row": {"kind": "field", "field": "city"}, "col": {"kind": "field", "field": "region"}}}})
+    b = _blocks_by_id(r.json())
+    assert sorted(b["pv"]["row_labels"]) == sorted(["上海", "杭州", "北京"]) and sorted(b["pv"]["col_labels"]) == sorted(["华东", "华北"]), (mode, b["pv"])
+
+    # 联动/跳转放宽：字段不是任何图表的分组字段（v 只是数值字段），但只要存在于数据集即可过滤
+    r = client.post(f"/api/reports/{p2_rid}/run", json={"links": [{"field": "v", "value": 5}]})
+    assert r.status_code == 200, (mode, r.text)
+    assert _blocks_by_id(r.json())["t1"]["total"] == 2, (mode, r.text)   # v=5 在两批插入里各一条
+    # 数据集里完全没有的字段仍被拒
+    r = client.post(f"/api/reports/{p2_rid}/run", json={"links": [{"field": "nope", "value": 1}]})
+    assert r.status_code == 400, (mode, r.text)
+
+    # 明细表点列头排序覆盖：按 v 升序第 1 页首行 v=1；非法排序字段 400
+    r = client.post(f"/api/reports/{p2_rid}/run", json={
+        "block_pages": {"t1": {"page": 1, "page_size": 50}},
+        "block_overrides": {"t1": {"sort_by": "v", "sort_order": "asc"}}})
+    b = _blocks_by_id(r.json())
+    vs = [row["v"] for row in b["t1"]["rows"]]
+    # 两批插入 v 有重复（1..60 和 1..20）：第 1 页 = 1,1,…,20,20,21,…,30
+    assert vs == sorted(vs) and vs[0] == 1 and vs[-1] == 30, (mode, vs[:4], vs[-2:])
+    r = client.post(f"/api/reports/{p2_rid}/run", json={"block_overrides": {"t1": {"sort_by": "nope"}}})
+    assert r.status_code == 400, (mode, r.text)
+
+    # 层级钻取校验负例：钻取字段与分组字段相同 → 400 且带区块 id
+    r = client.post("/api/reports", json={**payload, "name": "负例", "blocks": [
+        {**P2_BLOCKS[3], "id": "x1", "drill_down": {"field": "region"}}]})
+    assert r.status_code == 400 and "区块 x1" in r.json()["detail"], (mode, r.text)
+    # 跳转：目标报表不存在 → 400
+    r = client.post("/api/reports", json={**payload, "name": "负例2", "blocks": [
+        {**P2_BLOCKS[3], "id": "x2", "drill_down": None, "on_click": "jump", "jump_report_id": 999999}]})
+    assert r.status_code == 400 and "区块 x2" in r.json()["detail"], (mode, r.text)
+    # 跳转：合法目标（自跳）通过校验
+    r = client.post("/api/reports", json={**payload, "name": "跳转合法", "blocks": [
+        {**P2_BLOCKS[3], "id": "x3", "drill_down": None, "on_click": "jump", "jump_report_id": p2_rid}]})
+    assert r.status_code == 200, (mode, r.text)
+    jump_rid = r.json()["id"]
+    # 求值后跳转/钻取配置透传给前端
+    rb = _blocks_by_id(client.post(f"/api/reports/{jump_rid}/run", json={}).json())["x3"]
+    assert rb["on_click"] == "jump" and rb["jump_report_id"] == p2_rid, rb
+    client.delete(f"/api/reports/{jump_rid}")
+
+    client.delete(f"/api/reports/{p2_rid}")
+for tid in p2_tids.values():
+    client.delete(f"/api/tables/{tid}")
+print("报表 P2（服务端分页/筛选级联/层级钻取/透视表互换/跳转校验）通过")
+
+# ---------- 报表模板市场 + 复制 ----------
+as_user(admin_headers)
+r = client.get("/api/report-templates")
+assert r.status_code == 200 and len(r.json()) >= 6, r.text
+tpl_keys = [t["key"] for t in r.json()]
+tpl_rids = []
+for key in tpl_keys:
+    r = client.post(f"/api/report-templates/{key}/install", json={"with_demo_data": True})
+    assert r.status_code == 200, (key, r.text)
+    rid = r.json()["report_id"]
+    tpl_rids.append(rid)
+    # 安装后即可运行：所有区块都应有结果（示例数据驱动）
+    rr = client.post(f"/api/reports/{rid}/run", json={})
+    assert rr.status_code == 200, (key, rr.text)
+    assert not [b for b in rr.json()["blocks"] if b.get("error")], (key, rr.text)
+# 重复安装复用已有表，不重复建表
+r = client.post(f"/api/report-templates/{tpl_keys[0]}/install", json={"with_demo_data": True})
+assert r.status_code == 200 and "复用" in r.json()["notes"], r.text
+# 复制：名称加副本、默认停用、推送不复制
+r = client.post(f"/api/reports/{tpl_rids[0]}/duplicate")
+assert r.status_code == 200 and r.json()["name"].endswith("（副本）") and r.json()["enabled"] is False, r.text
+dup_id = r.json()["id"]
+assert client.post(f"/api/reports/{dup_id}/run", json={}).status_code == 200
+client.delete(f"/api/reports/{dup_id}")
+for rid in tpl_rids:
+    client.delete(f"/api/reports/{rid}")
+print("报表模板市场/复制通过")
 
 # 清理测试表
 as_user(admin_headers)

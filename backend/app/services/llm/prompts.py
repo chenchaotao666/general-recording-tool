@@ -160,8 +160,9 @@ _REPORT_OUTPUT_EXAMPLE = {
 }
 
 
-def build_report_prompt(description: str, fields: list[dict]) -> str:
-    """把自然语言需求转成报表模板配置。fields: [{field_name, label, data_type, options}]"""
+def build_report_prompt(description: str, fields: list[dict], append: bool = False) -> str:
+    """把自然语言需求转成报表模板配置。fields: [{field_name, label, data_type, options}]
+    append=True 表示用户已有报表、只想追加/调整——只输出本次要求的区块，不重新设计整表。"""
     field_desc = []
     for f in fields:
         item = {"field_name": f["field_name"], "含义": f["label"], "类型": f["data_type"]}
@@ -169,6 +170,15 @@ def build_report_prompt(description: str, fields: list[dict]) -> str:
         if opts:
             item["可选值"] = opts
         field_desc.append(item)
+    intent = (
+        "重要：用户已经有一张报表，本次需求是在其上追加/调整内容。\n"
+        "- 只输出用户本次明确要求的区块（通常 1 个，至多 3 个），不要生成用户没要求的统计卡/明细表/文本小结\n"
+        "- 不要揣摩补充「完整的报表结构」，用户说加一个图就只给一个图\n"
+        "- name 字段给这批新区块起个小标题（会用作追加页签的名称）\n"
+        if append else
+        "5. 区块数量 2~6 个，按「统计卡片 → 图表 → 明细 → 文本小结」组织\n"
+        "6. name 给报表起个简洁的名字\n"
+    )
     return (
         f"用户的报表需求：{description}\n\n"
         f"数据表字段（另有系统字段 id / created_at 创建时间 / updated_at 更新时间）：\n"
@@ -178,15 +188,18 @@ def build_report_prompt(description: str, fields: list[dict]) -> str:
         "this_month 本月 / last_month 上月 / this_quarter 本季度 / this_year 今年；"
         "date_field 统计所依据的日期字段（默认 created_at，也可选业务日期字段）\n"
         "2. blocks 是区块数组，五种类型：\n"
-        "   - stat 统计卡片：{type, title, agg, field, filters, compare}。agg: count 计数（不需要 field）/ count_distinct 去重计数（field 任意字段）/ "
+        "   - stat 统计卡片：{type, title, agg, field, filters, compare, compare_type?}。agg: count 计数（不需要 field）/ count_distinct 去重计数（field 任意字段）/ "
         "sum / avg / max / min（field 必须是 int/decimal 字段）/ ratio 占比%（满足 filters 的记录数 ÷ 口径内总数，不需要 field）；"
-        "compare: true 表示与等长上一期环比（如本周 vs 上周），需要对比时加上\n"
-        "   - chart 图表：{type, title, chart_type, group, agg, field, filters, metrics?, group2?, stack?}。chart_type: bar 柱状 / line 折线 / area 面积 / pie 饼图；"
+        "compare: true 表示对比，compare_type: mom 环比（等长上一期，默认）/ yoy 同比（去年同期）\n"
+        "   - chart 图表：{type, title, chart_type, group, agg, field, filters, metrics?, group2?, stack?, compare?, quick_calc?}。chart_type: bar 柱状 / line 折线 / area 面积 / pie 饼图 / funnel 漏斗 / mixed 组合图（柱线双轴）；"
         "agg 同 stat 但不支持 ratio；"
-        "group.kind: field 按字段分组（field 为分组字段，枚举字段最适合饼图）/ day / week / month 按时间分组（field 必须是日期字段）；"
-        "多系列（饼图不支持，需要对比多个指标或拆分维度时才用）：metrics 多指标数组 [{agg, field, title}]（最多 5 个，用了它就不用顶层 agg/field），"
+        "group.kind: field 按字段分组（field 为分组字段，枚举字段最适合饼图/漏斗）/ day / week / month 按时间分组（field 必须是日期字段）；"
+        "多系列（饼图/漏斗不支持，需要对比多个指标或拆分维度时才用）：metrics 多指标数组 [{agg, field, title}]（最多 5 个，用了它就不用顶层 agg/field），"
         "或 group2: {field} 二级分组（该字段每个取值一个系列，与 metrics 互斥，field 不能是日期字段）；"
-        "stack: true 表示堆叠（仅 bar/line/area 且多系列时）\n"
+        "mixed 组合图必须用 metrics（至少 2 个指标），每个指标可加 chart: bar/line 指定画成柱子还是折线；"
+        "stack: true 表示堆叠（仅 bar/line/area 且多系列时）；"
+        "compare: mom/yoy 给时间分组图表叠加一条对比折线（环比上一期/同比去年同期）；"
+        "quick_calc: pct 表示数值显示为占总计百分比（仅 bar/line/area/mixed）\n"
         "   - pivot 透视表：{type, title, row, col, agg, field, filters, totals?}。行维度 row × 列维度 col 交叉聚合，"
         "row/col 结构同 chart 的 group（{kind, field}，kind 为 field/day/week/month，两者不能相同）；"
         "agg 同 chart（不支持 ratio）；totals: false 可关闭行列合计；"
@@ -197,10 +210,93 @@ def build_report_prompt(description: str, fields: list[dict]) -> str:
         "op 只能是 eq/ne/gt/gte/lt/lte/contains/startswith/in/null/not_null/today（当天）/past_days（过去 N 天含今天）/older_than_days/within_days；"
         "枚举字段的 value 必须从可选值中选；日期字段的值必须是具体日期（YYYY-MM-DD），禁止 today 等字面量——「等于今天」用 today 操作符，「过去一周/一个月」用 past_days 且 value=7/30\n"
         "4. 只使用字段清单中存在的 field_name；数值聚合只能用 int/decimal 字段\n"
-        "5. 区块数量 2~6 个，按「统计卡片 → 图表 → 明细 → 文本小结」组织\n"
-        "6. name 给报表起个简洁的名字\n\n"
+        + intent + "\n"
         f"输出 JSON 格式示例：\n{json.dumps(_REPORT_OUTPUT_EXAMPLE, ensure_ascii=False, indent=2)}\n\n"
         "只输出 JSON。"
+    )
+
+
+# ---------- 报表单区块 AI 配置 ----------
+
+_BLOCK_SPEC_DOCS = {
+    "stat": ("统计卡", '{"title": "显示名", "agg": "count|count_distinct|sum|avg|max|min|ratio", '
+             '"field": "字段或null（count/ratio 不需要）", "compare": true|false（是否对比）, '
+             '"compare_type": "mom|yoy（环比上一期/同比去年同期，compare 为 true 时）", "filters": 筛选}'),
+    "chart": ("图表", '{"title": "显示名", "chart_type": "bar柱状|line折线|area面积|pie饼图|funnel漏斗|gauge仪表盘|mixed组合图", '
+              '"group": {"kind": "field按字段|day按日|week按周|month按月", "field": "分组字段"}, '
+              '"agg": "聚合方式", "field": "数值字段或null", '
+              '"metrics": [{"agg", "field", "title", "chart": "bar|line（仅组合图）"}]（多指标，与顶层 agg/field 二选一）, '
+              '"group2": {"field": "二级分组字段或null"}, "stack": false, "top_n": 8（饼图/漏斗取前N）, '
+              '"compare": "mom|yoy（时间分组的对比折线）", "quick_calc": "pct（占总计%）", '
+              '"max": 100（仅仪表盘满刻度）, "filters": 筛选}'),
+    "pivot": ("透视表", '{"title": "显示名", "row": {"kind": "field|day|week|month", "field": "行维度字段"}, '
+              '"col": {同 row}, "agg": "聚合方式", "field": "数值字段或null", "totals": true（行列合计）, "filters": 筛选}'),
+    "table": ("明细表", '{"title": "显示名", "columns": ["要展示的字段名..."], '
+              '"sort_by": "排序字段", "sort_order": "asc|desc", "filters": 筛选}'),
+    "filter": ("筛选组件", '{"title": "显示名", "field": "供查看者筛选的字段名"}'),
+    "text": ("文本", '{"title": "显示名", "content": "文本内容"}'),
+}
+
+_BLOCK_COMMON_RULES = (
+    "规则：\n"
+    "1. 只使用字段清单中存在的 field_name；数值聚合（sum/avg/max/min）只能用 int/decimal 字段；"
+    "count_distinct 任意字段；count/ratio 不需要 field\n"
+    "2. 按日/周/月分组的字段必须是 date/datetime 类型；二维分组字段不能是日期类型\n"
+    "3. filters 结构：{\"logic\": \"AND\", \"rules\": [{\"field\", \"op\", \"value\"}]}，"
+    "op 从 eq/ne/gt/gte/lt/lte/contains/startswith/in/null/not_null 中选；枚举字段 value 必须从可选值选；"
+    "日期值用 YYYY-MM-DD；不需要筛选时给空 rules\n"
+    "4. 枚举字段分组优先；趋势类按时间分组；占比类用饼图\n"
+)
+
+
+def build_text_content_prompt(description: str, current: dict | None = None) -> str:
+    """文本块 AI 写作：散文内容不走 JSON 协议（模型容易直接输出散文导致解析失败），直接产出文本本身。
+    current: {title?, content?, stats?: [{ref, label}]}——有现存内容时是编辑语义。"""
+    cur = ""
+    stats_doc = ""
+    if current:
+        if current.get("content"):
+            cur = f"当前内容：\n{current['content']}\n\n在上面内容的基础上按需求修改，用户没说改的部分原样保留。\n\n"
+        stats = current.get("stats") or []
+        if stats:
+            stats_doc = ("可用的统计卡变量（写入后查看时会替换成对应统计卡的实时数值）："
+                         + "、".join(f"{s['ref']}={s.get('label') or s['ref']}" for s in stats) + "；\n")
+    return (
+        f"你在为一张数据报表写「文本/小结」区块的内容。用户需求：{description}\n\n"
+        f"{cur}"
+        f"{stats_doc}"
+        "另外还支持变量：{range_label} 时间范围（如 本月（2026-09-01 ~ 2026-09-30)）、{start} 开始日期、{end} 结束日期。\n"
+        "只输出文本内容本身：不要 JSON、不要 markdown 代码围栏、不要首尾引号、不要解释。"
+    )
+
+def build_block_config_prompt(block_type: str, fields: list[dict], description: str,
+                              current: dict | None = None) -> str:
+    """单个报表区块的 AI 配置：类型 + 一句话需求 → 该区块的配置 JSON（不落库，前端合并）。
+    current 非空时是编辑语义：在现有配置上按需求修改，输出完整的修改后配置。"""
+    field_desc = []
+    for f in fields:
+        item = {"field_name": f["field_name"], "含义": f["label"], "类型": f["data_type"]}
+        opts = (f.get("options") or {}).get("options")
+        if opts:
+            item["可选值"] = [o.get("value") if isinstance(o, dict) else o for o in opts]
+        field_desc.append(item)
+    label, spec = _BLOCK_SPEC_DOCS[block_type]
+    current_doc = ""
+    if current:
+        current_doc = (
+            f"该区块的当前配置：\n{json.dumps(current, ensure_ascii=False, indent=2)}\n\n"
+            "在上面当前配置的基础上按用户需求修改，输出完整的修改后配置：\n"
+            "- 用户没要求改的部分原样保留\n"
+            "- 数组字段（如 metrics、columns）必须输出完整数组——「增加一个指标」= 原数组 + 新项一起输出，不能只输出新增的那一项\n\n"
+        )
+    return (
+        f"用户想配置一个报表「{label}」区块，需求：{description}\n\n"
+        f"数据集字段（另有系统字段 id / created_at 创建时间 / updated_at 更新时间）：\n"
+        f"{json.dumps(field_desc, ensure_ascii=False, indent=2)}\n\n"
+        f"{current_doc}"
+        f"输出该区块的配置 JSON，结构：{spec}\n\n"
+        f"{_BLOCK_COMMON_RULES}\n"
+        "只输出配置 JSON 本身（不需要包裹 type/id 字段）。"
     )
 
 

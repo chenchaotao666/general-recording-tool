@@ -177,12 +177,20 @@ export const getReport = (id) => http.get(`/reports/${id}`)
 export const createReport = (p) => http.post('/reports', p)
 export const updateReport = (id, p) => http.put(`/reports/${id}`, p)
 export const deleteReport = (id) => http.delete(`/reports/${id}`)
+export const duplicateReport = (id) => http.post(`/reports/${id}/duplicate`)
 export const toggleReport = (id) => http.post(`/reports/${id}/toggle`)
-export const runReport = (id, range, filters, links, draft) => http.post(`/reports/${id}/run`, { range, filters, links, draft })
+export const listReportTemplates = () => http.get('/report-templates')
+export const installReportTemplate = (key, withDemoData) => http.post(`/report-templates/${key}/install`, { with_demo_data: withDemoData })
+export const runReport = (id, range, filters, links, draft, blockPages, blockOverrides) =>
+  http.post(`/reports/${id}/run`, { range, filters, links, draft, block_pages: blockPages, block_overrides: blockOverrides })
 export const checkExpr = (p) => http.post('/reports/expr-check', p)
 export const drillReport = (id, payload) => http.post(`/reports/${id}/drill`, payload)
-export const aiAssistReport = (tableId, description) => http.post('/reports/ai-assist', { table_id: tableId, description })
+export const aiAssistReport = (tableId, description, append = false) =>
+  http.post('/reports/ai-assist', { table_id: tableId, description, append })
+export const aiAssistBlock = (blockType, description, fields, current) =>
+  http.post('/reports/ai-block-config', { block_type: blockType, description, fields, current })
 export const testPushReport = (id) => http.post(`/reports/${id}/test-push`)
+export const previewPushReport = (id) => http.post(`/reports/${id}/preview-push`)
 export const reportRuns = (id) => http.get(`/reports/${id}/runs`)
 export const reportExportUrl = (id, params) => {
   // filters 是对象，JSON 序列化后作为查询参数

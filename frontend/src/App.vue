@@ -182,4 +182,8 @@ body { margin: 0; font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Micr
 .main { background: #f5f7fa; padding: 20px 24px; overflow-y: auto; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-header h2 { margin: 0; }
+/* AI 生成按钮：全局统一紫色（.el-button 前缀提权，覆盖 EP 默认色） */
+.el-button.ai-btn { background: #9b59b6; border-color: #9b59b6; color: #fff; }
+.el-button.ai-btn:hover, .el-button.ai-btn:focus { background: #8e44ad; border-color: #8e44ad; color: #fff; }
+.el-button.ai-btn.is-disabled, .el-button.ai-btn.is-disabled:hover { background: #c8a6d8; border-color: #c8a6d8; color: #fff; }
 </style>
