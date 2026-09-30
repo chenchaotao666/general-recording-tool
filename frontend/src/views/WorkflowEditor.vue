@@ -92,6 +92,7 @@
             :tables="tables" :providers="providers" :fallback-table-id="fallbackTableId" :vars="upstreamVars"
             :record-fields="recordRuleFields"
             :node-type="selectedNode.data.nodeType" :node-id="selectedNode.id" :workflows="subWorkflowOptions"
+            :reports="allReports"
             @update:model-value="patchSelected({ config: $event })" />
           <el-divider content-position="left">失败处理</el-divider>
           <el-select :model-value="selectedNode.data.on_error?.policy || 'stop'" size="small" style="width: 100%"
@@ -218,7 +219,7 @@ import '@vue-flow/minimap/dist/style.css'
 
 import {
   aiAssistWorkflow, aiExplainWorkflow, aiNodeConfig, checkWorkflow, createWorkflow, getTable, getWorkflow,
-  getWorkflowRun, listProviders, listTables, listWorkflows,
+  getWorkflowRun, listProviders, listReports, listTables, listWorkflows,
   runWorkflow, testRunWorkflow, updateWorkflow, workflowNodeTypes, workflowRuns,
 } from '../api'
 import FlowNode from '../components/workflow/FlowNode.vue'
@@ -257,6 +258,7 @@ const providers = ref([])
 const nodeTypes = ref([])
 const triggerFields = ref([])
 const allWorkflows = ref([])   // 子流程调用节点的下拉数据源
+const allReports = ref([])     // 推送报表节点的下拉数据源
 // 子流程候选：排除自己，且只能是「仅手动运行」的流程（被调用的流程不应有自己的自动触发器）
 const subWorkflowOptions = computed(() =>
   allWorkflows.value.filter((w) => w.id !== wfId.value && (w.trigger?.type || 'manual') === 'manual')
@@ -603,6 +605,11 @@ const OUTPUT_VARS = {
     { label: '审批意见', expr: `{nodes.${n.id}.comment}` },
   ],
   send_message: (n) => [{ label: '发送人数', expr: `{nodes.${n.id}.sent}` }],
+  push_report: (n) => [
+    { label: '发送渠道数', expr: `{nodes.${n.id}.sent}` },
+    { label: '是否跳过（阈值告警）', expr: `{nodes.${n.id}.skipped}` },
+    { label: '口径', expr: `{nodes.${n.id}.range_label}` },
+  ],
   http_request: (n) => [
     { label: 'HTTP 状态码', expr: `{nodes.${n.id}.status}` },
     { label: '响应内容', expr: `{nodes.${n.id}.body}` },
@@ -1223,8 +1230,8 @@ async function onAiGenerate() {
 
 onMounted(async () => {
   window.addEventListener('keydown', onEditorKeydown)
-  ;[tables.value, providers.value, nodeTypes.value, allWorkflows.value] = await Promise.all([
-    listTables(), listProviders(), workflowNodeTypes(), listWorkflows(),
+  ;[tables.value, providers.value, nodeTypes.value, allWorkflows.value, allReports.value] = await Promise.all([
+    listTables(), listProviders(), workflowNodeTypes(), listWorkflows(), listReports(),
   ])
   if (wfId.value) {
     const wf = await getWorkflow(wfId.value)

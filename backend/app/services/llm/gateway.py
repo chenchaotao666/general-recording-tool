@@ -189,23 +189,31 @@ def recognize_form(db: Session, images: list[bytes], fields: list, current: dict
 
 # ---------- 报表 AI 辅助 ----------
 
-_REPORT_RANGE_MODES = {"this_week", "last_week", "this_month", "last_month"}
-_REPORT_AGGS = {"count", "sum", "avg", "max", "min"}
+_REPORT_RANGE_MODES = {"today", "yesterday", "past_7d", "past_30d", "this_week", "last_week",
+                       "this_month", "last_month", "this_quarter", "this_year", "custom"}
+_REPORT_AGGS = {"count", "count_distinct", "sum", "avg", "max", "min", "ratio"}
 _REPORT_CHARTS = {"bar", "line", "pie", "area", "gauge", "mixed", "funnel"}
 _REPORT_GROUP_KINDS = {"field", "day", "week", "month"}
 _REPORT_SYSTEM_FIELDS = {"id", "created_at", "updated_at"}
 _REPORT_DATE_SYSTEM_FIELDS = {"created_at", "updated_at"}
 
 
-def align_report_config(data: dict, fields: list) -> dict:
-    """把 LLM 输出的报表配置对齐到真实字段：丢弃非法字段/区块，数值聚合降级为计数。"""
+def align_report_config(data: dict, fields: list, allow_empty: bool = False) -> dict:
+    """把 LLM 输出的报表配置对齐到真实字段：丢弃非法字段/区块，数值聚合降级为计数。
+    allow_empty=True（追加模式）：允许纯口径调整（只改 range、不加块）。"""
     from ..report_engine import TABLE_LIMIT_MAX
 
     fields_by_name = {f.field_name: f for f in fields}
     notes_extra = []
 
     rng = data.get("range") or {}
+    if rng.get("mode") and rng.get("mode") not in _REPORT_RANGE_MODES:
+        notes_extra.append(f"口径 {rng.get('mode')} 无效，已改为本周")
     mode = rng.get("mode") if rng.get("mode") in _REPORT_RANGE_MODES else "this_week"
+    if mode == "custom" and not (rng.get("start") and rng.get("end")):
+        # 自定义口径缺起止日期运行期必报错：回退本周
+        notes_extra.append("自定义口径缺起止日期，已改为本周")
+        mode = "this_week"
     date_field = rng.get("date_field") or "created_at"
     df = fields_by_name.get(date_field)
     if date_field not in _REPORT_DATE_SYSTEM_FIELDS and (df is None or df.data_type not in ("date", "datetime")):
@@ -232,14 +240,40 @@ def align_report_config(data: dict, fields: list) -> dict:
     def numeric_or_count(b, out):
         agg = b.get("agg") if b.get("agg") in _REPORT_AGGS else "count"
         field = b.get("field")
-        if agg != "count":
+        # count/ratio 不需要统计字段；count_distinct 的 field 可为任意类型；sum/avg/max/min 必须数值字段
+        if agg not in ("count", "ratio"):
             f = fields_by_name.get(field or "")
-            if f is None or f.data_type not in ("int", "decimal"):
+            need_numeric = agg in ("sum", "avg", "max", "min")
+            if f is None or (need_numeric and f.data_type not in ("int", "decimal")):
                 notes_extra.append(f"「{out.get('title') or b.get('type')}」的聚合字段无效，已降级为计数")
                 agg, field = "count", None
         out["agg"] = agg
-        if agg != "count":
+        if agg not in ("count", "ratio"):
             out["field"] = field
+
+    def block_extras(b, out):
+        """块级时间口径透传：range_mode（自定义时带起止）+ 块级日期字段。"""
+        rm = b.get("range_mode")
+        if rm == "custom" and not (b.get("range_start") and b.get("range_end")):
+            # custom 缺起止日期会在运行期报错：丢弃口径，跟随全局
+            notes_extra.append(f"「{out.get('title') or b.get('type')}」的自定义口径缺起止日期，已跟随全局")
+            rm = None
+        if rm and rm in _REPORT_RANGE_MODES:
+            out["range_mode"] = rm
+            if rm == "custom":
+                if b.get("range_start"):
+                    out["range_start"] = str(b["range_start"])[:10]
+                if b.get("range_end"):
+                    out["range_end"] = str(b["range_end"])[:10]
+        elif rm:
+            notes_extra.append(f"「{out.get('title') or b.get('type')}」的块级口径 {rm} 无效，已跟随全局")
+        bdf = b.get("date_field")
+        if bdf:
+            bf = fields_by_name.get(bdf)
+            if bdf in _REPORT_DATE_SYSTEM_FIELDS or (bf is not None and bf.data_type in ("date", "datetime")):
+                out["date_field"] = bdf
+            else:
+                notes_extra.append(f"「{out.get('title') or b.get('type')}」的日期字段 {bdf} 无效，已跟随全局")
 
     blocks, stat_seq = [], 0
     for b in data.get("blocks") or []:
@@ -252,6 +286,7 @@ def align_report_config(data: dict, fields: list) -> dict:
             out["id"] = f"b{stat_seq}"   # text 占位符按 stat 顺序编号
             numeric_or_count(b, out)
             out["filters"] = clean_filters(b.get("filters"))
+            block_extras(b, out)
             # 对比透传（环比/同比）
             if b.get("compare"):
                 out["compare"] = True
@@ -276,6 +311,7 @@ def align_report_config(data: dict, fields: list) -> dict:
                 "chart_type": chart_type, "group": {"kind": gkind, "field": gfield},
                 "filters": clean_filters(b.get("filters")),
             })
+            block_extras(b, out)
             # 多指标清洗（饼图/漏斗不支持多系列）：agg/字段逐个校验，无效聚合降级为计数。
             # 原来只在 mixed 分支保留 metrics，导致柱/线/面积图的 AI 多指标被静默丢弃
             ms_in = [m for m in (b.get("metrics") or []) if isinstance(m, dict) and m.get("agg")]
@@ -312,9 +348,22 @@ def align_report_config(data: dict, fields: list) -> dict:
                 out["compare"] = b["compare"]
             if b.get("quick_calc") == "pct" and chart_type in ("bar", "line", "area", "mixed"):
                 out["quick_calc"] = "pct"
+            # 层级钻取：按字段分组时可下钻到下一层字段（不能与联动/跳转同时用，AI 不用 jump——目标报表 id 只能人工选）
+            dd = (b.get("drill_down") or {}).get("field")
+            if dd and gkind == "field" and chart_type in ("bar", "line", "area") and not out.get("on_click"):
+                if dd in fields_by_name and dd != gfield:
+                    out["drill_down"] = {"field": dd}
+                else:
+                    notes_extra.append(f"「{out['title'] or '图表'}」的层级钻取字段无效，已忽略")
             if b.get("on_click") in ("drill", "link"):
                 out["on_click"] = b["on_click"]
-            if chart_type in ("pie", "funnel"):
+            # 取前 N 项：字段分组的图都支持（饼图/漏斗缺省 8 也有 top_n 语义）
+            if b.get("top_n") is not None and gkind == "field":
+                try:
+                    out["top_n"] = min(max(int(b.get("top_n")), 2), 30)
+                except (TypeError, ValueError):
+                    pass
+            elif chart_type in ("pie", "funnel"):
                 try:
                     out["top_n"] = min(max(int(b.get("top_n") or 8), 2), 30)
                 except (TypeError, ValueError):
@@ -348,13 +397,19 @@ def align_report_config(data: dict, fields: list) -> dict:
                 continue
             numeric_or_count(b, out)
             out.update({"row": dims["row"], "col": dims["col"], "filters": clean_filters(b.get("filters"))})
+            block_extras(b, out)
             if b.get("totals") is False:
                 out["totals"] = False
+            # 透视表行/列取前 N 项（引擎约束：行 1~100、列 1~20）
+            for key, lo, hi in (("row_top_n", 1, 100), ("col_top_n", 1, 20)):
+                if b.get(key) is not None:
+                    try:
+                        out[key] = min(max(int(b[key]), lo), hi)
+                    except (TypeError, ValueError):
+                        pass
         elif t == "table":
+            # 空列 = 默认全部字段（引擎运行期展开），合法保留
             cols = [c for c in (b.get("columns") or []) if c in fields_by_name or c in _REPORT_SYSTEM_FIELDS]
-            if not cols:
-                notes_extra.append(f"「{out['title'] or '明细表'}」没有有效列，已跳过")
-                continue
             sort_by = b.get("sort_by")
             if sort_by not in fields_by_name and sort_by not in _REPORT_SYSTEM_FIELDS:
                 sort_by = "created_at"
@@ -367,6 +422,17 @@ def align_report_config(data: dict, fields: list) -> dict:
                 "sort_order": "asc" if b.get("sort_order") == "asc" else "desc",
                 "limit": limit, "filters": clean_filters(b.get("filters")),
             })
+            block_extras(b, out)
+        elif t == "filter":
+            # 查看端自助筛选块：field 必须是真实字段；target 指定作用域
+            ff = b.get("field")
+            if ff not in fields_by_name:
+                notes_extra.append(f"筛选块的字段无效（{ff}），已跳过")
+                continue
+            out["field"] = ff
+            tgt = b.get("target") or {}
+            if tgt.get("mode") == "blocks" and tgt.get("block_ids"):
+                out["target"] = {"mode": "blocks", "block_ids": [str(x) for x in tgt["block_ids"]]}
         elif t == "text":
             out["content"] = str(b.get("content") or "")
         else:
@@ -381,16 +447,83 @@ def align_report_config(data: dict, fields: list) -> dict:
             seq += 1
             b["id"] = f"b{seq}"
 
-    if not blocks:
+    if not blocks and not allow_empty:
         raise LLMError("模型没有生成任何有效的报表区块，请换一种描述再试")
+
+    # ---- 报表设置透传：schedule / guard / push（仅用户明确要求时模型才输出） ----
+    settings_extra = {}
+
+    sch = data.get("schedule") or {}
+    if sch:
+        from ..scheduler import trigger_of
+        trig = trigger_of({"type": sch.get("type"), "minutes": sch.get("minutes"), "expr": sch.get("expr")})
+        if trig is not None:
+            settings_extra["schedule"] = (
+                {"type": "interval", "minutes": int(sch["minutes"])}
+                if sch.get("type") == "interval"
+                else {"type": "cron", "expr": str(sch.get("expr"))}
+            )
+            settings_extra["enabled"] = False   # AI 配的推送默认停用，用户到设置里确认渠道后才启用
+        else:
+            notes_extra.append("推送周期无效，已忽略")
+
+    guard_in = data.get("guard") or {}
+    guard_rules = []
+    # 统计卡在 align 里被重新编号（b1/b2…按顺序），guard 的 block_id 按 align 后的实际 id 校验
+    for r in (guard_in.get("rules") or []):
+        if not isinstance(r, dict):
+            continue
+        bid = r.get("block_id")
+        target = next((b for b in blocks if b.get("type") == "stat" and b.get("id") == bid), None)
+        if target is None:
+            notes_extra.append(f"阈值告警引用的统计卡 {bid} 不存在，已忽略该条件")
+            continue
+        try:
+            val = float(r.get("value"))
+        except (TypeError, ValueError):
+            notes_extra.append("阈值告警的数值无效，已忽略该条件")
+            continue
+        op = r.get("op") if r.get("op") in ("gt", "gte", "lt", "lte", "eq", "ne") else "gt"
+        guard_rules.append({"block_id": target["id"], "op": op, "value": val})
+
+    push_in = data.get("push") or {}
+    push_out = {}
+    if push_in.get("recipients"):
+        push_out["recipients"] = str(push_in["recipients"])
+    whs = [
+        {"type": w.get("type") if w.get("type") in ("wecom", "dingtalk", "custom") else "custom",
+         "url": str(w.get("url") or "").strip()}
+        for w in (push_in.get("webhooks") or []) if isinstance(w, dict) and str(w.get("url") or "").startswith(("http://", "https://"))
+    ]
+    if whs:
+        push_out["webhooks"] = whs
+    fmts = [f for f in (push_in.get("formats") or []) if f in ("html_inline", "xlsx")]
+    if fmts:
+        push_out["formats"] = fmts
+    if push_in.get("subject"):
+        push_out["subject"] = str(push_in["subject"])[:128]
+    # guard 挂在 push 里（与模板存储结构一致 push_json.guard）
+    if guard_rules:
+        push_out["guard"] = {"logic": "OR" if guard_in.get("logic") == "OR" else "AND", "rules": guard_rules}
+    if push_out and "schedule" in settings_extra:
+        settings_extra["push"] = push_out
+    elif push_out.get("guard"):
+        # 只有阈值告警（没提周期/渠道）：保留进 push，用户在设置里补周期后生效
+        settings_extra["push"] = {"guard": push_out["guard"]}
+        notes_extra.append("已配置阈值告警，到设置里补执行周期和推送渠道后生效")
+    elif push_out:
+        notes_extra.append("推送渠道需要有执行周期才会生效，已忽略（用户没提周期）")
 
     notes = str(data.get("notes") or "")
     if notes_extra:
         notes = (notes + "；" if notes else "") + "；".join(notes_extra)
     return {
         "name": str(data.get("name") or "")[:128] or "AI 报表",
-        "range": {"mode": mode, "date_field": date_field},
+        "range": {"mode": mode, "date_field": date_field,
+                  **({"start": str(rng["start"])[:10], "end": str(rng.get("end") or rng["start"])[:10]}
+                     if mode == "custom" and rng.get("start") else {})},
         "blocks": blocks,
+        **settings_extra,
         "notes": notes,
     }
 
@@ -415,7 +548,7 @@ def assist_report(db: Session, fields: list, description: str, append: bool = Fa
             data = extract_json(raw)
             if not isinstance(data.get("blocks"), list):
                 raise ValueError("输出缺少 blocks 数组")
-            return align_report_config(data, fields)
+            return align_report_config(data, fields, allow_empty=append)
         except LLMError:
             raise
         except Exception as e:
@@ -451,7 +584,10 @@ def assist_block_config(db: Session, fields: list, block_type: str, description:
             if block_type == "text":
                 from .prompts import build_text_content_prompt
                 raw = provider.complete(
-                    build_text_content_prompt(description, current=current), system=REPORT_SYSTEM)
+                    build_text_content_prompt(description, current=current),
+                    # 不用 REPORT_SYSTEM（它要求只输出 JSON，与散文写作冲突，模型会交出空白）；
+                    # system 里也不要写「不要 JSON」这类否定式指令（实测会让模型输出空白）
+                    system="你是报表文案撰写助手。按用户需求撰写报表文本/小结，直接输出撰写好的文本。")
                 content = raw.strip()
                 if content.startswith("```"):
                     content = content.strip("`")

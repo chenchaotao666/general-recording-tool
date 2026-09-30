@@ -489,6 +489,43 @@ assert r.status_code == 200, r.text
 r = client.post(f"/api/reports/{wh_id}/test-push")
 assert r.status_code == 400 and "未配置推送渠道" in r.json()["detail"], r.text
 
+# 阈值告警：统计卡数值不满足条件 → 静默跳过（skipped，不发送）；满足 → 正常发
+r = client.put(f"/api/reports/{wh_id}", json={
+    "name": "推送报表", "table_id": tj, "enabled": True,
+    "range": {"mode": "today", "date_field": "created_at"}, "blocks": BLOCKS_P0,
+    "schedule": {"type": "interval", "minutes": 60},
+    "push": {"webhooks": [{"type": "wecom", "url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=ok1"}],
+             "guard": {"logic": "AND", "rules": [{"block_id": "b1", "op": "gt", "value": 99999}]}},
+})
+assert r.status_code == 200, r.text
+calls_before = len(wh_calls)
+re_mod.httpx.post = _fake_post
+try:
+    r = client.post(f"/api/reports/{wh_id}/test-push")
+finally:
+    re_mod.httpx.post = _orig_post
+assert r.status_code == 200 and r.json().get("skipped") is True and r.json()["sent"] == 0, r.text
+assert len(wh_calls) == calls_before, "条件不满足时不应发送"
+runs = client.get(f"/api/reports/{wh_id}/runs").json()
+assert runs[0]["skipped"] is True and runs[0]["sent_count"] == 0, runs[0]
+# 多条件：AND 一个不满足即跳过；OR 一个满足即发送
+r = client.put(f"/api/reports/{wh_id}", json={
+    "name": "推送报表", "table_id": tj, "enabled": True,
+    "range": {"mode": "today", "date_field": "created_at"}, "blocks": BLOCKS_P0,
+    "schedule": {"type": "interval", "minutes": 60},
+    "push": {"webhooks": [{"type": "wecom", "url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=ok1"}],
+             "guard": {"logic": "OR", "rules": [{"block_id": "b1", "op": "gt", "value": 99999},
+                                                 {"block_id": "b1", "op": "gte", "value": 0}]}},
+})
+re_mod.httpx.post = _fake_post
+try:
+    r = client.post(f"/api/reports/{wh_id}/test-push")
+finally:
+    re_mod.httpx.post = _orig_post
+assert r.status_code == 200 and r.json()["sent"] == 1 and not r.json().get("skipped"), r.text
+assert len(wh_calls) == calls_before + 1, "OR 任一满足应发送"
+print("报表阈值告警（条件不满足跳过/多条件 OR 满足发送/日志标记）通过")
+
 client.delete(f"/api/reports/{wh_id}")
 print("报表 Webhook 推送（协议/失败汇总/无渠道报错）通过")
 

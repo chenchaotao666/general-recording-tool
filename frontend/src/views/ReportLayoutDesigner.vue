@@ -354,59 +354,134 @@
       </template>
     </el-drawer>
 
-    <!-- 模板设置：描述 + 定时推送（名称/全局时间在顶栏编辑，AI 生成在顶栏） -->
-    <el-drawer v-model="settingsVisible" title="报表设置" size="520px">
-      <el-form label-width="90px">
-        <el-form-item label="描述">
-          <el-input v-model="settingsForm.description" placeholder="选填" />
-        </el-form-item>
+    <!-- 模板设置：描述 + 定时推送（名称/全局口径在顶栏编辑，AI 生成在顶栏） -->
+    <el-drawer v-model="settingsVisible" title="报表设置" size="520px" class="rp-settings">
+      <el-form label-position="top" size="small">
+        <div class="set-sec">
+          <div class="set-sec-title">基本信息</div>
+          <el-form-item label="描述">
+            <el-input v-model="settingsForm.description" placeholder="选填" />
+          </el-form-item>
+        </div>
 
-        <el-divider content-position="left">定时推送（可选）</el-divider>
-        <el-form-item label="执行周期">
-          <el-radio-group v-model="settingsForm.schedule.type">
-            <el-radio value="">不定时</el-radio>
-            <el-radio value="interval">每隔</el-radio>
-            <el-radio value="cron">cron</el-radio>
-          </el-radio-group>
-          <template v-if="settingsForm.schedule.type === 'interval'">
-            <el-input-number v-model="settingsForm.schedule.minutes" :min="1" controls-position="right" style="margin: 0 8px; width: 110px" />
-            分钟
-          </template>
-          <template v-else-if="settingsForm.schedule.type === 'cron'">
-            <el-input v-model="settingsForm.schedule.expr" style="width: 150px; margin-left: 8px" placeholder="分 时 日 月 周" />
-          </template>
-        </el-form-item>
-        <template v-if="settingsForm.schedule.type">
-          <el-form-item label="收件邮箱">
-            <el-input v-model="settingsForm.push.recipients" placeholder="多个用逗号分隔" />
-          </el-form-item>
-          <el-form-item label="群机器人">
-            <div style="width: 100%">
-              <div v-for="(wh, i) in settingsForm.push.webhooks" :key="i" style="display: flex; gap: 8px; margin-bottom: 8px">
-                <el-select v-model="wh.type" style="width: 100px">
-                  <el-option label="企业微信" value="wecom" />
-                  <el-option label="钉钉" value="dingtalk" />
-                  <el-option label="自定义" value="custom" />
-                </el-select>
-                <el-input v-model="wh.url" placeholder="Webhook 地址" style="flex: 1" />
-                <el-button text type="danger" @click="settingsForm.push.webhooks.splice(i, 1)">删</el-button>
-              </div>
-              <el-button text type="primary" size="small" @click="settingsForm.push.webhooks.push({ type: 'wecom', url: '' })">+ 添加机器人</el-button>
+        <div class="set-sec">
+          <div class="set-sec-title">
+            定时推送
+            <el-switch v-model="settingsForm.enabled" size="small" style="margin-left: 10px"
+              :disabled="!settingsForm.schedule.type" active-text="启用" />
+          </div>
+          <div class="set-sec-desc">配好周期和渠道后开启；启用后按周期自动生成并推送报表</div>
+
+          <!-- 执行周期：与工作流触发器的「触发频率」同款交互（间隔 / Cron 可视化构建器） -->
+          <el-form-item label="执行周期">
+            <el-radio-group v-model="settingsForm.schedule.type" size="small">
+              <el-radio-button value="">不定时</el-radio-button>
+              <el-radio-button value="interval">间隔</el-radio-button>
+              <el-radio-button value="cron">Cron</el-radio-button>
+            </el-radio-group>
+            <div v-if="settingsForm.schedule.type === 'interval'" class="mt row">
+              <span>每</span>
+              <el-input-number v-model="settingsForm.schedule.minutes" :min="1" size="small" controls-position="right" style="width: 100px" />
+              <span>分钟</span>
             </div>
+            <template v-else-if="settingsForm.schedule.type === 'cron'">
+              <div class="mt row">
+                <el-select v-model="cronMode" size="small" style="width: 170px">
+                  <el-option label="每小时" value="hour" />
+                  <el-option label="每天" value="day" />
+                  <el-option label="每周" value="week" />
+                  <el-option label="每月" value="month" />
+                  <el-option label="自定义（cron 表达式）" value="custom" />
+                </el-select>
+                <template v-if="cronMode === 'hour'">
+                  <span>第</span>
+                  <el-input-number v-model="cronMinute" :min="0" :max="59" size="small" controls-position="right" style="width: 80px" />
+                  <span>分</span>
+                </template>
+                <template v-else-if="cronMode !== 'custom'">
+                  <el-select v-if="cronMode === 'week'" v-model="cronWeek" size="small" style="width: 90px">
+                    <el-option v-for="(w, i) in ['周一', '周二', '周三', '周四', '周五', '周六', '周日']" :key="i" :label="w" :value="i" />
+                  </el-select>
+                  <template v-if="cronMode === 'month'">
+                    <el-input-number v-model="cronDom" :min="1" :max="31" size="small" controls-position="right" style="width: 80px" />
+                    <span>日</span>
+                  </template>
+                  <el-time-picker v-model="cronTime" size="small" format="HH:mm" value-format="HH:mm"
+                    placeholder="时间" style="width: 110px" />
+                </template>
+              </div>
+              <el-input v-if="cronMode === 'custom'" v-model="settingsForm.schedule.expr" size="small" class="mt"
+                placeholder="cron 表达式：分 时 日 月 周（周一 = 0，周日 = 6）" />
+              <div class="mt hint">实际生效：{{ settingsForm.schedule.expr }}</div>
+            </template>
           </el-form-item>
-          <el-form-item label="推送内容">
-            <el-checkbox-group v-model="settingsForm.push.formats">
-              <el-checkbox value="html_inline">邮件正文</el-checkbox>
-              <el-checkbox value="xlsx">Excel 附件</el-checkbox>
-            </el-checkbox-group>
-          </el-form-item>
-          <el-form-item label="邮件主题">
-            <el-input v-model="settingsForm.push.subject" placeholder="默认：【报表名】时间范围" />
-          </el-form-item>
-          <el-form-item label="启用推送">
-            <el-switch v-model="settingsForm.enabled" />
-          </el-form-item>
-        </template>
+
+          <template v-if="settingsForm.schedule.type">
+            <div class="set-sub">推送渠道</div>
+            <el-form-item label="收件邮箱">
+              <!-- 与工作流「接收邮箱」同款：标签式录入，回车添加、逐个校验格式 -->
+              <el-select :model-value="recipientsList" multiple filterable allow-create default-first-option
+                placeholder="输入邮箱后回车，可添加多个" style="width: 100%" @update:model-value="setRecipients">
+                <el-option v-for="r in recipientsList" :key="r" :label="r" :value="r" />
+              </el-select>
+            </el-form-item>
+            <!-- 群机器人：通道选择与工作流「发送通知」节点的通道同款（完整名称下拉） -->
+            <el-form-item label="群机器人">
+              <div style="width: 100%">
+                <div v-for="(wh, i) in settingsForm.push.webhooks" :key="i" class="wh-row">
+                  <el-select v-model="wh.type" size="small" style="width: 140px">
+                    <el-option label="企业微信机器人" value="wecom" />
+                    <el-option label="钉钉机器人" value="dingtalk" />
+                    <el-option label="自定义 Webhook" value="custom" />
+                  </el-select>
+                  <el-input v-model="wh.url" size="small" placeholder="Webhook 地址" style="flex: 1" />
+                  <el-button text type="danger" size="small" @click="settingsForm.push.webhooks.splice(i, 1)">删</el-button>
+                </div>
+                <el-button text type="primary" size="small" @click="settingsForm.push.webhooks.push({ type: 'wecom', url: '' })">+ 添加机器人</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item label="推送内容">
+              <el-checkbox-group v-model="settingsForm.push.formats" size="small">
+                <el-checkbox value="html_inline">邮件正文</el-checkbox>
+                <el-checkbox value="xlsx">Excel 附件</el-checkbox>
+              </el-checkbox-group>
+            </el-form-item>
+            <el-form-item label="邮件主题">
+              <el-input v-model="settingsForm.push.subject" placeholder="默认：【报表名】时间范围" />
+            </el-form-item>
+
+            <div class="set-sub">阈值告警</div>
+            <!-- 阈值告警：多条件（全部/任一满足才发送，与区块筛选同款规则行） -->
+            <el-checkbox
+              :model-value="!!settingsForm.push.guard?.rules?.length"
+              size="small"
+              @change="onGuardToggle"
+            >仅当条件满足时才发送</el-checkbox>
+            <div v-if="settingsForm.push.guard?.rules?.length" class="guard-box">
+              <div class="guard-logic">
+                满足
+                <el-radio-group v-model="settingsForm.push.guard.logic" size="small">
+                  <el-radio-button value="AND">全部条件</el-radio-button>
+                  <el-radio-button value="OR">任一条件</el-radio-button>
+                </el-radio-group>
+                时才发送
+              </div>
+              <div v-for="(r, ri) in settingsForm.push.guard.rules" :key="ri" class="guard-row">
+                <el-select v-model="r.block_id" size="small" style="flex: 1" placeholder="选择统计卡">
+                  <el-option v-for="s in statBlocks" :key="s.id" :label="s.title || s.id" :value="s.id" />
+                </el-select>
+                <el-select v-model="r.op" size="small" style="width: 64px">
+                  <el-option v-for="[v, l] in GUARD_OPS" :key="v" :label="l" :value="v" />
+                </el-select>
+                <el-input-number v-model="r.value" size="small" controls-position="right" style="width: 100px" />
+                <el-button text type="danger" size="small" @click="settingsForm.push.guard.rules.splice(ri, 1)">删</el-button>
+              </div>
+              <el-button text type="primary" size="small" @click="addGuardRule">+ 添加条件</el-button>
+              <div class="hint">条件不满足时本次不发送，推送日志标记「条件未满足」</div>
+            </div>
+            <div v-if="settingsForm.push.guard?.rules?.length && !statBlocks.length" class="hint">还没有统计卡区块，先加一个</div>
+          </template>
+        </div>
       </el-form>
       <template #footer>
         <el-button :loading="pushPreviewLoading" @click="onPreviewPush">预览推送内容</el-button>
@@ -1376,6 +1451,70 @@ const settingsForm = reactive({
   push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', webhooks: [] },
 })
 
+// ---------- 阈值告警（推送守卫：多条件，全部/任一满足才发送） ----------
+const GUARD_OPS = [['gt', '>'], ['gte', '≥'], ['lt', '<'], ['lte', '≤'], ['eq', '='], ['ne', '≠']]
+
+function onGuardToggle(v) {
+  settingsForm.push.guard = v
+    ? { logic: 'AND', rules: [{ block_id: statBlocks.value[0]?.id || null, op: 'gt', value: 0 }] }
+    : undefined
+}
+
+function addGuardRule() {
+  settingsForm.push.guard.rules.push({ block_id: statBlocks.value[0]?.id || null, op: 'gt', value: 0 })
+}
+
+// 收件邮箱：标签数组 ⇄ 逗号分隔字符串（后端 push.recipients 的存储格式），逐个校验格式
+const recipientsList = computed(() =>
+  String(settingsForm.push.recipients || '').split(/[,，\n]/).map((s) => s.trim()).filter(Boolean))
+
+function setRecipients(list) {
+  const re = /^\S+@\S+\.\S+$/
+  const bad = list.filter((s) => !re.test(s))
+  if (bad.length) ElMessage.warning(`已忽略格式不正确的邮箱：${bad.join('、')}`)
+  settingsForm.push.recipients = list.filter((s) => re.test(s)).join(',')
+}
+
+// ---------- 执行周期：Cron 可视化构建器（与工作流触发频率同款；APScheduler 周一=0） ----------
+const cronMode = ref('day')
+const cronMinute = ref(0)          // 每小时模式：第几分
+const cronTime = ref('09:00')      // 天/周/月模式：HH:mm
+const cronWeek = ref(0)            // 周一 = 0
+const cronDom = ref(1)             // 每月几号
+
+function parseCron(expr) {
+  const p = (expr || '').trim().split(/\s+/)
+  if (p.length !== 5) return 'custom'
+  const [m, h, dom, , dow] = p
+  const num = (s) => /^\d+$/.test(s)
+  if (num(m) && h === '*' && dom === '*' && dow === '*') { cronMinute.value = Number(m); return 'hour' }
+  if (num(m) && num(h) && dom === '*' && dow === '*') {
+    cronTime.value = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`; return 'day'
+  }
+  if (num(m) && num(h) && dom === '*' && num(dow)) {
+    cronTime.value = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`; cronWeek.value = Number(dow) % 7; return 'week'
+  }
+  if (num(m) && num(h) && num(dom) && dow === '*') {
+    cronTime.value = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`; cronDom.value = Number(dom); return 'month'
+  }
+  return 'custom'
+}
+
+function buildCron() {
+  const [h, m] = (cronTime.value || '09:00').split(':').map(Number)
+  switch (cronMode.value) {
+    case 'hour': return `${cronMinute.value} * * * *`
+    case 'day': return `${m} ${h} * * *`
+    case 'week': return `${m} ${h} * * ${cronWeek.value}`
+    case 'month': return `${m} ${h} ${cronDom.value} * *`
+    default: return settingsForm.schedule.expr
+  }
+}
+
+watch([cronMode, cronMinute, cronTime, cronWeek, cronDom], () => {
+  if (cronMode.value !== 'custom') settingsForm.schedule.expr = buildCron()
+})
+
 function openSettings() {
   const t = tpl.value
   Object.assign(settingsForm, {
@@ -1383,6 +1522,8 @@ function openSettings() {
     schedule: { type: '', minutes: 60, expr: '0 9 * * 1', ...(t.schedule || {}) },
     push: { recipients: '', formats: ['html_inline', 'xlsx'], subject: '', webhooks: [], ...(t.push || {}) },
   })
+  // Cron 构建器按已存表达式反向解析回填
+  cronMode.value = parseCron(settingsForm.schedule.expr)
   settingsVisible.value = true
 }
 
@@ -1480,6 +1621,18 @@ async function aiApply() {
     } : {}),
   }))
 
+  // AI 配的报表设置（执行周期/推送渠道/阈值告警）：应用进模板；推送默认停用，用户到设置里确认后启用
+  const aiSchedule = aiResult.value.schedule
+  if (aiSchedule?.type) {
+    tpl.value.schedule = aiSchedule.type === 'interval'
+      ? { type: 'interval', minutes: aiSchedule.minutes }
+      : { type: 'cron', expr: aiSchedule.expr }
+    tpl.value.enabled = false
+  }
+  if (aiResult.value.push) {
+    tpl.value.push = { recipients: '', formats: ['html_inline'], subject: '', webhooks: [], ...aiResult.value.push }
+    tpl.value.enabled = false
+  }
   if (aiMode.value === 'replace') {
     tpl.value.blocks = mapped
     pages.value = autoLayout(tpl.value.blocks).pages
@@ -1488,6 +1641,22 @@ async function aiApply() {
     if (!tpl.value.name.trim()) tpl.value.name = aiResult.value.name
   } else {
     // 追加模式：AI 生成的块 id（b1/b2…）可能与现有冲突，统一重新分配；不动现有布局
+    if (!mapped.length) {
+      // 纯口径调整（blocks 为空）：只改全局口径，不加块
+      const r = aiResult.value.range
+      if (r?.mode) {
+        tpl.value.range = { mode: r.mode, start: r.start || null, end: r.end || null }
+        aiVisible.value = false
+        settingsVisible.value = false
+        dirty.value = true
+        commit()
+        ElMessage.success('已调整全局口径')
+        refreshData(true)
+        return
+      }
+      ElMessage.warning('AI 没有生成任何内容，换个说法试试')
+      return
+    }
     for (const b of mapped) b.id = nextBlockId()
     tpl.value.blocks.push(...mapped)
     if (aiMode.value === 'append_page') {
@@ -1890,6 +2059,30 @@ onBeforeUnmount(() => {
 /* 抽屉标题与正文的间距收紧（el-drawer 标题默认 32px 太大；EP 不透传自定义 class 到抽屉根，按页面作用域统一收紧） */
 .rp-designer :deep(.el-drawer__header) { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #f2f6fc; }
 .dsd-head { display: flex; align-items: center; gap: 14px; }
+
+/* ---------- 报表设置抽屉：分区卡片化 ---------- */
+.rp-settings :deep(.el-form-item) { margin-bottom: 10px; }
+.rp-settings :deep(.el-form-item__label) { padding-bottom: 2px !important; font-size: 12px; color: #606266; }
+.rp-settings .hint { font-size: 12px; color: #909399; line-height: 1.6; margin-top: 6px; }
+.rp-settings .mt { margin-top: 8px; }
+.rp-settings .row { display: flex; align-items: center; gap: 8px; }
+/* 表单项内容是 flex-wrap 布局：构建器行占满整行换到 radio 组下方（否则会贴在同一行右侧） */
+.rp-settings .mt.row { flex-basis: 100%; }
+.rp-settings .row > span { color: #606266; font-size: 12px; }
+.set-sec {
+  border: 1px solid #ebeef5; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
+  background: #fff;
+}
+.set-sec-title { font-size: 13px; font-weight: 600; color: #303133; display: flex; align-items: center; margin-bottom: 4px; }
+.set-sec-desc { font-size: 12px; color: #909399; margin-bottom: 10px; line-height: 1.6; }
+.set-sub {
+  font-size: 12px; font-weight: 600; color: #909399; margin: 12px 0 8px;
+  padding-top: 10px; border-top: 1px dashed #ebeef5;
+}
+.wh-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+.guard-box { margin-top: 8px; border: 1px solid #ebeef5; border-radius: 8px; padding: 10px 12px; background: #fafbfc; }
+.guard-logic { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #606266; margin-bottom: 8px; }
+.guard-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .dsd-title { font-size: 16px; font-weight: 600; color: #303133; }
 .dsd-name { width: 220px; }
 .src-sec { margin-bottom: 22px; }

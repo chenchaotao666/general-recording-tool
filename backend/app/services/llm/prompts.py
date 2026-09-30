@@ -174,6 +174,8 @@ def build_report_prompt(description: str, fields: list[dict], append: bool = Fal
         "重要：用户已经有一张报表，本次需求是在其上追加/调整内容。\n"
         "- 只输出用户本次明确要求的区块（通常 1 个，至多 3 个），不要生成用户没要求的统计卡/明细表/文本小结\n"
         "- 不要揣摩补充「完整的报表结构」，用户说加一个图就只给一个图\n"
+        "- 用户如果只是调整时间口径（如「时间范围设置为今年」「改成上月」），不要生成任何区块："
+        "输出 blocks: [] 和 range: {mode: 对应口径}（块级调整则给对应块加 range_mode），禁止用 filters 里的日期条件凑口径\n"
         "- name 字段给这批新区块起个小标题（会用作追加页签的名称）\n"
         if append else
         "5. 区块数量 2~6 个，按「统计卡片 → 图表 → 明细 → 文本小结」组织\n"
@@ -185,13 +187,19 @@ def build_report_prompt(description: str, fields: list[dict], append: bool = Fal
         f"{json.dumps(field_desc, ensure_ascii=False, indent=2)}\n\n"
         "报表配置规则：\n"
         "1. range.mode 时间口径：today 今天 / yesterday 昨天 / past_7d 近7天 / past_30d 近30天 / this_week 本周 / last_week 上周 / "
-        "this_month 本月 / last_month 上月 / this_quarter 本季度 / this_year 今年；"
+        "this_month 本月 / last_month 上月 / this_quarter 本季度 / this_year 今年——用户说「近 N 天 / 最近 N 天」必须映射到 past_7d/past_30d，不要默认本周；"
         "date_field 统计所依据的日期字段（默认 created_at，也可选业务日期字段）\n"
-        "2. blocks 是区块数组，五种类型：\n"
+        "   块级口径：任何数据区块都可加 range_mode（取值同上）+ date_field 单独覆盖全局口径，自定义区间用 range_mode=custom + range_start/range_end（YYYY-MM-DD）。"
+        "用户说「某块固定看上周/不跟随全局/只看某段时间/按某日期字段统计」时必须用块级口径，不要用 filters 里的日期条件凑——"
+        "例：「明细表只看 9 月 1 日到 9 月 7 日」→ 该块 {\"range_mode\": \"custom\", \"range_start\": \"2026-09-01\", \"range_end\": \"2026-09-07\"}；"
+        "「按生产日期统计」→ 该块 {\"date_field\": \"production_date\"}（用字段清单里的业务日期字段名）"
+        "——用户点名了统计依据的日期字段时，对应区块必须带 date_field，不能只靠全局口径\n"
+        "2. blocks 是区块数组，六种类型：\n"
         "   - stat 统计卡片：{type, title, agg, field, filters, compare, compare_type?}。agg: count 计数（不需要 field）/ count_distinct 去重计数（field 任意字段）/ "
         "sum / avg / max / min（field 必须是 int/decimal 字段）/ ratio 占比%（满足 filters 的记录数 ÷ 口径内总数，不需要 field）；"
+        "用户说占比/百分比/合格率/达成率/完成率时必须用 agg=ratio + filters 限定分子（如合格率 = filters 限定「不良品数=0」的记录占比），不要拆成两个统计卡让用户自己除；"
         "compare: true 表示对比，compare_type: mom 环比（等长上一期，默认）/ yoy 同比（去年同期）\n"
-        "   - chart 图表：{type, title, chart_type, group, agg, field, filters, metrics?, group2?, stack?, compare?, quick_calc?}。chart_type: bar 柱状 / line 折线 / area 面积 / pie 饼图 / funnel 漏斗 / mixed 组合图（柱线双轴）；"
+        "   - chart 图表：{type, title, chart_type, group, agg, field, filters, metrics?, group2?, stack?, compare?, quick_calc?, top_n?, on_click?}。chart_type: bar 柱状 / line 折线 / area 面积 / pie 饼图 / funnel 漏斗 / gauge 仪表盘（单聚合值，max 为满值）/ mixed 组合图（柱线双轴）；"
         "agg 同 stat 但不支持 ratio；"
         "group.kind: field 按字段分组（field 为分组字段，枚举字段最适合饼图/漏斗）/ day / week / month 按时间分组（field 必须是日期字段）；"
         "多系列（饼图/漏斗不支持，需要对比多个指标或拆分维度时才用）：metrics 多指标数组 [{agg, field, title}]（最多 5 个，用了它就不用顶层 agg/field），"
@@ -199,17 +207,33 @@ def build_report_prompt(description: str, fields: list[dict], append: bool = Fal
         "mixed 组合图必须用 metrics（至少 2 个指标），每个指标可加 chart: bar/line 指定画成柱子还是折线；"
         "stack: true 表示堆叠（仅 bar/line/area 且多系列时）；"
         "compare: mom/yoy 给时间分组图表叠加一条对比折线（环比上一期/同比去年同期）；"
-        "quick_calc: pct 表示数值显示为占总计百分比（仅 bar/line/area/mixed）\n"
-        "   - pivot 透视表：{type, title, row, col, agg, field, filters, totals?}。行维度 row × 列维度 col 交叉聚合，"
+        "quick_calc: pct 表示数值显示为占总计百分比（仅 bar/line/area/mixed）；"
+        "top_n: N 只显示数值最高的前 N 个分组（其余合并为「其他」），用户说「前 N 名/最高 N 个」时用；"
+        "on_click: \"link\" 表示点击分组联动过滤其他区块（用户要求点击图表联动/过滤/下钻筛选时用，默认 drill 下钻明细不用写，"
+        "不要输出 jump——跳转目标报表只能人工选择）；"
+        "drill_down: {\"field\": 字段名} 层级钻取——用户说「点分组后再按另一字段细分/层级下钻」时用"
+        "（仅按字段分组的 bar/line/area，不能与 on_click=link 同时用，钻取字段不能等于分组字段）\n"
+        "   - pivot 透视表：{type, title, row, col, agg, field, filters, totals?, row_top_n?, col_top_n?}。行维度 row × 列维度 col 交叉聚合，"
         "row/col 结构同 chart 的 group（{kind, field}，kind 为 field/day/week/month，两者不能相同）；"
         "agg 同 chart（不支持 ratio）；totals: false 可关闭行列合计；"
+        "row_top_n/col_top_n 行/列各取前 N 项（其余合并「其他」），用户说「行/列只显示前 N 个」时用；"
         "需要「按两个维度交叉对比」（如 各分级×各月份 的成交量）时用透视表而不是图表\n"
         "   - table 明细表：{type, title, columns, sort_by, sort_order, limit, filters}。columns 是字段名数组，limit ≤ 500\n"
         "   - text 文本：{type, title, content}。content 支持占位符 {range_label} 时间范围、{b1} 引用第 1 个 stat 区块的值（按 blocks 中 stat 的顺序编号 b1、b2…）\n"
+        "   - filter 筛选块：{type, title, field, target?}。用户要求「看报表的人可以自己选/筛选某个维度」时用；"
+        "field 是被筛选的字段（枚举/布尔/日期字段最合适）；target.mode: same_dataset（默认，作用于同数据源全部区块）/ blocks（指定区块）\n"
         "3. filters 为可选筛选：{logic: AND|OR, rules: [{field, op, value}]}。"
         "op 只能是 eq/ne/gt/gte/lt/lte/contains/startswith/in/null/not_null/today（当天）/past_days（过去 N 天含今天）/older_than_days/within_days；"
         "枚举字段的 value 必须从可选值中选；日期字段的值必须是具体日期（YYYY-MM-DD），禁止 today 等字面量——「等于今天」用 today 操作符，「过去一周/一个月」用 past_days 且 value=7/30\n"
         "4. 只使用字段清单中存在的 field_name；数值聚合只能用 int/decimal 字段\n"
+        "5. 报表设置（仅用户明确要求时才输出，否则不给这三个键）：\n"
+        "   - schedule 定时推送周期：{type: \"interval\", minutes: 分钟}（每隔 N 分钟）或 {type: \"cron\", expr: \"分 时 日 月 周\"}；"
+        "「每天 9 点」= {\"type\": \"cron\", \"expr\": \"0 9 * * *\"}，「每周一 9 点」= {\"type\": \"cron\", \"expr\": \"0 9 * * 1\"}，「每小时」= {\"type\": \"interval\", \"minutes\": 60}\n"
+        "   - guard 阈值告警（仅当条件满足时才推送）：{\"logic\": \"AND|OR\", \"rules\": [{\"block_id\": \"统计卡的 id（如 b1）\", \"op\": \"gt|gte|lt|lte|eq|ne\", \"value\": 数值}]}；"
+        "用户说「低于/超过 X 就提醒我」时用，block_id 引用你生成的统计卡 id；"
+        "告警需要周期配合，用户没提周期时给 {\"type\": \"cron\", \"expr\": \"0 9 * * *\"}（每天 9 点检查一次）\n"
+        "   - push 推送渠道：{\"recipients\": \"邮箱逗号分隔\", \"webhooks\": [{\"type\": \"wecom|dingtalk|custom\", \"url\": \"https://...\"}], "
+        "\"formats\": [\"html_inline\", \"xlsx\"], \"subject\": \"邮件主题\"}；用户给了邮箱/Webhook 地址才填，没给就不填（推送默认停用，用户确认地址后自行启用）\n"
         + intent + "\n"
         f"输出 JSON 格式示例：\n{json.dumps(_REPORT_OUTPUT_EXAMPLE, ensure_ascii=False, indent=2)}\n\n"
         "只输出 JSON。"
@@ -221,18 +245,25 @@ def build_report_prompt(description: str, fields: list[dict], append: bool = Fal
 _BLOCK_SPEC_DOCS = {
     "stat": ("统计卡", '{"title": "显示名", "agg": "count|count_distinct|sum|avg|max|min|ratio", '
              '"field": "字段或null（count/ratio 不需要）", "compare": true|false（是否对比）, '
-             '"compare_type": "mom|yoy（环比上一期/同比去年同期，compare 为 true 时）", "filters": 筛选}'),
+             '"compare_type": "mom|yoy（环比上一期/同比去年同期，compare 为 true 时）", "filters": 筛选, '
+             '"range_mode": "时间口径（见下方规则5，仅用户要求改口径时给）", "date_field": "统计日期字段（仅用户点名时给）"}'),
     "chart": ("图表", '{"title": "显示名", "chart_type": "bar柱状|line折线|area面积|pie饼图|funnel漏斗|gauge仪表盘|mixed组合图", '
               '"group": {"kind": "field按字段|day按日|week按周|month按月", "field": "分组字段"}, '
               '"agg": "聚合方式", "field": "数值字段或null", '
               '"metrics": [{"agg", "field", "title", "chart": "bar|line（仅组合图）"}]（多指标，与顶层 agg/field 二选一）, '
               '"group2": {"field": "二级分组字段或null"}, "stack": false, "top_n": 8（饼图/漏斗取前N）, '
               '"compare": "mom|yoy（时间分组的对比折线）", "quick_calc": "pct（占总计%）", '
-              '"max": 100（仅仪表盘满刻度）, "filters": 筛选}'),
+              '"drill_down": {"field": "层级钻取字段或null"}, '
+              '"on_click": "link（点击分组联动过滤其他区块，仅按字段分组时可用，用户说联动/点击过滤时用）或 null", '
+              '"max": 100（仅仪表盘满刻度）, "filters": 筛选, '
+              '"range_mode": "时间口径（见下方规则5，仅用户要求改口径时给）", "date_field": "统计日期字段（仅用户点名时给）"}'),
     "pivot": ("透视表", '{"title": "显示名", "row": {"kind": "field|day|week|month", "field": "行维度字段"}, '
-              '"col": {同 row}, "agg": "聚合方式", "field": "数值字段或null", "totals": true（行列合计）, "filters": 筛选}'),
+              '"col": {同 row}, "agg": "聚合方式", "field": "数值字段或null", "totals": true（行列合计）, '
+              '"row_top_n": 行取前N, "col_top_n": 列取前N, "filters": 筛选, '
+              '"range_mode": "时间口径（见下方规则5，仅用户要求改口径时给）", "date_field": "统计日期字段（仅用户点名时给）"}'),
     "table": ("明细表", '{"title": "显示名", "columns": ["要展示的字段名..."], '
-              '"sort_by": "排序字段", "sort_order": "asc|desc", "filters": 筛选}'),
+              '"sort_by": "排序字段", "sort_order": "asc|desc", "filters": 筛选, '
+              '"range_mode": "时间口径（见下方规则5，仅用户要求改口径时给）", "date_field": "统计日期字段（仅用户点名时给）"}'),
     "filter": ("筛选组件", '{"title": "显示名", "field": "供查看者筛选的字段名"}'),
     "text": ("文本", '{"title": "显示名", "content": "文本内容"}'),
 }
@@ -246,6 +277,10 @@ _BLOCK_COMMON_RULES = (
     "op 从 eq/ne/gt/gte/lt/lte/contains/startswith/in/null/not_null 中选；枚举字段 value 必须从可选值选；"
     "日期值用 YYYY-MM-DD；不需要筛选时给空 rules\n"
     "4. 枚举字段分组优先；趋势类按时间分组；占比类用饼图\n"
+    "5. 时间口径类需求（「时间范围设置为今年」「固定看上周」「只看 9 月 1 日到 7 日」等）："
+    "用 range_mode（today/yesterday/past_7d/past_30d/this_week/last_week/this_month/last_month/this_quarter/this_year/custom）表达，"
+    "custom 时必须同时给 range_start/range_end（YYYY-MM-DD）；用户点名统计依据的日期字段时用 date_field。"
+    "禁止用 filters 里的日期条件凑口径\n"
 )
 
 
@@ -266,7 +301,7 @@ def build_text_content_prompt(description: str, current: dict | None = None) -> 
         f"{cur}"
         f"{stats_doc}"
         "另外还支持变量：{range_label} 时间范围（如 本月（2026-09-01 ~ 2026-09-30)）、{start} 开始日期、{end} 结束日期。\n"
-        "只输出文本内容本身：不要 JSON、不要 markdown 代码围栏、不要首尾引号、不要解释。"
+        "直接输出撰写好的文本，不要解释。"   # 注意：否定式指令（「不要 JSON」之类）会让部分模型输出空白，实测踩过
     )
 
 def build_block_config_prompt(block_type: str, fields: list[dict], description: str,

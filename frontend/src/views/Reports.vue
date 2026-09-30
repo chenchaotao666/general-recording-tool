@@ -172,7 +172,12 @@
           <template #default="{ row }">{{ { schedule: '计划', manual: '手动' }[row.trigger] || row.trigger }}</template>
         </el-table-column>
         <el-table-column prop="range_label" label="口径" width="200" />
-        <el-table-column prop="sent_count" label="发送" width="70" />
+        <el-table-column label="发送" width="90">
+          <template #default="{ row }">
+            <el-tag v-if="row.skipped" size="small" type="info" effect="plain">条件未满足</el-tag>
+            <template v-else>{{ row.sent_count }}</template>
+          </template>
+        </el-table-column>
         <el-table-column label="错误">
           <template #default="{ row }">
             <span v-if="row.error" style="color: #f56c6c">{{ row.error }}</span>

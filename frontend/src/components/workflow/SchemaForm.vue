@@ -105,6 +105,10 @@
         @update:model-value="set(key, $event)">
         <el-option v-for="w in workflows" :key="w.id" :label="w.name" :value="w.id" />
       </el-select>
+      <el-select v-else-if="spec.format === 'report-ref'" :model-value="cfg[key]" filterable placeholder="选择报表"
+        @update:model-value="set(key, $event)">
+        <el-option v-for="r in reports" :key="r.id" :label="r.name" :value="r.id" />
+      </el-select>
       <el-select v-else-if="spec.format === 'provider-ref'" :model-value="cfg[key]" clearable placeholder="默认供应商"
         @update:model-value="set(key, $event)">
         <el-option v-for="p in providers" :key="p.id" :label="p.name" :value="p.id" />
@@ -253,6 +257,10 @@ function showField(key) {
   // 条件/多路分支的「关联数据表」：UI 上不再需要（规则字段已跟随判断对象推导；
   // 后端 schema 保留——存量配置与 AI 生成仍可用它做类型兜底）
   if (['condition', 'switch'].includes(props.nodeType) && key === 'table_id') return false
+  // 推送报表的起止日期只在自定义区间时显示
+  if (props.nodeType === 'push_report' && ['range_start', 'range_end'].includes(key)) {
+    return cfg.range_mode === 'custom'
+  }
   return true
 }
 function titleOf(key, spec) {
@@ -337,6 +345,8 @@ const props = defineProps({
   nodeId: { type: String, default: '' },
   // 可选子流程清单（子流程调用节点的下拉数据源）
   workflows: { type: Array, default: () => [] },
+  // 可选报表清单（推送报表节点的下拉数据源）
+  reports: { type: Array, default: () => [] },
   // 条件/多路分支的条件规则字段（跟随判断对象，由父组件推导）；null = 退回表字段
   recordFields: { type: Array, default: null },
 })

@@ -430,7 +430,7 @@ def list_runs(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(g
         {
             "id": r.id, "trigger": r.trigger,
             "run_at": r.run_at.isoformat(sep=" ") if r.run_at else None,
-            "range_label": r.range_label, "sent_count": r.sent_count, "error": r.error,
+            "range_label": r.range_label, "sent_count": r.sent_count, "skipped": bool(getattr(r, "skipped", False)), "error": r.error,
         }
         for r in rows
     ]

@@ -2084,8 +2084,40 @@ def _post_webhook(wh: dict, subject: str, md: str) -> None:
             raise ReportError(f"{label}机器人报错：{resp.text[:100]}")
 
 
-def push_template(template_id: int, trigger: str = "schedule") -> dict | None:
-    """生成报表并推送（邮件 + 群机器人 Webhook），写 ReportRunLog。供调度器和手动调用。"""
+def _guard_rule_met(result: dict, rule: dict) -> bool:
+    """单条阈值条件：rule={block_id, op, value}，引用统计卡的数值。
+    找不到块/值非数值时不误拦（宁可发）——配置变更不该静默吞掉推送。"""
+    blk = next((b for b in (result.get("blocks") or [])
+                if b.get("id") == rule.get("block_id") and b.get("type") == "stat"), None)
+    if blk is None or blk.get("value") is None:
+        return True
+    try:
+        v, target = float(blk["value"]), float(rule.get("value"))
+    except (TypeError, ValueError):
+        return True
+    return {
+        "gt": v > target, "gte": v >= target, "lt": v < target, "lte": v <= target,
+        "eq": v == target, "ne": v != target,
+    }.get(rule.get("op") or "gt", True)
+
+
+def _guard_met(result: dict, guard: dict) -> bool:
+    """阈值告警开关：guard={logic: AND|OR, rules: [{block_id, op, value}]}；
+    兼容单条件旧格式 {block_id, op, value}。无条件 = 不拦截。"""
+    if not guard:
+        return True
+    rules = [r for r in (guard.get("rules") or []) if r.get("block_id")]
+    if not rules and guard.get("block_id"):
+        rules = [guard]
+    if not rules:
+        return True
+    results = [_guard_rule_met(result, r) for r in rules]
+    return any(results) if guard.get("logic") == "OR" else all(results)
+
+
+def push_template(template_id: int, trigger: str = "schedule", range_override: dict | None = None) -> dict | None:
+    """生成报表并推送（邮件 + 群机器人 Webhook），写 ReportRunLog。供调度器和手动调用。
+    range_override：工作流「推送报表」节点的口径覆盖（不落库，仅本次生成生效）。"""
     from .report_export import export_xlsx
 
     db = SessionLocal()
@@ -2098,9 +2130,17 @@ def push_template(template_id: int, trigger: str = "schedule") -> dict | None:
 
         run = ReportRunLog(template_id=tpl.id, trigger=trigger, run_at=datetime.now())
         try:
-            result = run_template(db, tpl)
+            result = run_template(db, tpl, range_override=range_override)
             run.range_label = result["range"]["label"]
             push = tpl.push_json or {}
+            # 阈值告警：仅当统计卡数值满足条件时才发送（条件不满足 = 本次静默跳过，日志标记 skipped）
+            guard = push.get("guard") or {}
+            if not _guard_met(result, guard):
+                run.sent_count = 0
+                run.skipped = True
+                db.add(run)
+                db.commit()
+                return {"sent": 0, "skipped": True, "range_label": run.range_label, "error": None}
             recipients = [s.strip() for s in str(push.get("recipients") or "").replace("，", ",").split(",") if s.strip()]
             webhooks = [w for w in (push.get("webhooks") or []) if (w.get("url") or "").strip()]
             if not recipients and not webhooks:

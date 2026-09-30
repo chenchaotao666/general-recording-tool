@@ -27,3 +27,6 @@ miniprogram/node_modules/
 miniprogram/dist/
 backend/smoke_workflow.db
 backend/smoke_test.db.bak-*
+
+# LLM 评测库（运行时生成）
+backend/test/llm/*.db

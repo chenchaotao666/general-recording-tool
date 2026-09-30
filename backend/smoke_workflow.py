@@ -616,5 +616,79 @@ loops = [nr for nr in r.json()["node_runs"] if nr["node_id"] == "loop_1" and nr[
 assert len(loops) == min(2, total), f"max_items=2 应只处理 2 条，实际 {len(loops)}"
 print(f"逐条处理：不限制（0）处理全部 {total} 条、正数截断正确")
 
+# ---------- 推送报表节点 ----------
+from app.services import report_engine as _re_mod
+
+# 建一张带 webhook 推送的报表
+r = client.post("/api/reports", json={
+    "name": "推送归档报表", "table_id": tid, "range": {"mode": "this_week"},
+    "blocks": [{"id": "b1", "type": "stat", "title": "记录数", "agg": "count",
+                "filters": {"logic": "AND", "rules": []}}],
+    "schedule": {}, "push": {"webhooks": [{"type": "wecom", "url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=wf1"}]},
+})
+assert r.status_code == 200, r.text
+rep_id = r.json()["id"]
+
+_wf_calls = []
+
+
+class _FakeResp2:
+    status_code = 200
+
+    def json(self):
+        return {"errcode": 0}
+
+
+def _fake_post2(url, json=None, timeout=None, **kw):
+    _wf_calls.append(url)
+    return _FakeResp2()
+
+
+_orig_post2 = _re_mod.httpx.post
+_re_mod.httpx.post = _fake_post2
+try:
+    # 试运行：只生成不推送（沙盒）
+    r = client.post("/api/workflows", json={
+        "name": "推送报表流程", "trigger": {"type": "manual"},
+        "nodes": [{"id": "pr_1", "type": "push_report", "name": "推送", "config": {"report_id": rep_id}}],
+        "edges": [],
+    })
+    assert r.status_code == 200, r.text
+    wf_push = r.json()["id"]
+    r = client.post(f"/api/workflows/{wf_push}/test-run")
+    assert r.status_code == 200, r.text
+    assert len(_wf_calls) == 0, "试运行不应真实推送"
+    # 正式执行：真实推送到机器人
+    r = client.post(f"/api/workflows/{wf_push}/run", json={"params": {}})
+    assert r.json()["status"] == "success", r.text
+    rid = r.json()["id"]
+    r = client.get(f"/api/workflows/runs/{rid}")
+    pr_out = next(nr["output"] for nr in r.json()["node_runs"] if nr["node_id"] == "pr_1")
+    assert pr_out["sent"] == 1 and pr_out["range_label"], pr_out
+    assert len(_wf_calls) == 1, "应推送到群机器人一次"
+    # 口径覆盖：本次按「今天」生成
+    r = client.put(f"/api/workflows/{wf_push}", json={
+        "name": "推送报表流程", "trigger": {"type": "manual"},
+        "nodes": [{"id": "pr_1", "type": "push_report", "name": "推送",
+                   "config": {"report_id": rep_id, "range_mode": "today"}}],
+        "edges": [],
+    })
+    assert r.status_code == 200, r.text
+    r = client.post(f"/api/workflows/{wf_push}/run", json={"params": {}})
+    r = client.get(f"/api/workflows/runs/{r.json()['id']}")
+    pr_out = next(nr["output"] for nr in r.json()["node_runs"] if nr["node_id"] == "pr_1")
+    assert "今天" in pr_out["range_label"], pr_out
+    # 体检：不存在的报表 → 保存前报错
+    r = client.post("/api/workflows", json={
+        "name": "bad", "trigger": {"type": "manual"},
+        "nodes": [{"id": "pr_1", "type": "push_report", "name": "推送", "config": {"report_id": 99999}}],
+        "edges": [],
+    })
+    assert r.status_code == 400 and "报表不存在" in r.text, r.text
+finally:
+    _re_mod.httpx.post = _orig_post2
+
+print("推送报表节点（试运行不推送/真实推送/口径覆盖/体检拦截）通过")
+
 print("\n全部通过 OK")
 cm.__exit__(None, None, None)

@@ -85,6 +85,11 @@ const EXTRA = {
   llm_transform: {
     tips: ['文本输出下游用 {nodes.本节点.text}；JSON 输出先填「JSON 输出键名」，下游用 {nodes.本节点.data.键名}'],
   },
+  push_report: {
+    tips: ['推送渠道（收件邮箱/群机器人）和阈值告警在报表的「设置」里配置；本节点只选报表和可选的口径覆盖',
+           '试运行只生成不推送，输出能看到将发送的渠道数和阈值告警评估结果'],
+    errors: [['未配置推送渠道', '到该报表的「设置 → 定时推送」里配收件邮箱或群机器人 Webhook']],
+  },
   aggregate: {
     tips: [
       '统计结果按「统计项显示名」取数：{nodes.本节点.stats.总金额}（没填显示名则自动用 sum_amount 这种形式）',

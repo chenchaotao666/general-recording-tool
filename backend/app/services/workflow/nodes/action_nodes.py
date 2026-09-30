@@ -272,3 +272,81 @@ class HttpRequestNode(NodeType):
         except ValueError:
             body = resp.text[:5000]
         return NodeResult(output={"status": resp.status_code, "body": body})
+
+
+@register
+class PushReportNode(NodeType):
+    """推送报表：生成并推送已配置好的报表（走该报表的推送渠道），作为流程的结果归档。"""
+    type = "push_report"
+    name = "推送报表"
+    category = "action"
+    description = "生成并推送一张已配置好的报表（邮件/群机器人）；推送渠道、阈值告警在报表的「设置」里配置"
+
+    example_config = {"report_id": 1}
+    config_schema = {
+        "type": "object",
+        "required": ["report_id"],
+        "properties": {
+            "report_id": {"type": "integer", "format": "report-ref", "title": "报表",
+                          "description": "要生成并推送的报表（推送渠道在报表设置里配置）"},
+            "range_mode": {"type": "string", "title": "口径覆盖（可选）",
+                           "enum": ["today", "yesterday", "past_7d", "past_30d", "this_week", "last_week",
+                                    "this_month", "last_month", "this_quarter", "this_year", "custom"],
+                           "enumNames": ["今天", "昨天", "近 7 天", "近 30 天", "本周", "上周",
+                                         "本月", "上月", "本季度", "今年", "自定义区间"],
+                           "description": "留空 = 按报表自身口径生成；选择后仅本次按该口径"},
+            "range_start": {"type": "string", "title": "起始日期（自定义区间）", "description": "YYYY-MM-DD"},
+            "range_end": {"type": "string", "title": "结束日期（自定义区间）", "description": "YYYY-MM-DD"},
+        },
+    }
+    output_schema = {
+        "type": "object",
+        "properties": {"sent": {"type": "integer"}, "skipped": {"type": "boolean"},
+                       "range_label": {"type": "string"}},
+    }
+
+    def _load_tpl(self, ctx: NodeContext):
+        from ....models import ReportTemplate, User
+        rid = ctx.config.get("report_id")
+        if not isinstance(rid, int):
+            raise WorkflowNodeError("未选择报表")
+        tpl = ctx.db.get(ReportTemplate, rid)
+        u = ctx.db.get(User, ctx.user_id)
+        if not tpl or (tpl.user_id != ctx.user_id and (not u or u.role != "admin")):
+            raise WorkflowNodeError("报表不存在或无权限")
+        return tpl
+
+    def _range_override(self, ctx: NodeContext) -> dict | None:
+        mode = (ctx.config.get("range_mode") or "").strip()
+        if not mode:
+            return None
+        if mode == "custom":
+            start = (ctx.config.get("range_start") or "").strip()
+            end = (ctx.config.get("range_end") or "").strip()
+            if not start or not end:
+                raise WorkflowNodeError("自定义区间需要起止日期")
+            return {"mode": "custom", "start": start, "end": end}
+        return {"mode": mode}
+
+    def execute(self, ctx: NodeContext) -> NodeResult:
+        from ...report_engine import _guard_met, push_template, run_template
+
+        tpl = self._load_tpl(ctx)
+        ov = self._range_override(ctx)
+        if ctx.dry_run:
+            # 试运行沙盒：真实生成一次（只读），算出将发送的渠道与阈值告警结果，不真实推送
+            result = run_template(ctx.db, tpl, range_override=ov)
+            push = tpl.push_json or {}
+            n_recipients = len([s for s in str(push.get("recipients") or "").split(",") if s.strip()])
+            n_webhooks = len([w for w in (push.get("webhooks") or []) if (w.get("url") or "").strip()])
+            skipped = not _guard_met(result, push.get("guard") or {})
+            return NodeResult(output={"simulated": True, "sent": 0, "skipped": skipped,
+                                      "channels": n_recipients + n_webhooks,
+                                      "range_label": result["range"]["label"]})
+        result = push_template(tpl.id, trigger="manual", range_override=ov)
+        if result is None:
+            raise WorkflowNodeError("报表不存在")
+        if result.get("error"):
+            raise WorkflowNodeError(f"报表推送失败：{result['error']}")
+        return NodeResult(output={"sent": result.get("sent") or 0, "skipped": bool(result.get("skipped")),
+                                  "range_label": result.get("range_label")})

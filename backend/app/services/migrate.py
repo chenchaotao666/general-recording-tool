@@ -22,6 +22,7 @@ _NEW_COLUMNS = [
     ("report_templates", "source_json", "JSON"),
     ("report_templates", "datasets_json", "JSON"),
     ("workflow_node_runs", "warnings_json", "JSON"),
+    ("report_run_logs", "skipped", "BOOLEAN DEFAULT 0"),
     ("shared_links", "allow_interact", "INTEGER DEFAULT 0"),
 ]
 

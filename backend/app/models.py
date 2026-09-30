@@ -245,6 +245,7 @@ class ReportRunLog(Base):
     run_at = Column(DateTime, default=datetime.now)
     range_label = Column(String(64))
     sent_count = Column(Integer, default=0)
+    skipped = Column(Boolean, default=False)   # 阈值告警：条件未满足，本次跳过推送
     error = Column(Text)
 
 

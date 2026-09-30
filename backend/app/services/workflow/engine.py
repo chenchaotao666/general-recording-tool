@@ -162,6 +162,21 @@ def _node_issues(db: Session, n: dict, user: User) -> list[tuple[str | None, str
                 out.append(("workflow_id", f"节点 {nid}：子流程不存在或无权限"))
             elif (sub.trigger_json or {}).get("type", "manual") != "manual":
                 out.append(("workflow_id", f"节点 {nid}：子流程「{sub.name}」的触发方式必须是「被动调用」（被调用的流程不应有自己的自动触发器）"))
+    if n.get("type") == "push_report":
+        from ...models import ReportTemplate
+        rid = (n.get("config") or {}).get("report_id")
+        if not isinstance(rid, int):
+            out.append(("report_id", f"节点 {nid}：未选择要推送的报表"))
+        else:
+            tpl = db.get(ReportTemplate, rid)
+            if not tpl or (tpl.user_id != user.id and user.role != "admin"):
+                out.append(("report_id", f"节点 {nid}：报表不存在或无权限"))
+            else:
+                push = tpl.push_json or {}
+                has_ch = bool(str(push.get("recipients") or "").strip()) or any(
+                    (w.get("url") or "").strip() for w in (push.get("webhooks") or []))
+                if not has_ch:
+                    out.append(("report_id", f"节点 {nid}：报表「{tpl.name}」没配推送渠道（到报表设置里配收件邮箱/群机器人）"))
     return out
 
 
