@@ -39,9 +39,8 @@ def analyze(req: AnalyzeRequest, db: Session = Depends(get_db)):
     if h_idx < 0 or h_idx >= len(rows):
         raise HTTPException(400, f"表头行号超出范围（1~{len(rows)}）")
     headers = build_headers(rows[h_idx])
+    # 允许只有表头没有数据：仅建表结构（类型一律保守按表头名推断，样例为空）
     data_rows = rows[h_idx + 1:]
-    if not data_rows:
-        raise HTTPException(400, "表头之下没有数据行，请检查表头行号")
 
     # 本地统计推断 + 脱敏样例，一起发给 LLM
     columns = []

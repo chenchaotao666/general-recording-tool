@@ -71,11 +71,18 @@ def list_records(db: Session, mt: MetaTable, fields: list[MetaField], page: int,
     recs = sort_records(recs, sort_by, sort_order, fields_by_name)
     page = max(page, 1)
     page_size = min(max(page_size, 1), page_cap or dyn_engine.MAX_PAGE_SIZE)
+    # 数字列合计：口径 = 全部筛选结果（非当前页）
+    num_fields = [f for f in fields if f.data_type in ("int", "decimal")]
+    summary = {}
+    for f in num_fields:
+        nums = [r.get(f.field_name) for r in recs]
+        nums = [v for v in nums if isinstance(v, (int, float)) and not isinstance(v, bool)]
+        summary[f.field_name] = sum(nums) if nums else None
     items = [
         {k: dyn_engine.serialize_value(v) for k, v in r.items()}
         for r in recs[(page - 1) * page_size: page * page_size]
     ]
-    return {"total": total, "items": items}
+    return {"total": total, "summary": summary, "items": items}
 
 
 def get_record(db: Session, table_id: int, record_id: int, fields: list[MetaField] | None = None) -> dict:
@@ -97,6 +104,8 @@ def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dic
             ok, cv, _ = coerce_value(f.default_value, f.data_type, True)
             if ok:
                 cleaned[f.field_name] = cv
+    dyn_engine.apply_serials(db, mt.id, fields, cleaned)
+    dyn_engine.apply_computed(fields, cleaned)
     now = datetime.now()
     rec = Record(table_id=mt.id, data=serialize_data(cleaned), created_at=now, updated_at=now)
     db.add(rec)
@@ -120,6 +129,8 @@ def update_record(db: Session, mt: MetaTable, fields: list[MetaField], record_id
     cleaned, errors = dyn_engine.coerce_payload(fields, data, partial=True)
     if errors:
         raise HTTPException(422, detail=errors)
+    dyn_engine.strip_serial_fields(fields, cleaned)
+    dyn_engine.apply_computed(fields, cleaned, base=before)
     merged = dict(rec.data or {})
     merged.update(serialize_data(cleaned))
     rec.data = merged

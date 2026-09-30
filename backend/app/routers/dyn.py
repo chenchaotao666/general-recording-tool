@@ -64,7 +64,7 @@ def export_records(
         page_cap=EXPORT_MAX,
     )
     fields = meta_service.get_meta_fields(db, table_id)
-    columns = ([{"prop": f.field_name, "label": f.label} for f in fields]
+    columns = ([{"prop": f.field_name, "label": f.label} for f in fields if f.data_type != "subform"]
                + [{"prop": "created_at", "label": "创建时间"}])
     buf = export_records_xlsx(access.table.label, columns, res["items"])
     filename = quote(f"{access.table.label}-导出.xlsx")

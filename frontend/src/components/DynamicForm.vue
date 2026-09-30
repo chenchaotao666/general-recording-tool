@@ -1,7 +1,10 @@
 <template>
   <div>
     <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
-      <el-form-item v-for="f in fields" :key="f.field_name" :label="f.label" :prop="f.field_name">
+      <!-- 字段超过 10 个时双列布局；subform 明细始终独占整行 -->
+      <el-row :gutter="16">
+        <el-col v-for="f in fields" :key="f.field_name" :span="colSpan(f)">
+        <el-form-item :label="f.label" :prop="f.field_name">
         <el-input
           v-if="f.widget === 'textarea'"
           v-model="form[f.field_name]" type="textarea" :rows="5" :placeholder="'请输入' + f.label"
@@ -9,6 +12,7 @@
         <el-input-number
           v-else-if="f.widget === 'number'"
           v-model="form[f.field_name]" style="width: 100%" controls-position="right"
+          :precision="f.data_type === 'decimal' ? 4 : 0" :step="f.data_type === 'decimal' ? 0.01 : 1"
         />
         <el-date-picker
           v-else-if="f.widget === 'date-picker'"
@@ -37,8 +41,37 @@
         >
           <el-icon><Plus /></el-icon>
         </el-upload>
+        <!-- 关联选择器：远程搜索目标表记录，选中后按 carry_fields 带出回填其他字段 -->
+        <RelationPicker
+          v-else-if="f.widget === 'relation-picker' && f.options?.relation?.table_id"
+          v-model="form[f.field_name]" :relation="f.options.relation"
+          :placeholder="'请选择' + f.label" @carry="(row) => applyCarry(f, row)"
+        />
+        <!-- 子表：明细行只读表格 + 弹窗行编辑 -->
+        <SubformField
+          v-else-if="f.data_type === 'subform'"
+          v-model="form[f.field_name]" :columns="f.options?.columns || []"
+          @change="recompute"
+        />
+        <!-- 自动编号：默认只读，保存时服务端生成；配置允许手改时可编辑 -->
+        <el-input
+          v-else-if="f.data_type === 'serial'"
+          v-model="form[f.field_name]" :disabled="!f.options?.serial?.allow_manual"
+          :placeholder="recordId ? '' : '保存时自动生成'" clearable
+        >
+          <template #append>№</template>
+        </el-input>
+        <!-- 公式字段：只读，实时计算展示（保存时服务端重算兜底） -->
+        <el-input
+          v-else-if="isFormula(f)" :model-value="form[f.field_name]" disabled
+          :placeholder="'由公式自动计算'"
+        >
+          <template #append>ƒx</template>
+        </el-input>
         <el-input v-else v-model="form[f.field_name]" clearable :placeholder="'请输入' + f.label" />
-      </el-form-item>
+        </el-form-item>
+        </el-col>
+      </el-row>
       <el-form-item>
         <el-button type="primary" :loading="loading" @click="onSubmit">保存</el-button>
         <el-button @click="$emit('cancel')">取消</el-button>
@@ -120,10 +153,15 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Camera, Plus } from '@element-plus/icons-vue'
 import { adoptVision, imageUrl, recognizeForm, uploadImage as apiUploadImage } from '../api'
+import { evalFormula } from '../utils/formula'
+import RelationPicker from './RelationPicker.vue'
+
+// 异步注册打破循环依赖（SubformField 的行编辑弹窗复用本组件）
+const SubformField = defineAsyncComponent(() => import('./SubformField.vue'))
 
 const props = defineProps({
   fields: { type: Array, required: true },
@@ -137,6 +175,13 @@ const emit = defineEmits(['submit', 'cancel'])
 const formRef = ref()
 const form = reactive({})
 
+// 字段超过 10 个时双列布局；subform 明细始终独占整行
+const twoColumn = computed(() => props.fields.length > 10)
+function colSpan(f) {
+  if (!twoColumn.value) return 24
+  return f.data_type === 'subform' ? 24 : 12
+}
+
 watch(
   () => props.initial,
   (v) => {
@@ -148,6 +193,8 @@ watch(
       } else if (f.widget === 'switch') {
         form[f.field_name] = false
       } else if (f.widget === 'image-uploader') {
+        form[f.field_name] = []
+      } else if (f.data_type === 'subform') {
         form[f.field_name] = []
       } else {
         form[f.field_name] = null
@@ -223,7 +270,7 @@ function previewImage(fieldName, file) {
 const rules = computed(() => {
   const r = {}
   for (const f of props.fields) {
-    if (!f.nullable) {
+    if (!f.nullable && !isFormula(f) && f.data_type !== 'serial') {   // 公式/自动编号由服务端生成，不做必填校验
       r[f.field_name] = [{ required: true, message: `请填写${f.label}`, trigger: ['blur', 'change'] }]
     }
   }
@@ -235,6 +282,51 @@ function fieldOptions(f) {
     typeof o === 'object' && o !== null ? o : { label: String(o), value: o }
   )
 }
+
+// ---------- 关联带出 / 公式实时计算 ----------
+
+function isFormula(f) {
+  return typeof f.options?.formula === 'string' && f.options.formula.trim() !== ''
+}
+
+// 选中关联记录后：按 carry_fields 映射把源行字段回填到本表单
+function applyCarry(f, row) {
+  for (const m of f.options?.relation?.carry_fields || []) {
+    if (m?.from && m?.to) form[m.to] = row[m.from] ?? null
+  }
+}
+
+// 实时计算：子表列合计回填（sum_to）→ 顶层公式（多遍，支持公式引用公式/合计）
+function recompute() {
+  for (const f of props.fields) {
+    if (f.data_type !== 'subform') continue
+    const rows = Array.isArray(form[f.field_name]) ? form[f.field_name] : []
+    for (const c of f.options?.columns || []) {
+      const target = c.options?.sum_to
+      if (!target || !(target in form)) continue
+      const sum = rows.reduce((acc, r) => {
+        const v = parseFloat(r?.[c.field_name])
+        return Number.isFinite(v) ? acc + v : acc
+      }, 0)
+      const val = rows.length ? Math.round(sum * 10000) / 10000 : null
+      if (form[target] !== val) form[target] = val
+    }
+  }
+  const formulaFields = props.fields.filter(isFormula)
+  for (let pass = 0; pass <= formulaFields.length; pass++) {
+    let changed = false
+    for (const f of formulaFields) {
+      const val = evalFormula(f.options.formula, form)
+      if (form[f.field_name] !== val) {
+        form[f.field_name] = val
+        changed = true
+      }
+    }
+    if (!changed) break
+  }
+}
+
+watch(form, recompute, { deep: true })
 
 async function onSubmit() {
   const valid = await formRef.value.validate().catch(() => false)

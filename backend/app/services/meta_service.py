@@ -14,6 +14,95 @@ from .typemap import coerce_value, default_widget, sa_column
 
 RESERVED_NAMES = {"id", "created_at", "updated_at"}
 PHYSICAL_NAME_RE = re.compile(r"^dyn_[a-z][a-z0-9_]{0,50}$")
+FIELD_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
+
+
+def _validate_relation(db: Session, rel: dict, own_names: set[str]) -> None:
+    """关联字段配置：目标表存在、值/显示字段存在、带出映射的源字段与目标字段都存在。"""
+    try:
+        tid = int(rel.get("table_id"))
+    except (TypeError, ValueError):
+        raise MetaError("关联字段必须配置目标表（relation.table_id）")
+    target = db.get(MetaTable, tid)
+    if not target:
+        raise MetaError(f"关联的目标表不存在：{tid}")
+    target_fields = {f.field_name for f in get_meta_fields(db, tid)}
+    for key in ("value_field", "label_field"):
+        if rel.get(key) not in target_fields:
+            raise MetaError(f"关联字段的 {key}「{rel.get(key)}」在目标表「{target.label}」中不存在")
+    for m in rel.get("carry_fields") or []:
+        if not isinstance(m, dict) or m.get("from") not in target_fields:
+            raise MetaError(f"带出映射的源字段「{(m or {}).get('from')}」在目标表「{target.label}」中不存在")
+        if m.get("to") not in own_names:
+            raise MetaError(f"带出映射的目标字段「{(m or {}).get('to')}」在本表不存在")
+
+
+def _validate_formula(expr_src: str, allow_fields: set[str], owner_label: str) -> None:
+    from . import expr as expr_mod
+    try:
+        expr_mod.parse(expr_src, allow_fields)
+    except expr_mod.ExprError as e:
+        raise MetaError(f"{owner_label}公式无效：{e}")
+
+
+def _validate_subform_columns(db: Session, columns, own_names: set[str], field_label: str) -> None:
+    """子表列定义：列名合法且不重复、类型合法、不允许嵌套子表、列公式/列关联/合计回填校验。"""
+    if not isinstance(columns, list) or not columns:
+        raise MetaError(f"子表字段「{field_label}」至少需要一列（options.columns）")
+    if len(columns) > 30:
+        raise MetaError(f"子表字段「{field_label}」列数不能超过 30")
+    seen = set()
+    col_names = {c.get("field_name") for c in columns if isinstance(c, dict)}
+    from .typemap import DATA_TYPES as _DT, WIDGETS as _WD
+    for c in columns:
+        if not isinstance(c, dict):
+            raise MetaError(f"子表字段「{field_label}」的列定义必须是对象")
+        name, ctype = c.get("field_name"), c.get("data_type", "varchar")
+        if not name or not FIELD_NAME_RE.match(str(name)):
+            raise MetaError(f"子表字段「{field_label}」存在非法列名：{name}")
+        if name in seen:
+            raise MetaError(f"子表字段「{field_label}」列名重复：{name}")
+        seen.add(name)
+        if ctype not in _DT or ctype == "subform":
+            raise MetaError(f"子表字段「{field_label}」列 {name} 类型不支持（不允许嵌套子表）：{ctype}")
+        cwidget = c.get("widget")
+        if cwidget and cwidget not in _WD:
+            raise MetaError(f"子表字段「{field_label}」列 {name} 控件不支持：{cwidget}")
+        copts = c.get("options") or {}
+        if copts.get("formula"):
+            _validate_formula(copts["formula"], col_names, f"子表列 {name} ")
+        if copts.get("sum_to") and copts["sum_to"] not in own_names:
+            raise MetaError(f"子表列 {name} 的合计回填字段「{copts['sum_to']}」在主表不存在")
+        if cwidget == "relation-picker":
+            _validate_relation(db, copts.get("relation") or {}, col_names)
+
+
+def validate_field_options(db: Session, data_type: str, widget: str | None,
+                           options: dict | None, own_names: set[str], field_label: str = "") -> None:
+    """字段级业务配置校验（建表/改结构时把关，保存记录时不再报错）。"""
+    opts = options or {}
+    if opts.get("formula"):
+        _validate_formula(opts["formula"], own_names, f"字段「{field_label}」")
+    if widget == "relation-picker":
+        _validate_relation(db, opts.get("relation") or {}, own_names)
+    if data_type == "subform":
+        _validate_subform_columns(db, opts.get("columns"), own_names, field_label)
+    if data_type == "serial":
+        _validate_serial(opts.get("serial") or {}, field_label)
+
+
+def _validate_serial(cfg: dict, field_label: str) -> None:
+    """自动编号规则：模板须含流水占位（{SEQ} 或 {0000} 形式），重置周期合法。"""
+    pattern = cfg.get("pattern")
+    if pattern is not None:
+        if not isinstance(pattern, str) or not pattern.strip():
+            raise MetaError(f"编号字段「{field_label}」的规则模板不能为空")
+        import re as _re
+        if "{SEQ}" not in pattern and not _re.search(r"\{0+\}", pattern):
+            raise MetaError(f"编号字段「{field_label}」的规则模板缺少流水占位：{{SEQ}} 或 {{{{0000}}}} 形式")
+    reset = cfg.get("reset")
+    if reset is not None and reset not in ("never", "daily", "monthly"):
+        raise MetaError(f"编号字段「{field_label}」的重置周期须为 never/daily/monthly")
 
 
 class MetaError(Exception):
@@ -53,6 +142,9 @@ def validate_fields(fields) -> None:
 
 def create_business_table(db: Session, payload: TableCreate, owner_id: int) -> MetaTable:
     validate_fields(payload.fields)
+    new_names = {f.field_name for f in payload.fields}
+    for f in payload.fields:
+        validate_field_options(db, f.data_type, f.widget, f.options, new_names, f.label)
     base = payload.name or slugify(payload.label)
     name = unique_physical_name(db, base)
     storage_mode = getattr(payload, "storage_mode", None) or "json"
@@ -150,6 +242,11 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
                 raise MetaError(f"字段名已存在或为保留字：{fin.field_name}")
             if len(fields) + 1 > 100:
                 raise MetaError("单表字段数不能超过 100")
+            widget = fin.widget or default_widget(fin.data_type)
+            opts = dict(fin.options or {})
+            if fin.data_type == "subform":
+                opts.setdefault("show_in_list", False)   # 明细字段默认不进列表
+            validate_field_options(db, fin.data_type, widget, opts, set(by_name) | {fin.field_name}, fin.label)
             if not is_json:
                 if not _physical_exists(mt.name):
                     raise MetaError("物理表不存在，无法加列")
@@ -158,7 +255,7 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
             f = MetaField(
                 table_id=mt.id, field_name=fin.field_name, label=fin.label, data_type=fin.data_type,
                 length=fin.length, nullable=fin.nullable, default_value=fin.default_value,
-                widget=fin.widget or default_widget(fin.data_type), options=dict(fin.options or {}),
+                widget=widget, options=opts,
                 sort_order=(fields[-1].sort_order + 1) if fields else 0,
             )
             db.add(f)
@@ -224,6 +321,10 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
             continue
 
         # update_field：只改出现的键
+        new_widget = op.get("widget") or f.widget
+        new_options = op.get("options") if op.get("options") is not None else (f.options or {})
+        validate_field_options(db, op.get("data_type") or f.data_type, new_widget, new_options,
+                               set(by_name), f.label)
         new_type = op.get("data_type")
         if new_type and new_type != f.data_type:
             if new_type not in ("varchar", "text", "int", "decimal", "date", "datetime", "bool"):

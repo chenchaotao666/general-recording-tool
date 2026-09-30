@@ -1,14 +1,17 @@
 """动态 CRUD 引擎：运行时按元数据反射业务表，动态拼 SQL（字段名全部来自服务端元数据）。"""
 import json
+import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy import MetaData, Table, and_, func, or_, select
+from sqlalchemy import update as sa_update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..database import engine
-from ..models import AuditLog, MetaField, MetaTable
+from ..models import AuditLog, MetaField, MetaTable, SerialCounter
 from .meta_service import get_meta_fields
 from .typemap import coerce_value
 
@@ -29,6 +32,10 @@ def serialize_value(v):
         return v.isoformat()
     if isinstance(v, Decimal):
         return float(v)
+    if isinstance(v, list):
+        return [serialize_value(x) for x in v]
+    if isinstance(v, dict):
+        return {k: serialize_value(x) for k, x in v.items()}
     return v
 
 
@@ -40,16 +47,21 @@ def _image_field_names(fields: list[MetaField]) -> list[str]:
     return [f.field_name for f in fields if f.data_type == "image"]
 
 
-def _encode_image_fields(cleaned: dict, fields: list[MetaField]) -> None:
-    """physical 模式：image 列是 Text，写入前把 list 编码为 JSON 字符串。"""
-    for name in _image_field_names(fields):
+def _json_field_names(fields: list[MetaField]) -> list[str]:
+    """physical 模式下以 JSON 字符串存 Text 列的字段（image / subform）。"""
+    return [f.field_name for f in fields if f.data_type in ("image", "subform")]
+
+
+def _encode_json_fields(cleaned: dict, fields: list[MetaField]) -> None:
+    """physical 模式：image/subform 列是 Text，写入前把 list 编码为 JSON 字符串（嵌套值序列化为标量）。"""
+    for name in _json_field_names(fields):
         if name in cleaned and cleaned[name] is not None:
-            cleaned[name] = json.dumps(cleaned[name], ensure_ascii=False)
+            cleaned[name] = json.dumps(serialize_value(cleaned[name]), ensure_ascii=False)
 
 
-def _expand_image_fields(record: dict, fields: list[MetaField]) -> dict:
-    """physical 模式：读出时把 image 列的 JSON 字符串还原为 list。"""
-    for name in _image_field_names(fields):
+def _expand_json_fields(record: dict, fields: list[MetaField]) -> dict:
+    """physical 模式：读出时把 image/subform 列的 JSON 字符串还原为 list。"""
+    for name in _json_field_names(fields):
         v = record.get(name)
         if isinstance(v, str):
             try:
@@ -230,27 +242,180 @@ def list_records(db: Session, table_id: int, page: int, page_size: int,
         select(table).where(*conds).order_by(order)
         .offset((page - 1) * page_size).limit(page_size)
     ).mappings().all()
-    return {"total": total, "items": [_expand_image_fields(row_to_dict(r), fields) for r in rows]}
+    # 数字列合计：口径 = 全部筛选结果（非当前页）
+    num_fields = [f for f in fields if f.data_type in ("int", "decimal")]
+    summary = {}
+    if num_fields:
+        agg = db.execute(
+            select(*[func.sum(table.c[f.field_name]) for f in num_fields]).where(*conds)
+        ).first()
+        summary = {f.field_name: serialize_value(v) for f, v in zip(num_fields, agg)}
+    return {"total": total, "summary": summary,
+            "items": [_expand_json_fields(row_to_dict(r), fields) for r in rows]}
 
 
 def coerce_payload(fields: list[MetaField], data: dict, partial: bool = False):
-    """按字段元数据校验并转换提交的数据。返回 (cleaned, errors)。"""
+    """按字段元数据校验并转换提交的数据。返回 (cleaned, errors)。公式字段忽略客户端提交值（保存时服务端重算）。"""
     by_name = {f.field_name: f for f in fields}
     cleaned, errors = {}, {}
     for key, v in (data or {}).items():
         if key not in by_name:
             continue  # 忽略未知字段，防注入
         f = by_name[key]
-        ok, cv, err = coerce_value(v, f.data_type, f.nullable)
+        if (f.options or {}).get("formula"):
+            continue  # 公式字段以服务端计算为准
+        ok, cv, err = coerce_value(v, f.data_type, f.nullable, f.options)
         if ok:
             cleaned[key] = cv
         else:
             errors[key] = f"{f.label}：{err}"
     if not partial:
         for f in fields:
-            if not f.nullable and cleaned.get(f.field_name) is None and not f.default_value:
+            if not f.nullable and cleaned.get(f.field_name) is None and not f.default_value \
+                    and not (f.options or {}).get("formula") and f.data_type != "serial":
                 errors.setdefault(f.field_name, f"{f.label}不能为空")
     return cleaned, errors
+
+
+# ---------- 自动编号（serial 字段） ----------
+
+_SEQ_ZEROS_RE = re.compile(r"\{(0+)\}")   # {0000} 形式的流水占位（宽度=0 的个数）
+SERIAL_RESETS = ("never", "daily", "monthly")
+DEFAULT_SERIAL_PATTERN = "{YYYY}{MM}{DD}{0000}"
+
+
+def _serial_period_key(reset: str, now: datetime) -> str:
+    if reset == "daily":
+        return now.strftime("%Y%m%d")
+    if reset == "monthly":
+        return now.strftime("%Y%m")
+    return ""
+
+
+def _render_serial(pattern: str, now: datetime, seq: int) -> str:
+    out = pattern
+    for token, val in (("{YYYY}", f"{now.year:04d}"), ("{YY}", f"{now.year % 100:02d}"),
+                       ("{MM}", f"{now.month:02d}"), ("{DD}", f"{now.day:02d}")):
+        out = out.replace(token, val)
+    if "{SEQ}" in out:
+        out = out.replace("{SEQ}", str(seq).zfill(4))
+    return _SEQ_ZEROS_RE.sub(lambda m: str(seq).zfill(len(m.group(1))), out)
+
+
+def _next_seq(db: Session, table_id: int, field_name: str, period_key: str) -> int:
+    """计数器原子 +1（UPDATE 行锁自增；首行 INSERT 撞唯一键则 SAVEPOINT 回退后重试 UPDATE）。"""
+    conds = [SerialCounter.table_id == table_id, SerialCounter.field_name == field_name,
+             SerialCounter.period_key == period_key]
+    res = db.execute(sa_update(SerialCounter).where(*conds).values(value=SerialCounter.value + 1))
+    if res.rowcount:
+        return db.execute(select(SerialCounter.value).where(*conds)).scalar()
+    try:
+        with db.begin_nested():
+            db.add(SerialCounter(table_id=table_id, field_name=field_name,
+                                 period_key=period_key, value=1))
+        return 1
+    except IntegrityError:   # 并发下另一事务抢先插入首行：改为自增
+        db.execute(sa_update(SerialCounter).where(*conds).values(value=SerialCounter.value + 1))
+        return db.execute(select(SerialCounter.value).where(*conds)).scalar()
+
+
+def apply_serials(db: Session, table_id: int, fields: list[MetaField], cleaned: dict) -> None:
+    """新建记录时为 serial 字段发号。允许手改的字段保留客户端提交值；否则服务端强制生成（忽略提交值）。"""
+    for f in fields:
+        if f.data_type != "serial":
+            continue
+        cfg = (f.options or {}).get("serial") or {}
+        if cleaned.get(f.field_name) and cfg.get("allow_manual"):
+            continue
+        now = datetime.now()
+        pattern = cfg.get("pattern") or DEFAULT_SERIAL_PATTERN
+        seq = _next_seq(db, table_id, f.field_name, _serial_period_key(cfg.get("reset") or "never", now))
+        cleaned[f.field_name] = _render_serial(pattern, now, seq)
+
+
+def strip_serial_fields(fields: list[MetaField], cleaned: dict) -> None:
+    """更新场景：serial 字段一经生成不可改。"""
+    for f in fields:
+        if f.data_type == "serial":
+            cleaned.pop(f.field_name, None)
+
+
+# ---------- 公式与明细行计算（保存时服务端兜底重算） ----------
+
+def _numify(ctx: dict) -> dict:
+    """Decimal → float：避免 Decimal × float 字面量 TypeError（公式内常量都是 float）。"""
+    return {k: (float(v) if isinstance(v, Decimal) else v) for k, v in ctx.items()}
+
+
+def _eval_formula(expr_src: str, ctx: dict, allow_fields: set[str] | None = None):
+    """求值一条公式；配置错误（语法/字段不存在）返回 None，不阻断保存。"""
+    from . import expr as expr_mod
+    try:
+        node = expr_mod.parse(expr_src, allow_fields)
+        return expr_mod.evaluate(node, _numify(ctx))
+    except expr_mod.ExprError:
+        return None
+
+
+def _apply_row_formulas(columns: list[dict], row: dict) -> None:
+    """子表行内公式：列可配 options.formula（引用本行其他列）。多遍求值支持公式列引用公式列。"""
+    formula_cols = [c for c in columns if isinstance((c.get("options") or {}).get("formula"), str)]
+    if not formula_cols:
+        return
+    col_names = {c.get("field_name") for c in columns}
+    for _ in range(len(formula_cols) + 1):
+        changed = False
+        for c in formula_cols:
+            val = _eval_formula(c["options"]["formula"], row, col_names)
+            if row.get(c.get("field_name")) != val:
+                row[c.get("field_name")] = val
+                changed = True
+        if not changed:
+            break
+
+
+def apply_computed(fields: list[MetaField], cleaned: dict, base: dict | None = None) -> None:
+    """公式字段与明细行计算（服务端权威，覆盖客户端提交值）。
+    cleaned 为已 coerce 的提交值；base 为更新场景的存量记录（partial 合并上下文）。
+    顺序：先算子表（行公式 + sum_to 合计回填），再算顶层公式（可引用合计结果）。"""
+    ctx = dict(base or {})
+    ctx.update(cleaned)
+
+    for f in fields:
+        if f.data_type != "subform" or f.field_name not in cleaned:
+            continue
+        rows = cleaned.get(f.field_name)
+        if not isinstance(rows, list):
+            continue
+        columns = (f.options or {}).get("columns") or []
+        for row in rows:
+            if isinstance(row, dict):
+                _apply_row_formulas(columns, row)
+        ctx[f.field_name] = rows
+        # 列合计回填主表字段：列 options.sum_to = 主表字段名
+        for c in columns:
+            target = (c.get("options") or {}).get("sum_to")
+            if not target:
+                continue
+            vals = [r.get(c.get("field_name")) for r in rows if isinstance(r, dict)]
+            nums = [v for v in vals if isinstance(v, (int, float, Decimal)) and not isinstance(v, bool)]
+            cleaned[target] = sum(nums) if nums else None
+            ctx[target] = cleaned[target]
+
+    formula_fields = [f for f in fields if isinstance((f.options or {}).get("formula"), str)]
+    if formula_fields:
+        allow = {f.field_name for f in fields}
+        for _ in range(len(formula_fields) + 1):
+            changed = False
+            for f in formula_fields:
+                val = _eval_formula(f.options["formula"], ctx, allow)
+                if ctx.get(f.field_name) != val:
+                    ctx[f.field_name] = val
+                    changed = True
+            if not changed:
+                break
+        for f in formula_fields:
+            cleaned[f.field_name] = ctx.get(f.field_name)
 
 
 def get_record(db: Session, table_id: int, record_id: int) -> dict:
@@ -262,7 +427,7 @@ def get_record(db: Session, table_id: int, record_id: int) -> dict:
     row = db.execute(select(table).where(table.c.id == record_id)).mappings().first()
     if not row:
         raise HTTPException(404, "记录不存在")
-    return _expand_image_fields(row_to_dict(row), fields)
+    return _expand_json_fields(row_to_dict(row), fields)
 
 
 def _fire_workflow_hook(kind: str, table_id: int, record: dict, old_record: dict | None = None) -> None:
@@ -291,10 +456,12 @@ def create_record(db: Session, table_id: int, data: dict, user: str | None = Non
             ok, cv, _ = coerce_value(f.default_value, f.data_type, True)
             if ok:
                 cleaned[f.field_name] = cv
+    apply_serials(db, table_id, fields, cleaned)
+    apply_computed(fields, cleaned)
     now = datetime.now()
     cleaned["created_at"] = now
     cleaned["updated_at"] = now
-    _encode_image_fields(cleaned, fields)
+    _encode_json_fields(cleaned, fields)
     result = db.execute(table.insert().values(**cleaned))
     db.commit()
     record = get_record(db, table_id, result.inserted_primary_key[0])
@@ -319,8 +486,10 @@ def update_record(db: Session, table_id: int, record_id: int, data: dict, user: 
     cleaned, errors = coerce_payload(fields, data, partial=True)
     if errors:
         raise HTTPException(422, detail=errors)
+    strip_serial_fields(fields, cleaned)
+    apply_computed(fields, cleaned, base=before)
     cleaned["updated_at"] = datetime.now()
-    _encode_image_fields(cleaned, fields)
+    _encode_json_fields(cleaned, fields)
     db.execute(table.update().where(table.c.id == record_id).values(**cleaned))
     db.commit()
     after = get_record(db, table_id, record_id)

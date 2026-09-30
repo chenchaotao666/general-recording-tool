@@ -37,6 +37,19 @@ class MetaField(Base):
     sort_order = Column(Integer, default=0)
 
 
+class SerialCounter(Base):
+    """自动编号计数器：按（表, 字段, 重置周期）一行，原子自增发号，保证并发不重号"""
+    __tablename__ = "serial_counters"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
+    field_name = Column(String(64), nullable=False)
+    period_key = Column(String(16), default="")   # 周期键：daily=YYYYMMDD / monthly=YYYYMM / never=空串
+    value = Column(Integer, default=0, nullable=False)
+
+    __table_args__ = (UniqueConstraint("table_id", "field_name", "period_key", name="uq_serial_counters"),)
+
+
 class Permission(Base):
     """权限点：内置 + 自定义。value 型权限（如数据表上限）通过 role_permissions.value 配置"""
     __tablename__ = "permissions"

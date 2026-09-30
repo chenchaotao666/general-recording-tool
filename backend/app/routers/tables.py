@@ -42,8 +42,13 @@ def _share_perms(db: Session, mt: MetaTable, user: User) -> dict:
 
 
 @router.get("")
-def list_tables(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """我的表 + 分享给我的表（含用户组分享）。admin 不例外——未分享的不出现在列表。"""
+def list_tables(db: Session = Depends(get_db), user: User = Depends(get_current_user),
+                all: bool = False):
+    """我的表 + 分享给我的表（含用户组分享）。admin 不例外——未分享的不出现在列表。
+    all=true（仅 admin 生效）：返回全部表，供关联配置等需要跨属主选表的场景。"""
+    if all and user.role == "admin":
+        rows = db.query(MetaTable).order_by(MetaTable.id.desc()).all()
+        return [meta_service.table_out(db, t, with_fields=False, access=_share_perms(db, t, user)) for t in rows]
     shared_ids = [
         s.table_id for s in db.query(TableShare)
         .outerjoin(GroupMember, TableShare.group_id == GroupMember.group_id)

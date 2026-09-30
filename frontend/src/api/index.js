@@ -45,7 +45,7 @@ export const uploadImage = (file) => {
 export const imageUrl = (id) => `/api/uploads/image/${id}?token=${localStorage.getItem('grt_token')}`
 
 // 数据表
-export const listTables = () => http.get('/tables')
+export const listTables = (params) => http.get('/tables', { params })   // params.all=1：admin 返回全部表（配置场景用）
 export const getTable = (id) => http.get(`/tables/${id}`)
 export const createTable = (payload) => http.post('/tables', payload)
 export const updateTable = (id, payload) => http.put(`/tables/${id}`, payload)

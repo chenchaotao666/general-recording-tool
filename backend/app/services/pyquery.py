@@ -46,6 +46,8 @@ def normalize_value(v, data_type: str):
         return str(v).strip().lower() in {"是", "true", "1", "yes", "y", "对", "√"}
     if data_type == "image":
         return v if isinstance(v, list) else None   # 图片字段存 file_id 列表，原样保留
+    if data_type == "subform":
+        return v if isinstance(v, list) else None   # 明细行存 JSON 数组，原样保留（不参与筛选语义）
     return str(v)
 
 

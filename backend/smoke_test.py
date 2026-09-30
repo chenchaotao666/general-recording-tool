@@ -1807,6 +1807,8 @@ from datetime import date as _date, timedelta as _td
 
 _today = _date.today()
 _ly = _today.replace(year=_today.year - 1)   # 去年同期同一天
+_m1 = _today.replace(day=1)                  # 本月 1 号（月界安全：today-2d 可能落到上月）
+_ly1 = _m1.replace(year=_m1.year - 1)        # 去年同月 1 号
 CE_FIELDS = [
     {"field_name": "d", "label": "日期", "data_type": "date", "widget": "date-picker"},
     {"field_name": "v", "label": "数量", "data_type": "int", "widget": "number"},
@@ -1815,9 +1817,9 @@ CE_FIELDS = [
 CE_RECS = [
     {"d": _today.isoformat(), "v": 10, "c": "A"},
     {"d": _today.isoformat(), "v": 30, "c": "B"},
-    {"d": (_today - _td(days=2)).isoformat(), "v": 20, "c": "A"},
+    {"d": _m1.isoformat(), "v": 20, "c": "A"},
     {"d": _ly.isoformat(), "v": 5, "c": "A"},
-    {"d": (_ly - _td(days=2)).isoformat(), "v": 15, "c": "B"},
+    {"d": _ly1.isoformat(), "v": 15, "c": "B"},
 ]
 ce_tids = {}
 for mode in ("json", "physical"):

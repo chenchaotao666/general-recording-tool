@@ -6,6 +6,42 @@
         <el-tag v-if="meta && !meta.is_owner" size="small" style="margin-left: 8px">来自 {{ meta.owner_label }} 的分享</el-tag>
       </h2>
       <div>
+        <el-popover placement="bottom-end" width="320" trigger="click">
+          <template #reference>
+            <el-button :icon="Grid">显示列</el-button>
+          </template>
+          <div class="col-picker">
+            <div class="col-picker-head">
+              <span>选择要显示的列（{{ listFields.length }}/{{ columnCandidates.length }}）</span>
+              <el-button text type="primary" size="small" @click="resetColumns">恢复默认</el-button>
+            </div>
+            <div class="col-picker-actions">
+              <el-button size="small" @click="showAllColumns">全选</el-button>
+              <el-button size="small" @click="hideAllColumns">全不选</el-button>
+            </div>
+            <div v-for="(f, i) in orderedCandidates" :key="f.field_name" class="col-picker-row">
+              <el-checkbox
+                :model-value="!effHidden.has(f.field_name)"
+                :label="f.label" size="small"
+                @change="(v) => toggleColumn(f.field_name, v)"
+              />
+              <span class="col-mover">
+                <el-button text size="small" :disabled="i === 0" title="移到最上" @click="moveColumnTo(f.field_name, 0)">
+                  <el-icon><Top /></el-icon>
+                </el-button>
+                <el-button text size="small" :disabled="i === 0" title="上移" @click="moveColumn(f.field_name, -1)">
+                  <el-icon><ArrowUp /></el-icon>
+                </el-button>
+                <el-button text size="small" :disabled="i === orderedCandidates.length - 1" title="下移" @click="moveColumn(f.field_name, 1)">
+                  <el-icon><ArrowDown /></el-icon>
+                </el-button>
+                <el-button text size="small" :disabled="i === orderedCandidates.length - 1" title="移到最下" @click="moveColumnTo(f.field_name, orderedCandidates.length - 1)">
+                  <el-icon><Bottom /></el-icon>
+                </el-button>
+              </span>
+            </div>
+          </div>
+        </el-popover>
         <el-button v-if="canAlter" :icon="SetUp" @click="openStruct">表结构</el-button>
         <el-button :icon="Download" @click="exportXlsx">导出 Excel</el-button>
         <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">新增记录</el-button>
@@ -31,10 +67,29 @@
           <el-select v-else-if="f.widget === 'switch'" v-model="filterModel[f.field_name]" clearable style="width: 120px" placeholder="全部">
             <el-option label="是" :value="true" /><el-option label="否" :value="false" />
           </el-select>
-          <el-input-number
-            v-else-if="f.widget === 'number'" v-model="filterModel[f.field_name]"
-            controls-position="right" style="width: 150px" placeholder="等于"
-          />
+          <div v-else-if="f.widget === 'number'" class="num-filter">
+            <el-select v-model="filterOps[f.field_name]" style="width: 78px">
+              <el-option v-for="o in NUM_OPS" :key="o.value" :label="o.label" :value="o.value" />
+            </el-select>
+            <template v-if="filterOps[f.field_name] === 'between'">
+              <el-input-number
+                v-model="filterModel[f.field_name]" controls-position="right"
+                :precision="f.data_type === 'decimal' ? 4 : 0"
+                placeholder="最小" style="width: 105px"
+              />
+              <span class="num-sep">~</span>
+              <el-input-number
+                v-model="filterMax[f.field_name]" controls-position="right"
+                :precision="f.data_type === 'decimal' ? 4 : 0"
+                placeholder="最大" style="width: 105px"
+              />
+            </template>
+            <el-input-number
+              v-else v-model="filterModel[f.field_name]" controls-position="right"
+              :precision="f.data_type === 'decimal' ? 4 : 0"
+              placeholder="值" style="width: 120px"
+            />
+          </div>
           <el-date-picker
             v-else-if="f.widget === 'date-picker' || f.widget === 'datetime-picker'"
             v-model="filterModel[f.field_name]" type="daterange" value-format="YYYY-MM-DD"
@@ -58,9 +113,12 @@
       </template>
     </el-card>
 
-    <!-- 动态列表 -->
-    <el-table :data="rows" v-loading="loading" border stripe @sort-change="onSortChange">
-      <el-table-column type="index" width="50" label="#" />
+    <!-- 动态列表：合计行固定显示数字列总和（口径 = 全部筛选结果） -->
+    <el-table
+      :data="rows" v-loading="loading" border stripe show-summary :summary-method="summaryMethod"
+      @sort-change="onSortChange"
+    >
+      <el-table-column type="index" width="55" label="#" />
       <el-table-column
         v-for="f in listFields" :key="f.field_name"
         :prop="f.field_name" :label="f.label" sortable="custom"
@@ -78,6 +136,9 @@
               +{{ asImageList(row[f.field_name]).length - 3 }}
             </span>
           </template>
+          <span v-else-if="f.data_type === 'subform'">
+            {{ Array.isArray(row[f.field_name]) ? `共 ${row[f.field_name].length} 行明细` : '' }}
+          </span>
           <span v-else>{{ fmt(f, row[f.field_name]) }}</span>
         </template>
       </el-table-column>
@@ -102,17 +163,17 @@
 
     <el-dialog
       v-model="dialogVisible" :title="editing ? '编辑记录' : '新增记录'"
-      width="640px" destroy-on-close
+      :width="hasSubform || fields.length > 10 ? '860px' : '640px'" destroy-on-close
     >
       <DynamicForm
-        :fields="meta.fields" :initial="editing || {}" :loading="saving"
+        :fields="formFields" :initial="editing || {}" :loading="saving"
         :table-id="tableId" :record-id="editing?.id || null"
         @submit="onSave" @cancel="dialogVisible = false"
       />
     </el-dialog>
 
     <!-- 表结构编辑：加/删/改/重命名字段（仅主人/admin 可见） -->
-    <el-drawer v-model="structVisible" title="表结构设置" size="600px">
+    <el-drawer v-model="structVisible" title="表结构设置" size="860px">
       <el-form label-width="70px" style="max-width: 400px">
         <el-form-item label="表名称">
           <el-input v-model="structLabel" maxlength="64" />
@@ -124,6 +185,7 @@
         <span class="sr-name">字段名（英文）</span>
         <span class="sr-type">类型</span>
         <span class="sr-null">可空</span>
+        <span class="sr-cfg" />
         <span class="sr-del" />
       </div>
       <div v-for="(r, i) in structRows" :key="r._key" class="struct-row">
@@ -133,9 +195,16 @@
           <el-option v-for="t in DATA_TYPES" :key="t" :label="t" :value="t" />
         </el-select>
         <el-checkbox v-model="r.nullable" class="sr-null" />
+        <el-button
+          text type="primary" size="small" class="sr-cfg"
+          :type="hasBizConfig(r) ? 'warning' : 'primary'" @click="openFieldConfig(r)"
+        >配置</el-button>
         <el-button text type="danger" size="small" class="sr-del" @click="structRows.splice(i, 1)">删</el-button>
       </div>
       <el-button text type="primary" size="small" @click="addStructRow">+ 添加字段</el-button>
+      <div class="struct-hint">
+        「配置」可设置：关联选择（选供应商带出地址/电话）、计算公式（金额=数量×单价）、subform 明细表（单据行）。
+      </div>
       <div v-if="meta?.storage_mode !== 'json'" class="struct-hint">
         physical 模式表暂不支持修改已有字段类型（可加/删/改名字段）
       </div>
@@ -147,6 +216,12 @@
         <el-button type="primary" :loading="structSaving" @click="saveStruct">保存修改</el-button>
       </div>
     </el-drawer>
+
+    <!-- 字段业务配置（关联带出/公式/子表列） -->
+    <FieldOptionsDialog
+      v-if="cfgVisible" v-model="cfgVisible" :field="cfgField"
+      :sibling-fields="structRows" @save="onFieldConfigSave"
+    />
   </div>
 </template>
 
@@ -154,15 +229,17 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Download, SetUp } from '@element-plus/icons-vue'
+import { Plus, Download, SetUp, Grid, ArrowUp, ArrowDown, Top, Bottom } from '@element-plus/icons-vue'
 import DynamicForm from '../components/DynamicForm.vue'
+import FieldOptionsDialog from '../components/FieldOptionsDialog.vue'
 import FiltersEditor from '../components/workflow/FiltersEditor.vue'
 import { alterTable, createRecord, deleteRecord, getTable, imageUrl, listRecords, recordExportUrl, updateRecord, updateTable } from '../api'
 
-const DATA_TYPES = ['varchar', 'text', 'int', 'decimal', 'date', 'datetime', 'bool', 'image']
+const DATA_TYPES = ['varchar', 'text', 'int', 'decimal', 'date', 'datetime', 'bool', 'image', 'subform', 'serial']
 const WIDGET_OF = {
   varchar: 'input', text: 'textarea', int: 'number', decimal: 'number',
   date: 'date-picker', datetime: 'datetime-picker', bool: 'switch', image: 'image-uploader',
+  subform: 'subform', serial: 'serial',
 }
 
 // 图片列兜底：值可能是 list / JSON 字符串 / null
@@ -180,6 +257,7 @@ const tableId = Number(route.params.id)
 const meta = ref(null)
 const metaLoading = ref(true)
 const rows = ref([])
+const summary = ref({})   // 数字列合计（服务端随列表返回，口径为全部筛选结果）
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
@@ -187,6 +265,15 @@ const loading = ref(false)
 const sortBy = ref(null)
 const sortOrder = ref(null)
 const filterModel = reactive({})
+// 数字字段的比较操作符与区间上限（与 filterModel 平行的辅助模型）
+const NUM_OPS = [
+  { value: 'eq', label: '=' }, { value: 'ne', label: '≠' },
+  { value: 'gt', label: '>' }, { value: 'gte', label: '≥' },
+  { value: 'lt', label: '<' }, { value: 'lte', label: '≤' },
+  { value: 'between', label: '介于' },
+]
+const filterOps = reactive({})
+const filterMax = reactive({})
 // 高级筛选：规则编辑器（与工作流筛选条件同一组件），{logic: AND|OR, rules}
 const filterMode = ref('quick')
 const advFilters = reactive({ logic: 'AND', rules: [] })
@@ -199,7 +286,120 @@ const canCreate = computed(() => meta.value?.my_perms?.can_create)
 const canEdit = computed(() => meta.value?.my_perms?.can_edit)
 const canAlter = computed(() => meta.value?.is_owner || meta.value?.my_perms?.is_admin)
 const canDelete = computed(() => meta.value?.my_perms?.can_delete)
-const listFields = computed(() => fields.value.filter((f) => f.options?.show_in_list !== false))
+// ---------- 显示列选择（用户级，localStorage 按表记忆；默认跟随字段的 show_in_list 配置） ----------
+const COLS_KEY = `grt_cols_${tableId}`
+// 存"隐藏集合"而非"显示集合"：以后新增字段默认可见
+const hiddenCols = ref(loadHiddenCols())
+
+function loadHiddenCols() {
+  try {
+    const raw = localStorage.getItem(COLS_KEY)
+    if (raw === null) return null   // 未自定义过 → 用默认
+    return new Set(JSON.parse(raw))
+  } catch { return null }
+}
+
+function saveHiddenCols() {
+  try { localStorage.setItem(COLS_KEY, JSON.stringify([...hiddenCols.value])) } catch { /* 隐私模式等场景忽略 */ }
+}
+
+// 默认隐藏 = 字段配置 show_in_list: false；subform 永不上列
+const defaultHidden = computed(() =>
+  new Set(fields.value.filter((f) => f.options?.show_in_list === false || f.data_type === 'subform').map((f) => f.field_name))
+)
+const effHidden = computed(() => hiddenCols.value ?? defaultHidden.value)
+// 可选列全集（含默认隐藏的，用户可自行放出；不含 subform）
+const columnCandidates = computed(() => fields.value.filter((f) => f.data_type !== 'subform'))
+
+// 列顺序（用户级，localStorage 按表记忆；null = 字段默认顺序）
+const ORDER_KEY = `grt_colorder_${tableId}`
+const colOrder = ref(loadColOrder())
+
+function loadColOrder() {
+  try {
+    const raw = localStorage.getItem(ORDER_KEY)
+    return raw === null ? null : JSON.parse(raw)
+  } catch { return null }
+}
+
+function saveColOrder() {
+  try { localStorage.setItem(ORDER_KEY, JSON.stringify(colOrder.value)) } catch { /* ignore */ }
+}
+
+// 有效列顺序：用户自定义顺序优先，之后新增的字段按默认顺序排在末尾
+const orderedCandidates = computed(() => {
+  const natural = columnCandidates.value
+  if (!colOrder.value) return natural
+  const byName = new Map(natural.map((f) => [f.field_name, f]))
+  const out = []
+  for (const name of colOrder.value) {
+    const f = byName.get(name)
+    if (f) { out.push(f); byName.delete(name) }
+  }
+  return out.concat([...byName.values()])
+})
+
+const listFields = computed(() => orderedCandidates.value.filter((f) => !effHidden.value.has(f.field_name)))
+
+// 编辑表单的字段顺序：优先采用「显示列」里用户调好的列顺序；未涉及字段（subform/新字段）按默认顺序排尾
+const formFields = computed(() => {
+  if (!colOrder.value) return fields.value
+  const byName = new Map(fields.value.map((f) => [f.field_name, f]))
+  const out = []
+  for (const name of colOrder.value) {
+    const f = byName.get(name)
+    if (f) { out.push(f); byName.delete(name) }
+  }
+  return out.concat([...byName.values()])
+})
+
+function moveColumn(name, dir) {
+  const arr = orderedCandidates.value.map((f) => f.field_name)
+  const i = arr.indexOf(name)
+  const j = i + dir
+  if (i < 0 || j < 0 || j >= arr.length) return
+  ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  colOrder.value = arr
+  saveColOrder()
+}
+
+function moveColumnTo(name, index) {
+  const arr = orderedCandidates.value.map((f) => f.field_name)
+  const i = arr.indexOf(name)
+  if (i < 0 || i === index) return
+  arr.splice(i, 1)
+  arr.splice(index, 0, name)
+  colOrder.value = arr
+  saveColOrder()
+}
+
+function toggleColumn(name, show) {
+  const next = new Set(effHidden.value)
+  if (show) next.delete(name)
+  else next.add(name)
+  hiddenCols.value = next
+  saveHiddenCols()
+}
+
+function resetColumns() {
+  hiddenCols.value = null
+  colOrder.value = null
+  try {
+    localStorage.removeItem(COLS_KEY)
+    localStorage.removeItem(ORDER_KEY)
+  } catch { /* ignore */ }
+}
+
+function showAllColumns() {
+  hiddenCols.value = new Set()
+  saveHiddenCols()
+}
+
+function hideAllColumns() {
+  hiddenCols.value = new Set(columnCandidates.value.map((f) => f.field_name))
+  saveHiddenCols()
+}
+const hasSubform = computed(() => fields.value.some((f) => f.data_type === 'subform'))
 const filterable = computed(() =>
   fields.value.filter((f) =>
     ['input', 'select', 'switch', 'number', 'date-picker', 'datetime-picker'].includes(f.widget)
@@ -212,6 +412,18 @@ function fmt(f, val) {
   if (f.data_type === 'date') return String(val).slice(0, 10)
   if (f.data_type === 'datetime') return String(val).replace('T', ' ').slice(0, 19)
   return val
+}
+
+// 合计行：首列写「合计」，数字列取服务端合计值，其余留空
+function summaryMethod({ columns }) {
+  return columns.map((col, i) => {
+    if (i === 0) return '合计'
+    const f = fields.value.find((x) => x.field_name === col.property)
+    if (!f || !['int', 'decimal'].includes(f.data_type)) return ''
+    const v = summary.value[f.field_name]
+    if (v === null || v === undefined) return ''
+    return f.data_type === 'int' ? Math.round(v) : Math.round(v * 10000) / 10000
+  })
 }
 
 function fieldOptions(f) {
@@ -229,6 +441,17 @@ function buildFilters() {
   const filters = []
   for (const f of filterable.value) {
     const v = filterModel[f.field_name]
+    if (f.widget === 'number') {
+      const op = filterOps[f.field_name] || 'eq'
+      if (op === 'between') {
+        if (v !== null && v !== undefined && v !== '') filters.push({ field: f.field_name, op: 'gte', value: v })
+        const v2 = filterMax[f.field_name]
+        if (v2 !== null && v2 !== undefined && v2 !== '') filters.push({ field: f.field_name, op: 'lte', value: v2 })
+      } else if (v !== null && v !== undefined && v !== '') {
+        filters.push({ field: f.field_name, op, value: v })
+      }
+      continue
+    }
     if (v === null || v === undefined || v === '') continue
     if (f.widget === 'date-picker' || f.widget === 'datetime-picker') {
       if (Array.isArray(v) && v.length === 2) {
@@ -271,6 +494,7 @@ async function load() {
     const res = await listRecords(tableId, queryParams())
     rows.value = res.items
     total.value = res.total
+    summary.value = res.summary || {}
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
@@ -284,6 +508,7 @@ async function silentLoad() {
     const res = await listRecords(tableId, queryParams())
     rows.value = res.items
     total.value = res.total
+    summary.value = res.summary || {}
   } catch { /* 静默刷新失败不打断用户 */ }
 }
 
@@ -312,6 +537,8 @@ function search() {
 
 function resetFilters() {
   for (const k of Object.keys(filterModel)) filterModel[k] = null
+  for (const k of Object.keys(filterMax)) filterMax[k] = null
+  for (const k of Object.keys(filterOps)) filterOps[k] = 'eq'
   advFilters.logic = 'AND'
   advFilters.rules = []
   search()
@@ -372,7 +599,13 @@ let structKeySeq = 0
 function openStruct() {
   structLabel.value = meta.value?.label || ''
   origFields.value = JSON.parse(JSON.stringify(meta.value?.fields || []))
-  structRows.value = origFields.value.map((f) => ({ ...f, _key: ++structKeySeq }))
+  // 字段行顺序优先采用「显示列」里调好的顺序（与编辑表单一致）
+  const orderIndex = new Map((colOrder.value || []).map((name, i) => [name, i]))
+  const sorted = colOrder.value
+    ? origFields.value.slice().sort((a, b) =>
+        (orderIndex.get(a.field_name) ?? 1e9) - (orderIndex.get(b.field_name) ?? 1e9))
+    : origFields.value
+  structRows.value = sorted.map((f) => ({ ...f, _key: ++structKeySeq }))
   structVisible.value = true
 }
 
@@ -383,10 +616,34 @@ function addStructRow() {
   })
 }
 
+// ---------- 字段业务配置（关联/公式/子表列） ----------
+const cfgVisible = ref(false)
+const cfgField = ref(null)
+
+function hasBizConfig(r) {
+  return !!(r.options?.formula || r.options?.relation || r.data_type === 'subform')
+}
+
+function openFieldConfig(r) {
+  cfgField.value = r
+  cfgVisible.value = true
+}
+
+function onFieldConfigSave({ widget, options }) {
+  cfgField.value.widget = widget
+  cfgField.value.options = options
+  cfgVisible.value = false
+}
+
 function buildStructOps() {
   const ops = []
   const origById = new Map(origFields.value.map((f) => [f.id, f]))
   const seenIds = new Set()
+  // widget/options 差异补进 update_field
+  const fillBiz = (upd, r, orig) => {
+    if (r.widget && r.widget !== orig.widget) upd.widget = r.widget
+    if (JSON.stringify(r.options || {}) !== JSON.stringify(orig.options || {})) upd.options = r.options || {}
+  }
   for (const r of structRows.value) {
     if (r.id) {
       seenIds.add(r.id)
@@ -400,12 +657,14 @@ function buildStructOps() {
         const upd = { op: 'update_field', field_name: r.field_name }
         if (r.data_type !== orig.data_type) upd.data_type = r.data_type
         if (r.nullable !== orig.nullable) upd.nullable = r.nullable
+        fillBiz(upd, r, orig)
         if (Object.keys(upd).length > 2) ops.push(upd)
       } else {
         const upd = { op: 'update_field', field_name: r.field_name }
         if (r.label !== orig.label) upd.label = r.label
         if (r.data_type !== orig.data_type) upd.data_type = r.data_type
         if (r.nullable !== orig.nullable) upd.nullable = r.nullable
+        fillBiz(upd, r, orig)
         if (Object.keys(upd).length > 2) ops.push(upd)
       }
     } else if (r.field_name.trim()) {
@@ -413,7 +672,9 @@ function buildStructOps() {
         op: 'add_field',
         field: {
           field_name: r.field_name.trim(), label: r.label.trim() || r.field_name.trim(),
-          data_type: r.data_type, nullable: r.nullable, widget: WIDGET_OF[r.data_type] || 'input',
+          data_type: r.data_type, nullable: r.nullable,
+          widget: r.widget || WIDGET_OF[r.data_type] || 'input',
+          options: r.options || {},
         },
       })
     }
@@ -452,8 +713,18 @@ async function saveStruct() {
   }
 }
 
+// 数字筛选操作符默认值（元数据加载/变更后调用）
+function initFilterOps() {
+  for (const f of fields.value) {
+    if (f.widget === 'number' && !filterOps[f.field_name]) filterOps[f.field_name] = 'eq'
+  }
+}
+
 async function reloadMeta() {
-  try { meta.value = await getTable(tableId) } catch { /* 静默 */ }
+  try {
+    meta.value = await getTable(tableId)
+    initFilterOps()
+  } catch { /* 静默 */ }
 }
 
 // AI 助手改了表结构时，元数据即时重载（字段列随之更新）
@@ -464,6 +735,7 @@ function onTableMetaChanged(e) {
 onMounted(async () => {
   try {
     meta.value = await getTable(tableId)
+    initFilterOps()
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
@@ -485,13 +757,24 @@ onUnmounted(() => {
 <style scoped>
 .struct-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .struct-head { font-size: 12px; color: #909399; }
-.sr-label { width: 130px; }
-.sr-name { width: 150px; }
-.sr-type { width: 110px; }
+.sr-label { width: 190px; }
+.sr-name { width: 210px; }
+.sr-type { width: 120px; }
 .sr-null { width: 40px; }
+.sr-cfg { width: 42px; }
 .sr-del { width: 36px; }
 .struct-hint { font-size: 12px; color: #909399; margin-top: 10px; }
 .struct-footer { margin-top: 18px; display: flex; justify-content: flex-end; gap: 8px; }
 .cell-thumb { width: 40px; height: 40px; border-radius: 4px; margin-right: 4px; vertical-align: middle; }
 .thumb-more { font-size: 12px; color: #909399; }
+.num-filter { display: flex; align-items: center; gap: 4px; }
+.num-sep { color: #909399; }
+.col-picker { display: flex; flex-direction: column; max-height: 360px; overflow-y: auto; }
+.col-picker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; color: #606266; }
+.col-picker-actions { display: flex; gap: 8px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #ebeef5; }
+.col-picker-actions .el-button + .el-button { margin-left: 0; }
+.col-picker-row { display: flex; align-items: center; justify-content: space-between; }
+.col-picker-row .el-checkbox { flex: 1; }
+.col-mover { display: flex; }
+.col-mover .el-button + .el-button { margin-left: 2px; }
 </style>

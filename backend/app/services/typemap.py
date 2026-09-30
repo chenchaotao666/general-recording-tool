@@ -8,8 +8,9 @@ from decimal import Decimal, InvalidOperation
 from dateutil import parser as dtparser
 from sqlalchemy import BigInteger, Boolean, Column, Date, DateTime, Numeric, String, Text
 
-DATA_TYPES = ["varchar", "text", "int", "decimal", "date", "datetime", "bool", "image"]
-WIDGETS = ["input", "textarea", "number", "date-picker", "datetime-picker", "select", "switch", "image-uploader"]
+DATA_TYPES = ["varchar", "text", "int", "decimal", "date", "datetime", "bool", "image", "subform", "serial"]
+WIDGETS = ["input", "textarea", "number", "date-picker", "datetime-picker", "select", "switch", "image-uploader",
+           "relation-picker", "subform", "serial"]
 
 DATE_FORMATS = [
     "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d", "%Y年%m月%d日",
@@ -44,7 +45,7 @@ def default_widget(data_type: str) -> str:
     return {
         "varchar": "input", "text": "textarea", "int": "number", "decimal": "number",
         "date": "date-picker", "datetime": "datetime-picker", "bool": "switch",
-        "image": "image-uploader",
+        "image": "image-uploader", "subform": "subform", "serial": "serial",
     }.get(data_type, "input")
 
 
@@ -53,6 +54,8 @@ def sa_column(field) -> Column:
     t = field.data_type
     if t == "varchar":
         col_type = String(field.length or 255)
+    elif t == "serial":
+        col_type = String(128)   # 自动编号：服务端按规则生成
     elif t == "text":
         col_type = Text()
     elif t == "int":
@@ -67,6 +70,8 @@ def sa_column(field) -> Column:
         col_type = Boolean()
     elif t == "image":
         col_type = Text()   # 存图片 file_id 的 JSON 数组
+    elif t == "subform":
+        col_type = Text()   # 存明细行的 JSON 数组（行结构见 field.options.columns）
     else:
         raise ValueError(f"不支持的字段类型：{t}")
     return Column(field.field_name, col_type, nullable=field.nullable, comment=field.label)
@@ -144,12 +149,12 @@ def infer_column_type(values: list) -> str:
     return "text" if max_len > 200 else "varchar"
 
 
-def coerce_value(v, data_type: str, nullable: bool = True):
-    """把原始值转换为字段类型。返回 (ok, value, error)。"""
+def coerce_value(v, data_type: str, nullable: bool = True, options: dict | None = None):
+    """把原始值转换为字段类型。返回 (ok, value, error)。options 为字段元数据（subform 的行结构校验用）。"""
     if v is None or (isinstance(v, str) and v.strip() == ""):
         return (True, None, None) if nullable else (False, None, "不能为空")
     try:
-        if data_type in ("varchar", "text"):
+        if data_type in ("varchar", "text", "serial"):
             return True, str(v), None
         if data_type == "int":
             if isinstance(v, bool):
@@ -192,6 +197,31 @@ def coerce_value(v, data_type: str, nullable: bool = True):
                     return False, None, "图片标识无效"
                 out.append(item.strip())
             return (True, out or None, None) if out else (True, None, None)
+        if data_type == "subform":
+            return _coerce_subform(v, options or {})
         raise ValueError
     except (ValueError, InvalidOperation):
         return False, None, f"值「{v}」无法转换为 {data_type}"
+
+
+def _coerce_subform(v, options: dict):
+    """明细行数组校验：逐行按 options.columns 的列定义转换单元格值（行内一律可空）。"""
+    if not isinstance(v, list):
+        return False, None, "明细必须是数组"
+    columns = options.get("columns") or []
+    by_name = {c.get("field_name"): c for c in columns if isinstance(c, dict)}
+    out = []
+    for i, row in enumerate(v[:500]):   # 单字段明细上限 500 行
+        if not isinstance(row, dict):
+            return False, None, f"第 {i + 1} 行明细必须是对象"
+        r = {}
+        for k, val in row.items():
+            c = by_name.get(k)
+            if c is None:
+                continue   # 忽略未知列，防注入
+            ok, cv, err = coerce_value(val, c.get("data_type", "varchar"), True, c.get("options"))
+            if not ok:
+                return False, None, f"第 {i + 1} 行「{c.get('label', k)}」：{err}"
+            r[k] = cv
+        out.append(r)
+    return (True, out or None, None) if out else (True, None, None)
