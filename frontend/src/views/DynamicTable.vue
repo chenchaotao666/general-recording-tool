@@ -64,6 +64,12 @@
               v-for="opt in fieldOptions(f)" :key="String(opt.value)" :label="opt.label" :value="opt.value"
             />
           </el-select>
+          <RelationPicker
+            v-else-if="f.widget === 'relation-picker' && f.options?.relation?.table_id"
+            v-model="filterModel[f.field_name]" :relation="f.options.relation"
+            :allow-create="['varchar', 'text'].includes(f.data_type)"
+            placeholder="全部" style="width: 200px"
+          />
           <el-select v-else-if="f.widget === 'switch'" v-model="filterModel[f.field_name]" clearable style="width: 120px" placeholder="全部">
             <el-option label="是" :value="true" /><el-option label="否" :value="false" />
           </el-select>
@@ -104,7 +110,7 @@
       </el-form>
       <template v-else>
         <!-- 与工作流筛选条件同一组件；reactive 对象不能整体替换，手动拆赋值 -->
-        <FiltersEditor :model-value="advFilters" :fields="fields"
+        <FiltersEditor :model-value="advFilters" :fields="visibleFields"
           @update:model-value="(v) => { advFilters.logic = v.logic; advFilters.rules = v.rules }" />
         <div style="margin-top: 8px">
           <el-button type="primary" size="small" @click="search">查询</el-button>
@@ -173,7 +179,7 @@
     </el-dialog>
 
     <!-- 表结构编辑：加/删/改/重命名字段（仅主人/admin 可见） -->
-    <el-drawer v-model="structVisible" title="表结构设置" size="860px">
+    <el-drawer v-model="structVisible" title="表结构设置" size="min(1080px, 94vw)">
       <el-form label-width="70px" style="max-width: 400px">
         <el-form-item label="表名称">
           <el-input v-model="structLabel" maxlength="64" />
@@ -185,25 +191,39 @@
         <span class="sr-name">字段名（英文）</span>
         <span class="sr-type">类型</span>
         <span class="sr-null">可空</span>
-        <span class="sr-cfg" />
-        <span class="sr-del" />
+        <span class="sr-show">显示</span>
+        <span class="sr-cfg">配置</span>
+        <span class="sr-del">删除</span>
       </div>
-      <div v-for="(r, i) in structRows" :key="r._key" class="struct-row">
-        <el-input v-model="r.label" placeholder="如：金额" class="sr-label" />
-        <el-input v-model="r.field_name" placeholder="如：amount" class="sr-name" />
-        <el-select v-model="r.data_type" class="sr-type" :disabled="!!r.id && meta?.storage_mode !== 'json'">
-          <el-option v-for="t in DATA_TYPES" :key="t" :label="t" :value="t" />
-        </el-select>
-        <el-checkbox v-model="r.nullable" class="sr-null" />
-        <el-button
-          text type="primary" size="small" class="sr-cfg"
-          :type="hasBizConfig(r) ? 'warning' : 'primary'" @click="openFieldConfig(r)"
-        >配置</el-button>
-        <el-button text type="danger" size="small" class="sr-del" @click="structRows.splice(i, 1)">删</el-button>
+      <div v-for="(r, i) in structRows" :key="r._key" class="struct-row-wrap">
+        <div class="struct-row">
+          <el-input v-model="r.label" placeholder="如：金额" class="sr-label" />
+          <el-input v-model="r.field_name" placeholder="如：amount" class="sr-name" />
+          <el-select v-model="r.data_type" class="sr-type" :disabled="!!r.id && meta?.storage_mode !== 'json'">
+            <el-option v-for="t in DATA_TYPES" :key="t" :label="t" :value="t" />
+          </el-select>
+          <el-checkbox v-model="r.nullable" class="sr-null" />
+          <!-- 显隐总开关：控制 新增/编辑/过滤/列表；子表字段不适用（始终只在表单中） -->
+          <el-checkbox
+            v-if="r.data_type !== 'subform'"
+            :model-value="r.options?.show_in_list !== false" class="sr-show"
+            @change="(v) => setRowVisible(r, v)"
+          />
+          <span v-else class="sr-show" style="color: #c0c4cc">-</span>
+          <el-button
+            text type="primary" size="small" class="sr-cfg"
+            :type="hasBizConfig(r) ? 'warning' : 'primary'" @click="openFieldConfig(r)"
+          >配置</el-button>
+          <el-button text type="danger" size="small" class="sr-del" @click="structRows.splice(i, 1)">删</el-button>
+        </div>
+        <!-- 字段配置摘要：控件/选项/关联/公式/编号/子表/列表显隐，一眼看清每个字段配了什么 -->
+        <div v-if="configSummary(r).length" class="struct-cfg-tags">
+          <el-tag v-for="(t, j) in configSummary(r)" :key="j" size="small" type="info" effect="plain">{{ t }}</el-tag>
+        </div>
       </div>
       <el-button text type="primary" size="small" @click="addStructRow">+ 添加字段</el-button>
       <div class="struct-hint">
-        「配置」可设置：关联选择（选供应商带出地址/电话）、计算公式（金额=数量×单价）、subform 明细表（单据行）。
+        「显示」是总开关：关闭后该字段在新增、编辑、过滤、列表中全部隐藏；「显示列」面板只控制表格列。「配置」可设置：下拉选项、关联选择（选供应商带出地址/电话）、计算公式、subform 明细表。
       </div>
       <div v-if="meta?.storage_mode !== 'json'" class="struct-hint">
         physical 模式表暂不支持修改已有字段类型（可加/删/改名字段）
@@ -233,7 +253,8 @@ import { Plus, Download, SetUp, Grid, ArrowUp, ArrowDown, Top, Bottom } from '@e
 import DynamicForm from '../components/DynamicForm.vue'
 import FieldOptionsDialog from '../components/FieldOptionsDialog.vue'
 import FiltersEditor from '../components/workflow/FiltersEditor.vue'
-import { alterTable, createRecord, deleteRecord, getTable, imageUrl, listRecords, recordExportUrl, updateRecord, updateTable } from '../api'
+import RelationPicker from '../components/RelationPicker.vue'
+import { alterTable, createRecord, deleteRecord, getTable, imageUrl, listRecords, listTables, recordExportUrl, updateRecord, updateTable } from '../api'
 
 const DATA_TYPES = ['varchar', 'text', 'int', 'decimal', 'date', 'datetime', 'bool', 'image', 'subform', 'serial']
 const WIDGET_OF = {
@@ -282,11 +303,15 @@ const editing = ref(null)
 const saving = ref(false)
 
 const fields = computed(() => meta.value?.fields || [])
+// 「显示」总开关（show_in_list）：优先级最高，关闭后字段在 新增/编辑/过滤/列表 全部不出现；
+// 子表字段天然不进列表，总开关不适用于它（始终在表单中显示）
+const isFieldVisible = (f) => f.data_type === 'subform' || f.options?.show_in_list !== false
+const visibleFields = computed(() => fields.value.filter(isFieldVisible))
 const canCreate = computed(() => meta.value?.my_perms?.can_create)
 const canEdit = computed(() => meta.value?.my_perms?.can_edit)
 const canAlter = computed(() => meta.value?.is_owner || meta.value?.my_perms?.is_admin)
 const canDelete = computed(() => meta.value?.my_perms?.can_delete)
-// ---------- 显示列选择（用户级，localStorage 按表记忆；默认跟随字段的 show_in_list 配置） ----------
+// ---------- 显示列选择（用户级，localStorage 按表记忆；只控制表格列显示，候选集已被「显示」总开关过滤） ----------
 const COLS_KEY = `grt_cols_${tableId}`
 // 存"隐藏集合"而非"显示集合"：以后新增字段默认可见
 const hiddenCols = ref(loadHiddenCols())
@@ -294,7 +319,7 @@ const hiddenCols = ref(loadHiddenCols())
 function loadHiddenCols() {
   try {
     const raw = localStorage.getItem(COLS_KEY)
-    if (raw === null) return null   // 未自定义过 → 用默认
+    if (raw === null) return null   // 未自定义过 → 全部显示
     return new Set(JSON.parse(raw))
   } catch { return null }
 }
@@ -303,13 +328,10 @@ function saveHiddenCols() {
   try { localStorage.setItem(COLS_KEY, JSON.stringify([...hiddenCols.value])) } catch { /* 隐私模式等场景忽略 */ }
 }
 
-// 默认隐藏 = 字段配置 show_in_list: false；subform 永不上列
-const defaultHidden = computed(() =>
-  new Set(fields.value.filter((f) => f.options?.show_in_list === false || f.data_type === 'subform').map((f) => f.field_name))
-)
+const defaultHidden = computed(() => new Set())   // 显隐由「显示」总开关接管，这里不再有默认隐藏
 const effHidden = computed(() => hiddenCols.value ?? defaultHidden.value)
-// 可选列全集（含默认隐藏的，用户可自行放出；不含 subform）
-const columnCandidates = computed(() => fields.value.filter((f) => f.data_type !== 'subform'))
+// 可选列全集：已按「显示」总开关过滤；不含 subform
+const columnCandidates = computed(() => visibleFields.value.filter((f) => f.data_type !== 'subform'))
 
 // 列顺序（用户级，localStorage 按表记忆；null = 字段默认顺序）
 const ORDER_KEY = `grt_colorder_${tableId}`
@@ -341,10 +363,10 @@ const orderedCandidates = computed(() => {
 
 const listFields = computed(() => orderedCandidates.value.filter((f) => !effHidden.value.has(f.field_name)))
 
-// 编辑表单的字段顺序：优先采用「显示列」里用户调好的列顺序；未涉及字段（subform/新字段）按默认顺序排尾
+// 编辑表单的字段顺序：只含「显示」开启的字段；优先采用「显示列」里用户调好的列顺序；未涉及字段（subform/新字段）按默认顺序排尾
 const formFields = computed(() => {
-  if (!colOrder.value) return fields.value
-  const byName = new Map(fields.value.map((f) => [f.field_name, f]))
+  if (!colOrder.value) return visibleFields.value
+  const byName = new Map(visibleFields.value.map((f) => [f.field_name, f]))
   const out = []
   for (const name of colOrder.value) {
     const f = byName.get(name)
@@ -401,8 +423,8 @@ function hideAllColumns() {
 }
 const hasSubform = computed(() => fields.value.some((f) => f.data_type === 'subform'))
 const filterable = computed(() =>
-  fields.value.filter((f) =>
-    ['input', 'select', 'switch', 'number', 'date-picker', 'datetime-picker'].includes(f.widget)
+  visibleFields.value.filter((f) =>
+    ['input', 'select', 'switch', 'number', 'date-picker', 'datetime-picker', 'relation-picker'].includes(f.widget)
   )
 )
 
@@ -605,8 +627,13 @@ function openStruct() {
     ? origFields.value.slice().sort((a, b) =>
         (orderIndex.get(a.field_name) ?? 1e9) - (orderIndex.get(b.field_name) ?? 1e9))
     : origFields.value
-  structRows.value = sorted.map((f) => ({ ...f, _key: ++structKeySeq }))
+  // 每行深拷贝：options 必须与 origFields 快照脱钩，否则原地修改（如「显示」开关）在 diff 时永远相等、保存丢失
+  structRows.value = sorted.map((f) => ({ ...JSON.parse(JSON.stringify(f)), _key: ++structKeySeq }))
   structVisible.value = true
+  // 拉表清单用于把关联配置的 table_id 显示成表名（失败不影响抽屉打开）
+  listTables({ all: 1 })
+    .then((ts) => { structTableNames.value = Object.fromEntries(ts.map((t) => [t.id, t.label])) })
+    .catch(() => {})
 }
 
 function addStructRow() {
@@ -616,12 +643,49 @@ function addStructRow() {
   })
 }
 
+// 「显示」总开关：写入 options.show_in_list，保存时随 update_field 一起提交
+function setRowVisible(r, v) {
+  if (!r.options || typeof r.options !== 'object') r.options = {}
+  r.options.show_in_list = !!v
+}
+
 // ---------- 字段业务配置（关联/公式/子表列） ----------
 const cfgVisible = ref(false)
 const cfgField = ref(null)
+const structTableNames = ref({})   // 关联目标表 id → 表名（配置摘要展示用）
+
+const WIDGET_LABELS = {
+  input: '单行输入', textarea: '多行文本', number: '数字', select: '下拉选择',
+  'date-picker': '日期', 'datetime-picker': '日期时间', switch: '开关',
+  'image-uploader': '图片上传', 'relation-picker': '关联选择', subform: '子表', serial: '自动编号',
+}
+
+// 字段配置摘要：把 options 里的业务配置转成一行可读标签
+function configSummary(r) {
+  const tags = []
+  const opts = r.options || {}
+  const w = r.data_type === 'subform' ? 'subform' : r.widget
+  if (w && w !== 'input') tags.push(`控件：${WIDGET_LABELS[w] || w}`)
+  if (w === 'select' && Array.isArray(opts.options) && opts.options.length) {
+    const names = opts.options.map((o) => (typeof o === 'object' && o !== null ? o.label ?? o.value : o))
+    tags.push(`选项：${names.slice(0, 6).join('、')}${names.length > 6 ? ` 等 ${names.length} 项` : ''}`)
+  }
+  if (opts.relation?.table_id) {
+    const tname = structTableNames.value[opts.relation.table_id] || `表 #${opts.relation.table_id}`
+    const carry = (opts.relation.carry_fields || []).filter((m) => m.from && m.to).length
+    tags.push(`关联：${tname}（存 ${opts.relation.value_field || '?'}）${carry ? `，带出 ${carry} 项` : ''}`)
+  }
+  if (opts.formula) tags.push(`公式：${opts.formula}${opts.sum_to ? `（合计回填 ${opts.sum_to}）` : ''}`)
+  if (opts.serial) tags.push(`编号：${opts.serial.pattern || '默认规则'}`)
+  if (r.data_type === 'subform') tags.push(`子表：${(opts.columns || []).length} 列`)
+  return tags
+}
 
 function hasBizConfig(r) {
-  return !!(r.options?.formula || r.options?.relation || r.data_type === 'subform')
+  const opts = r.options || {}
+  return !!(opts.formula || opts.relation || opts.serial || r.data_type === 'subform'
+    || (Array.isArray(opts.options) && opts.options.length)
+    || (r.widget && !['input', 'textarea', 'number', 'date-picker', 'datetime-picker'].includes(r.widget)))
 }
 
 function openFieldConfig(r) {
@@ -755,14 +819,19 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.struct-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.struct-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; width: 100%; }
+.struct-row-wrap { margin-bottom: 8px; }
+.struct-row-wrap .struct-row { margin-bottom: 4px; }
+.struct-cfg-tags { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 2px; }
 .struct-head { font-size: 12px; color: #909399; }
-.sr-label { width: 190px; }
-.sr-name { width: 210px; }
-.sr-type { width: 120px; }
-.sr-null { width: 40px; }
-.sr-cfg { width: 42px; }
-.sr-del { width: 36px; }
+/* 显示名/字段名弹性占满剩余宽度，其余列固定 */
+.sr-label { flex: 1 1 0; min-width: 140px; }
+.sr-name { flex: 1 1 0; min-width: 160px; }
+.sr-type { width: 120px; flex: none; }
+.sr-null { width: 40px; flex: none; white-space: nowrap; display: flex; justify-content: center; margin-right: 0; }
+.sr-show { width: 40px; flex: none; white-space: nowrap; display: flex; justify-content: center; margin-right: 0; }
+.sr-cfg { width: 42px; flex: none; display: flex; justify-content: center; padding-left: 0; padding-right: 0; }
+.sr-del { width: 36px; flex: none; display: flex; justify-content: center; padding-left: 0; padding-right: 0; margin-left: 0; }
 .struct-hint { font-size: 12px; color: #909399; margin-top: 10px; }
 .struct-footer { margin-top: 18px; display: flex; justify-content: flex-end; gap: 8px; }
 .cell-thumb { width: 40px; height: 40px; border-radius: 4px; margin-right: 4px; vertical-align: middle; }

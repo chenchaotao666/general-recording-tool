@@ -68,6 +68,9 @@ def align_columns(result: dict, headers: list[str]) -> dict:
             confidence = float(c.get("confidence", 0.8 if c else 0.5))
         except (TypeError, ValueError):
             confidence = 0.5
+        opts_in = c.get("options") if isinstance(c.get("options"), dict) else {}
+        # 下拉选项不由 AI 从样例数据归纳，统一清空，交给用户在建表界面自行维护
+        opts = {k: v for k, v in opts_in.items() if k != "options"}
         out.append({
             "source_header": h,
             "field_name": safe_field_name(str(c.get("field_name") or ""), used, i + 1),
@@ -76,7 +79,7 @@ def align_columns(result: dict, headers: list[str]) -> dict:
             "length": int(c.get("length") or 255),
             "nullable": bool(c.get("nullable", True)),
             "widget": widget,
-            "options": c.get("options") if isinstance(c.get("options"), dict) else {},
+            "options": opts,
             "confidence": round(confidence, 2),
         })
     result["columns"] = out

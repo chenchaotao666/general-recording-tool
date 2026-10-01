@@ -29,7 +29,7 @@ _OUTPUT_EXAMPLE = {
             "length": 32,
             "nullable": True,
             "widget": "select",
-            "options": {"options": ["进行中", "已成交", "已流失"]},
+            "options": {},
             "confidence": 0.9,
         },
     ],
@@ -124,7 +124,7 @@ def build_analyze_prompt(headers: list[str], columns: list[dict]) -> str:
         "2. widget 只能是 input / textarea / number / date-picker / datetime-picker / select / switch 之一\n"
         "3. field_name 用英文小写 snake_case 命名（如 next_follow_date）\n"
         "4. 参考本地类型推断；若语义类型与数据不符（如“到期时间”存的是文本），以数据实际类型为准并在 notes 说明\n"
-        "5. 取值高度重复的列（枚举）用 select 控件，并在 options.options 里列出枚举值\n"
+        "5. 取值高度重复的列（枚举）用 select 控件；但不要从样例数据归纳枚举值，options 一律输出 {}，下拉选项由用户在建表时自行维护\n"
         "6. 长文本用 text + textarea；布尔（是/否）用 bool + switch\n"
         "7. confidence 表示你对该列判断的置信度（0~1），不确定的列给低分\n"
         "8. 每一列都必须出现在 columns 中，不要遗漏\n\n"

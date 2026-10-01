@@ -10,6 +10,17 @@
         </el-select>
       </el-form-item>
 
+      <!-- 下拉选择的枚举选项：回车添加，存为 options.options 字符串数组 -->
+      <el-form-item v-if="local.widget === 'select'" label="选项">
+        <div style="width: 100%">
+          <el-select
+            v-model="enumOptions" multiple filterable allow-create default-first-option
+            placeholder="输入选项内容后回车添加" style="width: 100%"
+          />
+          <div class="hint">逐个输入回车添加；留空则下拉没有可选内容</div>
+        </div>
+      </el-form-item>
+
       <!-- 自动编号配置 -->
       <template v-if="field.data_type === 'serial'">
         <el-form-item label="编号规则">
@@ -33,8 +44,8 @@
         </el-form-item>
       </template>
 
-      <!-- 公式：任意非子表/图片字段可配 -->
-      <el-form-item v-if="!['subform', 'image'].includes(field.data_type)" label="计算公式">
+      <!-- 公式：任意非子表/图片/自动编号字段可配（serial 由服务端按规则生成，不参与公式） -->
+      <el-form-item v-if="!['subform', 'image', 'serial'].includes(field.data_type)" label="计算公式">
         <div style="width: 100%">
           <el-input
             v-model="local.options.formula" placeholder="如：qty * price；留空则手工录入"
@@ -114,10 +125,6 @@
         <div class="hint">列的「配置」里可设：关联选择（选产品带出规格/单价）、行内公式（金额=数量×单价）、合计回填（sum_to）</div>
       </template>
 
-      <el-form-item v-if="depth === 0" label="列表中显示" style="margin-top: 12px">
-        <el-checkbox v-model="showInList" :disabled="field.data_type === 'subform'" />
-        <span v-if="field.data_type === 'subform'" class="hint" style="margin-left: 8px">明细字段不进列表</span>
-      </el-form-item>
     </el-form>
 
     <template #footer>
@@ -152,7 +159,7 @@ const COLUMN_TYPES = ['varchar', 'text', 'int', 'decimal', 'date', 'datetime', '
 const local = reactive({ widget: 'input', options: { columns: [] } })
 const rel = reactive({ table_id: null, value_field: '', label_field: '', carry_fields: [] })
 const serialCfg = reactive({ pattern: '', reset: 'never', allow_manual: false })
-const showInList = ref(true)
+const enumOptions = ref([])   // select 控件的枚举项（字符串数组）
 const relReady = ref(false)   // 关联选项（表列表 + 目标表字段）是否已加载完
 // 注意：immediate watcher 在 setup 同步执行，这两个 ref 必须先于 watcher 声明（否则 TDZ 报错）
 const tables = ref([])
@@ -181,6 +188,10 @@ watch(() => props.modelValue, async (v) => {
   if (!v) return
   relReady.value = false
   local.widget = props.field.widget || 'input'
+  // 存储的 widget 不在当前类型的可选控件里（如 serial 字段存了 input）时，回退到该类型的默认控件
+  if (!widgetChoices.value.some((x) => x.value === local.widget)) {
+    local.widget = widgetChoices.value[0].value
+  }
   local.options = JSON.parse(JSON.stringify(props.field.options || {}))
   if (props.field.data_type === 'subform' && !Array.isArray(local.options.columns)) local.options.columns = []
   const r = local.options.relation || {}
@@ -189,7 +200,10 @@ watch(() => props.modelValue, async (v) => {
   if (rel.table_id !== null && rel.table_id !== '') rel.table_id = Number(rel.table_id)   // 与选项的数值 id 严格匹配
   Object.assign(serialCfg, { pattern: '', reset: 'never', allow_manual: false },
     JSON.parse(JSON.stringify(local.options.serial || {})))
-  showInList.value = local.options.show_in_list !== false
+  // 枚举项还原：历史数据可能存 {label, value} 对象，编辑时取其 value
+  enumOptions.value = (local.options.options || []).map((o) =>
+    typeof o === 'object' && o !== null ? o.value : o
+  ).filter((v) => v !== null && v !== undefined && v !== '')
   // 关联配置还原：按顺序等待目标表/字段列表加载完再渲染下拉，避免显示原始 id
   if (local.widget === 'relation-picker') {
     await loadTables()
@@ -287,10 +301,18 @@ function onSave() {
   } else {
     delete options.serial
   }
-  options.show_in_list = props.field.data_type === 'subform' ? false : showInList.value
+  // show_in_list（显隐总开关）已移到表结构列表行上，这里保持原值不动
+  if (local.widget === 'select') {
+    options.options = enumOptions.value.map((s) => String(s).trim()).filter(Boolean)
+  } else {
+    delete options.options
+  }
   if (!options.formula) delete options.formula
+  if (['subform', 'image', 'serial'].includes(props.field.data_type)) delete options.formula
   if (props.field.data_type === 'subform' && !options.columns.length) delete options.columns
-  emit('save', { widget: props.field.data_type === 'subform' ? 'subform' : local.widget, options })
+  // 控件跟随数据类型的场景：subform / serial 的 widget 固定，以类型为准纠正存量脏数据
+  const fixedWidget = { subform: 'subform', serial: 'serial' }[props.field.data_type]
+  emit('save', { widget: fixedWidget || local.widget, options })
   emit('update:modelValue', false)
 }
 </script>

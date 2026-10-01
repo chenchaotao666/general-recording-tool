@@ -45,7 +45,8 @@
         <RelationPicker
           v-else-if="f.widget === 'relation-picker' && f.options?.relation?.table_id"
           v-model="form[f.field_name]" :relation="f.options.relation"
-          :placeholder="'请选择' + f.label" @carry="(row) => applyCarry(f, row)"
+          :allow-create="['varchar', 'text'].includes(f.data_type)"
+          :placeholder="'请选择或输入' + f.label" @carry="(row) => applyCarry(f, row)"
         />
         <!-- 子表：明细行只读表格 + 弹窗行编辑 -->
         <SubformField

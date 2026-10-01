@@ -107,6 +107,17 @@
             </el-select>
           </template>
         </el-table-column>
+        <!-- 下拉选项：仅 select 控件可编辑，用户自行录入（AI 不再自动归纳） -->
+        <el-table-column label="下拉选项" min-width="200">
+          <template #default="{ row }">
+            <el-select
+              v-if="row.widget === 'select'"
+              v-model="row.enumOptions" multiple filterable allow-create default-first-option
+              size="small" placeholder="输入选项后回车添加" style="width: 100%"
+            />
+            <span v-else style="color: #c0c4cc">-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="置信度" width="90" align="center">
           <template #default="{ row }">
             <el-tag v-if="row.confidence != null" :type="confidenceType(row.confidence)" size="small">
@@ -236,7 +247,7 @@ async function doAnalyze() {
     analysis.value = res
     confirm.label = res.table_name_suggestion || fileInfo.value.file_name.replace(/\.[^.]+$/, '')
     confirm.name = ''
-    confirm.fields = res.columns.map((c) => ({ ...c }))
+    confirm.fields = res.columns.map((c) => ({ ...c, enumOptions: [] }))
     step.value = 2
   } catch (e) {
     ElMessage.error(e.message)
@@ -261,7 +272,7 @@ let newFieldSeq = 1
 function addField() {
   confirm.fields.push({
     source_header: null, field_name: `extra_${newFieldSeq++}`, label: '新字段',
-    data_type: 'varchar', length: 255, nullable: true, widget: 'input', options: {},
+    data_type: 'varchar', length: 255, nullable: true, widget: 'input', options: {}, enumOptions: [],
   })
 }
 
@@ -273,7 +284,13 @@ async function doCreate() {
     const res = await createTable({
       label: confirm.label.trim(),
       name: confirm.name.trim() || null,
-      fields: confirm.fields.map(({ confidence, ...f }) => f),
+      fields: confirm.fields.map(({ confidence, enumOptions, ...f }) => ({
+        ...f,
+        // 下拉选项来自用户手工录入；非 select 控件不带枚举配置
+        options: f.widget === 'select'
+          ? { options: (enumOptions || []).map((s) => String(s).trim()).filter(Boolean) }
+          : {},
+      })),
       storage_mode: confirm.storage_mode,
       source: { file_id: fileInfo.value.file_id, sheet_name: sheetName.value, header_row: headerRow.value },
     })

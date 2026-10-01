@@ -81,6 +81,8 @@ def validate_field_options(db: Session, data_type: str, widget: str | None,
                            options: dict | None, own_names: set[str], field_label: str = "") -> None:
     """字段级业务配置校验（建表/改结构时把关，保存记录时不再报错）。"""
     opts = options or {}
+    if data_type in ("subform", "image", "serial") and opts.get("formula"):
+        raise MetaError(f"字段「{field_label}」的类型不支持计算公式")
     if opts.get("formula"):
         _validate_formula(opts["formula"], own_names, f"字段「{field_label}」")
     if widget == "relation-picker":

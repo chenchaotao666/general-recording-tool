@@ -1,6 +1,7 @@
 <template>
   <el-select
     :model-value="modelValue" filterable remote clearable :remote-method="search"
+    :allow-create="allowCreate" default-first-option
     :loading="loading" :placeholder="placeholder" style="width: 100%"
     @update:model-value="onChange" @focus="ensureInit"
   >
@@ -19,6 +20,7 @@ const props = defineProps({
   modelValue: { default: null },
   relation: { type: Object, required: true },   // {table_id, value_field, label_field, carry_fields?}
   placeholder: { type: String, default: '请选择' },
+  allowCreate: { type: Boolean, default: false },   // 允许直接输入自由值（不触发 carry 带出）
 })
 const emit = defineEmits(['update:modelValue', 'carry'])
 
