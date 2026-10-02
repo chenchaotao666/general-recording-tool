@@ -26,6 +26,12 @@
                 @change="(v) => toggleColumn(f.field_name, v)"
               />
               <span class="col-mover">
+                <el-button
+                  text size="small" :type="fixedCols.has(f.field_name) ? 'primary' : 'info'"
+                  title="固定到左侧：横向滚动时该列保持可见（再点取消）" @click="toggleFixedCol(f.field_name)"
+                >
+                  <el-icon><Position /></el-icon>
+                </el-button>
                 <el-button text size="small" :disabled="i === 0" title="移到最上" @click="moveColumnTo(f.field_name, 0)">
                   <el-icon><Top /></el-icon>
                 </el-button>
@@ -48,17 +54,34 @@
       </div>
     </div>
 
-    <!-- 动态筛选区：快捷（各字段 AND）/ 高级（规则编辑器，支持 全部/任一 条件） -->
-    <el-card v-if="filterable.length || fields.length" style="margin-bottom: 14px">
-      <el-radio-group v-model="filterMode" size="small" style="margin-bottom: 10px">
-        <el-radio-button value="quick">快捷筛选</el-radio-button>
-        <el-radio-button value="advanced">高级筛选</el-radio-button>
-      </el-radio-group>
-      <el-form v-if="filterMode === 'quick'" inline>
+    <!-- 动态筛选区：各字段条件平铺，组合为 AND -->
+    <el-card v-if="filterable.length || fields.length" class="filter-card" style="margin-bottom: 14px">
+      <div style="display: flex; justify-content: flex-end; margin-bottom: 6px">
+        <!-- 筛选条件显隐（用户级偏好，按表记忆；顺序由「显示列」统一控制） -->
+        <el-popover v-if="filterableAll.length" placement="bottom-end" width="280" trigger="click">
+          <template #reference>
+            <el-button text :icon="Setting" size="small">筛选设置</el-button>
+          </template>
+          <div class="col-picker">
+            <div class="col-picker-head">
+              <span>选择要显示的筛选条件（{{ filterable.length }}/{{ filterableAll.length }}）</span>
+              <el-button text type="primary" size="small" @click="resetFiltersLayout">恢复默认</el-button>
+            </div>
+            <div v-for="f in filterableAll" :key="f.field_name" class="col-picker-row">
+              <el-checkbox
+                :model-value="!effHiddenFilters.has(f.field_name)"
+                :label="f.label" size="small"
+                @change="(v) => toggleFilter(f.field_name, v)"
+              />
+            </div>
+          </div>
+        </el-popover>
+      </div>
+      <el-form inline class="filter-form" label-width="88px">
         <el-form-item v-for="f in filterable" :key="f.field_name" :label="f.label">
           <el-select
             v-if="f.widget === 'select'" v-model="filterModel[f.field_name]" clearable
-            style="width: 160px" placeholder="全部"
+            style="width: 100%" placeholder="全部"
           >
             <el-option
               v-for="opt in fieldOptions(f)" :key="String(opt.value)" :label="opt.label" :value="opt.value"
@@ -68,55 +91,68 @@
             v-else-if="f.widget === 'relation-picker' && f.options?.relation?.table_id"
             v-model="filterModel[f.field_name]" :relation="f.options.relation"
             :allow-create="['varchar', 'text'].includes(f.data_type)"
-            placeholder="全部" style="width: 200px"
+            placeholder="全部" style="width: 100%"
           />
-          <el-select v-else-if="f.widget === 'switch'" v-model="filterModel[f.field_name]" clearable style="width: 120px" placeholder="全部">
+          <el-select v-else-if="f.widget === 'switch'" v-model="filterModel[f.field_name]" clearable style="width: 100%" placeholder="全部">
             <el-option label="是" :value="true" /><el-option label="否" :value="false" />
           </el-select>
           <div v-else-if="f.widget === 'number'" class="num-filter">
-            <el-select v-model="filterOps[f.field_name]" style="width: 78px">
+            <el-select v-model="filterOps[f.field_name]" style="width: 64px; flex-shrink: 0">
               <el-option v-for="o in NUM_OPS" :key="o.value" :label="o.label" :value="o.value" />
             </el-select>
             <template v-if="filterOps[f.field_name] === 'between'">
               <el-input-number
                 v-model="filterModel[f.field_name]" controls-position="right"
                 :precision="f.data_type === 'decimal' ? 4 : 0"
-                placeholder="最小" style="width: 105px"
+                placeholder="最小" class="ctl-grow"
               />
               <span class="num-sep">~</span>
               <el-input-number
                 v-model="filterMax[f.field_name]" controls-position="right"
                 :precision="f.data_type === 'decimal' ? 4 : 0"
-                placeholder="最大" style="width: 105px"
+                placeholder="最大" class="ctl-grow"
               />
             </template>
             <el-input-number
               v-else v-model="filterModel[f.field_name]" controls-position="right"
               :precision="f.data_type === 'decimal' ? 4 : 0"
-              placeholder="值" style="width: 120px"
+              placeholder="值" class="ctl-grow"
             />
           </div>
-          <el-date-picker
-            v-else-if="f.widget === 'date-picker' || f.widget === 'datetime-picker'"
-            v-model="filterModel[f.field_name]" type="daterange" value-format="YYYY-MM-DD"
-            start-placeholder="开始" end-placeholder="结束" style="width: 240px"
-          />
-          <el-input v-else v-model="filterModel[f.field_name]" clearable placeholder="包含..." style="width: 180px" />
+          <div v-else-if="f.widget === 'date-picker' || f.widget === 'datetime-picker'" class="num-filter">
+            <!-- 日期筛选类型：默认「范围」，其余为相对/空值等日期操作符；切换类型时清空旧值 -->
+            <el-select
+              :model-value="filterDateOps[f.field_name] || 'range'" style="width: 112px; flex-shrink: 0"
+              @update:model-value="(v) => { filterDateOps[f.field_name] = v; filterModel[f.field_name] = null }"
+            >
+              <el-option v-for="o in DATE_OPS" :key="o.value" :label="o.label" :value="o.value" />
+            </el-select>
+            <el-date-picker
+              v-if="!filterDateOps[f.field_name] || filterDateOps[f.field_name] === 'range'"
+              v-model="filterModel[f.field_name]" type="daterange" value-format="YYYY-MM-DD"
+              start-placeholder="开始" end-placeholder="结束" class="ctl-grow"
+            />
+            <el-date-picker
+              v-else-if="['eq', 'gte', 'lte'].includes(filterDateOps[f.field_name])"
+              v-model="filterModel[f.field_name]" type="date" value-format="YYYY-MM-DD"
+              placeholder="选择日期" class="ctl-grow"
+            />
+            <template v-else-if="DATE_DAY_OPS.includes(filterDateOps[f.field_name])">
+              <el-input-number
+                v-model="filterModel[f.field_name]" :min="0" controls-position="right"
+                placeholder="N" class="ctl-grow"
+              />
+              <span class="num-sep">天</span>
+            </template>
+            <!-- today / null / not_null：无需输入值 -->
+          </div>
+          <el-input v-else v-model="filterModel[f.field_name]" clearable placeholder="包含..." style="width: 100%" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="search">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
         </el-form-item>
       </el-form>
-      <template v-else>
-        <!-- 与工作流筛选条件同一组件；reactive 对象不能整体替换，手动拆赋值 -->
-        <FiltersEditor :model-value="advFilters" :fields="visibleFields"
-          @update:model-value="(v) => { advFilters.logic = v.logic; advFilters.rules = v.rules }" />
-        <div style="margin-top: 8px">
-          <el-button type="primary" size="small" @click="search">查询</el-button>
-          <el-button size="small" @click="resetFilters">重置</el-button>
-        </div>
-      </template>
     </el-card>
 
     <!-- 动态列表：合计行固定显示数字列总和（口径 = 全部筛选结果） -->
@@ -124,11 +160,12 @@
       :data="rows" v-loading="loading" border stripe show-summary :summary-method="summaryMethod"
       @sort-change="onSortChange"
     >
-      <el-table-column type="index" width="55" label="#" />
+      <el-table-column type="index" width="55" label="#" :fixed="fixedCols.size ? 'left' : false" />
       <el-table-column
         v-for="f in listFields" :key="f.field_name"
         :prop="f.field_name" :label="f.label" sortable="custom"
         show-overflow-tooltip min-width="110"
+        :fixed="fixedCols.has(f.field_name) ? 'left' : false"
       >
         <template #default="{ row }">
           <template v-if="f.data_type === 'image'">
@@ -249,10 +286,9 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Download, SetUp, Grid, ArrowUp, ArrowDown, Top, Bottom } from '@element-plus/icons-vue'
+import { Plus, Download, SetUp, Grid, ArrowUp, ArrowDown, Top, Bottom, Setting, Position } from '@element-plus/icons-vue'
 import DynamicForm from '../components/DynamicForm.vue'
 import FieldOptionsDialog from '../components/FieldOptionsDialog.vue'
-import FiltersEditor from '../components/workflow/FiltersEditor.vue'
 import RelationPicker from '../components/RelationPicker.vue'
 import { alterTable, createRecord, deleteRecord, getTable, imageUrl, listRecords, listTables, recordExportUrl, updateRecord, updateTable } from '../api'
 
@@ -295,9 +331,19 @@ const NUM_OPS = [
 ]
 const filterOps = reactive({})
 const filterMax = reactive({})
-// 高级筛选：规则编辑器（与工作流筛选条件同一组件），{logic: AND|OR, rules}
-const filterMode = ref('quick')
-const advFilters = reactive({ logic: 'AND', rules: [] })
+// 日期字段的筛选类型（与 filterModel 平行的辅助模型）：默认 range（范围），
+// 其余为后端支持的日期操作符（等于/不早于/不晚于/当天/N 天相对条件/空值判断）
+const DATE_OPS = [
+  { value: 'range', label: '范围' },
+  { value: 'eq', label: '等于' }, { value: 'gte', label: '不早于' }, { value: 'lte', label: '不晚于' },
+  { value: 'today', label: '当天' },
+  { value: 'past_days', label: '过去 N 天' }, { value: 'older_than_days', label: '早于 N 天前' },
+  { value: 'within_days', label: '未来 N 天内' },
+  { value: 'null', label: '为空' }, { value: 'not_null', label: '不为空' },
+]
+const DATE_DAY_OPS = ['past_days', 'older_than_days', 'within_days']   // 值为天数 N
+const DATE_NO_VALUE_OPS = ['today', 'null', 'not_null']                // 无需输入值
+const filterDateOps = reactive({})
 const dialogVisible = ref(false)
 const editing = ref(null)
 const saving = ref(false)
@@ -346,6 +392,29 @@ function loadColOrder() {
 
 function saveColOrder() {
   try { localStorage.setItem(ORDER_KEY, JSON.stringify(colOrder.value)) } catch { /* ignore */ }
+}
+
+// 固定列（左固定，用户级，localStorage 按表记忆；横向滚动时保持可见）
+const FIXED_KEY = `grt_colfixed_${tableId}`
+const fixedCols = ref(loadFixedCols())
+
+function loadFixedCols() {
+  try {
+    const raw = localStorage.getItem(FIXED_KEY)
+    return new Set(raw === null ? [] : JSON.parse(raw))
+  } catch { return new Set() }
+}
+
+function saveFixedCols() {
+  try { localStorage.setItem(FIXED_KEY, JSON.stringify([...fixedCols.value])) } catch { /* ignore */ }
+}
+
+function toggleFixedCol(name) {
+  const next = new Set(fixedCols.value)
+  if (next.has(name)) next.delete(name)
+  else next.add(name)
+  fixedCols.value = next
+  saveFixedCols()
 }
 
 // 有效列顺序：用户自定义顺序优先，之后新增的字段按默认顺序排在末尾
@@ -406,9 +475,11 @@ function toggleColumn(name, show) {
 function resetColumns() {
   hiddenCols.value = null
   colOrder.value = null
+  fixedCols.value = new Set()
   try {
     localStorage.removeItem(COLS_KEY)
     localStorage.removeItem(ORDER_KEY)
+    localStorage.removeItem(FIXED_KEY)
   } catch { /* ignore */ }
 }
 
@@ -422,11 +493,49 @@ function hideAllColumns() {
   saveHiddenCols()
 }
 const hasSubform = computed(() => fields.value.some((f) => f.data_type === 'subform'))
-const filterable = computed(() =>
-  visibleFields.value.filter((f) =>
-    ['input', 'select', 'switch', 'number', 'date-picker', 'datetime-picker', 'relation-picker'].includes(f.widget)
-  )
-)
+// ---------- 快捷筛选条件：顺序跟随「显示列」的列字段顺序；显隐为用户级偏好（localStorage 按表记忆） ----------
+const FILTER_WIDGETS = ['input', 'select', 'switch', 'number', 'date-picker', 'datetime-picker', 'relation-picker', 'serial']
+// 全部可筛选字段：基于 formFields（已实现 colOrder 排序），widget 白名单过滤（subform 天然排除）
+const filterableAll = computed(() => formFields.value.filter((f) => FILTER_WIDGETS.includes(f.widget)))
+
+// 存"隐藏集合"而非"显示集合"：以后新增字段默认显示
+const FILTER_KEY = `grt_filterhidden_${tableId}`
+const hiddenFilters = ref(loadHiddenFilters())
+
+function loadHiddenFilters() {
+  try {
+    const raw = localStorage.getItem(FILTER_KEY)
+    return raw === null ? null : new Set(JSON.parse(raw))
+  } catch { return null }
+}
+
+function saveHiddenFilters() {
+  try { localStorage.setItem(FILTER_KEY, JSON.stringify([...hiddenFilters.value])) } catch { /* 隐私模式等场景忽略 */ }
+}
+
+const effHiddenFilters = computed(() => hiddenFilters.value ?? new Set())
+// 实际渲染的筛选条件：扣掉用户隐藏的
+const filterable = computed(() => filterableAll.value.filter((f) => !effHiddenFilters.value.has(f.field_name)))
+
+function toggleFilter(name, show) {
+  const next = new Set(effHiddenFilters.value)
+  if (show) next.delete(name)
+  else {
+    next.add(name)
+    // 清理残留筛选值，避免重新显示时带出旧值（buildFilters 只迭代可见筛选条件，隐藏后本就不生效）
+    filterModel[name] = null
+    filterOps[name] = 'eq'
+    filterMax[name] = null
+    filterDateOps[name] = 'range'
+  }
+  hiddenFilters.value = next
+  saveHiddenFilters()
+}
+
+function resetFiltersLayout() {
+  hiddenFilters.value = null
+  try { localStorage.removeItem(FILTER_KEY) } catch { /* ignore */ }
+}
 
 function fmt(f, val) {
   if (val === null || val === undefined) return ''
@@ -455,11 +564,7 @@ function fieldOptions(f) {
 }
 
 function buildFilters() {
-  // 高级筛选：{logic, rules} 对象形态（支持 任一条件/OR）；快捷筛选：平铺数组（AND）
-  if (filterMode.value === 'advanced') {
-    const rules = (advFilters.rules || []).filter((r) => r.field && r.op)
-    return rules.length ? { logic: advFilters.logic || 'AND', rules } : []
-  }
+  // 各字段条件平铺为数组，后端按 AND 组合
   const filters = []
   for (const f of filterable.value) {
     const v = filterModel[f.field_name]
@@ -474,13 +579,35 @@ function buildFilters() {
       }
       continue
     }
-    if (v === null || v === undefined || v === '') continue
     if (f.widget === 'date-picker' || f.widget === 'datetime-picker') {
-      if (Array.isArray(v) && v.length === 2) {
-        filters.push({ field: f.field_name, op: 'gte', value: v[0] })
-        filters.push({ field: f.field_name, op: 'lte', value: f.widget === 'datetime-picker' ? `${v[1]} 23:59:59` : v[1] })
+      // 日期：按筛选类型生成条件；datetime 字段的「当天末尾」统一按 23:59:59 收尾（与范围逻辑一致）
+      const dop = filterDateOps[f.field_name] || 'range'
+      const isDt = f.widget === 'datetime-picker'
+      if (dop === 'range') {
+        if (Array.isArray(v) && v.length === 2) {
+          filters.push({ field: f.field_name, op: 'gte', value: v[0] })
+          filters.push({ field: f.field_name, op: 'lte', value: isDt ? `${v[1]} 23:59:59` : v[1] })
+        }
+      } else if (DATE_NO_VALUE_OPS.includes(dop)) {
+        filters.push({ field: f.field_name, op: dop })   // 当天/为空/不为空：无条件生效，无需值
+      } else if (DATE_DAY_OPS.includes(dop)) {
+        if (v !== null && v !== undefined && v !== '') filters.push({ field: f.field_name, op: dop, value: v })
+      } else if (v !== null && v !== undefined && v !== '') {
+        if (isDt && dop === 'lte') {
+          filters.push({ field: f.field_name, op: 'lte', value: `${v} 23:59:59` })
+        } else if (isDt && dop === 'eq') {
+          // datetime 字段的「等于」按当天理解：用户只选到日，精确到秒匹配几乎永不命中
+          filters.push({ field: f.field_name, op: 'gte', value: v })
+          filters.push({ field: f.field_name, op: 'lte', value: `${v} 23:59:59` })
+        } else {
+          filters.push({ field: f.field_name, op: dop, value: v })
+        }
       }
-    } else if (f.widget === 'input') {
+      continue
+    }
+    if (v === null || v === undefined || v === '') continue
+    if (['input', 'serial'].includes(f.widget)) {
+      // 单行文本/自动编号（单号）：模糊匹配
       filters.push({ field: f.field_name, op: 'contains', value: v })
     } else {
       filters.push({ field: f.field_name, op: 'eq', value: v })
@@ -561,8 +688,7 @@ function resetFilters() {
   for (const k of Object.keys(filterModel)) filterModel[k] = null
   for (const k of Object.keys(filterMax)) filterMax[k] = null
   for (const k of Object.keys(filterOps)) filterOps[k] = 'eq'
-  advFilters.logic = 'AND'
-  advFilters.rules = []
+  for (const k of Object.keys(filterDateOps)) filterDateOps[k] = 'range'
   search()
 }
 
@@ -836,8 +962,18 @@ onUnmounted(() => {
 .struct-footer { margin-top: 18px; display: flex; justify-content: flex-end; gap: 8px; }
 .cell-thumb { width: 40px; height: 40px; border-radius: 4px; margin-right: 4px; vertical-align: middle; }
 .thumb-more { font-size: 12px; color: #909399; }
-.num-filter { display: flex; align-items: center; gap: 4px; }
-.num-sep { color: #909399; }
+.num-filter { display: flex; align-items: center; gap: 4px; width: 100%; }
+.num-sep { color: #909399; flex-shrink: 0; }
+/* 筛选卡片：收紧默认 body padding（el-card 默认 20px），减少筛选区上下的空隙 */
+.filter-card :deep(.el-card__body) { padding: 10px 16px 2px; }
+/* 筛选区：等宽网格列对齐——每项一格、列宽一致（格宽按最宽组合控件「日期范围」≈430px 定） */
+.filter-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); column-gap: 18px; }
+.filter-form :deep(.el-form-item) { margin-right: 0; }
+.filter-form :deep(.el-form-item__label) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-form :deep(.el-form-item__content) { min-width: 0; }
+/* 组合控件（操作符 + 值）里的值控件吃掉剩余宽度，保证各项右缘对齐 */
+.filter-form .ctl-grow { flex: 1; min-width: 0; }
+.filter-form .ctl-grow :deep(.el-input__wrapper) { width: 100%; }
 .col-picker { display: flex; flex-direction: column; max-height: 360px; overflow-y: auto; }
 .col-picker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; color: #606266; }
 .col-picker-actions { display: flex; gap: 8px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #ebeef5; }

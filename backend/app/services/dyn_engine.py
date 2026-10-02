@@ -272,12 +272,16 @@ def coerce_payload(fields: list[MetaField], data: dict, partial: bool = False):
     if not partial:
         for f in fields:
             if not f.nullable and cleaned.get(f.field_name) is None and not f.default_value \
-                    and not (f.options or {}).get("formula") and f.data_type != "serial":
+                    and not (f.options or {}).get("formula") and not is_serial_field(f):
                 errors.setdefault(f.field_name, f"{f.label}不能为空")
     return cleaned, errors
 
 
-# ---------- 自动编号（serial 字段） ----------
+# ---------- 自动编号（serial 字段 / 配了 options.serial 的字符串字段） ----------
+
+def is_serial_field(f) -> bool:
+    """自动编号字段：serial 类型，或 varchar/text 字段在 options.serial 配了生成规则。"""
+    return f.data_type == "serial" or bool((f.options or {}).get("serial"))
 
 _SEQ_ZEROS_RE = re.compile(r"\{(0+)\}")   # {0000} 形式的流水占位（宽度=0 的个数）
 SERIAL_RESETS = ("never", "daily", "monthly")
@@ -320,9 +324,9 @@ def _next_seq(db: Session, table_id: int, field_name: str, period_key: str) -> i
 
 
 def apply_serials(db: Session, table_id: int, fields: list[MetaField], cleaned: dict) -> None:
-    """新建记录时为 serial 字段发号。允许手改的字段保留客户端提交值；否则服务端强制生成（忽略提交值）。"""
+    """新建记录时为自动编号字段发号。允许手改的字段保留客户端提交值；否则服务端强制生成（忽略提交值）。"""
     for f in fields:
-        if f.data_type != "serial":
+        if not is_serial_field(f):
             continue
         cfg = (f.options or {}).get("serial") or {}
         if cleaned.get(f.field_name) and cfg.get("allow_manual"):
@@ -334,9 +338,9 @@ def apply_serials(db: Session, table_id: int, fields: list[MetaField], cleaned: 
 
 
 def strip_serial_fields(fields: list[MetaField], cleaned: dict) -> None:
-    """更新场景：serial 字段一经生成不可改。"""
+    """更新场景：自动编号字段一经生成不可改。"""
     for f in fields:
-        if f.data_type == "serial":
+        if is_serial_field(f):
             cleaned.pop(f.field_name, None)
 
 

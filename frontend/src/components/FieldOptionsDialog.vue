@@ -21,39 +21,68 @@
         </div>
       </el-form-item>
 
-      <!-- 自动编号配置 -->
-      <template v-if="field.data_type === 'serial'">
-        <el-form-item label="编号规则">
-          <div style="width: 100%">
-            <el-input v-model="serialCfg.pattern" placeholder="如：PO{YYYY}{MM}{DD}-{0000}" clearable />
-            <div class="hint">
-              占位符：{YYYY} {YY} {MM} {DD} 日期；{0000} 或 {SEQ} 为流水号（0 的个数=位数）。留空默认 {YYYY}{MM}{DD}{0000}
+      <!-- 自动编号配置：serial 类型恒启用；单行文本（varchar）可勾选作为可选能力启用 -->
+      <template v-if="field.data_type === 'serial' || field.data_type === 'varchar'">
+        <el-form-item v-if="field.data_type === 'varchar'" label="自动编号">
+          <el-checkbox v-model="serialEnabled" label="保存时自动生成编号" />
+          <span class="hint" style="margin-left: 8px">勾选后按规则生成，默认只读不可改</span>
+        </el-form-item>
+        <template v-if="serialActive">
+          <el-form-item label="编号规则">
+            <div style="width: 100%">
+              <el-input v-model="serialCfg.pattern" placeholder="如：PO{YYYY}{MM}{DD}-{0000}" clearable />
+              <div class="hint">
+                占位符：{YYYY} {YY} {MM} {DD} 日期；{0000} 或 {SEQ} 为流水号（0 的个数=位数）。留空默认 {YYYY}{MM}{DD}{0000}
+              </div>
             </div>
-          </div>
-        </el-form-item>
-        <el-form-item label="流水重置">
-          <el-select v-model="serialCfg.reset" style="width: 240px">
-            <el-option label="连续（永不重置）" value="never" />
-            <el-option label="每日从 1 开始" value="daily" />
-            <el-option label="每月从 1 开始" value="monthly" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="允许手改">
-          <el-checkbox v-model="serialCfg.allow_manual" />
-          <span class="hint" style="margin-left: 8px">勾选后开单时可手工填写编号；不勾选则始终由系统生成</span>
-        </el-form-item>
+          </el-form-item>
+          <el-form-item label="流水重置">
+            <el-select v-model="serialCfg.reset" style="width: 240px">
+              <el-option label="连续（永不重置）" value="never" />
+              <el-option label="每日从 1 开始" value="daily" />
+              <el-option label="每月从 1 开始" value="monthly" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="允许手改">
+            <el-checkbox v-model="serialCfg.allow_manual" />
+            <span class="hint" style="margin-left: 8px">勾选后开单时可手工填写编号；不勾选则始终由系统生成</span>
+          </el-form-item>
+        </template>
       </template>
 
-      <!-- 公式：任意非子表/图片/自动编号字段可配（serial 由服务端按规则生成，不参与公式） -->
-      <el-form-item v-if="!['subform', 'image', 'serial'].includes(field.data_type)" label="计算公式">
+      <!-- 公式：任意非子表/图片/自动编号字段可配（自动编号由服务端按规则生成，不参与公式） -->
+      <el-form-item v-if="!['subform', 'image'].includes(field.data_type) && !serialActive" label="计算公式">
         <div style="width: 100%">
           <el-input
-            v-model="local.options.formula" placeholder="如：qty * price；留空则手工录入"
-            clearable
+            ref="formulaInputRef" v-model="local.options.formula"
+            placeholder="如：qty * price；留空则手工录入" clearable
           />
+          <!-- 点选插入：字段/运算符/函数插入到光标处，免手敲字段名 -->
+          <div v-if="formulaFields.length" class="formula-picks">
+            <span class="fp-label">字段</span>
+            <el-tag
+              v-for="s in formulaFields" :key="s.field_name" size="small" class="fp-tag"
+              disable-transitions @click="insertFormula(fieldToken(s.field_name))"
+            >{{ s.label || s.field_name }}</el-tag>
+          </div>
+          <div class="formula-picks">
+            <span class="fp-label">运算</span>
+            <el-tag
+              v-for="op in FORMULA_OPS" :key="op" size="small" class="fp-tag" type="info"
+              disable-transitions @click="insertFormula(` ${op} `)"
+            >{{ op }}</el-tag>
+            <span class="fp-label">函数</span>
+            <el-tooltip
+              v-for="fn in FORMULA_FUNCS" :key="fn.name" :content="fn.hint" placement="top" :show-after="300"
+            >
+              <el-tag
+                size="small" class="fp-tag" type="warning" disable-transitions
+                @click="insertFormula(fn.insert, fn.back)"
+              >{{ fn.name }}</el-tag>
+            </el-tooltip>
+          </div>
           <div class="hint">
-            可用字段：{{ siblingFields.map((s) => s.field_name).filter(Boolean).join('、') || '（先命名字段）' }}；
-            支持 + - * /、括号、iff/coalesce/round/abs/min/max，字段名特殊时用 [字段名] 引用
+            点上方标签插入到光标处；含空格/横线等的字段名会自动加 [ ] 引用。函数悬停看用法；支持四则运算、比较、and/or/not、括号
           </div>
         </div>
       </el-form-item>
@@ -142,7 +171,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { getTable, listTables } from '../api'
 
 // 字段业务配置：控件类型 / 关联（carry_fields 带出）/ 公式 / 子表列定义 / 列表显隐
@@ -159,11 +188,68 @@ const COLUMN_TYPES = ['varchar', 'text', 'int', 'decimal', 'date', 'datetime', '
 const local = reactive({ widget: 'input', options: { columns: [] } })
 const rel = reactive({ table_id: null, value_field: '', label_field: '', carry_fields: [] })
 const serialCfg = reactive({ pattern: '', reset: 'never', allow_manual: false })
+// varchar 字段的「自动编号」开关（serial 类型恒启用，无需开关）；须先于 immediate watcher 声明
+const serialEnabled = ref(false)
 const enumOptions = ref([])   // select 控件的枚举项（字符串数组）
 const relReady = ref(false)   // 关联选项（表列表 + 目标表字段）是否已加载完
 // 注意：immediate watcher 在 setup 同步执行，这两个 ref 必须先于 watcher 声明（否则 TDZ 报错）
 const tables = ref([])
 const targetFields = ref([])
+
+// 自动编号是否生效：serial 类型恒启用；varchar 看开关
+const serialActive = computed(() =>
+  props.field.data_type === 'serial' || (props.field.data_type === 'varchar' && serialEnabled.value)
+)
+
+// ---------- 计算公式：点选插入（字段/运算符/函数），与后端 expr.py 的白名单保持一致 ----------
+const formulaInputRef = ref(null)
+const FORMULA_OPS = ['+', '-', '*', '/', '(', ')', '==', '!=', '>=', '<=', '>', '<', 'and', 'or', 'not']
+// insert=插入文本；back=插入后光标回退格数（停在括号内）；hint=悬停用法说明
+const FORMULA_FUNCS = [
+  { name: 'iff', insert: 'iff()', back: 1, hint: 'iff(条件, 成立值, 不成立值)，如 iff(qty > 0, amount / qty, 0)' },
+  { name: 'coalesce', insert: 'coalesce()', back: 1, hint: 'coalesce(a, b, …)：取第一个非空值' },
+  { name: 'ifnull', insert: 'ifnull()', back: 1, hint: 'ifnull(a, b)：a 为空时取 b' },
+  { name: 'concat', insert: 'concat()', back: 1, hint: 'concat(a, b, …)：字符串拼接' },
+  { name: 'round', insert: 'round()', back: 1, hint: 'round(x, n)：四舍五入到 n 位小数（n 可省略）' },
+  { name: 'abs', insert: 'abs()', back: 1, hint: 'abs(x)：绝对值' },
+  { name: 'floor', insert: 'floor()', back: 1, hint: 'floor(x)：向下取整' },
+  { name: 'ceil', insert: 'ceil()', back: 1, hint: 'ceil(x)：向上取整' },
+  { name: 'min', insert: 'min()', back: 1, hint: 'min(a, b, …)：最小值' },
+  { name: 'max', insert: 'max()', back: 1, hint: 'max(a, b, …)：最大值' },
+  { name: 'year', insert: 'year()', back: 1, hint: 'year(日期字段)：取年份' },
+  { name: 'month', insert: 'month()', back: 1, hint: 'month(日期字段)：取月份' },
+  { name: 'day', insert: 'day()', back: 1, hint: 'day(日期字段)：取日' },
+  { name: 'datediff', insert: 'datediff()', back: 1, hint: 'datediff(日期1, 日期2)：相差天数' },
+]
+
+// 可引用的字段：同层已命名字段，排除自身和子表/图片（列表值无法参与计算）
+const formulaFields = computed(() =>
+  props.siblingFields.filter((s) =>
+    s.field_name && s.field_name !== props.field.field_name && !['subform', 'image'].includes(s.data_type)
+  )
+)
+
+// 字段引用形式：合法标识符（字母/中文/下划线开头，后端禁止 _ 开头）直接写；否则 [字段名]
+function fieldToken(name) {
+  return /^[\p{L}_][\p{L}\p{N}_]*$/u.test(name) && !name.startsWith('_') ? name : `[${name}]`
+}
+
+// 插入到光标处（未聚焦过则追加到末尾），插入后光标停在内容末尾/括号内
+function insertFormula(token, back = 0) {
+  const el = formulaInputRef.value?.input
+  const cur = local.options.formula || ''
+  if (!el) {
+    local.options.formula = cur + token
+    return
+  }
+  const start = el.selectionStart ?? cur.length
+  const end = el.selectionEnd ?? cur.length
+  local.options.formula = cur.slice(0, start) + token + cur.slice(end)
+  nextTick(() => {
+    el.focus()
+    el.selectionStart = el.selectionEnd = start + token.length - back
+  })
+}
 
 const widgetChoices = computed(() => {
   const t = props.field.data_type
@@ -200,6 +286,7 @@ watch(() => props.modelValue, async (v) => {
   if (rel.table_id !== null && rel.table_id !== '') rel.table_id = Number(rel.table_id)   // 与选项的数值 id 严格匹配
   Object.assign(serialCfg, { pattern: '', reset: 'never', allow_manual: false },
     JSON.parse(JSON.stringify(local.options.serial || {})))
+  serialEnabled.value = !!local.options.serial   // varchar：已配过编号规则 → 开关还原为勾选
   // 枚举项还原：历史数据可能存 {label, value} 对象，编辑时取其 value
   enumOptions.value = (local.options.options || []).map((o) =>
     typeof o === 'object' && o !== null ? o.value : o
@@ -292,7 +379,7 @@ function onSave() {
   } else {
     delete options.relation
   }
-  if (props.field.data_type === 'serial') {
+  if (serialActive.value) {
     options.serial = {
       ...(serialCfg.pattern?.trim() ? { pattern: serialCfg.pattern.trim() } : {}),
       reset: serialCfg.reset || 'never',
@@ -308,7 +395,8 @@ function onSave() {
     delete options.options
   }
   if (!options.formula) delete options.formula
-  if (['subform', 'image', 'serial'].includes(props.field.data_type)) delete options.formula
+  // 自动编号（serial 类型或 varchar 勾选启用）由服务端生成，不参与公式
+  if (['subform', 'image'].includes(props.field.data_type) || serialActive.value) delete options.formula
   if (props.field.data_type === 'subform' && !options.columns.length) delete options.columns
   // 控件跟随数据类型的场景：subform / serial 的 widget 固定，以类型为准纠正存量脏数据
   const fixedWidget = { subform: 'subform', serial: 'serial' }[props.field.data_type]
@@ -319,6 +407,10 @@ function onSave() {
 
 <style scoped>
 .hint { font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.5; }
+/* 公式点选区：字段/运算符/函数标签，点击插入 */
+.formula-picks { display: flex; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+.fp-label { font-size: 12px; color: #909399; margin-right: 6px; flex-shrink: 0; }
+.fp-tag { cursor: pointer; margin: 2px 4px 2px 0; user-select: none; }
 .carry-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .col-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .col-head { font-size: 12px; color: #909399; }

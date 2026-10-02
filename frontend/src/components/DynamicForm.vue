@@ -5,8 +5,16 @@
       <el-row :gutter="16">
         <el-col v-for="f in fields" :key="f.field_name" :span="colSpan(f)">
         <el-form-item :label="f.label" :prop="f.field_name">
+        <!-- 自动编号最优先：默认只读，保存时服务端生成；配置允许手改时可编辑（varchar 配了编号规则也走这里） -->
         <el-input
-          v-if="f.widget === 'textarea'"
+          v-if="isSerial(f)"
+          v-model="form[f.field_name]" :disabled="!f.options?.serial?.allow_manual"
+          :placeholder="recordId ? '' : '保存时自动生成'" clearable
+        >
+          <template #append>№</template>
+        </el-input>
+        <el-input
+          v-else-if="f.widget === 'textarea'"
           v-model="form[f.field_name]" type="textarea" :rows="5" :placeholder="'请输入' + f.label"
         />
         <el-input-number
@@ -54,14 +62,6 @@
           v-model="form[f.field_name]" :columns="f.options?.columns || []"
           @change="recompute"
         />
-        <!-- 自动编号：默认只读，保存时服务端生成；配置允许手改时可编辑 -->
-        <el-input
-          v-else-if="f.data_type === 'serial'"
-          v-model="form[f.field_name]" :disabled="!f.options?.serial?.allow_manual"
-          :placeholder="recordId ? '' : '保存时自动生成'" clearable
-        >
-          <template #append>№</template>
-        </el-input>
         <!-- 公式字段：只读，实时计算展示（保存时服务端重算兜底） -->
         <el-input
           v-else-if="isFormula(f)" :model-value="form[f.field_name]" disabled
@@ -271,7 +271,7 @@ function previewImage(fieldName, file) {
 const rules = computed(() => {
   const r = {}
   for (const f of props.fields) {
-    if (!f.nullable && !isFormula(f) && f.data_type !== 'serial') {   // 公式/自动编号由服务端生成，不做必填校验
+    if (!f.nullable && !isFormula(f) && !isSerial(f)) {   // 公式/自动编号由服务端生成，不做必填校验
       r[f.field_name] = [{ required: true, message: `请填写${f.label}`, trigger: ['blur', 'change'] }]
     }
   }
@@ -288,6 +288,11 @@ function fieldOptions(f) {
 
 function isFormula(f) {
   return typeof f.options?.formula === 'string' && f.options.formula.trim() !== ''
+}
+
+// 自动编号：serial 类型，或字符串字段配了 options.serial 生成规则
+function isSerial(f) {
+  return f.data_type === 'serial' || !!f.options?.serial
 }
 
 // 选中关联记录后：按 carry_fields 映射把源行字段回填到本表单

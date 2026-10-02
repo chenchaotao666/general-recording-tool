@@ -212,6 +212,6 @@ const withTime = (r, i) =>
 .f { flex: 0 0 180px; width: 180px; }
 .op { width: 110px; flex-shrink: 0; }
 .op-hint { float: right; margin-left: 16px; font-size: 12px; color: #909399; }
-.v { flex: 1 1 100px; min-width: 90px; }
+.v { flex: 1 1 100px; min-width: 90px; max-width: 260px; }
 .unit { font-size: 12px; color: #909399; }
 </style>

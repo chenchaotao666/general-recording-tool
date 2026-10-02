@@ -81,7 +81,10 @@ def validate_field_options(db: Session, data_type: str, widget: str | None,
                            options: dict | None, own_names: set[str], field_label: str = "") -> None:
     """字段级业务配置校验（建表/改结构时把关，保存记录时不再报错）。"""
     opts = options or {}
-    if data_type in ("subform", "image", "serial") and opts.get("formula"):
+    has_serial = data_type == "serial" or bool(opts.get("serial"))
+    if opts.get("serial") and data_type not in ("serial", "varchar", "text"):
+        raise MetaError(f"字段「{field_label}」的类型不支持自动编号（仅 单行文本/多行文本/自动编号）")
+    if (data_type in ("subform", "image") or has_serial) and opts.get("formula"):
         raise MetaError(f"字段「{field_label}」的类型不支持计算公式")
     if opts.get("formula"):
         _validate_formula(opts["formula"], own_names, f"字段「{field_label}」")
@@ -89,7 +92,7 @@ def validate_field_options(db: Session, data_type: str, widget: str | None,
         _validate_relation(db, opts.get("relation") or {}, own_names)
     if data_type == "subform":
         _validate_subform_columns(db, opts.get("columns"), own_names, field_label)
-    if data_type == "serial":
+    if has_serial:
         _validate_serial(opts.get("serial") or {}, field_label)
 
 
