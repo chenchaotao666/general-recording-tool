@@ -131,6 +131,23 @@ class ReportTemplateIn(BaseModel):
     push: dict = {}        # {recipients, formats, subject}
 
 
+class PrintTemplateIn(BaseModel):
+    """打印模板（全部 Excel 方式）：版式由 xlsx 文件承载，config 仅保存文件名等元信息。"""
+    name: str
+    is_default: bool = False
+
+
+class PrintExcelJsonIn(BaseModel):
+    """浏览器内 Excel 编辑器（luckysheet）保存/预览：getAllSheets() 的原始 JSON。"""
+    sheets: list = []
+    paper: str = "a4"      # a4 / half / third（仅预览时生效）
+    # 预览时与列表同口径的筛选/排序（同 /fill 的查询参数）
+    filters: str | None = None
+    sort_by: str | None = None
+    sort_order: str | None = None
+    template_id: int | None = None   # 预览时从该模板已保存文件里带入图片（logo 等）
+
+
 class WorkflowIn(BaseModel):
     name: str
     description: str = ""

@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import assistant, auth, dyn, excel, friends, groups, images, mcp, notes, notify, rbac, reports, settings as settings_router, share_links, shares, tables, users, vision, workflows
+from .routers import assistant, auth, dyn, excel, friends, groups, images, mcp, notes, notify, print_templates, rbac, reports, settings as settings_router, share_links, shares, tables, users, vision, workflows
 from .services import scheduler
 from .services.migrate import run_migrations
 from .utils.auth import get_current_user, hash_password
@@ -79,6 +79,8 @@ app.include_router(workflows.templates_router, dependencies=protected)
 app.include_router(mcp.router, dependencies=protected)
 app.include_router(reports.router, dependencies=protected)
 app.include_router(reports.templates_router, dependencies=protected)
+app.include_router(print_templates.router, dependencies=protected)
+app.include_router(print_templates.nested, dependencies=protected)
 app.include_router(assistant.router, dependencies=protected)
 app.include_router(notes.router, dependencies=protected)
 app.include_router(notify.router, dependencies=protected)

@@ -24,6 +24,7 @@ _NEW_COLUMNS = [
     ("workflow_node_runs", "warnings_json", "JSON"),
     ("report_run_logs", "skipped", "BOOLEAN DEFAULT 0"),
     ("shared_links", "allow_interact", "INTEGER DEFAULT 0"),
+    ("print_templates", "kind", "VARCHAR(16) DEFAULT 'excel'"),
 ]
 
 

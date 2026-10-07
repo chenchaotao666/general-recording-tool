@@ -201,6 +201,47 @@ export const reportExportUrl = (id, params) => {
   return `/api/reports/${id}/export?${qs}&token=${encodeURIComponent(token)}`
 }
 
+// 打印模板（按表共享；view 可见 / owner·admin 可编辑；首次列表后端自动播种预设）
+export const listPrintTemplates = (tableId) => http.get(`/tables/${tableId}/print-templates`)
+export const createPrintTemplate = (tableId, p) => http.post(`/tables/${tableId}/print-templates`, p)
+export const getPrintTemplate = (id) => http.get(`/print-templates/${id}`)
+export const updatePrintTemplate = (id, p) => http.put(`/print-templates/${id}`, p)
+export const deletePrintTemplate = (id) => http.delete(`/print-templates/${id}`)
+export const duplicatePrintTemplate = (id) => http.post(`/print-templates/${id}/duplicate`)
+export const setDefaultPrintTemplate = (id) => http.post(`/print-templates/${id}/set-default`)
+// Excel 模板：上传用 multipart；下载/填充走 window.open（URL 带 token，同导出 Excel 模式）
+export const uploadPrintExcel = (id, file) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  return http.post(`/print-templates/${id}/excel`, fd)
+}
+// 浏览器内编辑器（luckysheet）保存：表格 JSON → 后端还原 xlsx
+export const savePrintExcelJson = (id, sheets) =>
+  http.post(`/print-templates/${id}/excel-json`, { sheets }, { timeout: 60000 })
+// 编辑器内容即时预览：表格 JSON + 当前筛选口径 → 填充 HTML（paper 同打印预览）
+export const previewPrintExcel = (tableId, sheets, paper = 'a4', params = {}) =>
+  http.post(`/tables/${tableId}/print-templates/preview-fill`,
+    { sheets, paper, ...params }, { timeout: 120000 })
+const _withToken = (path, params) => {
+  const flat = { ...(params || {}) }
+  const qs = new URLSearchParams(Object.entries(flat).filter(([, v]) => v != null && v !== ''))
+  const token = localStorage.getItem('grt_token') || ''
+  const sep = qs.size ? '&' : ''
+  return `/api/print-templates/${path}?${qs}${sep}token=${encodeURIComponent(token)}`
+}
+export const printStarterUrl = (tableId) => {
+  // starter 在 /tables 命名空间下，不走 _withToken 的 print-templates 前缀
+  const token = localStorage.getItem('grt_token') || ''
+  return `/api/tables/${tableId}/print-templates/starter?token=${encodeURIComponent(token)}`
+}
+export const printExcelUrl = (id) => _withToken(`${id}/excel`)
+export const printFillUrl = (id, params) => _withToken(`${id}/fill`, params)
+export const printFillViewUrl = (id, params) => _withToken(`${id}/fill-view`, params)
+// 模板库（docs/打印模板 样例）：列表 + 文件下载（xlsx/对照图，img 标签直接用此 URL）
+export const listPrintLibrary = () => http.get('/print-templates/library')
+export const printLibraryFileUrl = (path, kind = 'xlsx') =>
+  _withToken(`library/file`, { path, kind })
+
 // 记事本
 export const noteTree = () => http.get('/notes/tree')
 export const searchNotes = (keyword) => http.get('/notes/search', { params: { keyword } })

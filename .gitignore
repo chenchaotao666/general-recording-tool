@@ -30,3 +30,9 @@ backend/smoke_test.db.bak-*
 
 # LLM 评测库（运行时生成）
 backend/test/llm/*.db
+
+# 打印模板：vendored 编辑器资源（postinstall 从 node_modules 拷贝）与可再生成产物
+frontend/public/luckysheet/
+frontend/e2e/out-*
+docs/打印模板/_renders/
+docs/工单打印截图/

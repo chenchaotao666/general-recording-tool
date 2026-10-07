@@ -6,6 +6,7 @@
         <el-tag v-if="meta && !meta.is_owner" size="small" style="margin-left: 8px">来自 {{ meta.owner_label }} 的分享</el-tag>
       </h2>
       <div>
+        <el-button :icon="Printer" @click="openPrint">打印</el-button>
         <el-popover placement="bottom-end" width="320" trigger="click">
           <template #reference>
             <el-button :icon="Grid">显示列</el-button>
@@ -215,6 +216,20 @@
       />
     </el-dialog>
 
+    <!-- 工单打印：页头入口 → 模板选择 → 后端填充下载 xlsx（当前筛选结果，每条记录一个工作表） -->
+    <PrintFormatPicker
+      ref="printPickerRef" v-model="printPickerVisible" :table-id="tableId" :total="total"
+      @preview="onPreviewTpl" @print="onPrintTpl" @design="onDesign"
+    />
+    <PrintPreviewDialog
+      v-model="printPreviewVisible" :view-url="printViewUrl" :download-url="printDownloadUrl"
+    />
+    <PrintTemplateDesigner
+      v-model="printDesignerVisible" :table-id="tableId" :fields="fields"
+      :template-id="designTplId" :fill-params="designFillParams"
+      @saved="onDesignerSaved"
+    />
+
     <!-- 表结构编辑：加/删/改/重命名字段（仅主人/admin 可见） -->
     <el-drawer v-model="structVisible" title="表结构设置" size="min(1080px, 94vw)">
       <el-form label-width="70px" style="max-width: 400px">
@@ -286,11 +301,14 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Download, SetUp, Grid, ArrowUp, ArrowDown, Top, Bottom, Setting, Position } from '@element-plus/icons-vue'
+import { Plus, Download, SetUp, Grid, ArrowUp, ArrowDown, Top, Bottom, Setting, Position, Printer } from '@element-plus/icons-vue'
 import DynamicForm from '../components/DynamicForm.vue'
 import FieldOptionsDialog from '../components/FieldOptionsDialog.vue'
+import PrintFormatPicker from '../components/PrintFormatPicker.vue'
+import PrintPreviewDialog from '../components/PrintPreviewDialog.vue'
+import PrintTemplateDesigner from '../components/PrintTemplateDesigner.vue'
 import RelationPicker from '../components/RelationPicker.vue'
-import { alterTable, createRecord, deleteRecord, getTable, imageUrl, listRecords, listTables, recordExportUrl, updateRecord, updateTable } from '../api'
+import { alterTable, createRecord, deleteRecord, getTable, imageUrl, listRecords, listTables, printFillUrl, printFillViewUrl, recordExportUrl, updateRecord, updateTable } from '../api'
 
 const DATA_TYPES = ['varchar', 'text', 'int', 'decimal', 'date', 'datetime', 'bool', 'image', 'subform', 'serial']
 const WIDGET_OF = {
@@ -706,6 +724,92 @@ function openCreate() {
 function openEdit(row) {
   editing.value = row
   dialogVisible.value = true
+}
+
+// ---------- 工单打印：页头入口，模板行上直接「预览/打印」（当前筛选结果，每条记录一页） ----------
+const printPickerVisible = ref(false)
+const printDesignerVisible = ref(false)
+const printPreviewVisible = ref(false)
+const printViewUrl = ref('')
+const printDownloadUrl = ref('')
+const designTplId = ref(null)
+const designFillParams = ref(null)   // 打开设计器时的筛选/排序快照（预览口径与打印一致）
+const printPickerRef = ref(null)
+
+function openPrint() {
+  printPickerVisible.value = true
+}
+
+function _fillParams() {
+  return {
+    sort_by: sortBy.value || undefined,
+    sort_order: sortOrder.value || undefined,
+    filters: JSON.stringify(buildFilters()),
+  }
+}
+
+function _checkPrintable(t) {
+  if (!t.has_excel) {
+    ElMessage.warning('该模板还没有 xlsx 文件，请先编辑模板并保存')
+    return false
+  }
+  if (!total.value) {
+    ElMessage.warning('当前筛选结果为空，没有可打印的记录')
+    return false
+  }
+  return true
+}
+
+function onPreviewTpl(t) {
+  if (!_checkPrintable(t)) return
+  printViewUrl.value = printFillViewUrl(t.id, _fillParams())
+  printDownloadUrl.value = printFillUrl(t.id, _fillParams())
+  printPickerVisible.value = false
+  printPreviewVisible.value = true
+}
+
+// 直接打印：填充 HTML 打印页 → 隐藏 iframe → window.print()
+async function onPrintTpl(t) {
+  if (!_checkPrintable(t)) return
+  const hint = ElMessage({ message: '正在生成打印页…', type: 'info', duration: 0 })
+  try {
+    const res = await fetch(printFillViewUrl(t.id, _fillParams()))
+    if (!res.ok) {
+      let msg = `填充失败（${res.status}）`
+      try { msg = (await res.json()).detail || msg } catch { /* 非 JSON 响应用默认信息 */ }
+      throw new Error(msg)
+    }
+    const htmlText = await res.text()
+    printPickerVisible.value = false
+    _printInHiddenFrame(htmlText)
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    hint.close()
+  }
+}
+
+function _printInHiddenFrame(htmlText) {
+  const f = document.createElement('iframe')
+  f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden'
+  f.srcdoc = htmlText
+  f.onload = () => {
+    f.contentWindow.addEventListener('afterprint', () => f.remove())
+    setTimeout(() => f.remove(), 120000)   // afterprint 兜底
+    f.contentWindow.focus()
+    f.contentWindow.print()
+  }
+  document.body.appendChild(f)
+}
+
+function onDesign(tplId) {
+  designTplId.value = tplId
+  designFillParams.value = _fillParams()   // 快照当前筛选，设计器预览与打印预览同口径
+  printDesignerVisible.value = true   // picker 保持在底层，保存后回来
+}
+
+function onDesignerSaved(saved) {
+  printPickerRef.value?.reload(saved?.id)
 }
 
 async function onSave(values) {

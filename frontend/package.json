@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "postinstall": "node scripts/copy-luckysheet.mjs"
   },
   "dependencies": {
     "@editorjs/checklist": "^1.6.0",
@@ -25,6 +26,8 @@
     "echarts": "^5.5.0",
     "element-plus": "^2.7.5",
     "grid-layout-plus": "^1.1.1",
+    "luckyexcel": "^1.0.1",
+    "luckysheet": "^2.1.13",
     "vue": "^3.4.27",
     "vue-router": "^4.3.2"
   },
