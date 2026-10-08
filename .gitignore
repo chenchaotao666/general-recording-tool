@@ -19,8 +19,6 @@ frontend/dist/
 
 # 测试数据文件（不上传）
 docs/*.xlsx
-docs/*.jpg
-docs/*.png
 
 # 小程序
 miniprogram/node_modules/
