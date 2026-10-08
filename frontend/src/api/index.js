@@ -239,10 +239,13 @@ export const printStarterUrl = (tableId) => {
 export const printExcelUrl = (id) => _withToken(`${id}/excel`)
 export const printFillUrl = (id, params) => _withToken(`${id}/fill`, params)
 export const printFillViewUrl = (id, params) => _withToken(`${id}/fill-view`, params)
-// 模板库（docs/打印模板 样例）：列表 + 文件下载（xlsx/对照图，img 标签直接用此 URL）
+// 模板库（docs/打印模板 样例）：列表 + xlsx 文件下载
+// 对照预览图是静态资源（public/print-library/，与 xlsx 同行业目录同名 jpg），前端直接拼 URL
 export const listPrintLibrary = () => http.get('/print-templates/library')
-export const printLibraryFileUrl = (path, kind = 'xlsx') =>
-  _withToken(`library/file`, { path, kind })
+export const printLibraryFileUrl = (path) =>
+  _withToken(`library/file`, { path })
+export const printLibraryImgUrl = (img) =>
+  '/print-library/' + img.split('/').map(encodeURIComponent).join('/')
 
 // 记事本
 export const noteTree = () => http.get('/notes/tree')

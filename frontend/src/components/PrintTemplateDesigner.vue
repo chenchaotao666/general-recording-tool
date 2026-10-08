@@ -112,6 +112,7 @@
                 class="lib-img" @click.stop
               >
                 <template #placeholder><div class="lib-noimg">加载中…</div></template>
+                <template #error><div class="lib-noimg">无预览图</div></template>
               </el-image>
               <div v-else class="lib-noimg">无预览图</div>
               <div class="lib-name" :title="t.name">{{ t.name }}</div>
@@ -135,7 +136,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Expand, Fold } from '@element-plus/icons-vue'
 import {
   createPrintTemplate, getPrintExcelImages, getPrintTemplate, listPrintLibrary, previewPrintExcel,
-  printExcelUrl, printLibraryFileUrl, printStarterUrl,
+  printExcelUrl, printLibraryFileUrl, printLibraryImgUrl, printStarterUrl,
   savePrintExcelJson, updatePrintTemplate, uploadPrintExcel,
 } from '../api'
 import PrintPreviewDialog from './PrintPreviewDialog.vue'
@@ -472,7 +473,7 @@ const libVisible = ref(false)
 const libLoading = ref(false)
 const libGroups = ref([])
 
-const libImgUrl = (imgPath) => printLibraryFileUrl(imgPath, 'img')
+const libImgUrl = (imgPath) => printLibraryImgUrl(imgPath)
 
 async function openLibrary() {
   libVisible.value = true
@@ -506,7 +507,7 @@ async function onPickLib(t) {
     await loadLuckysheet()
     const LuckyExcel = await loadLuckyExcel()
     await nextTick()
-    const res = await fetch(printLibraryFileUrl(t.file, 'xlsx'))
+    const res = await fetch(printLibraryFileUrl(t.file))
     if (!res.ok) throw new Error(`模板文件读取失败（${res.status}）`)
     const blob = await res.blob()
     LuckyExcel.transformExcelToLucky(blob, (exportJson) => {

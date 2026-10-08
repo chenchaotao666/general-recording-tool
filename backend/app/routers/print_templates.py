@@ -90,12 +90,14 @@ def create_template(payload: PrintTemplateIn, access: TableAccess = Depends(requ
     return _out(db, tpl)
 
 
-# ---------- 模板库：docs/打印模板 下的样例模板（含对照图片），编辑器里可一键套用 ----------
+# ---------- 模板库：docs/打印模板 下的样例模板，编辑器里可一键套用 ----------
+# 对照预览图已发布为前端静态资源（frontend/public/print-library/，
+# 由 docs/打印模板/compress_library_images.py 从 docs/工单打印截图 生成），
+# 前端按约定路径 /print-library/<行业>/<名称>.jpg 直接引用，不经过本接口。
 
 from ..config import BASE_DIR as _BASE_DIR
 
 _LIB_XLSX = _BASE_DIR.parent / "docs" / "打印模板"
-_LIB_IMG = _BASE_DIR.parent / "docs" / "工单打印截图"
 
 
 def _lib_safe(root: Path, rel: str) -> Path:
@@ -107,29 +109,26 @@ def _lib_safe(root: Path, rel: str) -> Path:
 
 @router.get("/library")
 def library_list(user: User = Depends(get_current_user)):
-    """模板库清单：分行业目录列出样例模板，附同名截图（有的话）。"""
+    """模板库清单：分行业目录列出样例模板；img 为前端静态预览图的约定路径（可能不存在，前端兜底）。"""
     items = []
     for f in sorted(_LIB_XLSX.glob("*/*.xlsx")):
         if f.name.startswith("~$"):
             continue
-        img = _LIB_IMG / f.parent.name / f"{f.stem}.jpg"
         items.append({
             "dir": f.parent.name, "name": f.stem,
             "file": f"{f.parent.name}/{f.name}",
-            "img": f"{f.parent.name}/{f.stem}.jpg" if img.exists() else None,
+            "img": f"{f.parent.name}/{f.stem}.jpg",
         })
     return {"items": items}
 
 
 @router.get("/library/file")
-def library_file(path: str, kind: str = "xlsx", user: User = Depends(get_current_user)):
-    """取模板库文件：kind=xlsx（模板）/ img（对照截图）。"""
+def library_file(path: str, user: User = Depends(get_current_user)):
+    """取模板库 xlsx 模板文件。"""
     from fastapi.responses import FileResponse
 
-    root = _LIB_XLSX if kind == "xlsx" else _LIB_IMG
-    p = _lib_safe(root, path)
-    media = _XLSX_MIME if kind == "xlsx" else "image/jpeg"
-    return FileResponse(p, media_type=media)
+    p = _lib_safe(_LIB_XLSX, path)
+    return FileResponse(p, media_type=_XLSX_MIME)
 
 
 
