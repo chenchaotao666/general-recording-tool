@@ -302,18 +302,38 @@ def _fill_flat_sheet(ws, fields, fields_by_name, records) -> tuple | None:
     return None
 
 
-def _copy_images(src_ws, dst_ws) -> None:
+def xlsx_media_bytes(data: bytes) -> set:
+    """xlsx 字节流里 xl/media/* 的内容集合。图片去重用它判断，
+    不碰 openpyxl 图片对象的流（从 xlsx 加载的图片流读一次就关，再读/再 save 会崩）。"""
+    import zipfile
+
+    out = set()
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        for n in z.namelist():
+            if n.startswith("xl/media/"):
+                out.add(z.read(n))
+    return out
+
+
+def _copy_images(src_ws, dst_ws, skip: set | None = None) -> None:
     """copy_worksheet 不复制图片（logo 等），手动带过去。
-    同一源图可能被复制到多个工作表，图片数据按源缓存（流只能读一次）。"""
+    同一源图可能被复制到多个工作表，图片数据按源对象缓存（openpyxl 图片流只能读一次；
+    用 WeakKeyDictionary 避免 id() 复用后命中脏缓存）。
+    skip: 目标里已有图片的内容集合（编辑器 JSON 已带回的），命中则跳过，避免一份图叠出两张。"""
     if not hasattr(_copy_images, "_cache"):
-        _copy_images._cache = {}
+        import weakref
+
+        _copy_images._cache = weakref.WeakKeyDictionary()
+    cache = _copy_images._cache
     for img in getattr(src_ws, "_images", []):
         try:
             from openpyxl.drawing.image import Image as XlImage
 
-            data = _copy_images._cache.get(id(img))
+            data = cache.get(img)
             if data is None:
-                data = _copy_images._cache[id(img)] = img._data()
+                data = cache[img] = img._data()
+            if skip and data in skip:
+                continue   # 编辑器已带回同一张图
             new = XlImage(io.BytesIO(data))
             new.width, new.height = img.width, img.height
             new.anchor = copy(img.anchor)

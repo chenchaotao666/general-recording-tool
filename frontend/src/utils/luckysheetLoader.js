@@ -122,10 +122,16 @@ function patchInputBoxFocus(containerId = 'ptSheetBox') {
     }, 0)
   }, true)
 
-  // 对齐下拉选中态同步（luckysheet 原生 bug：菜单创建时永远勾选第一项「左对齐」，
-  // 重开也不同步）。工具栏按钮的 type 属性才是当前单元格的真实对齐，以它为准打勾。
+  // 工具栏下拉选中态同步（luckysheet 原生 bug：菜单创建时永远勾选第一项——对齐勾
+  // 「左对齐」、换行勾「截断」、旋转勾「无」，重开也不同步）。工具栏按钮的 type 属性
+  // 才是当前单元格的真实状态（选区变化时会同步过去），以它为准打勾。
+  // 四类下拉同构：#luckysheet-icon-{align,valign,textwrap,rotation}-menu，
+  // 主按钮 #luckysheet-icon-{...}，菜单 #...-menuButton，菜单项带 itemvalue + span.icon
   document.addEventListener('click', (e) => {
-    const btn = e.target?.closest?.('#luckysheet-icon-align-menu, #luckysheet-icon-valign-menu')
+    const btn = e.target?.closest?.(
+      '#luckysheet-icon-align-menu, #luckysheet-icon-valign-menu,'
+      + ' #luckysheet-icon-textwrap-menu, #luckysheet-icon-rotation-menu',
+    )
     if (!btn) return
     setTimeout(() => {
       const mainBtn = document.getElementById(btn.id.replace('-menu', ''))

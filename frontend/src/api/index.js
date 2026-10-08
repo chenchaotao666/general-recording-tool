@@ -218,6 +218,8 @@ export const uploadPrintExcel = (id, file) => {
 // 浏览器内编辑器（luckysheet）保存：表格 JSON → 后端还原 xlsx
 export const savePrintExcelJson = (id, sheets) =>
   http.post(`/print-templates/${id}/excel-json`, { sheets }, { timeout: 60000 })
+// 模板图片注入：luckyexcel 解析不了 openpyxl 写的图片，由后端直接返回（含像素位置）
+export const getPrintExcelImages = (id) => http.get(`/print-templates/${id}/excel-images`)
 // 编辑器内容即时预览：表格 JSON + 当前筛选口径 → 填充 HTML（paper 同打印预览）
 export const previewPrintExcel = (tableId, sheets, paper = 'a4', params = {}) =>
   http.post(`/tables/${tableId}/print-templates/preview-fill`,

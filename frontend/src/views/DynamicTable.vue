@@ -80,9 +80,10 @@
       </div>
       <el-form inline class="filter-form" label-width="88px">
         <el-form-item v-for="f in filterable" :key="f.field_name" :label="f.label">
+          <!-- 除文本输入框（回车/点查询触发）外，各控件变化即查询（autoSearch 带 250ms 防抖） -->
           <el-select
             v-if="f.widget === 'select'" v-model="filterModel[f.field_name]" clearable
-            style="width: 100%" placeholder="全部"
+            style="width: 100%" placeholder="全部" @change="autoSearch"
           >
             <el-option
               v-for="opt in fieldOptions(f)" :key="String(opt.value)" :label="opt.label" :value="opt.value"
@@ -93,61 +94,66 @@
             v-model="filterModel[f.field_name]" :relation="f.options.relation"
             :allow-create="['varchar', 'text'].includes(f.data_type)"
             placeholder="全部" style="width: 100%"
+            @update:model-value="autoSearch"
           />
-          <el-select v-else-if="f.widget === 'switch'" v-model="filterModel[f.field_name]" clearable style="width: 100%" placeholder="全部">
+          <el-select v-else-if="f.widget === 'switch'" v-model="filterModel[f.field_name]" clearable style="width: 100%" placeholder="全部" @change="autoSearch">
             <el-option label="是" :value="true" /><el-option label="否" :value="false" />
           </el-select>
           <div v-else-if="f.widget === 'number'" class="num-filter">
-            <el-select v-model="filterOps[f.field_name]" style="width: 64px; flex-shrink: 0">
+            <el-select v-model="filterOps[f.field_name]" style="width: 64px; flex-shrink: 0" @change="autoSearch">
               <el-option v-for="o in NUM_OPS" :key="o.value" :label="o.label" :value="o.value" />
             </el-select>
             <template v-if="filterOps[f.field_name] === 'between'">
               <el-input-number
                 v-model="filterModel[f.field_name]" controls-position="right"
                 :precision="f.data_type === 'decimal' ? 4 : 0"
-                placeholder="最小" class="ctl-grow"
+                placeholder="最小" class="ctl-grow" @change="autoSearch"
               />
               <span class="num-sep">~</span>
               <el-input-number
                 v-model="filterMax[f.field_name]" controls-position="right"
                 :precision="f.data_type === 'decimal' ? 4 : 0"
-                placeholder="最大" class="ctl-grow"
+                placeholder="最大" class="ctl-grow" @change="autoSearch"
               />
             </template>
             <el-input-number
               v-else v-model="filterModel[f.field_name]" controls-position="right"
               :precision="f.data_type === 'decimal' ? 4 : 0"
-              placeholder="值" class="ctl-grow"
+              placeholder="值" class="ctl-grow" @change="autoSearch"
             />
           </div>
           <div v-else-if="f.widget === 'date-picker' || f.widget === 'datetime-picker'" class="num-filter">
-            <!-- 日期筛选类型：默认「范围」，其余为相对/空值等日期操作符；切换类型时清空旧值 -->
+            <!-- 日期筛选类型：默认「范围」，其余为相对/空值等日期操作符；切换类型时清空旧值并即时查询 -->
             <el-select
               :model-value="filterDateOps[f.field_name] || 'range'" style="width: 112px; flex-shrink: 0"
-              @update:model-value="(v) => { filterDateOps[f.field_name] = v; filterModel[f.field_name] = null }"
+              @update:model-value="(v) => onDateOpChange(f.field_name, v)"
             >
               <el-option v-for="o in DATE_OPS" :key="o.value" :label="o.label" :value="o.value" />
             </el-select>
             <el-date-picker
               v-if="!filterDateOps[f.field_name] || filterDateOps[f.field_name] === 'range'"
               v-model="filterModel[f.field_name]" type="daterange" value-format="YYYY-MM-DD"
-              start-placeholder="开始" end-placeholder="结束" class="ctl-grow"
+              start-placeholder="开始" end-placeholder="结束" class="ctl-grow" @change="autoSearch"
             />
             <el-date-picker
               v-else-if="['eq', 'gte', 'lte'].includes(filterDateOps[f.field_name])"
               v-model="filterModel[f.field_name]" type="date" value-format="YYYY-MM-DD"
-              placeholder="选择日期" class="ctl-grow"
+              placeholder="选择日期" class="ctl-grow" @change="autoSearch"
             />
             <template v-else-if="DATE_DAY_OPS.includes(filterDateOps[f.field_name])">
               <el-input-number
                 v-model="filterModel[f.field_name]" :min="0" controls-position="right"
-                placeholder="N" class="ctl-grow"
+                placeholder="N" class="ctl-grow" @change="autoSearch"
               />
               <span class="num-sep">天</span>
             </template>
             <!-- today / null / not_null：无需输入值 -->
           </div>
-          <el-input v-else v-model="filterModel[f.field_name]" clearable placeholder="包含..." style="width: 100%" />
+          <el-input
+            v-else v-model="filterModel[f.field_name]" clearable placeholder="包含..."
+            style="width: 100%" @keyup.enter="search"
+            @focus="onTextFocus(f.field_name)" @blur="onTextBlur(f.field_name)"
+          />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="search">查询</el-button>
@@ -309,6 +315,7 @@ import PrintPreviewDialog from '../components/PrintPreviewDialog.vue'
 import PrintTemplateDesigner from '../components/PrintTemplateDesigner.vue'
 import RelationPicker from '../components/RelationPicker.vue'
 import { alterTable, createRecord, deleteRecord, getTable, imageUrl, listRecords, listTables, printFillUrl, printFillViewUrl, recordExportUrl, updateRecord, updateTable } from '../api'
+import { getPaper } from '../utils/printPrefs'
 
 const DATA_TYPES = ['varchar', 'text', 'int', 'decimal', 'date', 'datetime', 'bool', 'image', 'subform', 'serial']
 const WIDGET_OF = {
@@ -702,6 +709,28 @@ function search() {
   load()
 }
 
+// 筛选控件（文本输入框除外）变化即查询：轻防抖合并连续操作（如区间先填最小再填最大、切换日期类型）
+let _autoSearchTimer = null
+function autoSearch() {
+  clearTimeout(_autoSearchTimer)
+  _autoSearchTimer = setTimeout(search, 250)
+}
+
+// 日期筛选类型切换：清空旧值后立即按新类型查询（today/null 等无值类型也即时生效）
+function onDateOpChange(field, v) {
+  filterDateOps[field] = v
+  filterModel[field] = null
+  autoSearch()
+}
+
+// 文本筛选：回车/失焦触发；失焦仅在值有变化时查（无变化不白查；
+// 失焦是因为去点「查询」时，250ms 防抖会把两次触发合并成一次）
+const _textFocusVal = {}
+function onTextFocus(field) { _textFocusVal[field] = filterModel[field] }
+function onTextBlur(field) {
+  if (filterModel[field] !== _textFocusVal[field]) autoSearch()
+}
+
 function resetFilters() {
   for (const k of Object.keys(filterModel)) filterModel[k] = null
   for (const k of Object.keys(filterMax)) filterMax[k] = null
@@ -764,8 +793,7 @@ function onPreviewTpl(t) {
   if (!_checkPrintable(t)) return
   printViewUrl.value = printFillViewUrl(t.id, _fillParams())
   printDownloadUrl.value = printFillUrl(t.id, _fillParams())
-  printPickerVisible.value = false
-  printPreviewVisible.value = true
+  printPreviewVisible.value = true   // picker 保持在底层（同 onDesign），关掉预览回到打印列表
 }
 
 // 直接打印：填充 HTML 打印页 → 隐藏 iframe → window.print()
@@ -773,15 +801,15 @@ async function onPrintTpl(t) {
   if (!_checkPrintable(t)) return
   const hint = ElMessage({ message: '正在生成打印页…', type: 'info', duration: 0 })
   try {
-    const res = await fetch(printFillViewUrl(t.id, _fillParams()))
+    // 纸张用全局偏好（picker/预览里可改），与预览版式同口径；no-store 防止吃到旧填充结果
+    const res = await fetch(printFillViewUrl(t.id, { ..._fillParams(), paper: getPaper() }), { cache: 'no-store' })
     if (!res.ok) {
       let msg = `填充失败（${res.status}）`
       try { msg = (await res.json()).detail || msg } catch { /* 非 JSON 响应用默认信息 */ }
       throw new Error(msg)
     }
     const htmlText = await res.text()
-    printPickerVisible.value = false
-    _printInHiddenFrame(htmlText)
+    _printInHiddenFrame(htmlText)   // picker 保持打开，系统打印框关闭后回到打印列表
   } catch (e) {
     ElMessage.error(e.message)
   } finally {

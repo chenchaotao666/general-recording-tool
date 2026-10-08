@@ -258,7 +258,6 @@ class PrintTemplate(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 创建者（仅留痕；权限按表 owner/admin 判定）
-    code = Column(String(16))                  # 表内序号编码 A001/A002…（创建时服务端取 max+1）
     name = Column(String(128), nullable=False)
     kind = Column(String(16), default="excel")    # 遗留列：恒为 excel
     paper = Column(String(16), default="a4")      # 遗留列：不再使用

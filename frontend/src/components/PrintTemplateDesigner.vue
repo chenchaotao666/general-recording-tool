@@ -2,11 +2,12 @@
   <el-dialog
     :model-value="modelValue" :title="templateId ? '编辑打印模板' : '新建打印模板'"
     width="96vw" top="3vh" destroy-on-close class="pt-designer" :close-on-press-escape="false"
+    :before-close="onBeforeClose"
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div v-loading="loading" class="designer-body">
-      <!-- 左：配置 -->
-      <div class="cfg">
+      <!-- 左：配置（可折叠，给编辑器让出全宽） -->
+      <div class="cfg" :class="{ collapsed: cfgCollapsed }">
         <el-form label-width="86px" size="small">
           <el-form-item label="模板名称" required>
             <el-input v-model="form.name" maxlength="64" />
@@ -20,12 +21,16 @@
             <template #title>
               <div class="syntax-title">占位符：先点右侧单元格，再点下面按钮插入</div>
             </template>
+            <el-input
+              v-model="tokenQuery" size="small" clearable placeholder="搜索字段…"
+              class="token-search"
+            />
             <div class="token-panel">
               <div class="token-group">
                 <div class="tg-title">单据信息（取第一条记录）</div>
                 <div class="tg-chips">
                   <span
-                    v-for="f in mainTokenFields" :key="f.field_name" class="token-chip" @mousedown.prevent
+                    v-for="f in filteredMainFields" :key="f.field_name" class="token-chip" @mousedown.prevent
                     :title="`插入 {${f.field_name}}`" @click="insertToken(`{${f.field_name}}`)"
                   >{{ f.label }}</span>
                 </div>
@@ -35,7 +40,7 @@
                 <div class="tg-chips">
                   <span class="token-chip" title="明细行序号" @mousedown.prevent @click="insertToken(detailTokens.index)">序号</span>
                   <span
-                    v-for="c in detailTokenCols" :key="c.field_name" class="token-chip" @mousedown.prevent
+                    v-for="c in filteredDetailCols" :key="c.field_name" class="token-chip" @mousedown.prevent
                     :title="`插入 ${detailTokens.wrap(c.field_name)}`" @click="insertToken(detailTokens.wrap(c.field_name))"
                   >{{ c.label }}</span>
                 </div>
@@ -44,7 +49,7 @@
                 <div class="tg-title">合计 / 特殊</div>
                 <div class="tg-chips">
                   <span
-                    v-for="c in sumTokenCols" :key="c.field_name" class="token-chip" @mousedown.prevent
+                    v-for="c in filteredSumCols" :key="c.field_name" class="token-chip" @mousedown.prevent
                     :title="`插入 ${detailTokens.wrap(c.field_name, 'sum')}（${c.label}列合计）`"
                     @click="insertToken(detailTokens.wrap(c.field_name, 'sum'))"
                   >{{ c.label }}合计</span>
@@ -61,14 +66,17 @@
       <!-- 右：在线编辑器 -->
       <div class="editor-side">
         <div class="editor-bar">
-          <el-tag size="small" type="success">Excel 在线编辑</el-tag>
+          <el-tooltip :content="cfgCollapsed ? '展开占位符面板' : '收起占位符面板'" placement="bottom">
+            <el-button size="small" text :icon="cfgCollapsed ? Expand : Fold" @click="toggleCfg" />
+          </el-tooltip>
+          <el-tag size="small" type="success">通过 Excel 方式在线编辑</el-tag>
           <span class="bar-ops">
-            <el-button size="small" type="primary" plain @click="openLibrary">选择模板</el-button>
+            <el-button size="small" type="primary" plain @click="openLibrary">选择系统模板</el-button>
             <el-upload
               :auto-upload="false" :show-file-list="false" accept=".xlsx"
               :on-change="onFilePicked" class="excel-upload bar-upload"
             >
-              <el-button size="small" type="primary" plain>上传 xlsx 载入</el-button>
+              <el-button size="small" type="primary" plain>上传 xlsx 模版</el-button>
             </el-upload>
             <el-button
               size="small" type="primary" plain :loading="previewLoading"
@@ -115,8 +123,8 @@
     </el-dialog>
 
     <template #footer>
-      <el-button @click="$emit('update:modelValue', false)">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
+      <el-button @click="requestClose">取消</el-button>
+      <el-button type="primary" :loading="saving" @click="onSave">保存（Ctrl+S）</el-button>
     </template>
   </el-dialog>
 </template>
@@ -124,13 +132,15 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Expand, Fold } from '@element-plus/icons-vue'
 import {
-  createPrintTemplate, getPrintTemplate, listPrintLibrary, previewPrintExcel, printExcelUrl,
-  printLibraryFileUrl, printStarterUrl,
+  createPrintTemplate, getPrintExcelImages, getPrintTemplate, listPrintLibrary, previewPrintExcel,
+  printExcelUrl, printLibraryFileUrl, printStarterUrl,
   savePrintExcelJson, updatePrintTemplate, uploadPrintExcel,
 } from '../api'
 import PrintPreviewDialog from './PrintPreviewDialog.vue'
 import { loadLuckysheet } from '../utils/luckysheetLoader'
+import { getCfgCollapsed, setCfgCollapsed } from '../utils/printPrefs'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -159,6 +169,8 @@ let luckyExcelPromise = null
 const loadLuckyExcel = () => (luckyExcelPromise ||= import('luckyexcel').then((m) => m.default))
 
 function destroySheet() {
+  toolbarObserver?.disconnect()
+  toolbarObserver = null
   try { window.luckysheet?.destroy() } catch { /* 忽略重复销毁 */ }
   sheetReady.value = false
   sheetDirty.value = false
@@ -173,10 +185,67 @@ function createSheet(sheets) {
     title: 'print-template',
     showinfobar: false,
     showsheetbar: sheets.length > 1,
+    // 打印模板用不到的按钮不渲染：插入链接/图表/批注/透视表/冻结/条件格式及其后的所有按钮
+    // （保留插入图片——模板支持嵌图；保留公式/排序筛选）
+    showtoolbarConfig: {
+      link: false, chart: false, postil: false, pivotTable: false,
+      frozenMode: false, conditionalFormat: false, dataVerification: false,
+      splitColumn: false, screenshot: false, findAndReplace: false,
+      protection: false, print: false,
+    },
     hook: { updated: () => { sheetDirty.value = true } },
   })
+  expandToolbar()
+  watchToolbar()                 // 折叠可能异步发生，盯住工具栏随时展开
+  setTimeout(expandToolbar, 0)   // 兜底：工具栏若为异步渲染，下一帧再展开一次（幂等）
   sheetReady.value = true
   sheetDirty.value = false
+}
+
+// luckysheet 按「按钮页面绝对 left < 容器宽 - 90」折叠工具栏——嵌入式对话框里工具栏
+// 本身不在页面左边缘，这个判断会过度折叠（合并单元格等大量按钮被收进「»」）。
+// 注意：折叠逻辑在 Uc() 里（window resize 的处理函数），流程是「先还原 → 量工具栏
+// 高度 → 再按宽度重新折叠」。因此 expandToolbar 必须：
+//   1. 加 expanding 守卫——否则「展开→dispatch resize→Uc 又折叠→observer 又展开」
+//      形成无限循环，页面直接挂死（已踩过）；
+//   2. dispatch resize 让 Uc 按展开后的（两行）工具栏量高度、摆网格，Uc 尾部会再
+//      折叠一次，所以返回前同步补一次 doExpand 把按钮再搬回来。
+let toolbarObserver = null
+let expanding = false
+
+function doExpand() {
+  const toolbar = document.querySelector('#ptSheetBox .luckysheet-wa-editor')
+  if (!toolbar) return
+  const more = document.getElementById('luckysheet-icon-morebtn-div')
+  if (more) while (more.firstChild) toolbar.appendChild(more.firstChild)
+  document.getElementById('luckysheet-icon-morebtn')?.remove()
+}
+
+function expandToolbar() {
+  if (expanding) return
+  expanding = true
+  try {
+    doExpand()
+    window.dispatchEvent(new Event('resize'))
+    doExpand()
+  } finally {
+    expanding = false
+  }
+}
+
+function watchToolbar(attempt = 0) {
+  toolbarObserver?.disconnect()
+  toolbarObserver = null
+  const toolbar = document.querySelector('#ptSheetBox .luckysheet-wa-editor')
+  if (!toolbar) {
+    if (attempt < 50) setTimeout(() => watchToolbar(attempt + 1), 100)   // 工具栏异步构建，最多等 5s
+    return
+  }
+  toolbarObserver = new MutationObserver(() => {
+    // expandToolbar 自身也会改动工具栏子节点，用「»是否存在」做守卫，不会死循环
+    if (document.getElementById('luckysheet-icon-morebtn')) expandToolbar()
+  })
+  toolbarObserver.observe(toolbar, { childList: true })
 }
 
 // source='tpl' 载入已保存模板；'starter' 载入按表结构生成的起始模板
@@ -187,16 +256,20 @@ async function openEditor(source) {
     await loadLuckysheet()
     const LuckyExcel = await loadLuckyExcel()
     await nextTick()
-    const url = source === 'tpl' && props.templateId && loadedHasExcel.value
-      ? printExcelUrl(props.templateId)
-      : printStarterUrl(props.tableId)
+    const fromTpl = source === 'tpl' && props.templateId && loadedHasExcel.value
+    const url = fromTpl ? printExcelUrl(props.templateId) : printStarterUrl(props.tableId)
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('模板文件加载超时')), 15000)
       LuckyExcel.transformExcelToLuckyByUrl(url, 'template.xlsx', (exportJson) => {
         clearTimeout(timer)
         if (!exportJson?.sheets?.length) return reject(new Error('模板文件解析失败'))
-        if (seq === sheetSeq) createSheet(exportJson.sheets)
-        resolve()
+        const done = () => {
+          if (seq === sheetSeq) createSheet(exportJson.sheets)
+          resolve()
+        }
+        // 自己存的 xlsx 图片 luckyexcel 解析不了（openpyxl 写的 drawing 无 xdr: 前缀），由后端注入
+        if (fromTpl) injectEditorImages(exportJson.sheets).then(done, done)
+        else done()
       })
     })
   } catch (e) {
@@ -204,6 +277,29 @@ async function openEditor(source) {
   } finally {
     if (seq === sheetSeq) sheetLoading.value = false
   }
+}
+
+// 把后端返回的图片（dataURL + luckysheet 像素位置）注入 sheet JSON，模型字段对齐
+// luckyexcel 的 imageObject / luckysheet 的 imgItem，渲染、缩放、再保存都走原生路径
+async function injectEditorImages(sheets) {
+  const sheet = sheets?.[0]
+  if (!sheet || Object.keys(sheet.images || {}).length) return   // luckyexcel 已解析出图片（外部 xlsx）则不重复注入
+  try {
+    const { images } = await getPrintExcelImages(props.templateId)
+    if (!images?.length) return
+    sheet.images = {}
+    images.forEach((im, i) => {
+      const { left, top, width: w, height: h } = im.default
+      sheet.images[`inj_${Date.now()}_${i}`] = {
+        type: '1', src: im.src,
+        originWidth: w, originHeight: h,
+        default: { left, top, width: w, height: h },
+        crop: { width: w, height: h, offsetLeft: 0, offsetTop: 0 },
+        isFixedPos: false, fixedLeft: 0, fixedTop: 0,
+        border: { width: 0, radius: 0, style: 'solid', color: '#000' },
+      }
+    })
+  } catch { /* 图片注入失败不阻塞编辑 */ }
 }
 
 // el-upload 的 on-change：uploadFile.raw 是原生 File；show-file-list=false 时组件不维护状态，重复选同一文件也会触发
@@ -269,6 +365,52 @@ const detailTokens = computed(() => {
   }
 })
 
+// 占位符搜索：按显示名/字段名过滤三组芯片
+const tokenQuery = ref('')
+const _matchToken = (f) => {
+  const q = tokenQuery.value.trim().toLowerCase()
+  if (!q) return true
+  return (f.label || '').toLowerCase().includes(q) || f.field_name.toLowerCase().includes(q)
+}
+const filteredMainFields = computed(() => mainTokenFields.value.filter(_matchToken))
+const filteredDetailCols = computed(() => detailTokenCols.value.filter(_matchToken))
+const filteredSumCols = computed(() => sumTokenCols.value.filter(_matchToken))
+
+// ---------- 左侧面板折叠（状态持久化；折叠后编辑器接近全宽） ----------
+const cfgCollapsed = ref(getCfgCollapsed())
+async function toggleCfg() {
+  cfgCollapsed.value = !cfgCollapsed.value
+  setCfgCollapsed(cfgCollapsed.value)
+  // 编辑器宽度变了，让 luckysheet 重算布局（Uc 尾部的折叠会被 watchToolbar 展开）
+  await nextTick()
+  window.dispatchEvent(new Event('resize'))
+}
+
+// ---------- 关闭守卫：有未保存修改时确认 ----------
+async function requestClose() {
+  if (sheetDirty.value) {
+    try {
+      await ElMessageBox.confirm('有未保存的修改，关闭后将丢失，确定关闭吗？', '提示', {
+        type: 'warning', confirmButtonText: '关闭', cancelButtonText: '继续编辑',
+      })
+    } catch { return }   // 继续编辑
+  }
+  emit('update:modelValue', false)
+}
+
+// el-dialog 的 X/遮罩关闭统一走 requestClose（自己发 update:modelValue），不调用 done
+function onBeforeClose() {
+  requestClose()
+}
+
+// Ctrl+S / Cmd+S 保存（编辑器用户的肌肉记忆）
+function onDesignerKeydown(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault()
+    onSave()
+  }
+}
+
 // 插入到右侧编辑器当前选中的单元格；编辑状态下插入到光标处；编辑器未就绪则复制到剪贴板
 async function insertToken(token) {
   const ls = window.luckysheet
@@ -301,9 +443,11 @@ async function insertToken(token) {
 
 watch(() => props.modelValue, async (v) => {
   if (!v) {
+    document.removeEventListener('keydown', onDesignerKeydown)
     destroySheet()
     return
   }
+  document.addEventListener('keydown', onDesignerKeydown)
   loading.value = true
   pendingFile.value = null
   try {
@@ -401,6 +545,7 @@ async function onPreview() {
 }
 
 async function onSave() {
+  if (saving.value) return   // Ctrl+S 连按防重入
   if (!form.name.trim()) {
     ElMessage.warning('请填写模板名称')
     return
@@ -420,7 +565,8 @@ async function onSave() {
     }
     pendingFile.value = null
     loadedHasExcel.value = true
-    ElMessage.success(`已保存 ${saved.code} ${saved.name}`)
+    sheetDirty.value = false
+    ElMessage.success(`已保存「${saved.name}」`)
     emit('saved', saved)
     emit('update:modelValue', false)
   } catch (e) {
@@ -449,18 +595,22 @@ async function onSave() {
 <style scoped>
 .designer-body { display: flex; gap: 14px; height: 80vh; }
 .cfg { width: 420px; flex-shrink: 0; overflow-y: auto; padding-right: 6px; }
+.cfg.collapsed { display: none; }   /* 折叠后编辑器占满全宽 */
+.cfg .el-form { margin-bottom: 12px; }   /* 模板名称与下面内容块拉开 */
 .excel-panel { margin-top: 4px; }
-.excel-panel .cur-file { margin-bottom: 8px; font-size: 13px; }
+.excel-panel .cur-file { margin-bottom: 12px; font-size: 13px; }
 .excel-panel .muted { color: #909399; font-size: 12px; }
 .bar-ops { display: inline-flex; gap: 8px; margin-left: 12px; }   /* 与左侧标签拉开间距 */
 .bar-ops .el-button + .el-upload .el-button { margin-left: 0; }
 .excel-upload { display: inline-block; }
-.syntax-help { margin-top: 6px; }
+.syntax-help { margin-top: 10px; }
 .syntax-title { font-size: 13px; }
+.token-search { margin: 8px 0 10px; }
 /* 占位符点击插入面板 */
 .token-panel { font-size: 12px; color: #606266; }
-.token-group { margin-bottom: 8px; }
-.tg-title { font-weight: 600; margin-bottom: 4px; }
+.token-group { margin-bottom: 14px; }
+.token-group:last-child { margin-bottom: 2px; }
+.tg-title { font-weight: 600; margin-bottom: 6px; }
 .tg-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .token-chip {
   padding: 2px 8px; background: #fff; border: 1px solid #c6e2ff; border-radius: 10px;
@@ -476,6 +626,8 @@ async function onSave() {
 .bar-ops .el-button + .el-upload .el-button { margin-left: 0; }
 .sheet-wrap { flex: 1; position: relative; min-height: 0; border: 1px solid #dcdfe6; }
 .sheet-box { position: absolute; inset: 0; margin: 0; padding: 0; overflow: hidden; }
+/* 工具栏全量显示：配合 expandToolbar()，允许按钮换行、高度自适应（默认 nowrap + 固定 32px 会截断） */
+.sheet-box :deep(.luckysheet-wa-editor) { height: auto; white-space: normal; }
 .bar-upload { display: inline-block; }
 .bar-hint { margin-left: 4px; }
 /* 模板库卡片 */

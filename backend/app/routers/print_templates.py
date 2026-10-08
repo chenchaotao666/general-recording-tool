@@ -32,7 +32,7 @@ MAX_TEMPLATE_SIZE = 2 * 1024 * 1024   # xlsx 模板上传上限
 def _out(db: Session, tpl: PrintTemplate) -> dict:
     creator = db.get(User, tpl.user_id) if tpl.user_id else None
     return {
-        "id": tpl.id, "table_id": tpl.table_id, "code": tpl.code, "name": tpl.name,
+        "id": tpl.id, "table_id": tpl.table_id, "name": tpl.name,
         "is_default": bool(tpl.is_default),
         "config": tpl.config_json or {},
         "has_excel": tpl_path(tpl.id).exists(),
@@ -45,13 +45,6 @@ def _require_manage(access: TableAccess) -> None:
     """模板是表级共享配置：写权限 = 表 owner/admin（同 canAlter 语义；分享者只到记录级）。"""
     if not (access.is_owner or access.is_admin):
         raise HTTPException(404, "数据表不存在")
-
-
-def _next_code(db: Session, table_id: int) -> str:
-    """表内 A%03d 递增（忽略非 A 开头编码；重复无实际危害，不加唯一索引）。"""
-    codes = [c for (c,) in db.query(PrintTemplate.code).filter_by(table_id=table_id).all() if c]
-    nums = [int(c[1:]) for c in codes if c.startswith("A") and c[1:].isdigit()]
-    return f"A{(max(nums) + 1) if nums else 1:03d}"
 
 
 def _clear_default(db: Session, table_id: int, keep_id: int | None = None) -> None:
@@ -85,7 +78,7 @@ def create_template(payload: PrintTemplateIn, access: TableAccess = Depends(requ
                     db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _require_manage(access)
     tpl = PrintTemplate(
-        table_id=access.table.id, user_id=user.id, code=_next_code(db, access.table.id),
+        table_id=access.table.id, user_id=user.id,
         name=payload.name, kind="excel", paper="a4", enabled=True,
         is_default=payload.is_default, config_json={},
     )
@@ -175,7 +168,7 @@ def delete_template(tpl_id: int, db: Session = Depends(get_db), user: User = Dep
 def duplicate_template(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tpl, _ = _get_tpl_access(db, tpl_id, user)
     dup = PrintTemplate(
-        table_id=tpl.table_id, user_id=user.id, code=_next_code(db, tpl.table_id),
+        table_id=tpl.table_id, user_id=user.id,
         name=f"{tpl.name}（副本）", kind="excel", paper="a4",
         enabled=True, is_default=False,
         config_json=dict(tpl.config_json or {}),
@@ -262,17 +255,18 @@ def preview_fill(payload: PrintExcelJsonIn, access: TableAccess = Depends(requir
         raise HTTPException(400, "表格数据过大")
     try:
         data = sheets_to_xlsx(payload.sheets)
-        # 编辑器不承载图片：从该模板已保存的文件里带入图片（logo 等），预览与打印一致
+        # 编辑器未承载的图片（解析不了的锚点）从该模板已保存的文件里带入，预览与打印一致；
+        # 编辑器已带回的图按 xl/media 内容去重（不能读 openpyxl 图片流判断，读后 save 会崩）
         if payload.template_id:
             old = tpl_path(payload.template_id)
             if old.exists():
                 from openpyxl import load_workbook as _lw
-                from ..services.print_excel import _copy_images
+                from ..services.print_excel import _copy_images, xlsx_media_bytes
 
                 old_wb = _lw(old)
                 if old_wb.active._images:
                     new_wb = _lw(io.BytesIO(data))
-                    _copy_images(old_wb.active, new_wb.active)
+                    _copy_images(old_wb.active, new_wb.active, skip=xlsx_media_bytes(data))
                     buf = io.BytesIO()
                     new_wb.save(buf)
                     data = buf.getvalue()
@@ -312,17 +306,18 @@ def save_excel_json(tpl_id: int, payload: PrintExcelJsonIn, db: Session = Depend
         raise HTTPException(400, "表格数据过大，请精简后再保存")
     try:
         data = sheets_to_xlsx(payload.sheets)
-        # 编辑器不承载图片：原模板文件里的图片（logo 等）保留到新文件（锚点照原样）
+        # 编辑器未承载的图片（如 luckyexcel 解析不了的锚点）从原模板文件带回；
+        # 编辑器已带回的图按 xl/media 内容去重（不能读 openpyxl 图片流判断，读后 save 会崩）
         import io
         from openpyxl import load_workbook
-        from ..services.print_excel import _copy_images
+        from ..services.print_excel import _copy_images, xlsx_media_bytes
 
         old_path = tpl_path(tpl.id)
         if old_path.exists():
             old_wb = load_workbook(old_path)
             if old_wb.active._images:
                 new_wb = load_workbook(io.BytesIO(data))
-                _copy_images(old_wb.active, new_wb.active)
+                _copy_images(old_wb.active, new_wb.active, skip=xlsx_media_bytes(data))
                 buf = io.BytesIO()
                 new_wb.save(buf)
                 data = buf.getvalue()
@@ -347,6 +342,24 @@ def download_excel(tpl_id: int, db: Session = Depends(get_db), user: User = Depe
         raise HTTPException(404, "该模板还没有上传 xlsx 文件")
     name = (tpl.config_json or {}).get("orig_name") or f"{tpl.name}.xlsx"
     return _download(path.read_bytes(), name)
+
+
+@router.get("/{tpl_id}/excel-images")
+def get_excel_images(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """编辑器载入模板时的图片注入。luckyexcel 解析不了 openpyxl 写出的 drawing
+    （元素无 xdr: 前缀，且 rels 用绝对路径），图片+位置（luckysheet 像素坐标，
+    与 sheets_to_xlsx 写入时同一口径）由后端直接给前端注入编辑器。"""
+    tpl, _ = _get_tpl_access(db, tpl_id, user)
+    path = tpl_path(tpl.id)
+    if not path.exists():
+        return {"images": []}
+    from openpyxl import load_workbook
+
+    from ..services.luckysheet_xlsx import extract_images
+    try:
+        return {"images": extract_images(load_workbook(path).active)}
+    except Exception:
+        return {"images": []}   # 图片读取失败不阻塞模板编辑
 
 
 @router.get("/{tpl_id}/fill")

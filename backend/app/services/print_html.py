@@ -83,31 +83,52 @@ def _cell_css(cell) -> str:
     return ";".join(css)
 
 
+def _vt_stack(text: str) -> str:
+    """255 竖排文字 → 单列逐字堆叠 HTML。源文本换行 → 列内额外的空行。
+    不用 CSS writing-mode：vertical-rl 会把换行变成「向左的新列」，
+    与 WPS/luckysheet 编辑器里 255 竖排的显示（同列留空）不一致，且窄单元格
+    overflow:hidden 下多行内容会被裁得只剩中间一行。"""
+    lines = ["<br>".join(_html.escape(ch) for ch in ln) for ln in text.split("\n")]
+    return "<br>".join(lines)
+
+
 def _images_html(ws, row_of) -> str:
     """工作表图片（logo 等）→ 绝对定位的 <img>（base64 内联）。
     row_of: 行号(1 起) → 该行的渲染 y 偏移(px)，补空行/切片时由调用方传入。"""
     import base64
 
+    from openpyxl.drawing.spreadsheet_drawing import AbsoluteAnchor, OneCellAnchor, TwoCellAnchor
+
     EMU = 9525   # EMU per px (96dpi)
-    col_px = [0]
-    for c in range(1, (ws.max_column or 1) + 1):
-        dim = ws.column_dimensions.get(get_column_letter(c))
-        col_px.append(col_px[-1] + (round(dim.width * 7 + 5) if dim and dim.width else 64))
+
+    def col_pos(idx: int) -> int:
+        """列 idx(0 起) 左边缘的 x(px)；未配置列按 Excel 默认 64px。"""
+        x = 0
+        for c in range(1, idx + 1):
+            dim = ws.column_dimensions.get(get_column_letter(c))
+            x += round(dim.width * 7 + 5) if dim and dim.width else 64
+        return x
+
     out = []
     for img in getattr(ws, "_images", []):
         try:
             a = img.anchor
-            if hasattr(a, "pos"):
-                # AbsoluteAnchor：表内绝对像素（编辑器工具栏插入的图片）
-                left = round(a.pos.x / EMU)
-                top = round(a.pos.y / EMU)
-            else:
+            if isinstance(a, AbsoluteAnchor):
+                left, top = round(a.pos.x / EMU), round(a.pos.y / EMU)
+                w, h = round(a.ext.cx / EMU), round(a.ext.cy / EMU)
+            elif isinstance(a, (TwoCellAnchor, OneCellAnchor)):
                 fr = a._from
-                left = (col_px[fr.col] if fr.col < len(col_px) else col_px[-1]) + round((fr.colOff or 0) / EMU)
-                top = row_of(fr.row) + round((fr.rowOff or 0) / EMU)
-            ext = getattr(a, "ext", None)
-            w = round(ext.cx / EMU) if ext else (img.width or 0)
-            h = round(ext.cy / EMU) if ext else (img.height or 0)
+                left = col_pos(fr.col) + round((fr.colOff or 0) / EMU)
+                top = round(row_of(fr.row) + (fr.rowOff or 0) / EMU)
+                if isinstance(a, TwoCellAnchor):
+                    # 尺寸 = from→to 跨度（编辑器里的显示尺寸；这种锚点没有 ext，拿原图
+                    # 像素尺寸当显示尺寸是错的——预览里图片大小不对的根因）
+                    w = col_pos(a.to.col) + round((a.to.colOff or 0) / EMU) - left
+                    h = round(row_of(a.to.row) + (a.to.rowOff or 0) / EMU) - top
+                else:
+                    w, h = round(a.ext.cx / EMU), round(a.ext.cy / EMU)
+            else:
+                continue
             data = img._data()
             fmt = img.format or ("png" if data[:4] == b"\x89PNG" else "jpeg")
             src = f"data:image/{fmt};base64,{base64.b64encode(data).decode()}"
@@ -198,14 +219,17 @@ def _sheet_html(ws, only_rows: list[int] | None = None,
                 if cs > 1:
                     attrs += f' colspan="{cs}"'
             style = _cell_css(cell)
+            raw = cell.value
+            value = "&nbsp;" if raw in (None, "") else _html.escape(str(raw))
+            # 竖排文字（Excel text_rotation=255，如右侧联注）：绝对定位脱离布局流，
+            # 否则窄列里的长竖排文本按横排换行计算会把整行撑高变形。
+            # position:relative 必须和样式合并进同一个 style 属性——拆成两个 style 属性时
+            # 浏览器只认第一个，relative 丢失后 .vt 会相对页面容器定位，竖排文字跑版
+            if value != "&nbsp;" and cell.alignment and cell.alignment.text_rotation == 255:
+                style = f"position:relative;{style}" if style else "position:relative"
+                value = f'<span class="vt"><span>{_vt_stack(str(raw))}</span></span>'
             if style:
                 attrs += f' style="{style}"'
-            value = "&nbsp;" if cell.value in (None, "") else _html.escape(str(cell.value))
-            # 竖排文字（Excel text_rotation=255，如右侧联注）：绝对定位脱离布局流，
-            # 否则窄列里的长竖排文本按横排换行计算会把整行撑高变形
-            if value != "&nbsp;" and cell.alignment and cell.alignment.text_rotation == 255:
-                attrs += ' style="position:relative' + (';' + style if style else '') + '"'
-                value = f'<span class="vt">{value}</span>'
             tds.append(f"<td{attrs}>{value}</td>")
         rows_html.append(f"<tr{tr_style}>{''.join(tds)}</tr>")
 
@@ -303,7 +327,7 @@ def render_fill_html(tpl_file: Path, mt: MetaTable, fields: list[MetaField],
            box-shadow: 0 1px 4px rgba(0,0,0,.25); box-sizing: border-box; }}
   .doc table {{ margin: 0 auto; }}
   .doc td {{ overflow: hidden; padding: 1px 3px; }}
-  .doc td .vt {{ position: absolute; inset: 1px; writing-mode: vertical-rl; overflow: hidden;
+  .doc td .vt {{ position: absolute; inset: 1px; overflow: hidden; text-align: center;
                  display: flex; align-items: center; justify-content: center; }}
   {page_css}
   @media print {{
