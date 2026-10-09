@@ -4,6 +4,9 @@
     <el-aside width="200px" class="aside">
       <div class="logo">通用记录工具</div>
       <el-menu :default-active="$route.path" router>
+        <el-menu-item index="/home">
+          <el-icon><HomeFilled /></el-icon><span>首页</span>
+        </el-menu-item>
         <el-menu-item index="/tables">
           <el-icon><Grid /></el-icon><span>数据表</span>
         </el-menu-item>
@@ -47,7 +50,7 @@
     </el-aside>
     <el-container>
       <el-header class="topbar">
-        <span />
+        <span id="topbarActions" class="topbar-actions" />
         <div class="topbar-right">
           <el-dropdown>
             <span class="user-name">{{ user?.username || '用户' }}（{{ roleLabel }}）</span>
@@ -91,7 +94,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Avatar, Bell, Connection, DataAnalysis, Grid, Key, Notebook, Setting, Upload, User, UserFilled } from '@element-plus/icons-vue'
+import { Avatar, Bell, Connection, DataAnalysis, Grid, HomeFilled, Key, Notebook, Setting, Upload, User, UserFilled } from '@element-plus/icons-vue'
 import { changePassword as changePasswordApi, unreadCount } from './api'
 import AssistantPanel from './components/AssistantPanel.vue'
 
@@ -173,6 +176,7 @@ body { margin: 0; font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Micr
   display: flex; align-items: center; justify-content: space-between; height: 48px;
 }
 .topbar-right { display: flex; align-items: center; gap: 16px; }
+.topbar-actions { display: inline-flex; align-items: center; }
 /* 侧边菜单的未读数角标 */
 .menu-unread {
   margin-left: auto; background: #f56c6c; color: #fff; font-size: 11px; line-height: 1;

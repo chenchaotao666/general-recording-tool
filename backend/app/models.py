@@ -410,3 +410,23 @@ class ImageFile(Base):
     mime = Column(String(64))
     size = Column(Integer)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class HomeLayout(Base):
+    """首页工作台布局：每用户一份（分区 → 分组 → 卡片三层，见 docs/首页工作台设计.md）。"""
+    __tablename__ = "home_layouts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    layout_json = Column(JSON, default=dict)   # {version, sections:[{id,title,x,y,w,h,groups?,cards?}]}
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class HomeDefaultLayout(Base):
+    """全员默认首页布局（管理员预设，单行表）。"""
+    __tablename__ = "home_default_layout"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    layout_json = Column(JSON, default=dict)
+    updated_by = Column(Integer, ForeignKey("users.id"))
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

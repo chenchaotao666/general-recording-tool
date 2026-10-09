@@ -21,7 +21,9 @@ const router = createRouter({
     { path: '/form/:wfId/:secret', component: () => import('../views/PublicForm.vue') },
     // 免登审批（签名链接），免登录
     { path: '/approve/:token', component: () => import('../views/PublicApprove.vue') },
-    { path: '/', redirect: '/tables' },
+    { path: '/', redirect: '/home' },
+    // 首页工作台：懒加载隔离 grid-layout-plus 体积
+    { path: '/home', component: () => import('../views/Home.vue') },
     { path: '/tables', component: TableList },
     { path: '/friends', component: Friends },
     { path: '/import', component: ImportWizard },

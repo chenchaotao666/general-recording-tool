@@ -260,6 +260,14 @@ export const noteAiAssist = (p) => http.post('/notes/ai-assist', p)
 export const listNotifications = () => http.get('/notify')
 export const listNotificationsPage = (params) => http.get('/notify/page', { params })
 export const unreadCount = () => http.get('/notify/unread_count')
+
+// 首页工作台布局（每用户一份；GET 无记录时返回系统默认布局）
+export const getHomeLayout = () => http.get('/home-layout')
+export const saveHomeLayout = (layout) => http.put('/home-layout', { layout })
+export const deleteHomeLayout = () => http.delete('/home-layout')   // 恢复默认（删除用户布局）
+// 管理员：全员默认布局（对没有自己布局的用户生效）
+export const saveDefaultHomeLayout = (layout) => http.put('/home-layout/default', { layout })
+export const deleteDefaultHomeLayout = () => http.delete('/home-layout/default')
 export const markRead = (payload) => http.post('/notify/read', payload)
 export const deleteNotifications = (payload) => http.post('/notify/delete', payload)
 
