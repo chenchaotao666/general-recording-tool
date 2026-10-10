@@ -1,21 +1,16 @@
-"""角色与权限管理（仅 admin）：角色 CRUD、权限 CRUD、角色授权。"""
+"""角色与权限管理：角色/权限为全局配置——读取对租户 admin 开放（成员角色分配用），
+增删改为平台超管专属。"""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Permission, Role, RolePermission, User
-from ..utils.auth import get_current_user
+from ..models import Permission, Role, RolePermission, TenantMember
+from ..utils.context import Context, require_platform_admin, require_tenant_admin
 
 router = APIRouter(prefix="/api", tags=["rbac"])
 
 ROLE_CODE_MIN = 2
-
-
-def _require_admin(user: User = Depends(get_current_user)) -> User:
-    if user.role != "admin":
-        raise HTTPException(403, "仅管理员可操作")
-    return user
 
 
 # ---------- 权限 ----------
@@ -34,12 +29,12 @@ def _perm_out(p: Permission) -> dict:
 
 
 @router.get("/permissions")
-def list_permissions(db: Session = Depends(get_db), admin: User = Depends(_require_admin)):
+def list_permissions(db: Session = Depends(get_db), admin: Context = Depends(require_tenant_admin)):
     return [_perm_out(p) for p in db.query(Permission).order_by(Permission.id).all()]
 
 
 @router.post("/permissions")
-def create_permission(payload: PermissionIn, db: Session = Depends(get_db), admin: User = Depends(_require_admin)):
+def create_permission(payload: PermissionIn, db: Session = Depends(get_db), admin: Context = Depends(require_platform_admin)):
     code = payload.code.strip()
     if not code.replace("_", "").isalnum() or not code[0].isalpha():
         raise HTTPException(400, "权限标识必须是小写字母开头的 snake_case")
@@ -53,7 +48,7 @@ def create_permission(payload: PermissionIn, db: Session = Depends(get_db), admi
 
 
 @router.delete("/permissions/{perm_id}")
-def delete_permission(perm_id: int, db: Session = Depends(get_db), admin: User = Depends(_require_admin)):
+def delete_permission(perm_id: int, db: Session = Depends(get_db), admin: Context = Depends(require_platform_admin)):
     p = db.get(Permission, perm_id)
     if not p:
         raise HTTPException(404, "权限不存在")
@@ -102,12 +97,12 @@ def _role_out(db: Session, r: Role) -> dict:
 
 
 @router.get("/roles")
-def list_roles(db: Session = Depends(get_db), admin: User = Depends(_require_admin)):
+def list_roles(db: Session = Depends(get_db), admin: Context = Depends(require_tenant_admin)):
     return [_role_out(db, r) for r in db.query(Role).order_by(Role.id).all()]
 
 
 @router.post("/roles")
-def create_role(payload: RoleIn, db: Session = Depends(get_db), admin: User = Depends(_require_admin)):
+def create_role(payload: RoleIn, db: Session = Depends(get_db), admin: Context = Depends(require_platform_admin)):
     code = payload.code.strip()
     if len(code) < ROLE_CODE_MIN or not code.replace("_", "").isalnum() or not code[0].isalpha():
         raise HTTPException(400, "角色标识必须是小写字母开头的 snake_case")
@@ -121,7 +116,7 @@ def create_role(payload: RoleIn, db: Session = Depends(get_db), admin: User = De
 
 
 @router.put("/roles/{role_id}")
-def update_role(role_id: int, payload: RoleUpdateIn, db: Session = Depends(get_db), admin: User = Depends(_require_admin)):
+def update_role(role_id: int, payload: RoleUpdateIn, db: Session = Depends(get_db), admin: Context = Depends(require_platform_admin)):
     r = db.get(Role, role_id)
     if not r:
         raise HTTPException(404, "角色不存在")
@@ -134,13 +129,13 @@ def update_role(role_id: int, payload: RoleUpdateIn, db: Session = Depends(get_d
 
 
 @router.delete("/roles/{role_id}")
-def delete_role(role_id: int, db: Session = Depends(get_db), admin: User = Depends(_require_admin)):
+def delete_role(role_id: int, db: Session = Depends(get_db), admin: Context = Depends(require_platform_admin)):
     r = db.get(Role, role_id)
     if not r:
         raise HTTPException(404, "角色不存在")
     if r.is_system:
         raise HTTPException(400, "内置角色不可删除")
-    if db.query(User).filter(User.role == r.code).first():
+    if db.query(TenantMember).filter(TenantMember.role == r.code).first():
         raise HTTPException(400, "仍有用户使用该角色，请先调整这些用户的角色")
     db.query(RolePermission).filter_by(role_id=r.id).delete()
     db.delete(r)
@@ -149,7 +144,7 @@ def delete_role(role_id: int, db: Session = Depends(get_db), admin: User = Depen
 
 
 @router.put("/roles/{role_id}/permissions")
-def set_role_permissions(role_id: int, payload: GrantsIn, db: Session = Depends(get_db), admin: User = Depends(_require_admin)):
+def set_role_permissions(role_id: int, payload: GrantsIn, db: Session = Depends(get_db), admin: Context = Depends(require_platform_admin)):
     """整体替换角色的权限授权（grants 全量覆盖）。"""
     r = db.get(Role, role_id)
     if not r:

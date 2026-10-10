@@ -109,7 +109,7 @@ def get_template(tpl_id: int, db: Session = Depends(get_db), user: User = Depend
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
-    check_owner_or_admin(tpl.user_id, user)
+    check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     return _out(db, tpl)
 
 
@@ -137,7 +137,8 @@ def create_template(payload: ReportTemplateIn, db: Session = Depends(get_db), us
     get_table_access(db, payload.table_id, user)
     _check_datasets_access(db, ds_mod.normalize_datasets(payload.datasets or None, payload.table_id, payload.source), user)
     validate_template(db, payload)
-    tpl = ReportTemplate(user_id=user.id)
+    from ..services.tenancy import default_tenant_id
+    tpl = ReportTemplate(user_id=user.id, tenant_id=default_tenant_id(db, user))
     _apply(tpl, payload)
     db.add(tpl)
     db.commit()
@@ -150,7 +151,7 @@ def update_template(tpl_id: int, payload: ReportTemplateIn, db: Session = Depend
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
-    check_owner_or_admin(tpl.user_id, user)
+    check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     get_table_access(db, payload.table_id, user)
     _check_datasets_access(db, ds_mod.normalize_datasets(payload.datasets or None, payload.table_id, payload.source), user)
     validate_template(db, payload)
@@ -165,7 +166,7 @@ def delete_template(tpl_id: int, db: Session = Depends(get_db), user: User = Dep
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
-    check_owner_or_admin(tpl.user_id, user)
+    check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     from ..models import SharedLink
     db.query(SharedLink).filter(SharedLink.resource_type == "report", SharedLink.resource_id == tpl.id).delete()
     db.delete(tpl)
@@ -180,9 +181,10 @@ def duplicate_template(tpl_id: int, db: Session = Depends(get_db), user: User = 
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
-    check_owner_or_admin(tpl.user_id, user)
+    check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     new = ReportTemplate(
-        user_id=user.id, name=f"{tpl.name}（副本）", description=tpl.description, enabled=False,
+        user_id=user.id, tenant_id=tpl.tenant_id, name=f"{tpl.name}（副本）",
+        description=tpl.description, enabled=False,
         table_id=tpl.table_id,
         range_json=tpl.range_json, blocks_json=tpl.blocks_json, layout_json=tpl.layout_json,
         source_json=tpl.source_json, datasets_json=tpl.datasets_json, filters_json=tpl.filters_json,
@@ -199,7 +201,7 @@ def toggle_template(tpl_id: int, db: Session = Depends(get_db), user: User = Dep
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
-    check_owner_or_admin(tpl.user_id, user)
+    check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     tpl.enabled = not tpl.enabled
     db.commit()
     sched.reload_jobs()
@@ -287,7 +289,7 @@ def run_report(tpl_id: int, payload: dict | None = None, db: Session = Depends(g
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
-    check_owner_or_admin(tpl.user_id, user)
+    check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     payload = payload or {}
     draft = payload.get("draft")
     if draft is not None:
@@ -326,7 +328,7 @@ def report_drill(tpl_id: int, payload: dict, db: Session = Depends(get_db), user
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
-    check_owner_or_admin(tpl.user_id, user)
+    check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     get_table_access(db, tpl.table_id, user)
     gi = payload.get("group_index")
     try:
@@ -351,7 +353,7 @@ def export_report(tpl_id: int, format: str = "xlsx", mode: str | None = None,
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
-    check_owner_or_admin(tpl.user_id, user)
+    check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     get_table_access(db, tpl.table_id, user)
     _check_datasets_access(db, ds_mod.template_datasets(tpl), user)
     viewer_filters = None
@@ -388,7 +390,7 @@ def preview_push(tpl_id: int, db: Session = Depends(get_db), user: User = Depend
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
-    check_owner_or_admin(tpl.user_id, user)
+    check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     get_table_access(db, tpl.table_id, user)
     from ..services.report_engine import render_email_html, render_markdown
     result = run_template(db, tpl)
@@ -403,7 +405,7 @@ def test_push(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(g
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
-    check_owner_or_admin(tpl.user_id, user)
+    check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     get_table_access(db, tpl.table_id, user)
     result = push_template(tpl_id, trigger="manual")
     if result is None:
@@ -418,7 +420,7 @@ def list_runs(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(g
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
-    check_owner_or_admin(tpl.user_id, user)
+    check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     rows = (
         db.query(ReportRunLog)
         .filter_by(template_id=tpl_id)

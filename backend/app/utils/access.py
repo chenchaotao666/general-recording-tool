@@ -1,7 +1,9 @@
-"""表级权限：主人全权 / admin 全权 / 分享者按 table_shares 四开关 / 其余 404。
+"""表级权限：主人全权 / 租户 admin 全权（限本租户的表）/ 分享者按 table_shares 四开关 / 其余 404。
 
 权限是请求的属性，检查放 router 层（Depends 工厂）；engine 层不感知用户
 （调度器以无用户上下文执行，engine 掺用户概念会污染内部函数）。
+
+好友分享可跨租户（产品决策）：分享并集逻辑不做租户过滤。
 """
 from dataclasses import dataclass
 
@@ -11,7 +13,8 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import GroupMember, MetaTable, TableShare, User
-from .auth import get_current_user
+from .context import Context, get_current_context
+from .rbac import tenant_role
 
 PERM_ATTR = {"view": "can_view", "create": "can_create", "edit": "can_edit", "delete": "can_delete"}
 
@@ -25,6 +28,7 @@ class TableAccess:
     can_create: bool
     can_edit: bool
     can_delete: bool
+    ctx: Context | None = None
 
     def my_perms(self) -> dict:
         return {
@@ -34,15 +38,25 @@ class TableAccess:
         }
 
 
-def get_table_access(db: Session, table_id: int, user: User) -> TableAccess:
+def _role_for_table(db: Session, user: User, mt: MetaTable, ctx: Context | None) -> str | None:
+    """用户对这张表所属租户的角色。ctx 与表同租户时直接用请求上下文（含平台超管运维通道）；
+    否则按成员关系解析（跨租户表 / 调度器等无请求上下文场景）。"""
+    if ctx is not None and mt.tenant_id is not None and ctx.tenant.id == mt.tenant_id:
+        if ctx.is_tenant_admin:
+            return "admin"
+        return ctx.membership.role if ctx.membership else None
+    return tenant_role(db, user, mt.tenant_id)
+
+
+def get_table_access(db: Session, table_id: int, user: User, ctx: Context | None = None) -> TableAccess:
     """表不存在或无权限一律 404（不泄露表存在性）。直接分享与用户组分享取权限并集（就高）。"""
     mt = db.get(MetaTable, table_id)
     if not mt:
         raise HTTPException(404, "数据表不存在")
-    if user.role == "admin":
-        return TableAccess(mt, mt.owner_id == user.id, True, True, True, True, True)
+    if _role_for_table(db, user, mt, ctx) == "admin":
+        return TableAccess(mt, mt.owner_id == user.id, True, True, True, True, True, ctx)
     if mt.owner_id == user.id:
-        return TableAccess(mt, True, False, True, True, True, True)
+        return TableAccess(mt, True, False, True, True, True, True, ctx)
     shares = (
         db.query(TableShare)
         .outerjoin(GroupMember, TableShare.group_id == GroupMember.group_id)
@@ -61,16 +75,18 @@ def get_table_access(db: Session, table_id: int, user: User) -> TableAccess:
         any(s.can_create for s in shares),
         any(s.can_edit for s in shares),
         any(s.can_delete for s in shares),
+        ctx,
     )
 
 
 def require_table(perm: str):
-    """Depends 工厂：从 path 取 table_id，校验对应权限，返回 TableAccess。"""
+    """Depends 工厂：从 path 取 table_id，校验对应权限，返回 TableAccess（附带 ctx）。"""
     if perm not in PERM_ATTR:
         raise ValueError(f"未知权限：{perm}")
 
-    def _dep(table_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> TableAccess:
-        access = get_table_access(db, table_id, user)
+    def _dep(table_id: int, db: Session = Depends(get_db),
+             ctx: Context = Depends(get_current_context)) -> TableAccess:
+        access = get_table_access(db, table_id, ctx.user, ctx)
         if not getattr(access, PERM_ATTR[perm]):
             raise HTTPException(404, "数据表不存在")
         return access
@@ -78,9 +94,12 @@ def require_table(perm: str):
     return _dep
 
 
-def check_owner_or_admin(obj_user_id: int | None, user: User) -> None:
-    """规则/模板等对象级归属校验（无归属或归属他人且非 admin → 404）。"""
-    if user.role == "admin":
+def check_owner_or_admin(obj_user_id: int | None, user: User,
+                         db: Session | None = None, tenant_id: int | None = None) -> None:
+    """规则/模板等对象级归属校验（无归属或归属他人且非该租户 admin → 404）。
+    db+tenant_id 提供时按租户成员关系判定 admin；否则仅主人可过。"""
+    if obj_user_id == user.id:
         return
-    if obj_user_id != user.id:
-        raise HTTPException(404, "对象不存在")
+    if db is not None and tenant_role(db, user, tenant_id) == "admin":
+        return
+    raise HTTPException(404, "对象不存在")

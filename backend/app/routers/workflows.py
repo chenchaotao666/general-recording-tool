@@ -48,7 +48,7 @@ def _get_own(db: Session, wf_id: int, user: User) -> Workflow:
     wf = db.get(Workflow, wf_id)
     if not wf:
         raise HTTPException(404, "工作流不存在")
-    check_owner_or_admin(wf.user_id, user)
+    check_owner_or_admin(wf.user_id, user, db, wf.tenant_id)
     return wf
 
 
@@ -107,7 +107,10 @@ def pending_approvals(db: Session = Depends(get_db), user: User = Depends(get_cu
     out = []
     for nr, run, wf in rows:
         approvers = ((nr.output_json or {}).get("approval") or {}).get("approver_user_ids") or [wf.user_id]
-        if user.role != "admin" and user.id not in approvers and user.id != wf.user_id:
+        # 工作流所属租户的 admin 可见全量（跨租户不可见）
+        from ..utils.rbac import tenant_role
+        is_admin = tenant_role(db, user, wf.tenant_id) == "admin"
+        if not is_admin and user.id not in approvers and user.id != wf.user_id:
             continue
         ap = (nr.output_json or {}).get("approval") or {}
         out.append({
@@ -179,8 +182,10 @@ def create_workflow(payload: WorkflowIn, db: Session = Depends(get_db), user: Us
         raise HTTPException(400, str(e))
     if trigger.get("type") in ("webhook", "form") and not trigger.get("secret"):
         trigger["secret"] = uuid.uuid4().hex
+    from ..services.tenancy import default_tenant_id
     wf = Workflow(
-        user_id=user.id, name=payload.name, description=payload.description,
+        user_id=user.id, tenant_id=default_tenant_id(db, user),
+        name=payload.name, description=payload.description,
         enabled=payload.enabled, trigger_json=trigger,
         nodes_json=payload.nodes, edges_json=payload.edges,
     )

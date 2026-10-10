@@ -75,8 +75,8 @@ def reset_layout(db: Session = Depends(get_db), user: User = Depends(get_current
 
 def _require_admin(user: User) -> None:
     from fastapi import HTTPException
-    if user.role != "admin":
-        raise HTTPException(403, "仅管理员可设置全员默认布局")
+    if not user.is_platform_admin:
+        raise HTTPException(403, "仅平台管理员可设置全员默认布局")
 
 
 @router.put("/default")

@@ -173,7 +173,7 @@
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
-import { analyzeExcel, createTable, uploadExcel } from '../api'
+import { analyzeExcel, createTable, handleBillingError, uploadExcel } from '../api'
 
 const DATA_TYPES = [
   { value: 'varchar', label: '文本' }, { value: 'text', label: '长文本' },
@@ -298,7 +298,7 @@ async function doCreate() {
     createdTableId.value = res.table.id
     step.value = 3
   } catch (e) {
-    ElMessage.error(e.message)
+    if (!handleBillingError(e)) ElMessage.error(e.message)
   } finally {
     creating.value = false
   }

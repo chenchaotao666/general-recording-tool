@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..models import MetaTable, User, Workflow
 from ..schemas import TableCreate
 from ..utils.access import check_owner_or_admin, get_table_access
-from ..utils.rbac import has_perm, perm_value
+from ..utils.rbac import has_perm, tenant_role
 from . import dyn_engine, meta_service
 from .dyn_engine import log_audit
 from .records_export import export_blank_xlsx, export_records_xlsx
@@ -187,8 +187,9 @@ def _exec_create_workflow(db: Session, user: User, payload: dict) -> dict:
         raise HTTPException(400, str(e))
     if trigger.get("type") in ("webhook", "form") and not trigger.get("secret"):
         trigger["secret"] = uuid.uuid4().hex
+    from ..services.tenancy import default_tenant_id
     wf = Workflow(
-        user_id=user.id,
+        user_id=user.id, tenant_id=default_tenant_id(db, user),
         name=str(payload.get("name") or "AI 工作流")[:128],
         description=str(payload.get("description") or "")[:500],
         enabled=False,
@@ -230,7 +231,7 @@ def _exec_run_workflow(db: Session, user: User, payload: dict) -> dict:
     wf = db.get(Workflow, wf_id)
     if not wf:
         raise HTTPException(404, "工作流不存在")
-    check_owner_or_admin(wf.user_id, user)
+    check_owner_or_admin(wf.user_id, user, db, wf.tenant_id)
     params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
     result = wf_engine.run_now(wf.id, trigger="manual", trigger_data={"params": params})
     return {
@@ -251,7 +252,7 @@ def _exec_fill(db: Session, user: User, payload: dict) -> dict:
     ok, fail, ids = 0, [], []
     for i, rec in enumerate(records):
         try:
-            r = dyn_engine.create_record(db, access.table.id, rec, user=user.username)
+            r = dyn_engine.create_record(db, access.table.id, rec, user=user.username, owner_id=user.id)
             ok += 1
             ids.append(r["id"])
         except HTTPException as e:
@@ -264,28 +265,31 @@ def _exec_fill(db: Session, user: User, payload: dict) -> dict:
 
 
 def _exec_create_table(db: Session, user: User, payload: dict) -> dict:
-    limit = perm_value(db, user, "max_tables")
-    if limit is not None:
-        owned = db.query(MetaTable).filter(MetaTable.owner_id == user.id).count()
-        if owned >= limit:
-            raise HTTPException(403, f"已达到数据表上限（{limit} 张），请联系管理员提升额度")
+    # 与建表接口同一套闸：套餐配额（宽限期模型）+ 只读闸；租户取用户默认工作空间
+    from ..services.tenancy import default_tenant_id
+    from . import entitlement
+    tid = default_tenant_id(db, user)
+    role = tenant_role(db, user, tid)
+    entitlement.assert_tenant_writable(db, tid)
+    entitlement.check_quota(db, tid, "max_tables")
     label = str(payload.get("label") or "").strip()[:64] or "新建数据表"
     storage_mode = payload.get("storage_mode") or "json"
     if storage_mode not in ("json", "physical"):
         raise HTTPException(400, "storage_mode 必须是 json 或 physical")
     # 与建表接口同一道门槛：独立物理表需「创建独立表」权限
-    if storage_mode == "physical" and not has_perm(db, user, "create_physical_table"):
+    if storage_mode == "physical" and not has_perm(db, role, "create_physical_table"):
         raise HTTPException(403, "独立物理表需要「创建独立表」权限")
     try:
         tc = TableCreate(label=label, fields=payload.get("fields") or [], storage_mode=storage_mode)
     except Exception as e:  # noqa: BLE001 — pydantic 校验失败统一 400
         raise HTTPException(400, f"字段定义无效：{e}")
     try:
-        mt = meta_service.create_business_table(db, tc, owner_id=user.id)
+        mt = meta_service.create_business_table(db, tc, owner_id=user.id, tenant_id=tid)
     except Exception as e:  # noqa: BLE001
         db.rollback()
         raise HTTPException(400, f"建表失败：{e}")
-    log_audit(db, "create_table", mt.id, after={"name": mt.name, "label": mt.label, "storage_mode": mt.storage_mode}, user=user.username)
+    entitlement.bump_usage(db, tid, "table_count", 1)
+    log_audit(db, "create_table", mt.id, after={"name": mt.name, "label": mt.label, "storage_mode": mt.storage_mode}, user=user.username, tenant_id=tid)
     db.commit()
     return {"type": "create_table", "table_id": mt.id, "table_label": mt.label, "storage_mode": mt.storage_mode}
 
@@ -308,7 +312,8 @@ def _exec_create_report(db: Session, user: User, payload: dict) -> dict:
         push={},
     )
     validate_template(db, tin)
-    tpl = ReportTemplate(user_id=user.id)
+    from ..services.tenancy import default_tenant_id
+    tpl = ReportTemplate(user_id=user.id, tenant_id=default_tenant_id(db, user))
     tpl.name = tin.name.strip()
     tpl.table_id = tin.table_id
     tpl.enabled = False

@@ -36,7 +36,7 @@ def _get_own_template(db: Session, tpl_id: int, user: User) -> ReportTemplate:
     tpl = db.get(ReportTemplate, tpl_id)
     if not tpl:
         raise HTTPException(404, "报表模板不存在")
-    check_owner_or_admin(tpl.user_id, user)
+    check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     return tpl
 
 

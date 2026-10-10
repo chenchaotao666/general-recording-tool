@@ -15,6 +15,7 @@ class MetaTable(Base):
     source_file = Column(String(256))                        # 来源上传文件 id
     status = Column(String(16), default="active")
     owner_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（多租户）
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)  # 归属租户（P0 起强制）
     storage_mode = Column(String(16), default="json")        # json（单表存储）/ physical（独立物理表）
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -92,6 +93,8 @@ class Record(Base):
 
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
+    tenant_id = Column(Integer, index=True)                  # 冗余自 meta_tables（配额计数/范围过滤免 join）
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # 记录归属人（P1 数据范围用）
     data = Column(JSON, nullable=False, default=dict)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -125,6 +128,7 @@ class Group(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(64), unique=True, nullable=False)
     description = Column(String(256))
+    tenant_id = Column(Integer, index=True)              # 归属租户（P0 起按租户隔离）
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.now)
 
@@ -184,15 +188,103 @@ class ImportBatch(Base):
 
 
 class User(Base):
-    """登录用户：账号密码登录；openid 预留给微信登录"""
+    """登录用户：账号密码登录；openid 预留给微信登录。
+    role 列已废弃（业务语义下沉到 tenant_members.role），仅为兼容保留；
+    is_platform_admin 为平台超管标记（跨租户运维，默认不见租户业务数据）。"""
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String(64), unique=True, index=True, nullable=False)
     password_hash = Column(String(256))          # pbkdf2_sha256$iterations$salt$digest
     openid = Column(String(64), unique=True, index=True)  # 微信登录用，可空
-    role = Column(String(16), default="user")    # admin / user
+    role = Column(String(16), default="user")    # 废弃：见 tenant_members.role
+    is_platform_admin = Column(Boolean, default=False)   # 平台超管（仅种子 admin）
     created_at = Column(DateTime, default=datetime.now)
+
+
+# ---------- 租户与套餐（P0 商业化地基，见 docs/用户与权限体系设计.md §0/§4.7） ----------
+
+class Tenant(Base):
+    """租户/工作空间：个人版（1 席）/ 企业版（N 席）/ 私有化（单租户实例）"""
+    __tablename__ = "tenants"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(128), nullable=False)
+    type = Column(String(16), default="personal")       # personal / enterprise / private
+    owner_user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class TenantMember(Base):
+    """租户成员关系：role 在此处（同一人可在 A 租户是 admin、B 租户是 user）"""
+    __tablename__ = "tenant_members"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    role = Column(String(64), default="user")           # roles.code：租户内角色
+    status = Column(String(16), default="active")       # invited / active / disabled
+    invited_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", name="uq_tenant_members"),)
+
+
+class Plan(Base):
+    """套餐：价格/配额/功能开关全部库表驱动（平台超管后台可改，种子只是默认值）"""
+    __tablename__ = "plans"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(64), unique=True, nullable=False)   # free / individual_basic / ent_team / private / legacy ...
+    name = Column(String(64), nullable=False)
+    audience = Column(String(16), nullable=False)            # individual / enterprise / private
+    price_monthly = Column(Integer, default=0)               # 单位：分
+    price_yearly = Column(Integer, default=0)                # 单位：分
+    sort = Column(Integer, default=0)
+    is_public = Column(Boolean, default=True)                # False=隐藏档（legacy / private）
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class PlanEntitlement(Base):
+    """套餐权益键值：配额类（max_tables/max_rows/max_storage_mb/max_seats/min_seats）、
+    功能开关类（feature_*，1=开通）、宽限类（quota_grace_days/sub_grace_days）、
+    保留类（trash_retention_days/audit_retention_days）。value=NULL 表示不限。"""
+    __tablename__ = "plan_entitlements"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    plan_id = Column(Integer, ForeignKey("plans.id"), index=True, nullable=False)
+    key = Column(String(64), nullable=False)
+    value = Column(Integer)                                  # NULL=不限
+
+    __table_args__ = (UniqueConstraint("plan_id", "key", name="uq_plan_entitlements"),)
+
+
+class Subscription(Base):
+    """租户当前订阅（一租户一条）。expires_at=NULL 永不到期（free/legacy）"""
+    __tablename__ = "subscriptions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), unique=True, nullable=False)
+    plan_id = Column(Integer, ForeignKey("plans.id"), nullable=False)
+    seats = Column(Integer, default=1)
+    status = Column(String(16), default="active")   # trial / active / grace / expired
+    started_at = Column(DateTime, default=datetime.now)
+    expires_at = Column(DateTime)
+    grace_until = Column(DateTime)                  # status=grace 时的宽限截止
+
+
+class UsageCounter(Base):
+    """租户用量计数：写路径增减 + 定时全量校准。grace_json={quota_key: 超限起始 ISO 时间}"""
+    __tablename__ = "usage_counters"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), unique=True, nullable=False)
+    table_count = Column(Integer, default=0)
+    row_count = Column(BigInteger, default=0)
+    storage_bytes = Column(BigInteger, default=0)
+    seat_count = Column(Integer, default=0)
+    grace_json = Column(JSON, default=dict)
+    calibrated_at = Column(DateTime)
 
 
 class LLMProvider(Base):
@@ -233,6 +325,7 @@ class ReportTemplate(Base):
     description = Column(String(256))
     table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（多租户）
+    tenant_id = Column(Integer, index=True)                         # 归属租户
     enabled = Column(Boolean, default=False)               # 控制定时推送是否生效
     range_json = Column(JSON, default=dict)
     # {mode: today|yesterday|past_7d|past_30d|this_week|last_week|this_month|last_month|this_quarter|this_year|custom, date_field, start?, end?}
@@ -323,6 +416,7 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, index=True)              # 归属租户（审计查询按租户过滤）
     user = Column(String(64), default="admin")
     action = Column(String(32), nullable=False)          # create/update/delete/create_table/drop_table
     table_id = Column(Integer, index=True)
@@ -340,6 +434,7 @@ class Workflow(Base):
     name = Column(String(128), nullable=False)
     description = Column(String(500), default="")
     user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（节点以其身份执行）
+    tenant_id = Column(Integer, index=True)                         # 归属租户
     enabled = Column(Boolean, default=False)
     trigger_json = Column(JSON, default=dict)   # {type: schedule|record_created|record_updated|webhook|manual, ...}
     nodes_json = Column(JSON, default=list)     # [{id, type, name, config, on_error?}]

@@ -26,7 +26,21 @@
           <el-icon><Bell /></el-icon><span>通知</span>
           <span v-if="unread" class="menu-unread">{{ unread > 99 ? '99+' : unread }}</span>
         </el-menu-item>
-        <template v-if="user?.role === 'admin'">
+        <template v-if="user?.role === 'admin' && user?.tenant">
+          <el-menu-item index="/members">
+            <el-icon><UserFilled /></el-icon><span>成员</span>
+          </el-menu-item>
+          <el-menu-item v-if="tenantInfo?.entitlements?.feature_audit" index="/audit">
+            <el-icon><Document /></el-icon><span>审计日志</span>
+          </el-menu-item>
+        </template>
+        <template v-if="user?.is_platform_admin">
+          <el-menu-item index="/platform/tenants">
+            <el-icon><OfficeBuilding /></el-icon><span>平台租户</span>
+          </el-menu-item>
+          <el-menu-item index="/platform/plans">
+            <el-icon><PriceTag /></el-icon><span>套餐配置</span>
+          </el-menu-item>
           <el-menu-item index="/system/users">
             <el-icon><User /></el-icon><span>用户管理</span>
           </el-menu-item>
@@ -43,7 +57,10 @@
         <el-menu-item index="/system/groups">
           <el-icon><UserFilled /></el-icon><span>用户组</span>
         </el-menu-item>
-        <el-menu-item index="/settings">
+        <el-menu-item index="/billing">
+          <el-icon><Wallet /></el-icon><span>套餐与用量</span>
+        </el-menu-item>
+        <el-menu-item v-if="user?.is_platform_admin" index="/settings">
           <el-icon><Setting /></el-icon><span>设置</span>
         </el-menu-item>
       </el-menu>
@@ -52,6 +69,17 @@
       <el-header class="topbar">
         <span id="topbarActions" class="topbar-actions" />
         <div class="topbar-right">
+          <el-select
+            v-if="user?.tenants?.length > 1"
+            :model-value="user.tenant?.id"
+            size="small"
+            class="tenant-switcher"
+            @change="switchWorkspace"
+          >
+            <el-option v-for="t in user.tenants" :key="t.id" :value="t.id" :label="t.name" />
+          </el-select>
+          <el-tag v-else-if="user?.tenant" size="small" effect="plain">{{ user.tenant.name }}</el-tag>
+          <el-tag v-if="planTag" :type="planTag.type" size="small">{{ planTag.text }}</el-tag>
           <el-dropdown>
             <span class="user-name">{{ user?.username || '用户' }}（{{ roleLabel }}）</span>
             <template #dropdown>
@@ -63,6 +91,16 @@
           </el-dropdown>
         </div>
       </el-header>
+      <el-alert
+        v-if="tenantInfo?.subscription?.status === 'grace'"
+        type="warning" :closable="false" class="sub-banner"
+        :title="`订阅已到期，宽限期还剩 ${tenantInfo.subscription.grace_remaining_days} 天，宽限期满后将进入只读状态；请联系平台管理员续费`"
+      />
+      <el-alert
+        v-else-if="tenantInfo && !tenantInfo.writable"
+        type="error" :closable="false" class="sub-banner"
+        title="订阅已过期，当前为只读状态；数据完整保留，续费后自动恢复"
+      />
 
       <!-- 修改密码 -->
       <el-dialog v-model="pwdVisible" title="修改密码" width="400px" destroy-on-close>
@@ -94,8 +132,8 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Avatar, Bell, Connection, DataAnalysis, Grid, HomeFilled, Key, Notebook, Setting, Upload, User, UserFilled } from '@element-plus/icons-vue'
-import { changePassword as changePasswordApi, unreadCount } from './api'
+import { Avatar, Bell, Connection, DataAnalysis, Document, Grid, HomeFilled, Key, Notebook, OfficeBuilding, PriceTag, Setting, Upload, User, UserFilled, Wallet } from '@element-plus/icons-vue'
+import { changePassword as changePasswordApi, getCurrentTenant, switchTenant, unreadCount } from './api'
 import AssistantPanel from './components/AssistantPanel.vue'
 
 const router = useRouter()
@@ -108,18 +146,48 @@ function readUser() {
   return JSON.parse(localStorage.getItem('grt_user') || 'null')
 }
 const user = ref(readUser())
+const tenantInfo = ref(null)   // /tenants/current：套餐/用量/订阅状态（横幅与菜单显隐用）
 watch(() => route.path, () => {
   user.value = readUser()
   // 登录/切换账号后路由首次变化时立即拉取未读数（否则要等下一个 30s 轮询周期）
-  if (localStorage.getItem('grt_token')) pollUnread()
+  if (localStorage.getItem('grt_token')) {
+    pollUnread()
+    pollTenant()
+  }
 })
 const roleLabel = computed(() => ({ admin: '管理员', vip: 'VIP', user: '普通用户' }[user.value?.role] || '普通用户'))
+const planTag = computed(() => {
+  const t = tenantInfo.value
+  if (!t) return null
+  const status = t.subscription?.status
+  if (status === 'grace') return { type: 'warning', text: '宽限期' }
+  if (!t.writable) return { type: 'danger', text: '已过期·只读' }
+  return t.plan ? { type: 'info', text: t.plan.name } : null
+})
 let timer = null
 
 function logout() {
   localStorage.removeItem('grt_token')
   localStorage.removeItem('grt_user')
+  localStorage.removeItem('grt_tenant_id')
   router.push('/login')
+}
+
+async function switchWorkspace(tenantId) {
+  try {
+    const payload = await switchTenant(tenantId)
+    localStorage.setItem('grt_user', JSON.stringify(payload))
+    localStorage.setItem('grt_tenant_id', payload.tenant?.id || tenantId)
+    location.reload()
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+async function pollTenant() {
+  try {
+    tenantInfo.value = await getCurrentTenant()
+  } catch { /* 静默：后端未启动或权限不足 */ }
 }
 
 // 修改密码
@@ -152,7 +220,10 @@ async function pollUnread() {
 
 onMounted(() => {
   // 未登录（停留在 /login）时不发请求，避免 401 触发拦截器的清理逻辑
-  if (localStorage.getItem('grt_token')) pollUnread()
+  if (localStorage.getItem('grt_token')) {
+    pollUnread()
+    pollTenant()
+  }
   // 通知页标记已读后广播此事件，角标立即刷新
   window.addEventListener('grt-notify-refresh', pollUnread)
   timer = setInterval(() => {
@@ -183,6 +254,8 @@ body { margin: 0; font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Micr
   border-radius: 9px; padding: 3px 6px; transform: scale(.9);
 }
 .user-name { cursor: pointer; font-size: 14px; color: #606266; outline: none; }
+.tenant-switcher { width: 180px; }
+.sub-banner { height: 32px; }
 .main { background: #f5f7fa; padding: 20px 24px; overflow-y: auto; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-header h2 { margin: 0; }

@@ -1,10 +1,13 @@
 import axios from 'axios'
+import { ElMessageBox } from 'element-plus'
 
 const http = axios.create({ baseURL: '/api', timeout: 180000 })
 
 http.interceptors.request.use((config) => {
   const token = localStorage.getItem('grt_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
+  const tenantId = localStorage.getItem('grt_tenant_id')
+  if (tenantId) config.headers['X-Tenant-Id'] = tenantId
   return config
 })
 
@@ -14,19 +17,64 @@ http.interceptors.response.use(
     if (e.response?.status === 401) {
       localStorage.removeItem('grt_token')
       localStorage.removeItem('grt_user')
+      localStorage.removeItem('grt_tenant_id')
       if (location.pathname !== '/login') location.href = '/login'
     }
     const d = e.response?.data?.detail
-    const msg = typeof d === 'string' ? d : d ? JSON.stringify(d) : e.message
-    return Promise.reject(new Error(msg))
+    const msg = typeof d === 'string' ? d : d?.message || (d ? JSON.stringify(d) : e.message)
+    const err = new Error(msg)
+    // 配额/订阅类错误带结构化 code，页面可据此弹升级引导（quota_exceeded / tenant_expired / feature_not_available）
+    if (d && typeof d === 'object') {
+      err.code = d.code
+      err.quota = d.quota
+      err.feature = d.feature
+      err.status = e.response?.status
+    }
+    return Promise.reject(err)
   }
 )
+
+// 配额/订阅错误：弹升级引导（返回 true 表示已处理，调用方别再 toast）
+export function handleBillingError(e) {
+  if (e?.code !== 'quota_exceeded' && e?.code !== 'tenant_expired' && e?.code !== 'feature_not_available') return false
+  ElMessageBox.confirm(`${e.message}。是否前往「套餐与用量」页查看？`, '提示', {
+    type: 'warning', confirmButtonText: '前往查看', cancelButtonText: '关闭',
+  }).then(() => { location.href = '/billing' }).catch(() => {})
+  return true
+}
 
 // 登录 / 注册
 export const login = (username, password) => http.post('/auth/login', { username, password })
 export const register = (username, password) => http.post('/auth/register', { username, password })
 export const changePassword = (oldPassword, newPassword) =>
   http.put('/auth/password', { old_password: oldPassword, new_password: newPassword })
+
+// 工作空间（租户）
+export const listMyTenants = () => http.get('/tenants/mine')
+export const switchTenant = (tenantId) => http.post('/tenants/switch', { tenant_id: tenantId })
+export const getCurrentTenant = () => http.get('/tenants/current')
+export const upgradeToEnterprise = () => http.post('/tenants/upgrade-to-enterprise')
+
+// 成员管理（当前工作空间）
+export const listMembers = () => http.get('/members')
+export const listMyInvitations = () => http.get('/members/invitations')
+export const inviteMember = (username, role = 'user') => http.post('/members/invite', { username, role })
+export const acceptInvitation = (memberId) => http.post(`/members/${memberId}/accept`)
+export const setMemberRole = (memberId, role) => http.put(`/members/${memberId}/role`, { role })
+export const removeMember = (memberId) => http.delete(`/members/${memberId}`)
+
+// 审计日志（租户 admin + feature_audit）
+export const listAuditLogs = (params) => http.get('/audit', { params })
+
+// 平台管理（平台超管）
+export const platformListTenants = () => http.get('/platform/tenants')
+export const platformCreateTenant = (p) => http.post('/platform/tenants', p)
+export const platformSetSubscription = (tenantId, p) => http.put(`/platform/tenants/${tenantId}/subscription`, p)
+export const platformListPlans = () => http.get('/platform/plans')
+export const platformCreatePlan = (p) => http.post('/platform/plans', p)
+export const platformUpdatePlan = (id, p) => http.put(`/platform/plans/${id}`, p)
+export const platformSetEntitlements = (id, entitlements) =>
+  http.put(`/platform/plans/${id}/entitlements`, { entitlements })
 
 // Excel 导入
 export const uploadExcel = (file) => {
@@ -42,7 +90,7 @@ export const uploadImage = (file) => {
   fd.append('files', file)
   return http.post('/uploads/image', fd)
 }
-export const imageUrl = (id) => `/api/uploads/image/${id}?token=${localStorage.getItem('grt_token')}`
+export const imageUrl = (id) => `/api/uploads/image/${id}?token=${localStorage.getItem('grt_token')}&tenant_id=${localStorage.getItem('grt_tenant_id') || ''}`
 
 // 数据表
 export const listTables = (params) => http.get('/tables', { params })   // params.all=1：admin 返回全部表（配置场景用）
@@ -92,7 +140,7 @@ export const removeGroupMember = (id, uid) => http.delete(`/groups/${id}/members
 
 // 用户管理（admin）
 export const listUsers = () => http.get('/users')
-export const setUserRole = (id, role) => http.put(`/users/${id}/role`, { role })
+export const setUserRole = (id, tenantId, role) => http.put(`/users/${id}/role`, { tenant_id: tenantId, role })
 
 // 角色与权限管理（admin）
 export const listRoles = () => http.get('/roles')
@@ -113,7 +161,7 @@ export const recordExportUrl = (tid, params) => {
   // <a>/window.open 无法带请求头，token 走查询参数；filters 为 JSON 字符串
   const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v != null && v !== ''))
   const token = localStorage.getItem('grt_token') || ''
-  return `/api/dyn/${tid}/export?${qs}&token=${encodeURIComponent(token)}`
+  return `/api/dyn/${tid}/export?${qs}&token=${encodeURIComponent(token)}&tenant_id=${localStorage.getItem('grt_tenant_id') || ''}`
 }
 
 // LLM 设置
@@ -198,7 +246,7 @@ export const reportExportUrl = (id, params) => {
   if (flat.filters) flat.filters = JSON.stringify(flat.filters)
   const qs = new URLSearchParams(Object.entries(flat).filter(([, v]) => v != null && v !== ''))
   const token = localStorage.getItem('grt_token') || ''
-  return `/api/reports/${id}/export?${qs}&token=${encodeURIComponent(token)}`
+  return `/api/reports/${id}/export?${qs}&token=${encodeURIComponent(token)}&tenant_id=${localStorage.getItem('grt_tenant_id') || ''}`
 }
 
 // 打印模板（按表共享；view 可见 / owner·admin 可编辑；首次列表后端自动播种预设）
@@ -229,12 +277,12 @@ const _withToken = (path, params) => {
   const qs = new URLSearchParams(Object.entries(flat).filter(([, v]) => v != null && v !== ''))
   const token = localStorage.getItem('grt_token') || ''
   const sep = qs.size ? '&' : ''
-  return `/api/print-templates/${path}?${qs}${sep}token=${encodeURIComponent(token)}`
+  return `/api/print-templates/${path}?${qs}${sep}token=${encodeURIComponent(token)}&tenant_id=${localStorage.getItem('grt_tenant_id') || ''}`
 }
 export const printStarterUrl = (tableId) => {
   // starter 在 /tables 命名空间下，不走 _withToken 的 print-templates 前缀
   const token = localStorage.getItem('grt_token') || ''
-  return `/api/tables/${tableId}/print-templates/starter?token=${encodeURIComponent(token)}`
+  return `/api/tables/${tableId}/print-templates/starter?token=${encodeURIComponent(token)}&tenant_id=${localStorage.getItem('grt_tenant_id') || ''}`
 }
 export const printExcelUrl = (id) => _withToken(`${id}/excel`)
 export const printFillUrl = (id, params) => _withToken(`${id}/fill`, params)
@@ -281,6 +329,6 @@ export const assistantChat = (payload) => http.post('/assistant/chat', payload)
 export const assistantExecute = (payload) => http.post('/assistant/execute', payload)
 export const assistantDownloadUrl = (fileId) => {
   const token = localStorage.getItem('grt_token') || ''
-  return `/api/assistant/download/${fileId}?token=${encodeURIComponent(token)}`
+  return `/api/assistant/download/${fileId}?token=${encodeURIComponent(token)}&tenant_id=${localStorage.getItem('grt_tenant_id') || ''}`
 }
 export const testSearchSettings = () => http.post('/settings/general/test-search')

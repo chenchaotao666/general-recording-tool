@@ -1,4 +1,5 @@
-"""用户组管理：admin 全权；普通成员可建组并管理自己创建的组（成员只能加好友）。组可被分享表（table_shares.group_id）。"""
+"""用户组管理：租户 admin 全权（限本租户的组）；普通成员可建组并管理自己创建的组（成员只能加好友）。
+组可被分享表（table_shares.group_id）；好友分享组可跨租户（成员关系不做租户过滤）。"""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import and_, or_
@@ -7,6 +8,8 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Friendship, Group, GroupMember, TableShare, User
 from ..utils.auth import get_current_user
+from ..utils.context import Context, get_current_context
+from ..utils.rbac import tenant_role
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
@@ -20,12 +23,16 @@ class MemberIn(BaseModel):
     username: str
 
 
+def _is_group_admin(db: Session, g: Group, user: User) -> bool:
+    return tenant_role(db, user, g.tenant_id) == "admin"
+
+
 def _get_manageable(db: Session, group_id: int, user: User) -> Group:
-    """admin 或组创建者才能管理（改/删/增减成员）。"""
+    """组所属租户的 admin 或组创建者才能管理（改/删/增减成员）。"""
     g = db.get(Group, group_id)
     if not g:
         raise HTTPException(404, "用户组不存在")
-    if user.role != "admin" and g.created_by != user.id:
+    if not _is_group_admin(db, g, user) and g.created_by != user.id:
         raise HTTPException(403, "只有组创建者或管理员可以管理该组")
     return g
 
@@ -41,24 +48,25 @@ def _is_friend(db: Session, a: int, b: int) -> bool:
 
 
 @router.get("/mine")
-def list_my_groups(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """分享对话框的组下拉数据源：普通用户只列自己所在的组，admin 可列全部（后端约束对 admin 豁免）。"""
-    if user.role == "admin":
-        rows = db.query(Group).order_by(Group.id).all()
-    else:
-        rows = (
-            db.query(Group)
-            .join(GroupMember, GroupMember.group_id == Group.id)
-            .filter(GroupMember.user_id == user.id)
-            .order_by(Group.id)
-            .all()
-        )
+def list_my_groups(db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    """分享对话框的组下拉数据源：自己所在的组；当前租户 admin 追加本租户全部组。"""
+    user = ctx.user
+    mine = (
+        db.query(Group)
+        .join(GroupMember, GroupMember.group_id == Group.id)
+        .filter(GroupMember.user_id == user.id)
+        .all()
+    )
+    rows = {g.id: g for g in mine}
+    if ctx.is_tenant_admin:
+        for g in db.query(Group).filter(Group.tenant_id == ctx.tenant.id).all():
+            rows.setdefault(g.id, g)
     return [
         {
             "id": g.id, "name": g.name, "description": g.description,
             "member_count": db.query(GroupMember).filter_by(group_id=g.id).count(),
         }
-        for g in rows
+        for g in sorted(rows.values(), key=lambda x: x.id)
     ]
 
 
@@ -79,31 +87,35 @@ def _group_out(db: Session, g: Group) -> dict:
 
 
 @router.get("")
-def list_groups(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """admin 看全部；普通成员看自己创建的 + 自己所在的组（后者只读，can_manage=False）。"""
+def list_groups(db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    """看自己创建的 + 自己所在的组（后者只读）；当前租户 admin 追加本租户全部组。"""
+    user = ctx.user
+    my_ids = {m.group_id for m in db.query(GroupMember).filter_by(user_id=user.id).all()}
     rows = db.query(Group).order_by(Group.id).all()
-    if user.role != "admin":
-        my_ids = {m.group_id for m in db.query(GroupMember).filter_by(user_id=user.id).all()}
-        rows = [g for g in rows if g.created_by == user.id or g.id in my_ids]
+    rows = [g for g in rows
+            if g.created_by == user.id or g.id in my_ids
+            or (ctx.is_tenant_admin and g.tenant_id == ctx.tenant.id)]
     return [
-        {**_group_out(db, g), "can_manage": user.role == "admin" or g.created_by == user.id}
+        {**_group_out(db, g),
+         "can_manage": g.created_by == user.id or _is_group_admin(db, g, user)}
         for g in rows
     ]
 
 
 @router.post("")
-def create_group(payload: GroupIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_group(payload: GroupIn, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
     name = payload.name.strip()
     if not name:
         raise HTTPException(400, "请填写组名")
     if db.query(Group).filter_by(name=name).first():
         raise HTTPException(400, "组名已存在")
-    g = Group(name=name, description=payload.description, created_by=user.id)
+    g = Group(name=name, description=payload.description, created_by=ctx.user.id,
+              tenant_id=ctx.tenant.id)
     db.add(g)
     db.commit()
     db.refresh(g)
     # 创建者自动入组：分享的组下拉（/groups/mine 按成员关系取）才能看到自建的组
-    db.add(GroupMember(group_id=g.id, user_id=user.id))
+    db.add(GroupMember(group_id=g.id, user_id=ctx.user.id))
     db.commit()
     return _group_out(db, g)
 
@@ -139,8 +151,8 @@ def add_member(group_id: int, payload: MemberIn, db: Session = Depends(get_db), 
     u = db.query(User).filter(User.username == payload.username.strip()).first()
     if not u:
         raise HTTPException(404, "用户不存在")
-    # 普通成员只能把好友加进组（admin 不受限）
-    if user.role != "admin" and u.id != user.id and not _is_friend(db, user.id, u.id):
+    # 普通成员只能把好友加进组（组所属租户 admin 不受限）
+    if not _is_group_admin(db, g, user) and u.id != user.id and not _is_friend(db, user.id, u.id):
         raise HTTPException(400, "只能把好友加入用户组（先到「好友」页添加对方）")
     if db.query(GroupMember).filter_by(group_id=g.id, user_id=u.id).first():
         raise HTTPException(400, "该用户已在组中")

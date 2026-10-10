@@ -145,7 +145,8 @@ def validate_fields(fields) -> None:
         seen.add(f.field_name)
 
 
-def create_business_table(db: Session, payload: TableCreate, owner_id: int) -> MetaTable:
+def create_business_table(db: Session, payload: TableCreate, owner_id: int,
+                          tenant_id: int | None = None) -> MetaTable:
     validate_fields(payload.fields)
     new_names = {f.field_name for f in payload.fields}
     for f in payload.fields:
@@ -159,6 +160,8 @@ def create_business_table(db: Session, payload: TableCreate, owner_id: int) -> M
         id_col = Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
         cols = [id_col] + [sa_column(f) for f in payload.fields]
         cols += [
+            Column("tenant_id", Integer, index=True),      # P0 租户冗余列（配额/范围免 join）
+            Column("owner_id", Integer, index=True),       # 记录归属人（P1 数据范围用）
             Column("created_at", DateTime, default=datetime.now),
             Column("updated_at", DateTime, default=datetime.now, onupdate=datetime.now),
         ]
@@ -171,6 +174,7 @@ def create_business_table(db: Session, payload: TableCreate, owner_id: int) -> M
         label=payload.label,
         source_file=payload.source.file_id if payload.source else None,
         owner_id=owner_id,
+        tenant_id=tenant_id,
         storage_mode=storage_mode,
     )
     db.add(mt)

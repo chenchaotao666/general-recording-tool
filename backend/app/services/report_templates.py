@@ -286,10 +286,15 @@ def list_templates(db: Session, user: User) -> list[dict]:
 
 
 def install_template(db: Session, user: User, key: str, with_demo_data: bool = False) -> dict:
+    from fastapi import HTTPException
     tpl = next((t for t in TEMPLATES if t["key"] == key), None)
     if not tpl:
-        from fastapi import HTTPException
         raise HTTPException(404, "模板不存在")
+
+    from . import entitlement
+    from .tenancy import default_tenant_id
+    tid = default_tenant_id(db, user)
+    entitlement.assert_tenant_writable(db, tid)
 
     notes = []
     table_ids: dict[str, int] = {}
@@ -309,10 +314,15 @@ def install_template(db: Session, user: User, key: str, with_demo_data: bool = F
             storage_mode="json",
         )
         try:
-            mt = meta_service.create_business_table(db, tc, owner_id=user.id)
+            # 模板市场建表与手工建表同一道配额闸（此前为绕过点）
+            entitlement.check_quota(db, tid, "max_tables")
+            mt = meta_service.create_business_table(db, tc, owner_id=user.id, tenant_id=tid)
+            entitlement.bump_usage(db, tid, "table_count", 1)
+        except HTTPException:
+            db.rollback()
+            raise   # 配额/只读 403 直接透传
         except Exception as e:  # noqa: BLE001
             db.rollback()
-            from fastapi import HTTPException
             raise HTTPException(400, f"建表失败：{e}")
         table_ids[tb["key"]] = mt.id
         if with_demo_data:
@@ -333,7 +343,7 @@ def install_template(db: Session, user: User, key: str, with_demo_data: bool = F
     )
     validate_template(db, payload)   # 与手工创建同一套完整校验
     rt = ReportTemplate(
-        user_id=user.id, name=payload.name, description=payload.description, enabled=False,
+        user_id=user.id, tenant_id=tid, name=payload.name, description=payload.description, enabled=False,
         range_json=payload.range, blocks_json=payload.blocks, layout_json=payload.layout,
         source_json=None, datasets_json=payload.datasets or None, filters_json=[],
         schedule_json={}, push_json={},

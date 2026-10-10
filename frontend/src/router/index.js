@@ -43,10 +43,15 @@ const router = createRouter({
     { path: '/reports/:id/view', component: () => import('../views/ReportView.vue') },
     // 布局设计器：懒加载隔离 grid-layout-plus 体积
     { path: '/reports/:id/layout', component: () => import('../views/ReportLayoutDesigner.vue') },
-    { path: '/settings', component: Settings },
-    { path: '/system/users', component: UsersManage, meta: { admin: true } },
-    { path: '/system/roles', component: RolesManage, meta: { admin: true } },
-    { path: '/system/permissions', component: PermissionsManage, meta: { admin: true } },
+    { path: '/settings', component: Settings, meta: { platformAdmin: true } },
+    { path: '/billing', component: () => import('../views/Billing.vue') },
+    { path: '/members', component: () => import('../views/Members.vue'), meta: { admin: true } },
+    { path: '/audit', component: () => import('../views/AuditLogs.vue'), meta: { admin: true } },
+    { path: '/system/users', component: UsersManage, meta: { platformAdmin: true } },
+    { path: '/system/roles', component: RolesManage, meta: { platformAdmin: true } },
+    { path: '/system/permissions', component: PermissionsManage, meta: { platformAdmin: true } },
+    { path: '/platform/tenants', component: () => import('../views/PlatformTenants.vue'), meta: { platformAdmin: true } },
+    { path: '/platform/plans', component: () => import('../views/PlatformPlans.vue'), meta: { platformAdmin: true } },
     { path: '/system/groups', component: GroupsManage },   // 普通成员也可建组（只能加好友为成员）
   ],
 })
@@ -56,6 +61,7 @@ router.beforeEach((to) => {
   if (to.path === '/login' || to.path.startsWith('/share/') || to.path.startsWith('/form/')
     || to.path.startsWith('/approve/')) return true
   if (!localStorage.getItem('grt_token')) return '/login'
+  if (to.meta.platformAdmin && !user?.is_platform_admin) return '/tables'
   if (to.meta.admin && user?.role !== 'admin') return '/tables'
 })
 

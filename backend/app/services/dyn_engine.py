@@ -92,9 +92,11 @@ def load_business(db: Session, table_id: int) -> tuple[MetaTable, list[MetaField
 
 
 def log_audit(db: Session, action: str, table_id: int | None, record_id: int | None = None,
-              before: dict | None = None, after: dict | None = None, user: str | None = None) -> None:
+              before: dict | None = None, after: dict | None = None, user: str | None = None,
+              tenant_id: int | None = None) -> None:
     db.add(AuditLog(action=action, table_id=table_id, record_id=record_id,
-                    before_json=before, after_json=after, user=user or "system"))
+                    before_json=before, after_json=after, user=user or "system",
+                    tenant_id=tenant_id))
 
 
 def build_condition(table: Table, fields_by_name: dict, flt: dict):
@@ -443,11 +445,20 @@ def _fire_workflow_hook(kind: str, table_id: int, record: dict, old_record: dict
         pass
 
 
-def create_record(db: Session, table_id: int, data: dict, user: str | None = None) -> dict:
+def create_record(db: Session, table_id: int, data: dict, user: str | None = None,
+                  owner_id: int | None = None) -> dict:
     mt, fields = load_meta(db, table_id)
+    # 引擎层单点闸（覆盖页面/AI/工作流/公开表单/MCP 全部写入路径）：
+    # 只读闸（订阅到期）+ 配额闸（max_rows，宽限期模型）；租户信息从 meta 自取，不感知用户
+    from . import entitlement
+    entitlement.assert_tenant_writable(db, mt.tenant_id)
+    entitlement.check_quota(db, mt.tenant_id, "max_rows")
+    record_owner = owner_id if owner_id is not None else mt.owner_id
     if mt.storage_mode == "json":
         from . import json_store
-        record = json_store.create_record(db, mt, fields, data, user=user)
+        record = json_store.create_record(db, mt, fields, data, user=user, owner_id=record_owner)
+        entitlement.bump_usage(db, mt.tenant_id, "row_count", 1)
+        db.commit()
         _sync_images(db, table_id, record["id"], fields, {}, record)
         _fire_workflow_hook("record_created", table_id, record)
         return record
@@ -465,11 +476,14 @@ def create_record(db: Session, table_id: int, data: dict, user: str | None = Non
     now = datetime.now()
     cleaned["created_at"] = now
     cleaned["updated_at"] = now
+    cleaned["tenant_id"] = mt.tenant_id
+    cleaned["owner_id"] = record_owner
     _encode_json_fields(cleaned, fields)
     result = db.execute(table.insert().values(**cleaned))
+    entitlement.bump_usage(db, mt.tenant_id, "row_count", 1)
     db.commit()
     record = get_record(db, table_id, result.inserted_primary_key[0])
-    log_audit(db, "create", table_id, record["id"], after=record, user=user)
+    log_audit(db, "create", table_id, record["id"], after=record, user=user, tenant_id=mt.tenant_id)
     db.commit()
     _sync_images(db, table_id, record["id"], fields, {}, record)
     _fire_workflow_hook("record_created", table_id, record)
@@ -478,6 +492,8 @@ def create_record(db: Session, table_id: int, data: dict, user: str | None = Non
 
 def update_record(db: Session, table_id: int, record_id: int, data: dict, user: str | None = None) -> dict:
     mt, fields = load_meta(db, table_id)
+    from . import entitlement
+    entitlement.assert_tenant_writable(db, mt.tenant_id)
     if mt.storage_mode == "json":
         from . import json_store
         before = json_store.get_record(db, table_id, record_id, fields)
@@ -497,7 +513,8 @@ def update_record(db: Session, table_id: int, record_id: int, data: dict, user: 
     db.execute(table.update().where(table.c.id == record_id).values(**cleaned))
     db.commit()
     after = get_record(db, table_id, record_id)
-    log_audit(db, "update", table_id, record_id, before=before, after=after, user=user)
+    log_audit(db, "update", table_id, record_id, before=before, after=after, user=user,
+              tenant_id=mt.tenant_id)
     db.commit()
     _sync_images(db, table_id, record_id, fields, before, after)
     _fire_workflow_hook("record_updated", table_id, after, before)
@@ -517,15 +534,20 @@ def _sync_images(db: Session, table_id: int, record_id: int, fields, before: dic
 
 def delete_record(db: Session, table_id: int, record_id: int, user: str | None = None) -> None:
     mt, fields = load_meta(db, table_id)
+    from . import entitlement
+    entitlement.assert_tenant_writable(db, mt.tenant_id)
     if mt.storage_mode == "json":
         from . import json_store
         json_store.delete_record(db, table_id, record_id, fields=fields, user=user)
+        entitlement.bump_usage(db, mt.tenant_id, "row_count", -1)
+        db.commit()
         _delete_images(db, record_id)
         return
     _, _, table = load_business(db, table_id)
     before = get_record(db, table_id, record_id)
     db.execute(table.delete().where(table.c.id == record_id))
-    log_audit(db, "delete", table_id, record_id, before=before, user=user)
+    log_audit(db, "delete", table_id, record_id, before=before, user=user, tenant_id=mt.tenant_id)
+    entitlement.bump_usage(db, mt.tenant_id, "row_count", -1)
     db.commit()
     _delete_images(db, record_id)
 

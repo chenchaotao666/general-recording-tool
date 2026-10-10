@@ -36,6 +36,17 @@ def _register_workflow_poller() -> None:
     )
 
 
+def _register_billing_jobs() -> None:
+    """计费固定任务（每日）：订阅巡检/配额宽限提醒/用量校准。remove_all_jobs 会清掉，须随重载补回。"""
+    from .billing_jobs import calibrate_usage, remind_quota_grace, sweep_subscriptions
+    scheduler.add_job(sweep_subscriptions, CronTrigger(hour=3, minute=0),
+                      id="billing_sub_sweep", replace_existing=True, misfire_grace_time=3600)
+    scheduler.add_job(remind_quota_grace, CronTrigger(hour=3, minute=30),
+                      id="billing_quota_remind", replace_existing=True, misfire_grace_time=3600)
+    scheduler.add_job(calibrate_usage, CronTrigger(hour=4, minute=0),
+                      id="billing_usage_calibrate", replace_existing=True, misfire_grace_time=3600)
+
+
 def reload_jobs() -> None:
     """全量重载任务（报表模板/工作流增删改后调用）。单进程部署下足够简单可靠。"""
     scheduler.remove_all_jobs()
@@ -68,6 +79,7 @@ def reload_jobs() -> None:
     finally:
         db.close()
     _register_workflow_poller()   # remove_all_jobs 会清掉 poller，每次重载后补回
+    _register_billing_jobs()      # 计费固定任务同理补回
 
 
 def start() -> None:

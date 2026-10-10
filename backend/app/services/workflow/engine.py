@@ -158,7 +158,8 @@ def _node_issues(db: Session, n: dict, user: User) -> list[tuple[str | None, str
         sub_id = (n.get("config") or {}).get("workflow_id")
         if isinstance(sub_id, int):
             sub = db.get(Workflow, sub_id)
-            if not sub or (sub.user_id != user.id and user.role != "admin"):
+            from ...utils.rbac import tenant_role
+            if not sub or (sub.user_id != user.id and tenant_role(db, user, sub.tenant_id) != "admin"):
                 out.append(("workflow_id", f"节点 {nid}：子流程不存在或无权限"))
             elif (sub.trigger_json or {}).get("type", "manual") != "manual":
                 out.append(("workflow_id", f"节点 {nid}：子流程「{sub.name}」的触发方式必须是「被动调用」（被调用的流程不应有自己的自动触发器）"))
@@ -169,7 +170,8 @@ def _node_issues(db: Session, n: dict, user: User) -> list[tuple[str | None, str
             out.append(("report_id", f"节点 {nid}：未选择要推送的报表"))
         else:
             tpl = db.get(ReportTemplate, rid)
-            if not tpl or (tpl.user_id != user.id and user.role != "admin"):
+            from ...utils.rbac import tenant_role
+            if not tpl or (tpl.user_id != user.id and tenant_role(db, user, tpl.tenant_id) != "admin"):
                 out.append(("report_id", f"节点 {nid}：报表不存在或无权限"))
             else:
                 push = tpl.push_json or {}
@@ -844,7 +846,8 @@ def resume_approval(db: Session, node_run_id: int, user: User, approved: bool, c
         raise WorkflowError("执行记录不存在")
     out = nr.output_json or {}
     approvers = (out.get("approval") or {}).get("approver_user_ids") or [wf.user_id]
-    if user.role != "admin" and user.id not in approvers and user.id != wf.user_id:
+    from ...utils.rbac import tenant_role
+    if tenant_role(db, user, wf.tenant_id) != "admin" and user.id not in approvers and user.id != wf.user_id:
         raise WorkflowError("你不是该审批的审批人")
 
     nr.output_json = {**out, "approved": bool(approved), "comment": comment or "", "approver_id": user.id}

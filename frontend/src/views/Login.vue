@@ -58,6 +58,7 @@ async function submit() {
     const r = await api(username.value.trim(), password.value)
     localStorage.setItem('grt_token', r.token)
     localStorage.setItem('grt_user', JSON.stringify(r.user))
+    localStorage.setItem('grt_tenant_id', r.user.tenant?.id || '')
     router.push('/')
   } catch (e) {
     error.value = e.message

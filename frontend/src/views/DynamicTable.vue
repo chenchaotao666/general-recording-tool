@@ -314,7 +314,7 @@ import PrintFormatPicker from '../components/PrintFormatPicker.vue'
 import PrintPreviewDialog from '../components/PrintPreviewDialog.vue'
 import PrintTemplateDesigner from '../components/PrintTemplateDesigner.vue'
 import RelationPicker from '../components/RelationPicker.vue'
-import { alterTable, createRecord, deleteRecord, getTable, imageUrl, listRecords, listTables, printFillUrl, printFillViewUrl, recordExportUrl, updateRecord, updateTable } from '../api'
+import { alterTable, createRecord, deleteRecord, getTable, handleBillingError, imageUrl, listRecords, listTables, printFillUrl, printFillViewUrl, recordExportUrl, updateRecord, updateTable } from '../api'
 import { getPaper } from '../utils/printPrefs'
 
 const DATA_TYPES = ['varchar', 'text', 'int', 'decimal', 'date', 'datetime', 'bool', 'image', 'subform', 'serial']
@@ -852,7 +852,7 @@ async function onSave(values) {
     dialogVisible.value = false
     load()
   } catch (e) {
-    ElMessage.error(e.message)
+    if (!handleBillingError(e)) ElMessage.error(e.message)
   } finally {
     saving.value = false
   }

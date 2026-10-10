@@ -2,7 +2,7 @@
 // 设计见 docs/首页工作台设计.md
 import { markRaw } from 'vue'
 import {
-  AlarmClock, Avatar, Bell, Connection, DataAnalysis, Grid, Key, List, Menu, Notebook, Setting, Upload, User, UserFilled,
+  AlarmClock, Avatar, Bell, Connection, DataAnalysis, Grid, Key, List, Menu, Notebook, Setting, Upload, User, UserFilled, Wallet,
 } from '@element-plus/icons-vue'
 
 import TableCard from './cards/TableCard.vue'
@@ -26,7 +26,7 @@ export function listCardTypes() {
   return [..._types.values()]
 }
 
-// 菜单功能卡片的可选入口（与 App.vue 侧边栏一致；adminOnly 项仅管理员可见）
+// 菜单功能卡片的可选入口（与 App.vue 侧边栏一致；adminOnly=租户管理员可见，platformOnly=平台超管可见）
 export const MENU_ENTRIES = [
   { path: '/tables', title: '数据表', icon: Grid, desc: '我的数据表列表' },
   { path: '/import', title: '导入 Excel', icon: Upload, desc: '从 Excel 建表' },
@@ -36,14 +36,23 @@ export const MENU_ENTRIES = [
   { path: '/notifications', title: '通知', icon: Bell, desc: '站内通知' },
   { path: '/friends', title: '好友', icon: User, desc: '好友与分享' },
   { path: '/system/groups', title: '用户组', icon: UserFilled, desc: '用户组管理' },
-  { path: '/settings', title: '设置', icon: Setting, desc: '个人设置' },
-  { path: '/system/users', title: '用户管理', icon: User, desc: '系统用户（管理员）', adminOnly: true },
-  { path: '/system/roles', title: '角色管理', icon: Avatar, desc: '角色与权限（管理员）', adminOnly: true },
-  { path: '/system/permissions', title: '权限管理', icon: Key, desc: '权限项（管理员）', adminOnly: true },
+  { path: '/billing', title: '套餐与用量', icon: Wallet, desc: '当前套餐与配额用量' },
+  { path: '/members', title: '成员', icon: UserFilled, desc: '工作空间成员（管理员）', adminOnly: true },
+  { path: '/audit', title: '审计日志', icon: Key, desc: '操作审计（管理员）', adminOnly: true },
+  { path: '/settings', title: '设置', icon: Setting, desc: '实例设置（平台超管）', platformOnly: true },
+  { path: '/platform/tenants', title: '平台租户', icon: User, desc: '租户与订阅（平台超管）', platformOnly: true },
+  { path: '/platform/plans', title: '套餐配置', icon: Key, desc: '套餐与定价（平台超管）', platformOnly: true },
+  { path: '/system/users', title: '用户管理', icon: User, desc: '系统用户（平台超管）', platformOnly: true },
+  { path: '/system/roles', title: '角色管理', icon: Avatar, desc: '角色与权限（平台超管）', platformOnly: true },
+  { path: '/system/permissions', title: '权限管理', icon: Key, desc: '权限项（平台超管）', platformOnly: true },
 ]
 
 export function menuEntriesFor(user) {
-  return MENU_ENTRIES.filter((e) => !e.adminOnly || user?.role === 'admin')
+  return MENU_ENTRIES.filter((e) => {
+    if (e.platformOnly) return !!user?.is_platform_admin
+    if (e.adminOnly) return user?.role === 'admin'
+    return true
+  })
 }
 
 // ---------- 内置类型注册 ----------

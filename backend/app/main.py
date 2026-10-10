@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import assistant, auth, dyn, excel, friends, groups, home, images, mcp, notes, notify, print_templates, rbac, reports, settings as settings_router, share_links, shares, tables, users, vision, workflows
+from .routers import assistant, audit, auth, dyn, excel, friends, groups, home, images, mcp, members, notes, notify, platform, print_templates, rbac, reports, settings as settings_router, share_links, shares, tables, tenants, users, vision, workflows
 from .services import scheduler
 from .services.migrate import run_migrations
 from .utils.auth import get_current_user, hash_password
@@ -37,14 +37,23 @@ def _cleanup_orphan_images():
 
 
 def _seed_admin():
-    """首次启动（无用户时）创建默认管理员，登录后请尽快修改密码"""
-    from .models import User
+    """首次启动（无用户时）创建默认管理员（平台超管），登录后请尽快修改密码。
+    用裸 SQL：老库尚未迁移出 is_platform_admin 列时 ORM 查询会直接报错。"""
+    from datetime import datetime
+
+    from sqlalchemy import inspect, text
 
     db = SessionLocal()
     try:
-        if not db.query(User).first():
-            db.add(User(username="admin", password_hash=hash_password("admin123"), role="admin"))
-            db.commit()
+        if db.execute(text("SELECT 1 FROM users LIMIT 1")).first():
+            return
+        cols = {c["name"] for c in inspect(engine).get_columns("users")}
+        extra = ", is_platform_admin" if "is_platform_admin" in cols else ""
+        db.execute(text(
+            f"INSERT INTO users (username, password_hash, role{extra}, created_at) "
+            f"VALUES ('admin', :pw, 'admin'{', 1' if extra else ''}, :ca)"
+        ), {"pw": hash_password("admin123"), "ca": datetime.now()})
+        db.commit()
     finally:
         db.close()
 
@@ -88,6 +97,10 @@ app.include_router(home.router, dependencies=protected)
 app.include_router(friends.router, dependencies=protected)
 app.include_router(shares.router, dependencies=protected)
 app.include_router(settings_router.router, dependencies=protected)
+app.include_router(tenants.router, dependencies=protected)
+app.include_router(members.router, dependencies=protected)
+app.include_router(platform.router, dependencies=protected)
+app.include_router(audit.router, dependencies=protected)
 
 # 前端构建产物存在时直接由后端托管（生产模式）
 dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"

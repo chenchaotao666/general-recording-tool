@@ -1,7 +1,8 @@
 <template>
   <div class="home-page">
-    <!-- 操作按钮挂到全局顶栏（不占首页版面）；布局来源标签随行 -->
-    <Teleport to="#topbarActions">
+    <!-- 操作按钮挂到全局顶栏（不占首页版面）；布局来源标签随行。
+         defer：等顶栏挂载完成再传送，避免时序问题导致的目标缺失（Vue 3.5+） -->
+    <Teleport defer to="#topbarActions">
       <span class="bar-ops">
         <el-tag v-if="!editing && layoutSource === 'preset'" size="small" type="warning" effect="plain">全员默认布局</el-tag>
         <el-tag v-else-if="!editing && layoutSource === 'builtin'" size="small" type="info" effect="plain">系统默认布局</el-tag>

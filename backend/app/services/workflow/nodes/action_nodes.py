@@ -307,12 +307,14 @@ class PushReportNode(NodeType):
 
     def _load_tpl(self, ctx: NodeContext):
         from ....models import ReportTemplate, User
+        from ....utils.rbac import tenant_role
         rid = ctx.config.get("report_id")
         if not isinstance(rid, int):
             raise WorkflowNodeError("未选择报表")
         tpl = ctx.db.get(ReportTemplate, rid)
         u = ctx.db.get(User, ctx.user_id)
-        if not tpl or (tpl.user_id != ctx.user_id and (not u or u.role != "admin")):
+        if not tpl or (tpl.user_id != ctx.user_id
+                       and (not u or tenant_role(ctx.db, u, tpl.tenant_id) != "admin")):
             raise WorkflowNodeError("报表不存在或无权限")
         return tpl
 

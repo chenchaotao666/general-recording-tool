@@ -69,8 +69,8 @@ import {
   rejectFriend, requestFriend, searchUsers,
 } from '../api'
 
-// 全站用户搜索下拉仅 admin 可用（后端 /users/search scope=all 也只对 admin 开放）
-const isAdmin = computed(() => JSON.parse(localStorage.getItem('grt_user') || 'null')?.role === 'admin')
+// 全站用户搜索下拉仅平台超管可用（后端 /users/search scope=all 也只对平台超管开放）
+const isAdmin = computed(() => !!JSON.parse(localStorage.getItem('grt_user') || 'null')?.is_platform_admin)
 
 const tab = ref('friends')
 const friends = ref([])

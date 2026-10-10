@@ -12,7 +12,7 @@ from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..models import ImageFile
+from ..models import ImageFile, MetaTable, User
 
 MAX_SIZE = 5 * 1024 * 1024          # 单张 5MB（前端已压缩，这里兜底）
 MAX_PER_UPLOAD = 5
@@ -45,7 +45,8 @@ def images_dir() -> Path:
     return d
 
 
-async def save_image(db: Session, file: UploadFile, uploader_id: int) -> ImageFile:
+async def save_image(db: Session, file: UploadFile, uploader_id: int,
+                     tenant_id: int | None = None) -> ImageFile:
     content = await file.read()
     if len(content) > MAX_SIZE:
         raise ImageError("单张图片不能超过 5MB")
@@ -53,12 +54,17 @@ async def save_image(db: Session, file: UploadFile, uploader_id: int) -> ImageFi
     if not sniffed:
         raise ImageError("仅支持 JPG / PNG / WebP 图片")
     ext, mime = sniffed
+    # 存储配额闸（宽限期模型）+ 只读闸
+    from . import entitlement
+    entitlement.assert_tenant_writable(db, tenant_id)
+    entitlement.check_quota(db, tenant_id, "max_storage_mb", delta=len(content))
     row = ImageFile(
         id=uuid.uuid4().hex, uploader_id=uploader_id,
         filename=(file.filename or "")[:256], mime=mime, size=len(content),
     )
     (images_dir() / row.id).write_bytes(content)
     db.add(row)
+    entitlement.bump_usage(db, tenant_id, "storage_bytes", len(content))
     db.commit()
     return row
 
@@ -73,14 +79,35 @@ def get_image(db: Session, file_id: str) -> tuple[ImageFile, Path]:
     return row, path
 
 
+def _tenant_of_image(db: Session, row: ImageFile) -> int | None:
+    """图片归属租户：已关联记录 → 表租户；孤儿文件 → 上传者默认工作空间（与校准口径一致）。"""
+    if row.table_id:
+        mt = db.get(MetaTable, row.table_id)
+        if mt:
+            return mt.tenant_id
+    if row.uploader_id:
+        u = db.get(User, row.uploader_id)
+        if u:
+            try:
+                from .tenancy import default_tenant_id
+                return default_tenant_id(db, u)
+            except Exception:  # noqa: BLE001
+                return None
+    return None
+
+
 def _delete_rows(db: Session, rows: list[ImageFile]) -> int:
+    from . import entitlement
     n = 0
     for row in rows:
         try:
             (images_dir() / row.id).unlink(missing_ok=True)
         except OSError:
             pass
+        tid = _tenant_of_image(db, row)
         db.delete(row)
+        if tid and row.size:
+            entitlement.bump_usage(db, tid, "storage_bytes", -row.size)
         n += 1
     return n
 

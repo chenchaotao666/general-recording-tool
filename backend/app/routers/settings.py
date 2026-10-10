@@ -1,4 +1,4 @@
-"""LLM 供应商配置管理 + 通用通知渠道设置。"""
+"""LLM 供应商配置管理 + 通用通知渠道设置（实例级配置，仅平台超管）。"""
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,9 +9,11 @@ from ..database import get_db
 from ..models import LLMProvider
 from ..schemas import ProviderIn
 from ..services.llm import LLMError, build_provider
+from ..utils.context import require_platform_admin
 from ..utils.security import encrypt
 
-router = APIRouter(prefix="/api/settings", tags=["settings"])
+router = APIRouter(prefix="/api/settings", tags=["settings"],
+                   dependencies=[Depends(require_platform_admin)])
 
 
 def _out(row: LLMProvider) -> dict:

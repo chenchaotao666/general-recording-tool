@@ -7,11 +7,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import User
 from ..services import dyn_engine, meta_service
 from ..services.records_export import export_records_xlsx
 from ..utils.access import TableAccess, require_table
-from ..utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/dyn", tags=["dyn"])
 
@@ -79,9 +77,9 @@ def create_record(
     table_id: int, data: dict,
     db: Session = Depends(get_db),
     access: TableAccess = Depends(require_table("create")),
-    user: User = Depends(get_current_user),
 ):
-    return dyn_engine.create_record(db, table_id, data, user=user.username)
+    user = access.ctx.user
+    return dyn_engine.create_record(db, table_id, data, user=user.username, owner_id=user.id)
 
 
 @router.get("/{table_id}/records/{record_id}")
@@ -98,9 +96,8 @@ def update_record(
     table_id: int, record_id: int, data: dict,
     db: Session = Depends(get_db),
     access: TableAccess = Depends(require_table("edit")),
-    user: User = Depends(get_current_user),
 ):
-    return dyn_engine.update_record(db, table_id, record_id, data, user=user.username)
+    return dyn_engine.update_record(db, table_id, record_id, data, user=access.ctx.user.username)
 
 
 @router.delete("/{table_id}/records/{record_id}")
@@ -108,7 +105,6 @@ def delete_record(
     table_id: int, record_id: int,
     db: Session = Depends(get_db),
     access: TableAccess = Depends(require_table("delete")),
-    user: User = Depends(get_current_user),
 ):
-    dyn_engine.delete_record(db, table_id, record_id, user=user.username)
+    dyn_engine.delete_record(db, table_id, record_id, user=access.ctx.user.username)
     return {"ok": True}

@@ -25,6 +25,8 @@ def _row_to_client(rec: Record, fields_by_name: dict) -> dict:
     out = {name: None for name in fields_by_name}
     out.update(rec.data or {})
     out["id"] = rec.id
+    out["tenant_id"] = rec.tenant_id
+    out["owner_id"] = rec.owner_id
     out["created_at"] = dyn_engine.serialize_value(rec.created_at)
     out["updated_at"] = dyn_engine.serialize_value(rec.updated_at)
     return {k: dyn_engine.serialize_value(v) for k, v in out.items()}
@@ -94,7 +96,8 @@ def get_record(db: Session, table_id: int, record_id: int, fields: list[MetaFiel
     return _row_to_client(rec, {f.field_name: f for f in (fields or [])})
 
 
-def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dict, user: str | None = None) -> dict:
+def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dict,
+                  user: str | None = None, owner_id: int | None = None) -> dict:
     cleaned, errors = dyn_engine.coerce_payload(fields, data)
     if errors:
         raise HTTPException(422, detail=errors)
@@ -107,12 +110,15 @@ def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dic
     dyn_engine.apply_serials(db, mt.id, fields, cleaned)
     dyn_engine.apply_computed(fields, cleaned)
     now = datetime.now()
-    rec = Record(table_id=mt.id, data=serialize_data(cleaned), created_at=now, updated_at=now)
+    rec = Record(table_id=mt.id, tenant_id=mt.tenant_id,
+                 owner_id=owner_id if owner_id is not None else mt.owner_id,
+                 data=serialize_data(cleaned), created_at=now, updated_at=now)
     db.add(rec)
     db.commit()
     db.refresh(rec)
     record = _row_to_client(rec, {f.field_name: f for f in fields})
-    dyn_engine.log_audit(db, "create", mt.id, record["id"], after=record, user=user)
+    dyn_engine.log_audit(db, "create", mt.id, record["id"], after=record, user=user,
+                         tenant_id=mt.tenant_id)
     db.commit()
     return record
 
@@ -137,7 +143,8 @@ def update_record(db: Session, mt: MetaTable, fields: list[MetaField], record_id
     rec.updated_at = datetime.now()
     db.commit()
     after = _row_to_client(rec, fbn)
-    dyn_engine.log_audit(db, "update", mt.id, record_id, before=before, after=after, user=user)
+    dyn_engine.log_audit(db, "update", mt.id, record_id, before=before, after=after, user=user,
+                         tenant_id=mt.tenant_id)
     db.commit()
     return after
 
@@ -149,21 +156,29 @@ def delete_record(db: Session, table_id: int, record_id: int, fields: list[MetaF
     if not rec:
         raise HTTPException(404, "记录不存在")
     before = _row_to_client(rec, {f.field_name: f for f in (fields or [])})
+    tenant_id = rec.tenant_id
     db.delete(rec)
     db.commit()
-    dyn_engine.log_audit(db, "delete", table_id, record_id, before=before, user=user)
+    dyn_engine.log_audit(db, "delete", table_id, record_id, before=before, user=user,
+                         tenant_id=tenant_id)
     db.commit()
 
 
 def bulk_insert(db: Session, table_id: int, items: list[dict]) -> None:
-    """Excel 导入用。items 已 coerce（含 created_at/updated_at），批量插入。"""
+    """Excel 导入用。items 已 coerce（含 created_at/updated_at），批量插入。
+    引擎层闸：配额按批次校验 + 用量累计（tenant/owner 列从 meta 自取）。"""
     if not items:
         return
+    from . import entitlement
+    mt = db.get(MetaTable, table_id)
+    entitlement.check_quota(db, mt.tenant_id, "max_rows", delta=len(items))
     now = datetime.now()
     rows = [
-        Record(table_id=table_id, data=serialize_data(item), created_at=item.get("created_at") or now,
+        Record(table_id=table_id, tenant_id=mt.tenant_id, owner_id=mt.owner_id,
+               data=serialize_data(item), created_at=item.get("created_at") or now,
                updated_at=item.get("updated_at") or now)
         for item in items
     ]
     db.add_all(rows)
+    entitlement.bump_usage(db, mt.tenant_id, "row_count", len(rows))
     db.commit()

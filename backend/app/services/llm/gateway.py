@@ -681,26 +681,35 @@ def field_dicts_of(fields: list) -> list[dict]:
 
 
 def _accessible_tables(db: Session, user) -> list:
-    """当前用户可访问（自有 + 已接受分享；admin 全部）的数据表清单。"""
+    """当前用户可访问的数据表清单：自有 + 已接受分享（可跨租户）+ 我任 admin 的租户的全部表。"""
     from sqlalchemy import or_
 
-    from ...models import GroupMember, MetaTable, TableShare
+    from ...models import GroupMember, MetaTable, TableShare, TenantMember
 
-    q = db.query(MetaTable)
-    if user.role != "admin":
-        shared_ids = [
-            s.table_id
-            for s in db.query(TableShare)
-            .outerjoin(GroupMember, TableShare.group_id == GroupMember.group_id)
-            .filter(
-                TableShare.can_view.is_(True),
-                TableShare.status == "accepted",
-                or_(TableShare.user_id == user.id, GroupMember.user_id == user.id),
-            )
-            .all()
-        ]
-        q = q.filter(or_(MetaTable.owner_id == user.id, MetaTable.id.in_(shared_ids or [-1])))
-    return q.order_by(MetaTable.id.desc()).all()
+    shared_ids = [
+        s.table_id
+        for s in db.query(TableShare)
+        .outerjoin(GroupMember, TableShare.group_id == GroupMember.group_id)
+        .filter(
+            TableShare.can_view.is_(True),
+            TableShare.status == "accepted",
+            or_(TableShare.user_id == user.id, GroupMember.user_id == user.id),
+        )
+        .all()
+    ]
+    admin_tenant_ids = [
+        m.tenant_id
+        for m in db.query(TenantMember)
+        .filter(TenantMember.user_id == user.id, TenantMember.status == "active",
+                TenantMember.role == "admin")
+        .all()
+    ]
+    conds = [MetaTable.owner_id == user.id, MetaTable.id.in_(shared_ids or [-1])]
+    if user.is_platform_admin:
+        conds.append(MetaTable.id.isnot(None))   # 平台超管全量（运维用途）
+    elif admin_tenant_ids:
+        conds.append(MetaTable.tenant_id.in_(admin_tenant_ids))
+    return db.query(MetaTable).filter(or_(*conds)).order_by(MetaTable.id.desc()).all()
 
 
 def _clean_assistant_fields(raw_fields, notes: list) -> list[dict]:
@@ -785,9 +794,10 @@ def align_assistant_action(db: Session, user, action: dict | None, notes: list) 
             return None
         label = str(action.get("label") or "").strip()[:64] or "新建数据表"
         # 存储方式：默认 JSON；物理表需「创建独立表」权限，没权限降级为 JSON 并提示
-        from ...utils.rbac import has_perm
+        from ...services.tenancy import default_tenant_id
+        from ...utils.rbac import has_perm, tenant_role
         storage_mode = action.get("storage_mode") if action.get("storage_mode") in ("json", "physical") else "json"
-        if storage_mode == "physical" and not has_perm(db, user, "create_physical_table"):
+        if storage_mode == "physical" and not has_perm(db, tenant_role(db, user, default_tenant_id(db, user)), "create_physical_table"):
             storage_mode = "json"
             notes.append("你没有「创建独立表」权限，已改为 JSON 存储表（如需物理表请联系管理员开通权限）")
         mode_label = "物理表" if storage_mode == "physical" else "JSON 表"
@@ -1087,10 +1097,11 @@ def assist_chat(db: Session, user, message: str, history: list | None, context: 
         for h in (history or []) if isinstance(h, dict)
     ][-_ASSISTANT_HISTORY_MAX:]
     img_bytes = _decode_data_urls(images)
-    from ...utils.rbac import has_perm
+    from ...services.tenancy import default_tenant_id
+    from ...utils.rbac import has_perm, tenant_role
     prompt = build_assistant_prompt(message, history, table_briefs, current, datetime.now().strftime("%Y-%m-%d"),
                                     workflows=wf_briefs,
-                                    can_physical_table=has_perm(db, user, "create_physical_table"))
+                                    can_physical_table=has_perm(db, tenant_role(db, user, default_tenant_id(db, user)), "create_physical_table"))
     if img_bytes:
         prompt += (f"\n\n注意：用户随消息附上了 {len(img_bytes)} 张图片，请结合图片内容理解需求"
                    "（例如从截图中提取信息填入数据表、根据图片中的表格建表等）。")

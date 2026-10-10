@@ -653,6 +653,13 @@ def install_template(db: Session, user: User, key: str, with_demo_data: bool = F
     if not tpl:
         raise WorkflowError("模板不存在")
 
+    from fastapi import HTTPException
+
+    from .. import entitlement
+    from ..tenancy import default_tenant_id
+    tid = default_tenant_id(db, user)
+    entitlement.assert_tenant_writable(db, tid)
+
     notes = []
     table_ids: dict[str, int] = {}
     for tb in tpl["tables"]:
@@ -671,7 +678,13 @@ def install_template(db: Session, user: User, key: str, with_demo_data: bool = F
             storage_mode="json",
         )
         try:
-            mt = meta_service.create_business_table(db, tc, owner_id=user.id)
+            # 模板市场建表与手工建表同一道配额闸（此前为绕过点）
+            entitlement.check_quota(db, tid, "max_tables")
+            mt = meta_service.create_business_table(db, tc, owner_id=user.id, tenant_id=tid)
+            entitlement.bump_usage(db, tid, "table_count", 1)
+        except HTTPException:
+            db.rollback()
+            raise   # 配额/只读 403 直接透传
         except Exception as e:  # noqa: BLE001
             db.rollback()
             raise WorkflowError(f"建表失败：{e}")
@@ -702,7 +715,7 @@ def install_template(db: Session, user: User, key: str, with_demo_data: bool = F
     if wf_def["trigger"].get("type") in ("webhook", "form") and not wf_def["trigger"].get("secret"):
         wf_def["trigger"] = {**wf_def["trigger"], "secret": uuid.uuid4().hex}
     wf = Workflow(
-        user_id=user.id, name=wf_def["name"], description=wf_def.get("description") or "",
+        user_id=user.id, tenant_id=tid, name=wf_def["name"], description=wf_def.get("description") or "",
         enabled=False, trigger_json=wf_def["trigger"],
         nodes_json=wf_def["nodes"], edges_json=wf_def["edges"],
     )
