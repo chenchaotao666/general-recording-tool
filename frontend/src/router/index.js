@@ -7,7 +7,6 @@ import Settings from '../views/Settings.vue'
 import Login from '../views/Login.vue'
 import UsersManage from '../views/UsersManage.vue'
 import RolesManage from '../views/RolesManage.vue'
-import PermissionsManage from '../views/PermissionsManage.vue'
 import GroupsManage from '../views/GroupsManage.vue'
 import Friends from '../views/Friends.vue'
 
@@ -45,11 +44,11 @@ const router = createRouter({
     { path: '/reports/:id/layout', component: () => import('../views/ReportLayoutDesigner.vue') },
     { path: '/settings', component: Settings, meta: { platformAdmin: true } },
     { path: '/billing', component: () => import('../views/Billing.vue') },
+    { path: '/billing/upgrade', component: () => import('../views/Upgrade.vue'), meta: { admin: true } },
     { path: '/members', component: () => import('../views/Members.vue'), meta: { admin: true } },
     { path: '/audit', component: () => import('../views/AuditLogs.vue'), meta: { admin: true } },
     { path: '/system/users', component: UsersManage, meta: { platformAdmin: true } },
     { path: '/system/roles', component: RolesManage, meta: { platformAdmin: true } },
-    { path: '/system/permissions', component: PermissionsManage, meta: { platformAdmin: true } },
     { path: '/platform/tenants', component: () => import('../views/PlatformTenants.vue'), meta: { platformAdmin: true } },
     { path: '/platform/plans', component: () => import('../views/PlatformPlans.vue'), meta: { platformAdmin: true } },
     { path: '/system/groups', component: GroupsManage },   // 普通成员也可建组（只能加好友为成员）

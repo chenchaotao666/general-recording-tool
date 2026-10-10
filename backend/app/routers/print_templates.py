@@ -273,7 +273,7 @@ def preview_fill(payload: PrintExcelJsonIn, access: TableAccess = Depends(requir
         raise HTTPException(400, f"表格数据无法转换为 xlsx：{e}")
     res = dyn_engine.list_records(
         db, access.table.id, 1, MAX_FILL_RECORDS, _parse_filters(payload.filters),
-        payload.sort_by or "id", payload.sort_order or "asc", page_cap=MAX_FILL_RECORDS,
+        payload.sort_by or "id", payload.sort_order or "asc", page_cap=MAX_FILL_RECORDS, viewer=access.ctx.user if access.ctx else None,
     )
     if not res["items"]:
         raise HTTPException(400, "当前筛选结果为空，没有可预览的记录")
@@ -372,7 +372,7 @@ def fill_excel(tpl_id: int, filters: str | None = None, sort_by: str | None = No
         raise HTTPException(400, "该模板还没有 xlsx 文件，请先在模板编辑器中保存")
     res = dyn_engine.list_records(
         db, tpl.table_id, 1, MAX_FILL_RECORDS, _parse_filters(filters),
-        sort_by or "id", sort_order or "asc", page_cap=MAX_FILL_RECORDS,
+        sort_by or "id", sort_order or "asc", page_cap=MAX_FILL_RECORDS, viewer=access.ctx.user if access.ctx else None,
     )
     if not res["items"]:
         raise HTTPException(400, "当前筛选结果为空，没有可打印的记录")
@@ -392,7 +392,7 @@ def fill_view(tpl_id: int, filters: str | None = None, sort_by: str | None = Non
         raise HTTPException(400, "该模板还没有 xlsx 文件，请先在模板编辑器中保存")
     res = dyn_engine.list_records(
         db, tpl.table_id, 1, MAX_FILL_RECORDS, _parse_filters(filters),
-        sort_by or "id", sort_order or "asc", page_cap=MAX_FILL_RECORDS,
+        sort_by or "id", sort_order or "asc", page_cap=MAX_FILL_RECORDS, viewer=access.ctx.user if access.ctx else None,
     )
     if not res["items"]:
         raise HTTPException(400, "当前筛选结果为空，没有可打印的记录")

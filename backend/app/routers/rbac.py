@@ -15,12 +15,6 @@ ROLE_CODE_MIN = 2
 
 # ---------- 权限 ----------
 
-class PermissionIn(BaseModel):
-    code: str
-    name: str
-    description: str | None = None
-
-
 def _perm_out(p: Permission) -> dict:
     return {
         "id": p.id, "code": p.code, "name": p.name,
@@ -33,31 +27,6 @@ def list_permissions(db: Session = Depends(get_db), admin: Context = Depends(req
     return [_perm_out(p) for p in db.query(Permission).order_by(Permission.id).all()]
 
 
-@router.post("/permissions")
-def create_permission(payload: PermissionIn, db: Session = Depends(get_db), admin: Context = Depends(require_platform_admin)):
-    code = payload.code.strip()
-    if not code.replace("_", "").isalnum() or not code[0].isalpha():
-        raise HTTPException(400, "权限标识必须是小写字母开头的 snake_case")
-    if db.query(Permission).filter_by(code=code).first():
-        raise HTTPException(400, "权限标识已存在")
-    p = Permission(code=code, name=payload.name.strip(), description=payload.description)
-    db.add(p)
-    db.commit()
-    db.refresh(p)
-    return _perm_out(p)
-
-
-@router.delete("/permissions/{perm_id}")
-def delete_permission(perm_id: int, db: Session = Depends(get_db), admin: Context = Depends(require_platform_admin)):
-    p = db.get(Permission, perm_id)
-    if not p:
-        raise HTTPException(404, "权限不存在")
-    if p.is_system:
-        raise HTTPException(400, "内置权限不可删除")
-    db.query(RolePermission).filter_by(permission_id=p.id).delete()
-    db.delete(p)
-    db.commit()
-    return {"ok": True}
 
 
 # ---------- 角色 ----------

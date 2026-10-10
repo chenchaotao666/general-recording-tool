@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -44,7 +45,8 @@ def list_records(
     db: Session = Depends(get_db),
     access: TableAccess = Depends(require_table("view")),
 ):
-    return dyn_engine.list_records(db, table_id, page, page_size, _parse_filters(filters), sort_by, sort_order)
+    return dyn_engine.list_records(db, table_id, page, page_size, _parse_filters(filters),
+                                   sort_by, sort_order, viewer=access.ctx.user)
 
 
 @router.get("/{table_id}/export")
@@ -59,7 +61,7 @@ def export_records(
     """导出记录为 xlsx：参数与列表一致（filters/sort 同参），上限 EXPORT_MAX 条。"""
     res = dyn_engine.list_records(
         db, table_id, 1, EXPORT_MAX, _parse_filters(filters), sort_by or "id", sort_order or "asc",
-        page_cap=EXPORT_MAX,
+        page_cap=EXPORT_MAX, viewer=access.ctx.user,
     )
     fields = meta_service.get_meta_fields(db, table_id)
     columns = ([{"prop": f.field_name, "label": f.label} for f in fields if f.data_type != "subform"]
@@ -82,13 +84,42 @@ def create_record(
     return dyn_engine.create_record(db, table_id, data, user=user.username, owner_id=user.id)
 
 
+class TransferIn(BaseModel):
+    record_ids: list[int]
+    owner_id: int
+
+
+@router.post("/{table_id}/transfer")
+def transfer_records(
+    table_id: int, body: TransferIn,
+    db: Session = Depends(get_db),
+    access: TableAccess = Depends(require_table("view")),
+):
+    """记录转移（改 owner_id）：仅表主/租户 admin；目标须为本租户 active 成员。"""
+    from ..models import TenantMember
+    from ..services import entitlement
+    if not (access.is_owner or access.is_admin):
+        raise HTTPException(404, "数据表不存在")
+    if not body.record_ids or len(body.record_ids) > 500:
+        raise HTTPException(400, "record_ids 需为 1~500 条")
+    mt = access.table
+    entitlement.assert_tenant_writable(db, mt.tenant_id)
+    member = db.query(TenantMember).filter_by(
+        tenant_id=mt.tenant_id, user_id=body.owner_id, status="active").first()
+    if not member:
+        raise HTTPException(400, "目标用户不是本工作空间的成员")
+    n = dyn_engine.transfer_records(db, table_id, body.record_ids, body.owner_id,
+                                    user=access.ctx.user.username)
+    return {"ok": True, "updated": n}
+
+
 @router.get("/{table_id}/records/{record_id}")
 def get_record(
     table_id: int, record_id: int,
     db: Session = Depends(get_db),
     access: TableAccess = Depends(require_table("view")),
 ):
-    return dyn_engine.get_record(db, table_id, record_id)
+    return dyn_engine.get_record(db, table_id, record_id, viewer=access.ctx.user)
 
 
 @router.put("/{table_id}/records/{record_id}")
@@ -97,7 +128,8 @@ def update_record(
     db: Session = Depends(get_db),
     access: TableAccess = Depends(require_table("edit")),
 ):
-    return dyn_engine.update_record(db, table_id, record_id, data, user=access.ctx.user.username)
+    return dyn_engine.update_record(db, table_id, record_id, data,
+                                    user=access.ctx.user.username, viewer=access.ctx.user)
 
 
 @router.delete("/{table_id}/records/{record_id}")
@@ -106,5 +138,6 @@ def delete_record(
     db: Session = Depends(get_db),
     access: TableAccess = Depends(require_table("delete")),
 ):
-    dyn_engine.delete_record(db, table_id, record_id, user=access.ctx.user.username)
+    dyn_engine.delete_record(db, table_id, record_id, user=access.ctx.user.username,
+                             viewer=access.ctx.user)
     return {"ok": True}

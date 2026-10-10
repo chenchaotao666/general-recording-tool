@@ -10,12 +10,18 @@ from .base import NodeContext, NodeResult, NodeType, WorkflowNodeError
 
 
 def query_table(db, table_id: int, filters: dict | None, limit: int,
-                order_by: str | None, order_desc: bool, fields: list | None = None) -> list[dict]:
+                order_by: str | None, order_desc: bool, fields: list | None = None,
+                viewer=None) -> list[dict]:
     """双存储模式统一的查询路径，语义与 dyn_engine.list_records / pyquery 对齐。
     limit：默认 100；正数上限 500（安全阀）；0 = 不限制（返回全部，数据量大时慎用）。
     fields：输出字段投影（字段名列表）；空 = 全部字段。id 总会保留（更新定位/AI 判断依赖它）。"""
     mt, meta_fields = dyn_engine.load_meta(db, table_id)
     fbn = {f.field_name: f for f in meta_fields}
+    # P1 数据范围：viewer（工作流 owner）的角色 scope 物化为 owner_id 过滤；None=内部不过滤
+    scope_rule = None
+    if viewer is not None:
+        from ... import scope as scope_mod
+        scope_rule = scope_mod.scope_rule(db, mt, viewer)
     limit = int(limit or 100)
     if limit > 0:
         limit = min(limit, 500)
@@ -31,6 +37,8 @@ def query_table(db, table_id: int, filters: dict | None, limit: int,
     if mt.storage_mode == "json":
         from ... import json_store
         recs = json_store.all_dicts(db, mt.id, meta_fields, normalized=True)
+        if scope_rule:
+            recs = [r for r in recs if match_filters(r, fbn, {"logic": "AND", "rules": [scope_rule]})]
         recs = [r for r in recs if match_filters(r, fbn, filters)]
         recs = sort_records(recs, order_by, "desc" if order_desc else "asc", fbn)
         if limit > 0:
@@ -40,6 +48,8 @@ def query_table(db, table_id: int, filters: dict | None, limit: int,
     _, meta_fields, table = dyn_engine.load_business(db, table_id)
     rules = (filters or {}).get("rules") or []
     conds = [dyn_engine.build_condition(table, fbn, r) for r in rules]
+    if scope_rule:
+        conds.append(dyn_engine.build_condition(table, fbn, scope_rule))
     if (filters or {}).get("logic") == "OR" and len(conds) > 1:
         conds = [or_(*conds)]
     stmt = select(table).where(*conds)
@@ -87,11 +97,13 @@ class QueryRecordsNode(NodeType):
         if not table_id:
             raise WorkflowNodeError("未配置数据表")
         ai_filter = (ctx.config.get("ai_filter") or "").strip()
+        from ....models import User
         records = query_table(
             ctx.db, table_id, ctx.config.get("filters"),
             ctx.config.get("limit") or 100,
             ctx.config.get("order_by"), bool(ctx.config.get("order_desc", True)),
             ctx.config.get("fields"),
+            viewer=ctx.db.get(User, ctx.user_id),
         )
         if ai_filter and records:
             # AI 筛选：LLM 分批（20 条/次）判断候选记录是否满足自然语言条件，输出命中子集
@@ -131,7 +143,7 @@ class CreateRecordNode(NodeType):
         if ctx.dry_run:
             # 试运行沙盒：不真实写入，回显将要写入的记录
             return NodeResult(output={"record": {"id": 0, **data}, "simulated": True})
-        record = dyn_engine.create_record(ctx.db, table_id, data, user=ctx.username)
+        record = dyn_engine.create_record(ctx.db, table_id, data, user=ctx.username, owner_id=ctx.user_id)
         return NodeResult(output={"record": record})
 
 
@@ -163,7 +175,10 @@ class UpdateRecordNode(NodeType):
         mapping = ctx.config.get("field_mapping")
         if not table_id or not isinstance(mapping, dict) or not mapping:
             raise WorkflowNodeError("未配置数据表或字段赋值")
-        targets = query_table(ctx.db, table_id, ctx.config.get("match_filters"), 100, None, True)
+        from ....models import User
+        wf_owner = ctx.db.get(User, ctx.user_id)
+        targets = query_table(ctx.db, table_id, ctx.config.get("match_filters"), 100, None, True,
+                              viewer=wf_owner)
         if not targets:
             return NodeResult(output={"count": 0, "records": []})
         if ctx.dry_run:
@@ -171,7 +186,8 @@ class UpdateRecordNode(NodeType):
             return NodeResult(output={"count": len(targets), "records": targets, "simulated": True})
         data = {k: v for k, v in mapping.items() if v is not None}
         updated = [
-            dyn_engine.update_record(ctx.db, table_id, r["id"], data, user=ctx.username)
+            dyn_engine.update_record(ctx.db, table_id, r["id"], data, user=ctx.username,
+                                     viewer=wf_owner)
             for r in targets
         ]
         return NodeResult(output={"count": len(updated), "records": updated})

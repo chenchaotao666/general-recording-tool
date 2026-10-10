@@ -103,7 +103,7 @@ def build_condition(table: Table, fields_by_name: dict, flt: dict):
     name = flt.get("field")
     op = flt.get("op")
     value = flt.get("value")
-    if name not in fields_by_name and name not in ("id", "created_at", "updated_at"):
+    if name not in fields_by_name and name not in ("id", "created_at", "updated_at", "owner_id"):
         raise HTTPException(400, f"未知筛选字段：{name}")
     if op not in FILTER_OPS:
         raise HTTPException(400, f"不支持的筛选操作符：{op}")
@@ -218,16 +218,23 @@ def _to_condition(table: Table, fields_by_name: dict, f: dict):
 
 def list_records(db: Session, table_id: int, page: int, page_size: int,
                  filters: list[dict] | None, sort_by: str | None, sort_order: str | None,
-                 page_cap: int = MAX_PAGE_SIZE) -> dict:
+                 page_cap: int = MAX_PAGE_SIZE, viewer=None) -> dict:
     """page_cap：页大小上限，常规列表用默认 200；导出等批量场景可放宽（传 EXPORT_MAX）。
-    filters 元素除单条规则外，也接受 {"logic": "AND"|"OR", "rules": [...]} 组合条件。"""
+    filters 元素除单条规则外，也接受 {"logic": "AND"|"OR", "rules": [...]} 组合条件。
+    viewer（P1 数据范围）：None=引擎内部不过滤；传 User 则按角色 scope 追加 owner_id 过滤。"""
+    from . import scope as scope_mod
     mt, fields = load_meta(db, table_id)
+    rule = scope_mod.scope_rule(db, mt, viewer)
     if mt.storage_mode == "json":
         from . import json_store
+        if rule:
+            filters = (filters or []) + [{"logic": "AND", "rules": [rule]}]
         return json_store.list_records(db, mt, fields, page, page_size, filters, sort_by, sort_order, page_cap)
     _, fields, table = load_business(db, table_id)
     fields_by_name = {f.field_name: f for f in fields}
     conds = [c for c in (_to_condition(table, fields_by_name, f) for f in (filters or [])) if c is not None]
+    if rule:
+        conds.append(build_condition(table, fields_by_name, rule))
 
     page = max(page, 1)
     page_size = min(max(page_size, 1), page_cap)
@@ -424,16 +431,22 @@ def apply_computed(fields: list[MetaField], cleaned: dict, base: dict | None = N
             cleaned[f.field_name] = ctx.get(f.field_name)
 
 
-def get_record(db: Session, table_id: int, record_id: int) -> dict:
+def get_record(db: Session, table_id: int, record_id: int, viewer=None) -> dict:
+    """viewer（P1 数据范围）：传 User 时记录不在 scope 内 → 404（不泄露存在性）。"""
+    from . import scope as scope_mod
     mt, fields = load_meta(db, table_id)
     if mt.storage_mode == "json":
         from . import json_store
-        return json_store.get_record(db, table_id, record_id, fields)
+        rec = json_store.get_record(db, table_id, record_id, fields)
+        scope_mod.assert_record_visible(db, mt, viewer, rec.get("owner_id"))
+        return rec
     _, _, table = load_business(db, table_id)
     row = db.execute(select(table).where(table.c.id == record_id)).mappings().first()
     if not row:
         raise HTTPException(404, "记录不存在")
-    return _expand_json_fields(row_to_dict(row), fields)
+    record = _expand_json_fields(row_to_dict(row), fields)
+    scope_mod.assert_record_visible(db, mt, viewer, record.get("owner_id"))
+    return record
 
 
 def _fire_workflow_hook(kind: str, table_id: int, record: dict, old_record: dict | None = None) -> None:
@@ -490,19 +503,23 @@ def create_record(db: Session, table_id: int, data: dict, user: str | None = Non
     return record
 
 
-def update_record(db: Session, table_id: int, record_id: int, data: dict, user: str | None = None) -> dict:
+def update_record(db: Session, table_id: int, record_id: int, data: dict, user: str | None = None,
+                  viewer=None) -> dict:
+    """viewer（P1 数据范围）：传 User 时记录不在 scope 内 → 404（写也受范围约束）。"""
     mt, fields = load_meta(db, table_id)
-    from . import entitlement
+    from . import entitlement, scope as scope_mod
     entitlement.assert_tenant_writable(db, mt.tenant_id)
     if mt.storage_mode == "json":
         from . import json_store
         before = json_store.get_record(db, table_id, record_id, fields)
+        scope_mod.assert_record_writable(db, mt, viewer, before.get("owner_id"))
         record = json_store.update_record(db, mt, fields, record_id, data, user=user)
         _sync_images(db, table_id, record_id, fields, before, record)
         _fire_workflow_hook("record_updated", table_id, record)
         return record
     _, fields, table = load_business(db, table_id)
     before = get_record(db, table_id, record_id)
+    scope_mod.assert_record_writable(db, mt, viewer, before.get("owner_id"))
     cleaned, errors = coerce_payload(fields, data, partial=True)
     if errors:
         raise HTTPException(422, detail=errors)
@@ -532,12 +549,16 @@ def _sync_images(db: Session, table_id: int, record_id: int, fields, before: dic
         db.rollback()
 
 
-def delete_record(db: Session, table_id: int, record_id: int, user: str | None = None) -> None:
+def delete_record(db: Session, table_id: int, record_id: int, user: str | None = None,
+                  viewer=None) -> None:
+    """viewer（P1 数据范围）：传 User 时记录不在 scope 内 → 404。"""
     mt, fields = load_meta(db, table_id)
-    from . import entitlement
+    from . import entitlement, scope as scope_mod
     entitlement.assert_tenant_writable(db, mt.tenant_id)
     if mt.storage_mode == "json":
         from . import json_store
+        before = json_store.get_record(db, table_id, record_id, fields)
+        scope_mod.assert_record_writable(db, mt, viewer, before.get("owner_id"))
         json_store.delete_record(db, table_id, record_id, fields=fields, user=user)
         entitlement.bump_usage(db, mt.tenant_id, "row_count", -1)
         db.commit()
@@ -545,11 +566,41 @@ def delete_record(db: Session, table_id: int, record_id: int, user: str | None =
         return
     _, _, table = load_business(db, table_id)
     before = get_record(db, table_id, record_id)
+    scope_mod.assert_record_writable(db, mt, viewer, before.get("owner_id"))
     db.execute(table.delete().where(table.c.id == record_id))
     log_audit(db, "delete", table_id, record_id, before=before, user=user, tenant_id=mt.tenant_id)
     entitlement.bump_usage(db, mt.tenant_id, "row_count", -1)
     db.commit()
     _delete_images(db, record_id)
+
+
+def transfer_records(db: Session, table_id: int, record_ids: list[int], new_owner_id: int,
+                     user: str | None = None) -> int:
+    """记录转移（P1）：批量改 owner_id。权限校验在 router 层（表主/租户 admin）。
+    单行审计（不逐条刷屏）；owner 变更不是内容变更，不触发工作流 hook。"""
+    if not record_ids:
+        return 0
+    mt, fields = load_meta(db, table_id)
+    now = datetime.now()
+    if mt.storage_mode == "json":
+        from sqlalchemy import update as _upd
+        from ..models import Record
+        n = db.execute(
+            _upd(Record).where(Record.table_id == table_id, Record.id.in_(record_ids))
+            .values(owner_id=new_owner_id, updated_at=now)
+        ).rowcount
+    else:
+        _, _, table = load_business(db, table_id)
+        n = db.execute(
+            table.update()
+            .where(table.c.id.in_(record_ids), table.c.tenant_id == mt.tenant_id)
+            .values(owner_id=new_owner_id, updated_at=now)
+        ).rowcount
+    log_audit(db, "transfer", table_id, None,
+              after={"record_ids": record_ids[:50], "count": n, "owner_id": new_owner_id},
+              user=user, tenant_id=mt.tenant_id)
+    db.commit()
+    return n
 
 
 def _delete_images(db: Session, record_id: int) -> None:

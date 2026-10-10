@@ -6,8 +6,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Role, TenantMember, User
-from ..services import entitlement
+from ..models import Department, Role, TenantMember, User
+from ..services import entitlement, scope as scope_mod
 from ..services.notify import notify_user
 from ..utils.context import Context, get_current_context, require_tenant_admin
 
@@ -25,9 +25,15 @@ class RoleIn(BaseModel):
 
 def _out(db: Session, m: TenantMember) -> dict:
     u = db.get(User, m.user_id)
+    dept = db.get(Department, u.department_id) if u and u.department_id else None
+    mgr = db.get(User, u.manager_id) if u and u.manager_id else None
     return {
         "id": m.id, "user_id": m.user_id, "username": u.username if u else m.user_id,
         "role": m.role, "status": m.status,
+        "department_id": dept.id if dept and dept.tenant_id == m.tenant_id and dept.enabled else None,
+        "department_name": dept.name if dept and dept.tenant_id == m.tenant_id and dept.enabled else None,
+        "manager_id": mgr.id if mgr else None,
+        "manager_name": mgr.username if mgr else None,
         "created_at": m.created_at.isoformat(sep=" ") if m.created_at else None,
     }
 
@@ -94,6 +100,51 @@ def accept(member_id: int, db: Session = Depends(get_db), ctx: Context = Depends
     return _out(db, m)
 
 
+class OrgIn(BaseModel):
+    department_id: int | None = None
+    manager_id: int | None = None
+
+
+@router.put("/{member_id}/org")
+def set_org(member_id: int, body: OrgIn, db: Session = Depends(get_db),
+            ctx: Context = Depends(require_tenant_admin)):
+    """挂靠组织：所属部门（本租户 enabled 部门）+ 直属上级（本租户成员，防环限深 10 层）。
+    users.department_id/manager_id 是全局单列（一人一部一上级，文档已定的简化）。"""
+    m = db.get(TenantMember, member_id)
+    if not m or m.tenant_id != ctx.tenant.id:
+        raise HTTPException(404, "成员不存在")
+    u = db.get(User, m.user_id)
+    if not u:
+        raise HTTPException(404, "用户不存在")
+    if body.department_id is not None:
+        d = db.get(Department, body.department_id)
+        if not d or d.tenant_id != ctx.tenant.id or not d.enabled:
+            raise HTTPException(404, "部门不存在或已停用")
+        u.department_id = body.department_id
+    else:
+        u.department_id = None
+    if body.manager_id is not None:
+        if body.manager_id == u.id:
+            raise HTTPException(400, "直属上级不能是自己")
+        if not db.query(TenantMember).filter_by(
+                tenant_id=ctx.tenant.id, user_id=body.manager_id, status="active").first():
+            raise HTTPException(400, "直属上级须为本工作空间成员")
+        # 防环：沿目标上级的 manager 链上溯，命中自己即成环
+        seen, cur, depth = {u.id}, body.manager_id, 0
+        while cur is not None and depth < 10:
+            if cur in seen:
+                raise HTTPException(400, "直属上级设置会形成循环汇报关系")
+            seen.add(cur)
+            nxt = db.get(User, cur)
+            cur, depth = (nxt.manager_id if nxt else None), depth + 1
+        u.manager_id = body.manager_id
+    else:
+        u.manager_id = None
+    db.commit()
+    scope_mod.invalidate_scope_cache(ctx.tenant.id)
+    return _out(db, m)
+
+
 @router.put("/{member_id}/role")
 def set_role(member_id: int, body: RoleIn, db: Session = Depends(get_db),
              ctx: Context = Depends(require_tenant_admin)):
@@ -118,5 +169,11 @@ def remove(member_id: int, db: Session = Depends(get_db), ctx: Context = Depends
     db.delete(m)
     if m.status in ("invited", "active"):
         entitlement.bump_usage(db, ctx.tenant.id, "seat_count", -1)
+    # 清理组织引用（P1）：退租后部门/上级不留脏引用；名下记录的可见性由「记录转移」兜底
+    u = db.get(User, m.user_id)
+    if u:
+        u.department_id = None
+        u.manager_id = None
     db.commit()
+    scope_mod.invalidate_scope_cache(ctx.tenant.id)
     return {"ok": True}

@@ -40,6 +40,9 @@ _NEW_COLUMNS = [
     ("groups", "tenant_id", "INTEGER"),
     ("workflows", "tenant_id", "INTEGER"),
     ("report_templates", "tenant_id", "INTEGER"),
+    # P1 数据范围+组织树：用户组织归属
+    ("users", "department_id", "INTEGER"),
+    ("users", "manager_id", "INTEGER"),
 ]
 
 
@@ -63,6 +66,7 @@ def _seed_rbac(conn) -> None:
         ("admin", "管理员", "超级管理员，拥有全部权限（代码级放行）"),
         ("vip", "VIP", "可分享数据表、可创建独立物理表"),
         ("user", "普通用户", "默认角色"),
+        ("manager", "经理", "可查看本部门及下级部门数据（配合「数据范围」配置使用）"),
     ]
     for code, name, desc in roles:
         conn.execute(
@@ -269,9 +273,16 @@ def _migrate_v2_tenants(conn) -> None:
     print("[migrate] v2: usage_counters 校准完成", flush=True)
 
 
+def _migrate_v3_scope_org(conn) -> None:
+    """P1 占位迁移：无存量回填（存量无 role_table_scopes 行 → scope 默认 all，行为=现状；
+    users.department_id/manager_id 新列 NULL=未分配）。版本行的意义是记录与未来挂载点。"""
+    print("[migrate] v3: 数据范围+组织树 schema 就绪（存量 scope 默认 all，零回填）", flush=True)
+
+
 # (版本, 迁移函数)——已执行的版本记录在 schema_migrations，跳过
 _MIGRATIONS = [
     ("v2_tenants", _migrate_v2_tenants),
+    ("v3_scope_org", _migrate_v3_scope_org),
 ]
 
 

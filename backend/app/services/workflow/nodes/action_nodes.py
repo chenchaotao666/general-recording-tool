@@ -331,13 +331,15 @@ class PushReportNode(NodeType):
         return {"mode": mode}
 
     def execute(self, ctx: NodeContext) -> NodeResult:
+        from ....models import User
         from ...report_engine import _guard_met, push_template, run_template
 
         tpl = self._load_tpl(ctx)
         ov = self._range_override(ctx)
         if ctx.dry_run:
             # 试运行沙盒：真实生成一次（只读），算出将发送的渠道与阈值告警结果，不真实推送
-            result = run_template(ctx.db, tpl, range_override=ov)
+            result = run_template(ctx.db, tpl, range_override=ov,
+                                  viewer=ctx.db.get(User, ctx.user_id))
             push = tpl.push_json or {}
             n_recipients = len([s for s in str(push.get("recipients") or "").split(",") if s.strip()])
             n_webhooks = len([w for w in (push.get("webhooks") or []) if (w.get("url") or "").strip()])
@@ -345,7 +347,7 @@ class PushReportNode(NodeType):
             return NodeResult(output={"simulated": True, "sent": 0, "skipped": skipped,
                                       "channels": n_recipients + n_webhooks,
                                       "range_label": result["range"]["label"]})
-        result = push_template(tpl.id, trigger="manual", range_override=ov)
+        result = push_template(tpl.id, trigger="manual", range_override=ov, viewer_id=ctx.user_id)
         if result is None:
             raise WorkflowNodeError("报表不存在")
         if result.get("error"):

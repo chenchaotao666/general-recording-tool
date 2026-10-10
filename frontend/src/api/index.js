@@ -61,7 +61,32 @@ export const listMyInvitations = () => http.get('/members/invitations')
 export const inviteMember = (username, role = 'user') => http.post('/members/invite', { username, role })
 export const acceptInvitation = (memberId) => http.post(`/members/${memberId}/accept`)
 export const setMemberRole = (memberId, role) => http.put(`/members/${memberId}/role`, { role })
+export const setMemberOrg = (memberId, departmentId, managerId) =>
+  http.put(`/members/${memberId}/org`, { department_id: departmentId, manager_id: managerId })
 export const removeMember = (memberId) => http.delete(`/members/${memberId}`)
+
+// 部门树（组织与成员页）
+export const listDepartments = () => http.get('/departments')
+export const createDepartment = (p) => http.post('/departments', p)
+export const updateDepartment = (id, p) => http.put(`/departments/${id}`, p)
+export const moveDepartment = (id, parentId) => http.put(`/departments/${id}/move`, { parent_id: parentId })
+export const deleteDepartment = (id) => http.delete(`/departments/${id}`)
+
+// 数据范围（角色 × 表 × scope 矩阵，feature_data_scope 闸）
+export const getScopes = () => http.get('/scopes')
+export const putScope = (roleId, tableId, scope) =>
+  http.put('/scopes', { role_id: roleId, table_id: tableId, scope })
+export const applyScopePresets = () => http.post('/scopes/apply-presets')
+
+// 记录转移（表主/租户 admin）
+export const transferRecords = (tid, recordIds, ownerId) =>
+  http.post(`/dyn/${tid}/transfer`, { record_ids: recordIds, owner_id: ownerId })
+
+// 自助计费（选购/下单/模拟支付/订单）
+export const billingPlans = () => http.get('/billing/plans')
+export const createOrder = (p) => http.post('/billing/orders', p)
+export const payOrder = (orderId) => http.post(`/billing/orders/${orderId}/pay`)
+export const listOrders = () => http.get('/billing/orders')
 
 // 审计日志（租户 admin + feature_audit）
 export const listAuditLogs = (params) => http.get('/audit', { params })
@@ -149,8 +174,6 @@ export const updateRole = (id, p) => http.put(`/roles/${id}`, p)
 export const deleteRole = (id) => http.delete(`/roles/${id}`)
 export const setRolePermissions = (id, grants) => http.put(`/roles/${id}/permissions`, { grants })
 export const listPermissions = () => http.get('/permissions')
-export const createPermission = (p) => http.post('/permissions', p)
-export const deletePermission = (id) => http.delete(`/permissions/${id}`)
 
 // 动态记录
 export const listRecords = (tid, params) => http.get(`/dyn/${tid}/records`, { params })

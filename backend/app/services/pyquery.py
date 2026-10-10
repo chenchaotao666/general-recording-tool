@@ -79,12 +79,20 @@ def _cmp_ok(a, b, op: str) -> bool:
         return False
 
 
+def _sys_int(x):
+    """系统整型列（id/owner_id）的筛选值规范化：尽量转 int，转不了保留原值（永不命中）。"""
+    try:
+        return int(float(x))
+    except (TypeError, ValueError):
+        return x
+
+
 def match_rule(rec: dict, fields_by_name: dict, flt: dict) -> bool:
     """单条筛选规则，语义对齐 build_condition。rec 值须已 normalize_record。"""
     name = flt.get("field")
     op = flt.get("op")
     value = flt.get("value")
-    if name not in fields_by_name and name not in ("id", "created_at", "updated_at"):
+    if name not in fields_by_name and name not in ("id", "created_at", "updated_at", "owner_id"):
         raise HTTPException(400, f"未知筛选字段：{name}")
     v = rec.get(name)
 
@@ -137,12 +145,13 @@ def match_rule(rec: dict, fields_by_name: dict, flt: dict) -> bool:
         values = value if isinstance(value, list) else [s.strip() for s in str(value).split(",")]
         if v is None:
             return False
-        norm = [normalize_value(x, f.data_type if f else "varchar") for x in values]
+        # 系统整型列（id/owner_id）按 int 规范化，避免 varchar 化导致永不命中
+        norm = [normalize_value(x, f.data_type) if f else _sys_int(x) for x in values]
         return v in norm
 
     # eq/ne/gt/gte/lt/lte：筛选值按字段类型规范化后比较（与 build_condition 的 coerce 对齐）
-    target = normalize_value(value, f.data_type if f else "varchar")
-    if f is None and name in ("id",):
+    target = normalize_value(value, f.data_type) if f else _sys_int(value)
+    if f is None and name in ("id", "owner_id"):
         try:
             target = int(value)
         except (TypeError, ValueError):

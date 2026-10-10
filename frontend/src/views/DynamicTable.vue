@@ -49,6 +49,9 @@
             </div>
           </div>
         </el-popover>
+        <el-button v-if="canTransfer && selectedRows.length" :icon="Switch" @click="openTransfer(null)">
+          转移选中（{{ selectedRows.length }}）
+        </el-button>
         <el-button v-if="canAlter" :icon="SetUp" @click="openStruct">表结构</el-button>
         <el-button :icon="Download" @click="exportXlsx">导出 Excel</el-button>
         <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">新增记录</el-button>
@@ -165,8 +168,9 @@
     <!-- 动态列表：合计行固定显示数字列总和（口径 = 全部筛选结果） -->
     <el-table
       :data="rows" v-loading="loading" border stripe show-summary :summary-method="summaryMethod"
-      @sort-change="onSortChange"
+      @sort-change="onSortChange" @selection-change="(v) => (selectedRows = v)"
     >
+      <el-table-column v-if="canTransfer" type="selection" width="42" fixed="left" />
       <el-table-column type="index" width="55" label="#" :fixed="fixedCols.size ? 'left' : false" />
       <el-table-column
         v-for="f in listFields" :key="f.field_name"
@@ -192,9 +196,10 @@
           <span v-else>{{ fmt(f, row[f.field_name]) }}</span>
         </template>
       </el-table-column>
-      <el-table-column v-if="canEdit || canDelete" label="操作" width="130" fixed="right">
+      <el-table-column v-if="canEdit || canDelete || canTransfer" label="操作" :width="canTransfer ? 180 : 130" fixed="right">
         <template #default="{ row }">
           <el-button v-if="canEdit" text type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+          <el-button v-if="canTransfer" text type="warning" size="small" @click="openTransfer(row)">转移</el-button>
           <el-popconfirm v-if="canDelete" title="确定删除该记录？" @confirm="del(row)">
             <template #reference>
               <el-button text type="danger" size="small">删除</el-button>
@@ -220,6 +225,19 @@
         :table-id="tableId" :record-id="editing?.id || null"
         @submit="onSave" @cancel="dialogVisible = false"
       />
+    </el-dialog>
+
+    <!-- 记录转移（表主/租户 admin）：改 owner_id，影响数据范围下的可见性 -->
+    <el-dialog v-model="transferVisible" title="转移记录归属" width="420px" destroy-on-close>
+      <el-alert type="info" :closable="false" style="margin-bottom: 12px"
+        :title="`把 ${transferIds.length} 条记录的归属人改为目标成员（数据范围按归属人过滤）`" />
+      <el-select v-model="transferOwnerId" filterable placeholder="选择目标成员" style="width: 100%">
+        <el-option v-for="m in memberOptions" :key="m.user_id" :label="m.username" :value="m.user_id" />
+      </el-select>
+      <template #footer>
+        <el-button @click="transferVisible = false">取消</el-button>
+        <el-button type="primary" :loading="transferring" @click="doTransfer">确定</el-button>
+      </template>
     </el-dialog>
 
     <!-- 工单打印：页头入口 → 模板选择 → 后端填充下载 xlsx（当前筛选结果，每条记录一个工作表） -->
@@ -307,14 +325,14 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Download, SetUp, Grid, ArrowUp, ArrowDown, Top, Bottom, Setting, Position, Printer } from '@element-plus/icons-vue'
+import { Plus, Download, SetUp, Grid, ArrowUp, ArrowDown, Top, Bottom, Setting, Position, Printer, Switch } from '@element-plus/icons-vue'
 import DynamicForm from '../components/DynamicForm.vue'
 import FieldOptionsDialog from '../components/FieldOptionsDialog.vue'
 import PrintFormatPicker from '../components/PrintFormatPicker.vue'
 import PrintPreviewDialog from '../components/PrintPreviewDialog.vue'
 import PrintTemplateDesigner from '../components/PrintTemplateDesigner.vue'
 import RelationPicker from '../components/RelationPicker.vue'
-import { alterTable, createRecord, deleteRecord, getTable, handleBillingError, imageUrl, listRecords, listTables, printFillUrl, printFillViewUrl, recordExportUrl, updateRecord, updateTable } from '../api'
+import { alterTable, createRecord, deleteRecord, getTable, handleBillingError, imageUrl, listMembers, listRecords, listTables, printFillUrl, printFillViewUrl, recordExportUrl, transferRecords, updateRecord, updateTable } from '../api'
 import { getPaper } from '../utils/printPrefs'
 
 const DATA_TYPES = ['varchar', 'text', 'int', 'decimal', 'date', 'datetime', 'bool', 'image', 'subform', 'serial']
@@ -382,6 +400,41 @@ const canCreate = computed(() => meta.value?.my_perms?.can_create)
 const canEdit = computed(() => meta.value?.my_perms?.can_edit)
 const canAlter = computed(() => meta.value?.is_owner || meta.value?.my_perms?.is_admin)
 const canDelete = computed(() => meta.value?.my_perms?.can_delete)
+// 记录转移：表主/租户 admin（P0 起 table_out 透出 is_admin）
+const canTransfer = computed(() => !!(meta.value?.is_owner || meta.value?.is_admin))
+const selectedRows = ref([])
+const transferVisible = ref(false)
+const transferIds = ref([])
+const transferOwnerId = ref(null)
+const memberOptions = ref([])
+const transferring = ref(false)
+
+async function openTransfer(row) {
+  transferIds.value = row ? [row.id] : selectedRows.value.map((r) => r.id)
+  if (!transferIds.value.length) return
+  transferOwnerId.value = null
+  transferVisible.value = true
+  if (!memberOptions.value.length) {
+    try {
+      memberOptions.value = (await listMembers()).filter((m) => m.status === 'active')
+    } catch { memberOptions.value = [] }
+  }
+}
+
+async function doTransfer() {
+  if (!transferOwnerId.value) return ElMessage.warning('请选择目标成员')
+  transferring.value = true
+  try {
+    const r = await transferRecords(tableId, transferIds.value, transferOwnerId.value)
+    ElMessage.success(`已转移 ${r.updated} 条记录`)
+    transferVisible.value = false
+    load()
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    transferring.value = false
+  }
+}
 // ---------- 显示列选择（用户级，localStorage 按表记忆；只控制表格列显示，候选集已被「显示」总开关过滤） ----------
 const COLS_KEY = `grt_cols_${tableId}`
 // 存"隐藏集合"而非"显示集合"：以后新增字段默认可见

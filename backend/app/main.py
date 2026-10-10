@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import assistant, audit, auth, dyn, excel, friends, groups, home, images, mcp, members, notes, notify, platform, print_templates, rbac, reports, settings as settings_router, share_links, shares, tables, tenants, users, vision, workflows
+from .routers import assistant, audit, auth, billing, departments, dyn, excel, friends, groups, home, images, mcp, members, notes, notify, platform, print_templates, rbac, reports, scopes, settings as settings_router, share_links, shares, tables, tenants, users, vision, workflows
 from .services import scheduler
 from .services.migrate import run_migrations
 from .utils.auth import get_current_user, hash_password
@@ -101,6 +101,9 @@ app.include_router(tenants.router, dependencies=protected)
 app.include_router(members.router, dependencies=protected)
 app.include_router(platform.router, dependencies=protected)
 app.include_router(audit.router, dependencies=protected)
+app.include_router(departments.router, dependencies=protected)
+app.include_router(scopes.router, dependencies=protected)
+app.include_router(billing.router, dependencies=protected)
 
 # 前端构建产物存在时直接由后端托管（生产模式）
 dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"

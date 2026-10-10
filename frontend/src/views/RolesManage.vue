@@ -92,7 +92,8 @@ async function load() {
   try {
     const [r, p] = await Promise.all([listRoles(), listPermissions()])
     roles.value = r
-    permissions.value = p
+    // max_tables 已废弃（配额上移套餐层，见「套餐配置」页），不在角色矩阵里展示
+    permissions.value = p.filter((x) => x.code !== 'max_tables')
   } catch (e) {
     ElMessage.error(e.message)
   } finally {

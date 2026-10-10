@@ -977,7 +977,7 @@ def align_assistant_action(db: Session, user, action: dict | None, notes: list) 
         notes += spec_notes
         if spec is None:
             return None
-        result = run_query_spec(db, mt, fields, spec)
+        result = run_query_spec(db, mt, fields, spec, viewer=user)
         return {
             "type": "query_answer", "table_id": mt.id, "table_label": mt.label,
             "summary": "数据查询结果", "result": result, "warnings": notes,

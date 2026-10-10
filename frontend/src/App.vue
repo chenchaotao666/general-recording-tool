@@ -28,7 +28,7 @@
         </el-menu-item>
         <template v-if="user?.role === 'admin' && user?.tenant">
           <el-menu-item index="/members">
-            <el-icon><UserFilled /></el-icon><span>成员</span>
+            <el-icon><UserFilled /></el-icon><span>组织与成员</span>
           </el-menu-item>
           <el-menu-item v-if="tenantInfo?.entitlements?.feature_audit" index="/audit">
             <el-icon><Document /></el-icon><span>审计日志</span>
@@ -46,9 +46,6 @@
           </el-menu-item>
           <el-menu-item index="/system/roles">
             <el-icon><Avatar /></el-icon><span>角色管理</span>
-          </el-menu-item>
-          <el-menu-item index="/system/permissions">
-            <el-icon><Key /></el-icon><span>权限管理</span>
           </el-menu-item>
         </template>
         <el-menu-item index="/friends">

@@ -45,6 +45,8 @@ def all_dicts(db: Session, table_id: int, fields: list[MetaField], normalized: b
         rec = {f.field_name: None for f in fields}  # 未赋值字段补 None，对齐物理表 NULL 列形状
         rec.update(r.data or {})
         rec["id"] = r.id
+        rec["owner_id"] = r.owner_id      # P1 数据范围过滤用（引擎/报表 json 链路）
+        rec["tenant_id"] = r.tenant_id
         rec["created_at"] = r.created_at
         rec["updated_at"] = r.updated_at
         out.append(normalize_record(rec, fields_by_name))

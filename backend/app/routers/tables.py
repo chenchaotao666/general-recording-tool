@@ -33,6 +33,8 @@ def _share_perms(db: Session, mt: MetaTable, user: User, ctx: Context | None = N
     owner = db.get(User, mt.owner_id) if mt.owner_id else None
     return {
         "is_owner": access.is_owner,
+        "is_admin": access.is_admin,
+        "via": access.via,
         "my_perms": {
             "can_view": access.can_view, "can_create": access.can_create,
             "can_edit": access.can_edit, "can_delete": access.can_delete,
@@ -44,7 +46,8 @@ def _share_perms(db: Session, mt: MetaTable, user: User, ctx: Context | None = N
 @router.get("")
 def list_tables(db: Session = Depends(get_db), ctx: Context = Depends(get_current_context),
                 all: bool = False):
-    """我的表 + 分享给我的表（含用户组分享，可跨租户——好友分享能力不变）。
+    """我的表 + 分享给我的表（含用户组分享，可跨租户——好友分享能力不变）；
+    企业/私有化租户成员追加可见本租户全部表（P1，记录级由数据范围过滤）。
     all=true（仅当前租户 admin 生效）：返回本租户全部表，供关联配置等跨属主选表场景。"""
     user = ctx.user
     if all:
@@ -62,7 +65,11 @@ def list_tables(db: Session = Depends(get_db), ctx: Context = Depends(get_curren
             TableShare.status == "accepted",
         )
     ]
-    q = db.query(MetaTable).filter(or_(MetaTable.owner_id == user.id, MetaTable.id.in_(shared_ids or [-1])))
+    conds = [MetaTable.owner_id == user.id, MetaTable.id.in_(shared_ids or [-1])]
+    # 企业/私有化租户成员：本租户全部表默认可见（个人租户不放开，保持 owner+分享 现状）
+    if ctx.membership is not None and ctx.tenant.type in ("enterprise", "private"):
+        conds.append(MetaTable.tenant_id == ctx.tenant.id)
+    q = db.query(MetaTable).filter(or_(*conds))
     rows = q.order_by(MetaTable.id.desc()).all()
     return [meta_service.table_out(db, t, with_fields=False, access=_share_perms(db, t, user, ctx)) for t in rows]
 

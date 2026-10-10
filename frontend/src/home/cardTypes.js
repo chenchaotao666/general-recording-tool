@@ -44,7 +44,6 @@ export const MENU_ENTRIES = [
   { path: '/platform/plans', title: '套餐配置', icon: Key, desc: '套餐与定价（平台超管）', platformOnly: true },
   { path: '/system/users', title: '用户管理', icon: User, desc: '系统用户（平台超管）', platformOnly: true },
   { path: '/system/roles', title: '角色管理', icon: Avatar, desc: '角色与权限（平台超管）', platformOnly: true },
-  { path: '/system/permissions', title: '权限管理', icon: Key, desc: '权限项（平台超管）', platformOnly: true },
 ]
 
 export function menuEntriesFor(user) {

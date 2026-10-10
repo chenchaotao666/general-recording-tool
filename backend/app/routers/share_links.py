@@ -160,7 +160,12 @@ def visit_share(
         if not mt:
             raise HTTPException(404, "数据表不存在")
         from ..services.meta_service import field_out, get_meta_fields
-        result = dyn_engine.list_records(db, mt.id, page, page_size, None, "id", "desc")
+        # 免登录链接按链接创建者的数据范围过滤（P1）；创建者已删号 → 410，绝不放开全表
+        creator = db.get(User, link.created_by) if link.created_by else None
+        if creator is None:
+            raise HTTPException(410, "链接创建者账号已不存在，分享已失效")
+        result = dyn_engine.list_records(db, mt.id, page, page_size, None, "id", "desc",
+                                         viewer=creator)
         return {
             "resource_type": "table",
             "label": mt.label,
@@ -216,6 +221,9 @@ def visit_share(
                 viewer_filters = json.loads(filters)
             except ValueError:
                 raise HTTPException(400, "filters 参数不是合法 JSON")
+    creator = db.get(User, link.created_by) if link.created_by else None
+    if creator is None:
+        raise HTTPException(410, "链接创建者账号已不存在，分享已失效")
     result = run_template(db, tpl, range_override, viewer_filters=viewer_filters,
-                          block_pages=pages, block_overrides=overrides)
+                          block_pages=pages, block_overrides=overrides, viewer=creator)
     return {"resource_type": "report", "label": tpl.name, "report": result, "allow_interact": interact}

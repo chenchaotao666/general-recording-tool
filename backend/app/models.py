@@ -199,6 +199,37 @@ class User(Base):
     openid = Column(String(64), unique=True, index=True)  # 微信登录用，可空
     role = Column(String(16), default="user")    # 废弃：见 tenant_members.role
     is_platform_admin = Column(Boolean, default=False)   # 平台超管（仅种子 admin）
+    department_id = Column(Integer, ForeignKey("departments.id"))   # 所属部门（单归属，P1）
+    manager_id = Column(Integer, ForeignKey("users.id"))            # 直属上级（subtree 范围用）
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class Department(Base):
+    """部门树（租户内单树，轻量实现：不支持多维组织/兼任；见 docs/用户与权限体系设计.md §4.6）"""
+    __tablename__ = "departments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    name = Column(String(64), nullable=False)
+    parent_id = Column(Integer, ForeignKey("departments.id"))   # NULL=根部门
+    leader_id = Column(Integer, ForeignKey("users.id"))         # 部门负责人（展示/审批用，不参与范围判定）
+    sort = Column(Integer, default=0)
+    enabled = Column(Boolean, default=True)                     # 停用后成员视同未分配
+    created_at = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (Index("ix_departments_tenant_parent", "tenant_id", "parent_id"),)
+
+
+class RoleTableScope(Base):
+    """角色 × 表 的数据范围（P1）：table_id=NULL 表示租户级默认。rank_limit 为 P2 职级占位。"""
+    __tablename__ = "role_table_scopes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    role_id = Column(Integer, ForeignKey("roles.id"), index=True, nullable=False)
+    table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True)   # NULL=租户默认
+    scope = Column(String(16), default="all")   # all / dept_tree（本部门及下级）/ subtree（本人及下属）/ own（仅本人）
+    rank_limit = Column(Boolean, default=False)  # P2：dept_tree 叠加"职级不高于我"
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -285,6 +316,22 @@ class UsageCounter(Base):
     seat_count = Column(Integer, default=0)
     grace_json = Column(JSON, default=dict)
     calibrated_at = Column(DateTime)
+
+
+class Order(Base):
+    """套餐订单：选购 → 支付（当前为模拟支付）→ 订阅生效。金额单位：分。"""
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    plan_id = Column(Integer, ForeignKey("plans.id"), nullable=False)
+    seats = Column(Integer, default=1)              # 企业版按人计费
+    years = Column(Integer, default=1)              # 购买年数
+    amount = Column(Integer, nullable=False)        # 应付金额（分）
+    status = Column(String(16), default="pending")  # pending / paid / cancelled
+    created_at = Column(DateTime, default=datetime.now)
+    paid_at = Column(DateTime)
+    created_by = Column(Integer, ForeignKey("users.id"))
 
 
 class LLMProvider(Base):

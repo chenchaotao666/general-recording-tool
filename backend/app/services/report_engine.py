@@ -1386,7 +1386,8 @@ def _tagged_viewer_rules(db: Session, tpl, datasets: list, viewer_filters: dict 
 
 def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None = None,
                  viewer_filters: dict | None = None, links: list | None = None,
-                 block_pages: dict | None = None, block_overrides: dict | None = None) -> dict:
+                 block_pages: dict | None = None, block_overrides: dict | None = None,
+                 viewer=None) -> dict:
     """执行报表模板，返回结构化结果（前端渲染 / 导出共用）。
     v3：区块经 dataset_id 各自绑定数据集（旧模板运行期合成 _default），全局口径逐块套用各自的 date_field。
     block_pages：{块id: [page, page_size]}，明细表服务端分页；
@@ -1408,6 +1409,15 @@ def run_template(db: Session, tpl: ReportTemplate, range_override: dict | None =
 
     # 查看端规则：带数据集标签 + 作用域，逐块匹配
     tagged = _tagged_viewer_rules(db, tpl, datasets, viewer_filters, links)
+    # P1 数据范围：viewer 的角色 scope 物化为 owner_id 规则，逐数据集追加
+    # （必须在 _tagged_viewer_rules 之后 append——那里的"未开放筛选"校验不认 owner_id）
+    if viewer is not None:
+        from . import scope as scope_mod
+        for d in datasets:
+            mt, _ = dyn_engine.load_meta(db, d["base_table_id"])
+            rule = scope_mod.scope_rule(db, mt, viewer)
+            if rule:
+                tagged.append({**rule, "_dataset": d["id"], "_targets": None})
     rules_by_block: dict[str, list] = {}
     for b in (tpl.blocks_json or []):
         if b.get("type") in ("text", "filter"):
@@ -1839,7 +1849,8 @@ def _drill_pivot_py(db, mt, fields, block, date_field, start, end, viewer_rules,
 
 
 def drill_chart(db: Session, tpl: ReportTemplate, block_id: str, group_index: int | None, series_index: int | None = None,
-                range_override: dict | None = None, viewer_filters: dict | None = None, links: list | None = None) -> dict:
+                range_override: dict | None = None, viewer_filters: dict | None = None, links: list | None = None,
+                viewer=None) -> dict:
     """图表/透视表下钻：chart 按分组/系列序号（group_index 必填），pivot 按行/列序号（可为 None 表示合计行/列）。
     沿用图表的完整口径（块自身数据集、块级口径、查看端筛选与联动的作用域匹配）。"""
     datasets = ds.template_datasets(tpl)
@@ -1862,6 +1873,13 @@ def drill_chart(db: Session, tpl: ReportTemplate, block_id: str, group_index: in
 
     did = block.get("dataset_id") or default_did
     tagged = _tagged_viewer_rules(db, tpl, datasets, viewer_filters, links)
+    if viewer is not None:   # P1 数据范围（同 run_template）
+        from . import scope as scope_mod
+        for d in datasets:
+            mt, _ = dyn_engine.load_meta(db, d["base_table_id"])
+            rule = scope_mod.scope_rule(db, mt, viewer)
+            if rule:
+                tagged.append({**rule, "_dataset": d["id"], "_targets": None})
     vrules = [
         {k: v for k, v in r.items() if not k.startswith("_")}
         for r in tagged
@@ -2115,9 +2133,11 @@ def _guard_met(result: dict, guard: dict) -> bool:
     return any(results) if guard.get("logic") == "OR" else all(results)
 
 
-def push_template(template_id: int, trigger: str = "schedule", range_override: dict | None = None) -> dict | None:
+def push_template(template_id: int, trigger: str = "schedule", range_override: dict | None = None,
+                  viewer_id: int | None = None) -> dict | None:
     """生成报表并推送（邮件 + 群机器人 Webhook），写 ReportRunLog。供调度器和手动调用。
-    range_override：工作流「推送报表」节点的口径覆盖（不落库，仅本次生成生效）。"""
+    range_override：工作流「推送报表」节点的口径覆盖（不落库，仅本次生成生效）。
+    viewer_id（P1 数据范围）：报表内容按该用户的 scope 过滤；默认模板主人，工作流节点传流程 owner。"""
     from .report_export import export_xlsx
 
     db = SessionLocal()
@@ -2130,7 +2150,9 @@ def push_template(template_id: int, trigger: str = "schedule", range_override: d
 
         run = ReportRunLog(template_id=tpl.id, trigger=trigger, run_at=datetime.now())
         try:
-            result = run_template(db, tpl, range_override=range_override)
+            from ..models import User
+            viewer = db.get(User, viewer_id or tpl.user_id)   # P1：推送内容按执行人范围过滤
+            result = run_template(db, tpl, range_override=range_override, viewer=viewer)
             run.range_label = result["range"]["label"]
             push = tpl.push_json or {}
             # 阈值告警：仅当统计卡数值满足条件时才发送（条件不满足 = 本次静默跳过，日志标记 skipped）

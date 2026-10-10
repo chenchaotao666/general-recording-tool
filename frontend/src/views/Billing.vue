@@ -2,7 +2,9 @@
   <div>
     <div class="page-header">
       <h2>套餐与用量</h2>
-      <el-button type="primary" plain @click="upgradeTip">升级套餐</el-button>
+      <el-button v-if="info?.my_role === 'admin'" type="primary" @click="$router.push('/billing/upgrade')">
+        升级 / 续费
+      </el-button>
     </div>
 
     <el-row :gutter="16" v-loading="loading">
@@ -24,10 +26,7 @@
           <div class="plan-meta" v-if="info?.subscription?.status === 'grace'">
             宽限期剩 {{ info.subscription.grace_remaining_days }} 天（至 {{ info.subscription.grace_until }}）
           </div>
-          <el-button
-            v-if="info?.tenant?.type === 'personal' && info?.my_role === 'admin'"
-            class="upgrade-btn" size="small" @click="upgradeEnterprise"
-          >升级为企业版空间</el-button>
+
         </el-card>
       </el-col>
       <el-col :span="16">
@@ -50,15 +49,39 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 订单记录 -->
+    <el-card v-if="orders.length" class="orders-card">
+      <template #header>订单记录</template>
+      <el-table :data="orders" border size="small">
+        <el-table-column prop="created_at" label="下单时间" width="160" />
+        <el-table-column prop="plan_name" label="套餐" min-width="130" />
+        <el-table-column label="规格" width="150">
+          <template #default="{ row }">{{ row.years }} 年<template v-if="row.seats > 1"> × {{ row.seats }} 席</template></template>
+        </el-table-column>
+        <el-table-column label="金额" width="110">
+          <template #default="{ row }">¥{{ fen(row.amount) }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="{ paid: 'success', pending: 'warning', cancelled: 'info' }[row.status]" size="small">
+              {{ { paid: '已支付', pending: '待支付', cancelled: '已取消' }[row.status] || row.status }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="paid_at" label="支付时间" width="160" />
+      </el-table>
+    </el-card>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getCurrentTenant, upgradeToEnterprise } from '../api'
+import { getCurrentTenant, listOrders } from '../api'
 
 const info = ref(null)
+const orders = ref([])
 const loading = ref(false)
 
 const fen = (v) => (v / 100).toFixed(v % 100 ? 2 : 0)
@@ -96,6 +119,9 @@ async function load() {
   loading.value = true
   try {
     info.value = await getCurrentTenant()
+    if (info.value?.my_role === 'admin') {
+      orders.value = await listOrders().catch(() => [])
+    }
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
@@ -104,20 +130,6 @@ async function load() {
 }
 onMounted(load)
 
-function upgradeTip() {
-  ElMessageBox.alert('线上支付即将上线。当前请联系平台管理员调整套餐（平台管理 → 平台租户 → 改订阅）。', '升级套餐', { confirmButtonText: '知道了' })
-}
-
-async function upgradeEnterprise() {
-  try {
-    await ElMessageBox.confirm('升级后空间变为企业版，可邀请成员加入，数据保持不变。继续？', '升级企业版', { type: 'warning' })
-    await upgradeToEnterprise()
-    ElMessage.success('已升级为企业版空间，到「成员」页邀请同事吧')
-    load()
-  } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.message)
-  }
-}
 </script>
 
 <style scoped>
@@ -131,4 +143,5 @@ async function upgradeEnterprise() {
 .quota-unlimited { flex: 1; color: #909399; font-size: 13px; }
 .quota-value { width: 160px; text-align: right; font-size: 13px; color: #303133; }
 .readonly-tip { margin-top: 12px; }
+.orders-card { margin-top: 16px; }
 </style>

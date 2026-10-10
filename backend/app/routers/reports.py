@@ -318,7 +318,8 @@ def run_report(tpl_id: int, payload: dict | None = None, db: Session = Depends(g
         _check_datasets_access(db, ds_mod.template_datasets(tpl), user)
     return run_template(db, tpl, _range_override(payload.get("range"), None, None, None),
                         viewer_filters=payload.get("filters"), links=payload.get("links"),
-                        block_pages=payload.get("block_pages"), block_overrides=payload.get("block_overrides"))
+                        block_pages=payload.get("block_pages"), block_overrides=payload.get("block_overrides"),
+                        viewer=user)
 
 
 @router.post("/{tpl_id}/drill")
@@ -342,7 +343,8 @@ def report_drill(tpl_id: int, payload: dict, db: Session = Depends(get_db), user
         raise HTTPException(400, "series_index 无效")
     return drill_chart(db, tpl, payload.get("block_id") or "", group_index, series_index,
                        _range_override(payload.get("range"), None, None, None), payload.get("filters"),
-                       payload.get("links"))
+                       payload.get("links"),
+                       viewer=user)
 
 
 @router.get("/{tpl_id}/export")
@@ -362,7 +364,8 @@ def export_report(tpl_id: int, format: str = "xlsx", mode: str | None = None,
             viewer_filters = json.loads(filters)
         except ValueError:
             raise HTTPException(400, "filters 参数不是合法 JSON")
-    result = run_template(db, tpl, _range_override(None, mode, start, end), viewer_filters=viewer_filters)
+    result = run_template(db, tpl, _range_override(None, mode, start, end), viewer_filters=viewer_filters,
+                        viewer=user)
     base = f"{tpl.name}-{result['range']['label'].split('（')[0]}"
 
     if format == "xlsx":
@@ -393,7 +396,7 @@ def preview_push(tpl_id: int, db: Session = Depends(get_db), user: User = Depend
     check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     get_table_access(db, tpl.table_id, user)
     from ..services.report_engine import render_email_html, render_markdown
-    result = run_template(db, tpl)
+    result = run_template(db, tpl, viewer=user)
     push = tpl.push_json or {}
     subject = (push.get("subject") or "【{name}】{range_label}") \
         .replace("{name}", tpl.name).replace("{range_label}", result["range"]["label"])
@@ -407,7 +410,7 @@ def test_push(tpl_id: int, db: Session = Depends(get_db), user: User = Depends(g
         raise HTTPException(404, "报表模板不存在")
     check_owner_or_admin(tpl.user_id, user, db, tpl.tenant_id)
     get_table_access(db, tpl.table_id, user)
-    result = push_template(tpl_id, trigger="manual")
+    result = push_template(tpl_id, trigger="manual", viewer_id=user.id)
     if result is None:
         raise HTTPException(404, "报表模板不存在")
     if result.get("error"):

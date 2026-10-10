@@ -130,20 +130,26 @@ def _query_range(range_spec: dict | None):
     return "created_at", datetime(1970, 1, 1), datetime.now() + timedelta(days=1), "全部时间"
 
 
-def run_query_spec(db: Session, mt: MetaTable, fields: list, spec: dict) -> dict:
-    """按清洗后的 spec 走报表引擎求值（双引擎对齐）。"""
+def run_query_spec(db: Session, mt: MetaTable, fields: list, spec: dict, viewer=None) -> dict:
+    """按清洗后的 spec 走报表引擎求值（双引擎对齐）。
+    viewer（P1 数据范围）：传 User 时按角色 scope 追加 owner_id 过滤；None=内部不过滤。"""
     from . import report_engine as re_mod
+    from . import scope as scope_mod
+
+    rule = scope_mod.scope_rule(db, mt, viewer)
+    viewer_rules = [rule] if rule else None
 
     date_field, start, end, range_label = _query_range(spec.get("range"))
     block = dict(spec["block"], id="q1")
     if mt.storage_mode == "json":
         fake_tpl = SimpleNamespace(id=None, name="数据问答", blocks_json=[block])
-        out = re_mod._run_py(db, mt, fields, fake_tpl, date_field, start, end, range_label)["blocks"][0]
+        out = re_mod._run_py(db, mt, fields, fake_tpl, date_field, start, end, range_label,
+                             viewer_rules=viewer_rules)["blocks"][0]
     else:
         _, fields, table = dyn_engine.load_business(db, mt.id)
         fbn = {f.field_name: f for f in fields}
         fn = {"stat": re_mod._eval_stat, "chart": re_mod._eval_chart, "table": re_mod._eval_table}[spec["kind"]]
-        out = fn(db, table, fbn, block, date_field, start, end)
+        out = fn(db, table, fbn, block, date_field, start, end, viewer_rules=viewer_rules)
     out["range_label"] = range_label
     return out
 
