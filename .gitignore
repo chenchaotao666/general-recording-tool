@@ -35,3 +35,5 @@ frontend/public/luckysheet/
 frontend/e2e/out-*
 docs/打印模板/_renders/
 docs/工单打印截图/
+backend/smoke_*.db*
+frontend/vite-dev.log
