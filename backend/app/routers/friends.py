@@ -100,6 +100,39 @@ def list_friends(db: Session = Depends(get_db), user: User = Depends(get_current
     return [_friend_out(db, f, user.id) for f in rows]
 
 
+@router.get("/requests/outgoing")
+def list_outgoing_requests(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """我发出的申请（可查看状态/撤回）。"""
+    rows = (
+        db.query(Friendship)
+        .filter(Friendship.requester_id == user.id, Friendship.status == "pending")
+        .order_by(Friendship.id.desc())
+        .all()
+    )
+    out = []
+    for f in rows:
+        addressee = db.get(User, f.addressee_id)
+        out.append({
+            "id": f.id,
+            "user_id": f.addressee_id,
+            "username": addressee.username if addressee else str(f.addressee_id),
+            "created_at": f.created_at.isoformat(sep=" ") if f.created_at else None,
+        })
+    return out
+
+
+@router.delete("/requests/outgoing/{friendship_id}")
+def withdraw_outgoing_request(friendship_id: int, db: Session = Depends(get_db),
+                              user: User = Depends(get_current_user)):
+    """撤回我发出的待处理申请。"""
+    f = db.get(Friendship, friendship_id)
+    if not f or f.requester_id != user.id or f.status != "pending":
+        raise HTTPException(404, "申请不存在或已被处理")
+    db.delete(f)
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/requests")
 def list_requests(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     rows = (

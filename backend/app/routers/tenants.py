@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import UsageCounter, User
+from ..services.dyn_engine import log_audit
 from ..services.tenancy import my_tenants
 from ..utils.auth import get_current_user
-from ..utils.context import Context, get_current_context
+from ..utils.context import Context, get_current_context, require_tenant_admin
 from .auth import _user_payload
 
 router = APIRouter(prefix="/api/tenants", tags=["tenants"])
@@ -69,6 +70,25 @@ def current(db: Session = Depends(get_db), ctx: Context = Depends(get_current_co
         "writable": ctx.writable,
         "my_role": ctx.membership.role if ctx.membership else ("admin" if ctx.is_platform_admin else None),
     }
+
+
+class RenameIn(BaseModel):
+    name: str
+
+
+@router.put("/current")
+def rename_current(body: RenameIn, db: Session = Depends(get_db),
+                   ctx: Context = Depends(require_tenant_admin)):
+    """基础设置：租户 admin 修改公司名称（工作空间名称），全空间即时生效。"""
+    name = body.name.strip()
+    if not name or len(name) > 64:
+        raise HTTPException(400, "公司名称须为 1~64 个字符")
+    before = {"name": ctx.tenant.name}
+    ctx.tenant.name = name
+    log_audit(db, "tenant_rename", None, tenant_id=ctx.tenant.id,
+              before=before, after={"name": name}, user=ctx.user.username)
+    db.commit()
+    return {"ok": True, "tenant": {"id": ctx.tenant.id, "name": name, "type": ctx.tenant.type}}
 
 
 @router.post("/upgrade-to-enterprise")

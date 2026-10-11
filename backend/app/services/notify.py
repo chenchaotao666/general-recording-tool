@@ -4,5 +4,7 @@ from sqlalchemy.orm import Session
 from ..models import Notification
 
 
-def notify_user(db: Session, user_id: int, title: str, content: str, link: str | None = None) -> None:
-    db.add(Notification(user_id=user_id, title=title, content=content, link=link))
+def notify_user(db: Session, user_id: int, title: str, content: str, link: str | None = None,
+                ref_type: str | None = None, ref_id: int | None = None) -> None:
+    db.add(Notification(user_id=user_id, title=title, content=content, link=link,
+                        ref_type=ref_type, ref_id=ref_id))

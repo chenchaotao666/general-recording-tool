@@ -81,6 +81,7 @@
     <el-empty v-else description="先选择卡片类型" :image-size="60" />
 
     <template #footer>
+      <span v-if="!valid" class="invalid-hint">{{ invalidReason }}</span>
       <el-button @click="$emit('update:modelValue', false)">取消</el-button>
       <el-button type="primary" :disabled="!valid" @click="confirm">确定</el-button>
     </template>
@@ -140,6 +141,11 @@ async function onReportChange(id) {
 }
 
 function pick(t) {
+  // 已填过配置再换类型会清空已填内容：先确认
+  const hasInput = !!(cfg.table_id || cfg.report_id || cfg.path || cfg.title || cfg.text)
+  if (type.value && type.value !== t.type && hasInput) {
+    if (!window.confirm('切换卡片类型将清空已填写的配置，确定切换？')) return
+  }
   type.value = t.type
   Object.keys(cfg).forEach((k) => delete cfg[k])
   Object.assign(cfg, t.defaultConfig || {})
@@ -157,6 +163,15 @@ const valid = computed(() => {
   return true
 })
 
+// 「确定」disabled 时说明原因（按钮不能点但不知道为什么）
+const invalidReason = computed(() => {
+  if (!type.value) return '请先选择卡片类型'
+  if (type.value === 'table' && !cfg.table_id) return '请选择数据表'
+  if (type.value === 'menu' && !cfg.path) return '请选择菜单'
+  if (type.value === 'report' && !cfg.report_id) return '请选择报表'
+  return ''
+})
+
 function confirm() {
   emit('confirm', { type: type.value, config: { ...cfg } })
   emit('update:modelValue', false)
@@ -165,6 +180,7 @@ function confirm() {
 
 <style scoped>
 .step-label { font-size: 13px; font-weight: 600; color: #606266; margin: 2px 0 10px; }
+.invalid-hint { font-size: 12px; color: #e6a23c; margin-right: auto; }
 .cfg-form { margin-top: 2px; }
 
 /* 类型卡片：图标柔色底 + 名称/描述，选中带对勾 */

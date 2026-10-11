@@ -27,7 +27,7 @@
       />
     </div>
     <template v-if="unplaced.length">
-      <div class="unplaced-title">其他</div>
+      <div class="unplaced-title">未排版的区块</div>
       <div class="flow">
         <ReportBlock
           v-for="b in unplaced" :key="b.id" :block="b" :drillable="drillable"
@@ -94,6 +94,10 @@ const activeTab = ref('')
 watch(pages, (ps) => {
   if (ps.length && !ps.some((p) => p.id === activeTab.value)) activeTab.value = ps[0].id
 }, { immediate: true })
+// 页签切换滚回顶部（长报表切页后不停留在原滚动位置）
+watch(activeTab, () => {
+  rootEl.value?.closest('.main')?.scrollTo?.({ top: 0 })
+})
 
 function blockOf(id) {
   return props.blocks.find((b) => b.id === id)

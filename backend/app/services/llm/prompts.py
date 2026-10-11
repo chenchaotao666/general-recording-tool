@@ -338,13 +338,13 @@ def build_block_config_prompt(block_type: str, fields: list[dict], description: 
 # ---------- AI 助手（对话式） ----------
 
 NOTE_AI_SYSTEM = (
-    "你是记事本写作助手，按用户指令直接生成笔记内容（块结构 JSON）。"
+    "你是记事本写作助手，按用户指令直接生成笔记内容（HTML 片段）。"
     "不写客套话、不解释，只输出 JSON。"
 )
 
 
 def build_note_ai_prompt(instruction: str, note_title: str, context_texts: list[str], today: str) -> str:
-    """记事本 AI 写作：指令 + 笔记上下文 → Editor.js 块数组。"""
+    """记事本 AI 写作：指令 + 笔记上下文 → HTML 片段（会被服务端白名单清洗）。"""
     lines = [
         f"今天日期：{today}",
         f"当前笔记标题：{note_title or '（无标题）'}",
@@ -356,15 +356,12 @@ def build_note_ai_prompt(instruction: str, note_title: str, context_texts: list[
         "",
         f"用户的指令：{instruction}",
         "",
-        '输出 JSON：{"blocks": [...]}，块只能是以下五种（Editor.js 格式）：',
-        '{"type": "paragraph", "data": {"text": "段落文字"}}',
-        '{"type": "header", "data": {"text": "标题", "level": 1}},  // level 1~3',
-        '{"type": "list", "data": {"style": "unordered 或 ordered", "items": ["条目1", "条目2"]}}',
-        '{"type": "checklist", "data": {"items": [{"text": "待办事项", "checked": false}]}}',
-        '{"type": "quote", "data": {"text": "引用文字"}}',
-        "规则：内容用中文（用户要求其他语言除外）；text 里可以用 <b></b> 加粗；"
-        "按指令体裁组织（总结用标题+段落/清单，计划用 checklist，清单用 list）；"
-        "最多 30 个块；不要输出其他字段。",
+        '输出 JSON：{"html": "..."}。html 是富文本片段，只允许使用这些标签：',
+        "<p>段落</p>、<h1>~<h3>标题</h3>、<ul><li>无序列表</li></ul>、<ol><li>有序列表</li></ol>、",
+        "<blockquote>引用</blockquote>、<pre><code>代码</code></pre>、<hr>，行内可加粗 <strong>、斜体 <em>、下划线 <u>、删除线 <s>。",
+        "规则：内容用中文（用户要求其他语言除外）；不要任何 style/class 属性和其他标签；"
+        "按指令体裁组织（总结用标题+段落/列表，计划用列表，清单用 ul/ol）；"
+        "内容长度适中；不要输出其他字段。",
     ]
     return "\n".join(lines)
 

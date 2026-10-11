@@ -310,7 +310,19 @@ async function load() {
   try { rows.value = await listWorkflows() } finally { loading.value = false }
 }
 
+// 启用定时/自动触发的工作流立即生效：启用前确认（停用安全，不打扰）
 async function onToggle(row) {
+  if (!row.enabled) {
+    const t = row.trigger?.type
+    const desc = { schedule: '按定时计划自动执行', record_created: '在记录新增时自动执行', record_updated: '在记录修改时自动执行', webhook: '接收外部 Webhook 时执行', form: '表单提交时执行' }[t]
+    try {
+      await ElMessageBox.confirm(
+        `启用后，工作流「${row.name}」将${desc || '可按配置自动/手动执行'}，产生的副作用真实生效。`,
+        '启用工作流',
+        { type: 'warning', confirmButtonText: '启用', cancelButtonText: '取消' },
+      )
+    } catch { return }
+  }
   row.enabled = !row.enabled
   try { await toggleWorkflow(row.id) } catch (e) {
     row.enabled = !row.enabled
@@ -318,12 +330,32 @@ async function onToggle(row) {
   }
 }
 
+// 立即执行会产生真实副作用（发通知/写表/调 HTTP）：每个流程每会话首次执行前确认一次
 async function onRun(row) {
+  const key = `grt_wf_run_ok_${row.id}`
+  if (!sessionStorage.getItem(key)) {
+    try {
+      await ElMessageBox.confirm(
+        `将真实执行工作流「${row.name}」：可能发送通知、写入数据表或调用外部接口。`,
+        '立即执行',
+        { type: 'warning', confirmButtonText: '执行', cancelButtonText: '取消' },
+      )
+      sessionStorage.setItem(key, '1')
+    } catch { return }
+  }
   runningId.value = row.id
   try {
     const r = await runWorkflow(row.id)
-    if (r.status === 'success') ElMessage.success(`执行成功，消耗 token：${r.tokens_used}`)
-    else ElMessage.warning(`状态：${r.status}${r.error ? `；${r.error}` : ''}`)
+    const ok = r.status === 'success'
+    // 结果带「查看详情」出口（失败时直达节点级时间线，不用自己摸去日志页）
+    ElMessageBox({
+      title: ok ? '执行完成' : '执行未成功',
+      message: `状态：${r.status}${r.error ? `；${r.error}` : ''}；消耗 token：${r.tokens_used}`,
+      confirmButtonText: '查看详情',
+      cancelButtonText: '关闭',
+      showCancelButton: true,
+      type: ok ? 'success' : 'warning',
+    }).then(() => router.push(`/workflows/runs/${r.id}`)).catch(() => {})
     load()
   } catch (e) {
     ElMessage.error(e.message)
@@ -350,7 +382,7 @@ onMounted(load)
 <style scoped>
 .desc { font-size: 12px; color: #909399; }
 .last-time { margin-left: 8px; font-size: 12px; color: #909399; }
-.tokens { margin-left: 8px; font-size: 12px; color: #9b59b6; }
+.tokens { margin-left: 8px; font-size: 12px; color: var(--grt-ai); }
 .err { font-size: 12px; color: #f56c6c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
 .ai-examples { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .ai-examples .hint { font-size: 12px; color: #909399; }

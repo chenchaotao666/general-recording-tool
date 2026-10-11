@@ -38,9 +38,15 @@ def read_image(file_id: str, db: Session = Depends(get_db), user: User = Depends
         row, path = images.get_image(db, file_id)
     except images.ImageError as e:
         raise HTTPException(404, str(e))
-    # 归属校验：本人上传，或对图片归属表有查看权（无权限 404，不泄露存在性）
+    # 归属校验：本人上传，或对图片归属表/笔记有查看权（无权限 404，不泄露存在性）
     if row.uploader_id != user.id:
-        if not row.table_id:
+        if row.note_id:
+            from ..models import Note
+            note = db.get(Note, row.note_id)
+            if not note or note.user_id != user.id:
+                raise HTTPException(404, "图片不存在")  # 笔记严格私有，他人不可读
+        elif not row.table_id:
             raise HTTPException(404, "图片不存在")
-        get_table_access(db, row.table_id, user)
+        else:
+            get_table_access(db, row.table_id, user)
     return FileResponse(path, media_type=row.mime or "image/jpeg", filename=row.filename or "image")

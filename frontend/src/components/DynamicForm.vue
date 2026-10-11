@@ -154,7 +154,7 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Camera, Plus } from '@element-plus/icons-vue'
 import { adoptVision, imageUrl, recognizeForm, uploadImage as apiUploadImage } from '../api'
@@ -175,6 +175,11 @@ const emit = defineEmits(['submit', 'cancel'])
 
 const formRef = ref()
 const form = reactive({})
+// 初始填充后的快照：供父组件判断"表单有没有被改过"（关闭前防误丢确认用）
+let initialSnapshot = ''
+function isDirty() {
+  return JSON.stringify(form) !== initialSnapshot
+}
 
 // 字段超过 10 个时双列布局；subform 明细始终独占整行
 const twoColumn = computed(() => props.fields.length > 10)
@@ -207,6 +212,7 @@ watch(
         imageLists[f.field_name] = ids.map((id) => ({ uid: id, name: id.slice(0, 8), url: imageUrl(id), status: 'success' }))
       }
     }
+    nextTick(() => { initialSnapshot = JSON.stringify(form) })   // 等公式初算落定后再拍快照
   },
   { immediate: true, deep: true }
 )
@@ -333,6 +339,9 @@ function recompute() {
 }
 
 watch(form, recompute, { deep: true })
+
+// 暴露给父组件：关闭对话框前判断表单是否被改过（防误丢确认）
+defineExpose({ isDirty })
 
 async function onSubmit() {
   const valid = await formRef.value.validate().catch(() => false)

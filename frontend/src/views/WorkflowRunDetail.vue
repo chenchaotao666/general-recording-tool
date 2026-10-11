@@ -5,6 +5,11 @@
       <h2>执行详情 · {{ run.workflow_name || `#${run.workflow_id}` }}</h2>
       <div class="spacer" />
       <el-tag v-if="run.status" :type="statusType(run.status)" size="large">{{ statusLabel(run.status) }}</el-tag>
+      <!-- 失败出口：不用自己找路 —— 直接重新执行或去画布修复 -->
+      <template v-if="run.status === 'failed'">
+        <el-button size="small" type="primary" plain :loading="rerunning" @click="rerun">重新执行</el-button>
+        <el-button size="small" @click="$router.push(`/workflows/${run.workflow_id}/edit`)">去画布修复</el-button>
+      </template>
     </div>
 
     <el-descriptions v-if="run.id" :column="4" border size="small" class="meta">
@@ -32,11 +37,13 @@
         :type="{ success: 'success', failed: 'danger', waiting: 'warning', running: 'primary' }[nr.status] || 'info'"
         :hollow="nr.status === 'waiting'">
         <div class="nr-head" @click="toggleExpand(nr.id)">
-          <b>{{ nr.node_id }}</b>
+          <el-icon class="nr-arrow" :class="{ open: expanded.has(nr.id) }"><ArrowRight /></el-icon>
+          <b>{{ nr.node_name || nr.node_id }}</b>
+          <span v-if="nr.node_name && nr.node_name !== nr.node_id" class="nr-id">{{ nr.node_id }}</span>
           <el-tag size="small" effect="plain">{{ NODE_TYPE_NAMES[nr.node_type] || nr.node_type }}</el-tag>
           <el-tag size="small" :type="statusType(nr.status)">{{ statusLabel(nr.status) }}</el-tag>
           <el-tag v-if="nr.output?.simulated" size="small" type="info" effect="plain" title="试运行沙盒：该节点只模拟，未真实生效">模拟</el-tag>
-          <span class="nr-meta">{{ nr.duration_ms }}ms</span>
+          <span class="nr-meta">{{ fmtMs(nr.duration_ms) }}</span>
           <span v-if="nr.tokens_used" class="nr-meta tok">{{ nr.tokens_used }} tok</span>
           <el-link type="primary" size="small" class="nr-canvas" @click.stop="openInCanvas(nr)">画布定位</el-link>
         </div>
@@ -65,9 +72,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { ArrowLeft, WarningFilled } from '@element-plus/icons-vue'
-import { approveWorkflowNode, getWorkflowRun, workflowNodeTypes } from '../api'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft, ArrowRight, WarningFilled } from '@element-plus/icons-vue'
+import { approveWorkflowNode, getWorkflowRun, runWorkflow, workflowNodeTypes } from '../api'
 import JsonTree from '../components/workflow/JsonTree.vue'
 
 const TRIGGER_LABELS = { manual: '手动', schedule: '定时', record: '数据变更', webhook: 'Webhook', test: '试运行', form: '表单', sub: '子流程' }
@@ -91,6 +98,24 @@ const waitingApprovals = computed(() =>
 const statusLabel = (s) => STATUS_LABELS[s] || s
 const statusType = (s) => ({ success: 'success', failed: 'danger', waiting: 'warning', running: 'primary', pending: 'info' }[s] || 'info')
 const fmt = (v) => (v === undefined || v === null ? '' : JSON.stringify(v, null, 2))
+// 耗时格式化：≥1s 显示秒（12345ms 不如 12.3s 好读）
+const fmtMs = (ms) => (ms == null ? '' : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)
+
+// 失败重试：直接重新执行该工作流（真实执行，与列表页「执行」一致）
+const rerunning = ref(false)
+async function rerun() {
+  rerunning.value = true
+  try {
+    const r = await runWorkflow(run.value.workflow_id)
+    ElMessage.success('已重新执行，正在刷新结果')
+    router.replace(`/workflows/runs/${r.id}`)
+    load()
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    rerunning.value = false
+  }
+}
 
 // 跳回画布并定位到该节点（编辑器读 ?node= 选中并居中）
 function openInCanvas(nr) {
@@ -117,7 +142,15 @@ function schedulePoll() {
   timer = setTimeout(load, 3000)
 }
 
+// L3 审批决定不可撤销：确认时说明审批对象
 async function act(nr, approved) {
+  try {
+    await ElMessageBox.confirm(
+      `确定${approved ? '通过' : '驳回'}节点「${nr.node_label || nr.node_id}」的审批？${approved ? '流程将继续执行。' : '驳回后流程将终止，不可撤销。'}`,
+      `${approved ? '通过' : '驳回'}审批`,
+      { type: 'warning', confirmButtonText: approved ? '通过' : '驳回', cancelButtonText: '取消' },
+    )
+  } catch { return }
   acting.value = true
   try {
     await approveWorkflowNode(nr.id, approved, comments[nr.id] || '')
@@ -151,8 +184,11 @@ onUnmounted(() => clearTimeout(timer))
 .mb { margin-bottom: 10px; }
 .trace { margin-top: 10px; }
 .nr-head { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.nr-arrow { font-size: 12px; color: #909399; transition: transform .15s; flex-shrink: 0; }
+.nr-arrow.open { transform: rotate(90deg); }
+.nr-id { font-size: 12px; color: #c0c4cc; }
 .nr-meta { font-size: 12px; color: #909399; }
-.nr-meta.tok { color: #9b59b6; }
+.nr-meta.tok { color: var(--grt-ai); }
 .nr-detail { margin-top: 8px; }
 .err { color: #f56c6c; font-size: 12px; margin-bottom: 6px; }
 .warn { margin-bottom: 6px; }

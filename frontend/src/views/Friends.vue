@@ -47,15 +47,42 @@
         </template>
         <el-table :data="requests" size="small" border>
           <el-table-column label="用户名" prop="username" min-width="160" />
-          <el-table-column label="申请时间" prop="created_at" width="180" />
+          <el-table-column label="申请时间" width="150" :formatter="(r) => fmtTime(r.created_at)" />
           <el-table-column label="操作" width="130" align="center">
             <template #default="{ row }">
               <el-button text type="primary" size="small" @click="respond(row, 'accept')">接受</el-button>
-              <el-button text type="danger" size="small" @click="respond(row, 'reject')">拒绝</el-button>
+              <el-popconfirm title="拒绝该好友申请？" width="200" @confirm="respond(row, 'reject')">
+                <template #reference><el-button text type="danger" size="small">拒绝</el-button></template>
+              </el-popconfirm>
             </template>
           </el-table-column>
         </el-table>
         <el-empty v-if="!requests.length" description="暂无待处理的申请" :image-size="70" />
+      </el-tab-pane>
+
+      <!-- 我发出的申请：可查看状态、撤回 -->
+      <el-tab-pane name="outgoing">
+        <template #label>
+          我发出的申请
+          <el-badge v-if="outgoing.length" :value="outgoing.length" type="warning" style="margin-left: 6px" />
+        </template>
+        <el-table :data="outgoing" size="small" border>
+          <el-table-column label="用户名" prop="username" min-width="160" />
+          <el-table-column label="申请时间" width="150" :formatter="(r) => fmtTime(r.created_at)" />
+          <el-table-column label="状态" width="100">
+            <template #default>
+              <el-tag type="warning" size="small">待对方处理</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="100" align="center">
+            <template #default="{ row }">
+              <el-popconfirm :title="`撤回发给「${row.username}」的好友申请？`" width="220" @confirm="withdraw(row)">
+                <template #reference><el-button text type="danger" size="small">撤回</el-button></template>
+              </el-popconfirm>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="!outgoing.length" description="没有待处理的申请" :image-size="70" />
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -65,9 +92,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  acceptFriend, deleteFriend, listFriendRequests, listFriends,
-  rejectFriend, requestFriend, searchUsers,
+  acceptFriend, deleteFriend, listFriendRequests, listFriends, listOutgoingFriendRequests,
+  rejectFriend, requestFriend, searchUsers, withdrawFriendRequest,
 } from '../api'
+import { fmtTime } from '../utils/format'
 
 // 全站用户搜索下拉仅平台超管可用（后端 /users/search scope=all 也只对平台超管开放）
 const isAdmin = computed(() => !!JSON.parse(localStorage.getItem('grt_user') || 'null')?.is_platform_admin)
@@ -75,6 +103,7 @@ const isAdmin = computed(() => !!JSON.parse(localStorage.getItem('grt_user') || 
 const tab = ref('friends')
 const friends = ref([])
 const requests = ref([])
+const outgoing = ref([])
 const addUserId = ref(null)
 const addUsername = ref('')
 const userOptions = ref([])
@@ -83,7 +112,20 @@ const adding = ref(false)
 
 async function load() {
   try {
-    [friends.value, requests.value] = await Promise.all([listFriends(), listFriendRequests()])
+    [friends.value, requests.value, outgoing.value] = await Promise.all([
+      listFriends(), listFriendRequests(), listOutgoingFriendRequests(),
+    ])
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+// 撤回我发出的待处理申请
+async function withdraw(row) {
+  try {
+    await withdrawFriendRequest(row.id)
+    ElMessage.success('已撤回')
+    await load()
   } catch (e) {
     ElMessage.error(e.message)
   }

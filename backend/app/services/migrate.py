@@ -43,6 +43,15 @@ _NEW_COLUMNS = [
     # P1 数据范围+组织树：用户组织归属
     ("users", "department_id", "INTEGER"),
     ("users", "manager_id", "INTEGER"),
+    # 租户自定义角色：NULL=全局内置角色
+    ("roles", "tenant_id", "INTEGER"),
+    # 通知结构化引用（邀请通知内联 接受/拒绝 用）
+    ("notifications", "ref_type", "VARCHAR(32)"),
+    ("notifications", "ref_id", "INTEGER"),
+    # 记事本改富文本 HTML 存储（替代 Editor.js blocks_json）
+    ("notes", "content_html", "TEXT"),
+    # 记事本插图归属（孤儿清理跳过已关联笔记的图片）
+    ("image_files", "note_id", "INTEGER"),
 ]
 
 
@@ -64,20 +73,30 @@ def _seed_rbac(conn) -> None:
     max_tables 配额类权限已上移 plan_entitlements（P0），此处仅保留权限点行防止外键断链，不再新种子授权。"""
     roles = [
         ("admin", "管理员", "超级管理员，拥有全部权限（代码级放行）"),
-        ("vip", "VIP", "可分享数据表、可创建独立物理表"),
         ("user", "普通用户", "默认角色"),
         ("manager", "经理", "可查看本部门及下级部门数据（配合「数据范围」配置使用）"),
     ]
     for code, name, desc in roles:
         conn.execute(
             text("INSERT INTO roles (code, name, description, is_system) "
-                 "SELECT :c, :n, :d, 1 WHERE NOT EXISTS (SELECT 1 FROM roles WHERE code = :c)"),
+                 "SELECT :c, :n, :d, 1 WHERE NOT EXISTS (SELECT 1 FROM roles WHERE code = :c AND tenant_id IS NULL)"),
             {"c": code, "n": name, "d": desc},
         )
     perms = [
         ("share", "分享", "把数据表分享给其他用户"),
         ("create_physical_table", "创建独立表", "建表时可选独立物理表存储（数据量大/报表重的表）"),
         ("max_tables", "数据表上限", "已废弃：配额由套餐 plan_entitlements 承接（保留行防外键断链）"),
+        # 菜单功能权限（P2 角色矩阵）：控制侧边菜单入口显隐；admin 代码级恒有
+        ("menu_tables", "菜单-数据表", "侧边「数据表」入口"),
+        ("menu_import", "菜单-导入Excel", "侧边「导入 Excel」入口"),
+        ("menu_notes", "菜单-记事本", "侧边「记事本」入口"),
+        ("menu_reports", "菜单-报表", "侧边「报表」入口"),
+        ("menu_workflows", "菜单-工作流", "侧边「工作流」入口"),
+        ("menu_notifications", "菜单-通知", "侧边「通知」入口"),
+        ("menu_friends", "菜单-好友", "侧边「好友」入口"),
+        ("menu_groups", "菜单-用户组", "侧边「用户组」入口"),
+        ("menu_billing", "菜单-套餐与用量", "侧边「套餐与用量」入口"),
+        ("menu_mindmaps", "菜单-思维导图", "侧边「思维导图」入口"),
     ]
     for code, name, desc in perms:
         conn.execute(
@@ -87,13 +106,16 @@ def _seed_rbac(conn) -> None:
         )
     grants = [
         ("admin", "share", None), ("admin", "create_physical_table", None),
-        ("vip", "share", None), ("vip", "create_physical_table", None),
     ]
+    # 菜单权限默认全开（user/manager/vip），租户 admin 可按角色关闭入口
+    menu_perms = [c for c, _, _ in perms if c.startswith("menu_")]
+    for rc in ("user", "manager"):
+        grants += [(rc, c, None) for c in menu_perms]
     for role_code, perm_code, value in grants:
         conn.execute(
             text("INSERT INTO role_permissions (role_id, permission_id, value) "
                  "SELECT r.id, p.id, :v FROM roles r, permissions p "
-                 "WHERE r.code = :rc AND p.code = :pc "
+                 "WHERE r.code = :rc AND r.tenant_id IS NULL AND p.code = :pc "
                  "AND NOT EXISTS (SELECT 1 FROM role_permissions WHERE role_id = r.id AND permission_id = p.id)"),
             {"rc": role_code, "pc": perm_code, "v": value},
         )
@@ -128,24 +150,24 @@ _PLAN_SEEDS = [
         "max_rows": 2000000, "max_storage_mb": 204800, "min_seats": 5,
         "quota_grace_days": 7, "sub_grace_days": 7,
         "feature_print_templates": 1, "feature_data_scope": 1, "feature_owd": 1,
-        "feature_audit": 1, "audit_retention_days": 90}),
+        "feature_custom_roles": 1, "feature_audit": 1, "audit_retention_days": 90}),
     ("ent_flagship", "企业旗舰版", "enterprise", None, 40000, 22, True, {
         "max_rows": 5000000, "max_storage_mb": 512000, "min_seats": 5,
         "quota_grace_days": 7, "sub_grace_days": 7,
         "feature_print_templates": 1, "feature_data_scope": 1, "feature_owd": 1,
         "feature_share_rules": 1, "feature_perm_diagnose": 1, "feature_field_perm": 1,
-        "feature_audit": 1, "feature_automation": 1, "feature_api": 1}),
+        "feature_custom_roles": 1, "feature_audit": 1, "feature_automation": 1, "feature_api": 1}),
     ("private", "私有化部署", "private", None, None, 90, False, {
         "quota_grace_days": 7, "sub_grace_days": 7,
         "feature_print_templates": 1, "feature_data_scope": 1, "feature_owd": 1,
         "feature_share_rules": 1, "feature_perm_diagnose": 1, "feature_field_perm": 1,
-        "feature_audit": 1, "feature_automation": 1, "feature_api": 1}),
+        "feature_custom_roles": 1, "feature_audit": 1, "feature_automation": 1, "feature_api": 1}),
     # 存量迁移隐藏档：全不限 + 功能全开，保证老用户迁移零锁死（不对外售卖）
     ("legacy", "存量迁移档", "individual", 0, 0, 99, False, {
         "quota_grace_days": 7, "sub_grace_days": 7,
         "feature_print_templates": 1, "feature_data_scope": 1, "feature_owd": 1,
         "feature_share_rules": 1, "feature_perm_diagnose": 1, "feature_field_perm": 1,
-        "feature_audit": 1, "feature_automation": 1, "feature_api": 1}),
+        "feature_custom_roles": 1, "feature_audit": 1, "feature_automation": 1, "feature_api": 1}),
 ]
 
 
@@ -279,10 +301,119 @@ def _migrate_v3_scope_org(conn) -> None:
     print("[migrate] v3: 数据范围+组织树 schema 就绪（存量 scope 默认 all，零回填）", flush=True)
 
 
+def _migrate_v4_tenant_roles(conn) -> None:
+    """租户自定义角色：老库 roles.code 上有单列唯一索引（建表 unique=True 的产物），
+    重建表为 (tenant_id, code) 复合唯一，让不同租户可各自定义同名角色。
+    新库 create_all 已按复合唯一建表（无 code 单列唯一索引），自动跳过。"""
+    need = False
+    for row in conn.execute(text("PRAGMA index_list('roles')")):
+        if not row[2]:   # 非唯一索引跳过
+            continue
+        cols = [r[2] for r in conn.execute(text(f"PRAGMA index_info('{row[1]}')"))]
+        if cols == ["code"]:
+            need = True
+    if not need:
+        print("[migrate] v4: roles 已是 (tenant_id, code) 复合唯一，跳过重建", flush=True)
+        return
+    conn.execute(text("""
+        CREATE TABLE roles_v4 (
+            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            code VARCHAR(64) NOT NULL,
+            name VARCHAR(64) NOT NULL,
+            description VARCHAR(256),
+            is_system BOOLEAN,
+            tenant_id INTEGER,
+            created_at DATETIME,
+            CONSTRAINT uq_roles_tenant_code UNIQUE (tenant_id, code),
+            FOREIGN KEY(tenant_id) REFERENCES tenants (id)
+        )
+    """))
+    conn.execute(text(
+        "INSERT INTO roles_v4 (id, code, name, description, is_system, tenant_id, created_at) "
+        "SELECT id, code, name, description, is_system, tenant_id, created_at FROM roles"
+    ))
+    conn.execute(text("DROP TABLE roles"))
+    conn.execute(text("ALTER TABLE roles_v4 RENAME TO roles"))
+    conn.execute(text("CREATE INDEX ix_roles_tenant_id ON roles (tenant_id)"))
+    print("[migrate] v4: roles 重建完成（code 全局唯一 → (tenant_id, code) 复合唯一）", flush=True)
+
+
+def _migrate_v5_members_autoinc(conn) -> None:
+    """tenant_members 重建为 AUTOINCREMENT 主键：老表是 rowid 表，删行后新行会回收 max(id)+1，
+    通知 ref_id（tenant_invitation）等外部引用因此串到新行上（拒绝后再邀请出现两条可操作邀请）。
+    新库 create_all 已带 AUTOINCREMENT，自动跳过。"""
+    ddl = conn.execute(
+        text("SELECT sql FROM sqlite_master WHERE type='table' AND name='tenant_members'")
+    ).scalar()
+    if ddl and "AUTOINCREMENT" in ddl.upper():
+        print("[migrate] v5: tenant_members 已是 AUTOINCREMENT，跳过重建", flush=True)
+        return
+    conn.execute(text("""
+        CREATE TABLE tenant_members_v5 (
+            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            tenant_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            role VARCHAR(64),
+            status VARCHAR(16),
+            invited_by INTEGER,
+            created_at DATETIME,
+            CONSTRAINT uq_tenant_members UNIQUE (tenant_id, user_id),
+            FOREIGN KEY(tenant_id) REFERENCES tenants (id),
+            FOREIGN KEY(user_id) REFERENCES users (id),
+            FOREIGN KEY(invited_by) REFERENCES users (id)
+        )
+    """))
+    conn.execute(text(
+        "INSERT INTO tenant_members_v5 (id, tenant_id, user_id, role, status, invited_by, created_at) "
+        "SELECT id, tenant_id, user_id, role, status, invited_by, created_at FROM tenant_members"
+    ))
+    conn.execute(text("DROP TABLE tenant_members"))
+    conn.execute(text("ALTER TABLE tenant_members_v5 RENAME TO tenant_members"))
+    conn.execute(text("CREATE INDEX ix_tenant_members_tenant_id ON tenant_members (tenant_id)"))
+    conn.execute(text("CREATE INDEX ix_tenant_members_user_id ON tenant_members (user_id)"))
+    print("[migrate] v5: tenant_members 重建完成（AUTOINCREMENT，id 不再复用）", flush=True)
+
+
+def _migrate_v5b_invite_notification_cleanup(conn) -> None:
+    """清理 id 复用时代留下的串行邀请通知（独立版本：v5 可能被先行重启的库应用过）。
+    判定：邀请通知早于其引用的 membership 创建时间 → 上一个邀请周期的残留。
+    注意：悬空 ref（membership 已删）不是垃圾——那是「已拒绝」的留痕，不能清。"""
+    r1 = conn.execute(text("""
+        DELETE FROM notifications WHERE ref_type = 'tenant_invitation'
+        AND ref_id IN (SELECT id FROM tenant_members)
+        AND created_at < (SELECT created_at FROM tenant_members WHERE tenant_members.id = notifications.ref_id)
+    """))
+    print(f"[migrate] v5b: 清理串行邀请通知 {r1.rowcount} 条", flush=True)
+
+
+def _migrate_v6_drop_vip_role(conn) -> None:
+    """删除内置 vip 角色（付费等级概念，已由套餐承接）：
+    vip 成员回落为 user；清理 vip 的全部授权与范围/覆盖配置；种子同步移除。"""
+    row = conn.execute(text("SELECT id FROM roles WHERE code = 'vip' AND tenant_id IS NULL")).first()
+    if not row:
+        print("[migrate] v6: vip 角色已不存在，跳过", flush=True)
+        return
+    vid = row[0]
+    n = conn.execute(text("UPDATE tenant_members SET role = 'user' WHERE role = 'vip'")).rowcount
+    conn.execute(text("DELETE FROM role_permissions WHERE role_id = :v"), {"v": vid})
+    conn.execute(text("DELETE FROM role_table_scopes WHERE role_id = :v"), {"v": vid})
+    # P2 新表可能不存在（老库未建）：有则清
+    tables = {r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}
+    for t in ("tenant_role_perms", "role_table_perms"):
+        if t in tables:
+            conn.execute(text(f"DELETE FROM {t} WHERE role_id = :v"), {"v": vid})
+    conn.execute(text("DELETE FROM roles WHERE id = :v"), {"v": vid})
+    print(f"[migrate] v6: vip 角色已删除（{n} 个成员回落为 user）", flush=True)
+
+
 # (版本, 迁移函数)——已执行的版本记录在 schema_migrations，跳过
 _MIGRATIONS = [
     ("v2_tenants", _migrate_v2_tenants),
     ("v3_scope_org", _migrate_v3_scope_org),
+    ("v4_tenant_roles", _migrate_v4_tenant_roles),
+    ("v5_members_autoinc", _migrate_v5_members_autoinc),
+    ("v5b_invite_notification_cleanup", _migrate_v5b_invite_notification_cleanup),
+    ("v6_drop_vip_role", _migrate_v6_drop_vip_role),
 ]
 
 

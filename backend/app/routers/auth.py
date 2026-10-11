@@ -52,7 +52,7 @@ def _user_payload(db: Session, user: User, tenant_id: int = 0) -> dict:
         "id": user.id,
         "username": user.username,
         "role": role or "user",
-        "perms": role_perms(db, role),
+        "perms": role_perms(db, role, tid),
         "is_platform_admin": bool(user.is_platform_admin),
         "tenant": _tenant_brief(db, tid),
         "tenants": my_tenants(db, user),

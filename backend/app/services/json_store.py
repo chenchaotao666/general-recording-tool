@@ -61,7 +61,7 @@ def count(db: Session, table_id: int) -> int:
 
 def list_records(db: Session, mt: MetaTable, fields: list[MetaField], page: int, page_size: int,
                  filters: list[dict] | None, sort_by: str | None, sort_order: str | None,
-                 page_cap: int | None = None) -> dict:
+                 page_cap: int | None = None, kw: str | None = None) -> dict:
     fields_by_name = {f.field_name: f for f in fields}
     recs = all_dicts(db, mt.id, fields, normalized=True)
     if filters:
@@ -71,6 +71,13 @@ def list_records(db: Session, mt: MetaTable, fields: list[MetaField], page: int,
                 return match_filters(r, fields_by_name, {"logic": f.get("logic"), "rules": f["rules"]})
             return match_filters(r, fields_by_name, {"logic": "AND", "rules": [f]})
         recs = [r for r in recs if all(_hit(r, f) for f in filters)]
+    if kw:
+        # 全局关键字：跨所有 varchar/text 字段 OR 模糊匹配（不区分大小写）
+        text_fields = [f.field_name for f in fields if f.data_type in ("varchar", "text")]
+        needle = kw.lower()
+        if text_fields and needle:
+            recs = [r for r in recs
+                    if any(needle in str(r.get(fn) or "").lower() for fn in text_fields)]
     total = len(recs)
     recs = sort_records(recs, sort_by, sort_order, fields_by_name)
     page = max(page, 1)

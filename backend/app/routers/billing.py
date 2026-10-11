@@ -54,10 +54,13 @@ def _plan_out(db: Session, p: Plan) -> dict:
 
 def _order_out(db: Session, o: Order) -> dict:
     plan = db.get(Plan, o.plan_id)
+    sub = db.query(Subscription).filter_by(tenant_id=o.tenant_id).first()
     return {
         "id": o.id, "plan_code": plan.code if plan else None,
         "plan_name": plan.name if plan else None,
         "seats": o.seats, "years": o.years, "amount": o.amount, "status": o.status,
+        # renewal=与当前订阅同档（续费，时长累加）；new=新购/换档
+        "kind": "renewal" if sub and sub.plan_id == o.plan_id else "new",
         "created_at": o.created_at.isoformat(sep=" ") if o.created_at else None,
         "paid_at": o.paid_at.isoformat(sep=" ") if o.paid_at else None,
     }
@@ -79,6 +82,8 @@ def available_plans(db: Session = Depends(get_db), ctx: Context = Depends(requir
         "plans": [_plan_out(db, p) for p in rows],
         "current_plan_code": current_plan.code if current_plan else None,
         "tenant_type": ctx.tenant.type,
+        # 席位阶梯折扣档位下发（前端展示提示与本地试算用，金额以后端订单为准）
+        "seat_discount_tiers": [[t, d] for t, d in SEAT_DISCOUNT_TIERS],
     }
 
 
@@ -143,6 +148,19 @@ def pay_order(order_id: int, db: Session = Depends(get_db), ctx: Context = Depen
                                     "order_id": order.id, "amount": order.amount},
               user=ctx.user.username)
     entitlement.invalidate_cache(ctx.tenant.id)
+    db.commit()
+    return _order_out(db, order)
+
+
+@router.post("/orders/{order_id}/cancel")
+def cancel_order(order_id: int, db: Session = Depends(get_db), ctx: Context = Depends(require_tenant_admin)):
+    """取消待支付订单（已支付/已取消的不可再操作）。"""
+    order = db.get(Order, order_id)
+    if not order or order.tenant_id != ctx.tenant.id:
+        raise HTTPException(404, "订单不存在")
+    if order.status != "pending":
+        raise HTTPException(400, "只有待支付订单可以取消")
+    order.status = "cancelled"
     db.commit()
     return _order_out(db, order)
 

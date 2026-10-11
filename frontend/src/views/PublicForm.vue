@@ -13,6 +13,8 @@
       </el-result>
 
       <el-form v-else ref="formRef" :model="form" :rules="rules" label-position="top" size="large">
+        <!-- 提交失败的错误提示放表单顶部（长表单不用滚到底才看到） -->
+        <el-alert v-if="error" :title="error" type="error" :closable="false" class="mb" />
         <el-form-item v-for="f in meta.fields" :key="f.field_name" :label="f.label" :prop="f.field_name">
           <el-input v-if="f.widget === 'textarea'" v-model="form[f.field_name]" type="textarea" :rows="5"
             :placeholder="'请输入' + f.label" />
@@ -29,7 +31,6 @@
           <el-switch v-else-if="f.widget === 'switch'" v-model="form[f.field_name]" />
           <el-input v-else v-model="form[f.field_name]" clearable :placeholder="'请输入' + f.label" />
         </el-form-item>
-        <el-alert v-if="error" :title="error" type="error" :closable="false" class="mb" />
         <el-button type="primary" style="width: 100%" :loading="submitting" @click="onSubmit">提交</el-button>
       </el-form>
     </el-card>
@@ -66,7 +67,15 @@ const rules = computed(() => {
   const r = {}
   for (const f of meta.value?.fields || []) {
     if (!f.nullable) {
-      r[f.field_name] = [{ required: true, message: `请填写${f.label}`, trigger: ['blur', 'change'] }]
+      if (f.widget === 'switch') {
+        // 开关是布尔值：false 是有效答案（必填只要求"有值"，不能要求必须打开）
+        r[f.field_name] = [{
+          validator: (rule, v, cb) => (typeof v === 'boolean' ? cb() : cb(new Error(`请填写${f.label}`))),
+          trigger: 'change',
+        }]
+      } else {
+        r[f.field_name] = [{ required: true, message: `请填写${f.label}`, trigger: ['blur', 'change'] }]
+      }
     }
   }
   return r

@@ -25,9 +25,10 @@ def _check(db: Session, ctx: Context) -> None:
     entitlement.require_feature(db, ctx.tenant.id, "feature_data_scope")
 
 
-def _role(db: Session, role_id: int) -> Role:
+def _role(db: Session, role_id: int, tenant_id: int) -> Role:
+    """角色须存在且本租户可用（全局内置或本租户自定义）。"""
     r = db.get(Role, role_id)
-    if not r:
+    if not r or (r.tenant_id is not None and r.tenant_id != tenant_id):
         raise HTTPException(404, "角色不存在")
     if r.code == "admin":
         raise HTTPException(400, "管理员角色恒为全部数据，无需配置")
@@ -38,7 +39,10 @@ def _role(db: Session, role_id: int) -> Role:
 def get_matrix(db: Session = Depends(get_db), ctx: Context = Depends(require_tenant_admin)):
     """矩阵数据源：全部可配角色 + 租户默认 + 按表覆盖。"""
     _check(db, ctx)
-    roles = db.query(Role).filter(Role.code != "admin").order_by(Role.id).all()
+    roles = (db.query(Role)
+             .filter(Role.code != "admin",
+                     (Role.tenant_id.is_(None)) | (Role.tenant_id == ctx.tenant.id))
+             .order_by(Role.id).all())
     rows = db.query(RoleTableScope).filter_by(tenant_id=ctx.tenant.id).all()
     return {
         "roles": [{"id": r.id, "code": r.code, "name": r.name} for r in roles],
@@ -52,7 +56,7 @@ def get_matrix(db: Session = Depends(get_db), ctx: Context = Depends(require_ten
 def put_scope(body: ScopeIn, db: Session = Depends(get_db), ctx: Context = Depends(require_tenant_admin)):
     """UPSERT 一条范围配置；scope=all 时删除已有行（保持表干净，all 是默认行为）。"""
     _check(db, ctx)
-    _role(db, body.role_id)
+    _role(db, body.role_id, ctx.tenant.id)
     if body.scope not in scope_mod.SCOPE_VALUES:
         raise HTTPException(400, f"scope 必须是 {'/'.join(scope_mod.SCOPE_VALUES)}")
     if body.table_id is not None:
@@ -82,7 +86,7 @@ def apply_presets(db: Session = Depends(get_db), ctx: Context = Depends(require_
     _check(db, ctx)
     applied = {}
     for code, scope in PRESETS.items():
-        role = db.query(Role).filter_by(code=code).first()
+        role = db.query(Role).filter(Role.code == code, Role.tenant_id.is_(None)).first()
         if not role:
             continue
         row = db.query(RoleTableScope).filter_by(

@@ -42,11 +42,12 @@ def list_records(
     sort_by: str | None = None,
     sort_order: str | None = None,
     filters: str | None = None,
+    kw: str | None = Query(None, max_length=100),
     db: Session = Depends(get_db),
     access: TableAccess = Depends(require_table("view")),
 ):
     return dyn_engine.list_records(db, table_id, page, page_size, _parse_filters(filters),
-                                   sort_by, sort_order, viewer=access.ctx.user)
+                                   sort_by, sort_order, viewer=access.ctx.user, kw=(kw or "").strip() or None)
 
 
 @router.get("/{table_id}/export")

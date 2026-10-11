@@ -1,4 +1,7 @@
 """链接分享：表/报表生成免登录只读链接（可设密码和有效期）+ 公开访问接口。"""
+import base64
+import hashlib
+import hmac
 import secrets
 from datetime import datetime, timedelta
 
@@ -7,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import MetaTable, ReportTemplate, SharedLink, User
+from ..models import MetaTable, Mindmap, ReportTemplate, SharedLink, User
 from ..services import dyn_engine
 from ..services.report_engine import run_template
 from ..utils.access import check_owner_or_admin, get_table_access
@@ -125,12 +128,83 @@ def delete_report_link(tpl_id: int, link_id: int, db: Session = Depends(get_db),
     return {"ok": True}
 
 
+# ---------- 思维导图的链接分享 ----------
+
+def _get_own_mindmap(db: Session, mid: int, user: User) -> Mindmap:
+    """导图分享管理闸：创建人，或该租户 admin（限本人所在租户）。"""
+    from ..models import TenantMember
+    m = db.get(Mindmap, mid)
+    if not m:
+        raise HTTPException(404, "思维导图不存在")
+    if m.user_id == user.id:
+        return m
+    is_admin = user.is_platform_admin or db.query(TenantMember).filter_by(
+        tenant_id=m.tenant_id, user_id=user.id, status="active", role="admin").first()
+    if not is_admin:
+        raise HTTPException(404, "思维导图不存在")
+    return m
+
+
+@router.get("/mindmaps/{mid}/share-links")
+def list_mindmap_links(mid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    m = _get_own_mindmap(db, mid, user)
+    links = db.query(SharedLink).filter_by(resource_type="mindmap", resource_id=m.id).all()
+    return [_link_out(db, l) for l in links]
+
+
+@router.post("/mindmaps/{mid}/share-links")
+def create_mindmap_link(mid: int, payload: ShareLinkIn, db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    m = _get_own_mindmap(db, mid, user)
+    return _link_out(db, _create_link(db, "mindmap", m.id, payload, user))
+
+
+@router.delete("/mindmaps/{mid}/share-links/{link_id}")
+def delete_mindmap_link(mid: int, link_id: int, db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    m = _get_own_mindmap(db, mid, user)
+    _delete_link(db, link_id, "mindmap", m.id)
+    return {"ok": True}
+
+
 # ---------- 公开访问（免登录） ----------
+
+class _VerifyIn(BaseModel):
+    password: str
+
+
+def _view_token_for(link: SharedLink) -> str:
+    """密码校验通过后签发的访问凭证：密码本体不进 URL/日志，只带这个派生 token。"""
+    from ..utils.auth import _secret
+    sig = hmac.new(_secret().encode(), f"share-view:{link.token}:{link.password_hash}".encode(),
+                   hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(sig[:24]).decode().rstrip("=")
+
+
+def _check_view_token(link: SharedLink, view_token: str) -> bool:
+    return bool(view_token) and hmac.compare_digest(_view_token_for(link), view_token)
+
+
+@router.post("/share/{token}/verify")
+def verify_share_password(token: str, payload: _VerifyIn, db: Session = Depends(get_db)):
+    """密码校验（POST body，密码不进浏览器历史/服务端日志）；通过返回 view_token 供后续取数。"""
+    link = db.query(SharedLink).filter_by(token=token).first()
+    if not link:
+        raise HTTPException(404, "分享链接不存在")
+    if link.expires_at and link.expires_at < datetime.now():
+        raise HTTPException(410, "链接已过期")
+    if not link.password_hash:
+        return {"ok": True, "view_token": ""}   # 无密码链接无需校验
+    if not verify_password(payload.password, link.password_hash):
+        raise HTTPException(401, "访问密码错误")
+    return {"ok": True, "view_token": _view_token_for(link)}
+
 
 @router.get("/share/{token}")
 def visit_share(
     token: str,
     password: str = Query(default=""),
+    view_token: str = Query(default=""),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     mode: str | None = Query(default=None),
@@ -150,10 +224,25 @@ def visit_share(
     if link.expires_at and link.expires_at < datetime.now():
         raise HTTPException(410, "链接已过期")
     if link.password_hash:
-        if not password:
+        # 两种凭证：view_token（推荐，密码校验后派生）/ 旧版 password 直传（兼容）
+        if view_token:
+            if not _check_view_token(link, view_token):
+                raise HTTPException(401, "访问凭证无效，请重新输入密码")
+        elif password:
+            if not verify_password(password, link.password_hash):
+                raise HTTPException(401, "访问密码错误")
+        else:
             raise HTTPException(401, "需要访问密码")
-        if not verify_password(password, link.password_hash):
-            raise HTTPException(401, "访问密码错误")
+
+    if link.resource_type == "mindmap":
+        m = db.get(Mindmap, link.resource_id)
+        if not m:
+            raise HTTPException(404, "思维导图不存在")
+        return {
+            "resource_type": "mindmap",
+            "label": m.title,
+            "data": m.data,
+        }
 
     if link.resource_type == "table":
         mt = db.get(MetaTable, link.resource_id)

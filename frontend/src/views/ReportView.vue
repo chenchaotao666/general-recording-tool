@@ -22,6 +22,7 @@
       <el-date-picker
         v-if="rangeMode === 'custom'" v-model="customRange" type="daterange" size="small"
         value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" style="margin-left: 10px"
+        @change="onCustomRangeChange"
       />
       <el-button size="small" type="primary" :loading="loading" style="margin-left: 10px" @click="run">重新生成</el-button>
     </div>
@@ -30,14 +31,15 @@
     <div v-if="filterDefs.length" class="toolbar filter-bar">
       <span style="color: #909399; font-size: 13px">筛选</span>
       <template v-for="f in filterDefs" :key="f.field_name">
+        <span class="filter-field-label">{{ f.label }}</span>
         <el-select
-          v-if="f.widget === 'select'" v-model="filterValues[f.field_name]" :placeholder="f.label"
+          v-if="f.widget === 'select'" v-model="filterValues[f.field_name]" placeholder="全部"
           clearable size="small" style="width: 140px" @change="run"
         >
           <el-option v-for="o in selectOpts(f)" :key="String(o)" :label="o" :value="o" />
         </el-select>
         <el-select
-          v-else-if="f.data_type === 'bool'" v-model="filterValues[f.field_name]" :placeholder="f.label"
+          v-else-if="f.data_type === 'bool'" v-model="filterValues[f.field_name]" placeholder="全部"
           clearable size="small" style="width: 110px" @change="run"
         >
           <el-option label="是" :value="true" /><el-option label="否" :value="false" />
@@ -45,28 +47,28 @@
         <el-date-picker
           v-else-if="['date', 'datetime'].includes(f.data_type)" v-model="filterValues[f.field_name]"
           type="daterange" value-format="YYYY-MM-DD" size="small"
-          :start-placeholder="`${f.label}起`" :end-placeholder="`${f.label}止`" style="width: 240px" @change="run"
+          start-placeholder="开始" end-placeholder="结束" style="width: 240px" @change="run"
         />
         <el-input-number
           v-else-if="['int', 'decimal'].includes(f.data_type)" v-model="filterValues[f.field_name]"
-          :placeholder="f.label" size="small" controls-position="right" style="width: 130px" @change="run"
+          placeholder="值" size="small" controls-position="right" style="width: 120px" @change="run"
         />
         <el-input
-          v-else v-model="filterValues[f.field_name]" :placeholder="f.label"
-          clearable size="small" style="width: 160px" @change="run"
+          v-else v-model="filterValues[f.field_name]" placeholder="包含…"
+          clearable size="small" style="width: 150px" @change="run"
         />
       </template>
       <el-button v-if="hasFilter" size="small" text @click="clearFilters">清空筛选</el-button>
     </div>
 
     <template v-if="result">
-      <!-- 图表联动中的过滤条件 -->
+      <!-- 图表联动中的过滤条件（字段显示中文标签） -->
       <div v-if="linkList.length" class="link-bar">
         <span style="color: #909399; font-size: 13px">联动</span>
         <el-tag
           v-for="l in linkList" :key="l.field" closable size="small" type="warning" effect="plain"
           @close="clearLink(l.field)"
-        >{{ l.field }} = {{ l.label }}</el-tag>
+        >{{ fieldLabel(l.field) }} = {{ l.label }}</el-tag>
         <el-button size="small" text @click="clearAllLinks">清除全部</el-button>
       </div>
       <ReportDashboard
@@ -358,6 +360,28 @@ function onModeChange() {
   if (rangeMode.value !== 'custom') run()
 }
 
+// 自定义日期选满即自动重跑（与 radio 切换一致，不再必须手动点「重新生成」）
+function onCustomRangeChange(v) {
+  if (v?.length === 2 && v[0] && v[1]) run()
+}
+
+// ---------- 字段中文标签（联动标签等展示用；覆盖主表 + 各数据集） ----------
+const fieldLabels = ref({})
+function fieldLabel(fn) {
+  return fieldLabels.value[fn] || fn
+}
+async function loadFieldLabels(t) {
+  const tableIds = new Set([t.table_id, ...(t.datasets || []).map((d) => d.table_id)].filter(Boolean))
+  const map = {}
+  await Promise.all([...tableIds].map(async (tid) => {
+    try {
+      const meta = await getTable(tid)
+      for (const f of meta.fields || []) if (!map[f.field_name]) map[f.field_name] = f.label
+    } catch { /* 单表失败不影响其他 */ }
+  }))
+  fieldLabels.value = map
+}
+
 function exportFile(format) {
   const range = currentRange() || { mode: rangeMode.value }
   window.open(reportExportUrl(tplId.value, { format, ...range, filters: mergedFilters() }), '_blank')
@@ -374,17 +398,19 @@ async function init() {
   try {
     const t = await getReport(tplId.value)
     tplBlocks.value = t.blocks || []
+    // 先回填模板口径再跑数：radio 高亮从加载初期就是对的（不再短暂停在默认「本周」）
+    rangeMode.value = t.range?.mode || 'this_week'
+    customRange.value = (rangeMode.value === 'custom' && t.range?.start && t.range?.end)
+      ? [t.range.start, t.range.end] : null
     // 报表间跳转入口：?link_field=xx&link_value=yy 作为初始联动过滤
     if (route.query.link_field && route.query.link_value != null) {
       linkFilters.value = {
         [route.query.link_field]: { value: route.query.link_value, label: route.query.link_label || route.query.link_value },
       }
     }
+    loadFieldLabels(t)   // 异步补齐字段中文标签（联动条用），不阻塞首屏
+    // range 传 null：后端按模板默认口径（与刚回填的 rangeMode 一致）
     result.value = await runReport(tplId.value, null, null, currentLinks.value, undefined, blockPagesParam())
-    rangeMode.value = t.range?.mode || 'this_week'
-    if (rangeMode.value === 'custom' && t.range?.start && t.range?.end) {
-      customRange.value = [t.range.start, t.range.end]
-    }
     if (t.filter_fields?.length) {
       const meta = await getTable(t.table_id)
       filterDefs.value = t.filter_fields
@@ -411,7 +437,8 @@ watch(() => route.fullPath, () => {
 <style scoped>
 .toolbar { margin-bottom: 16px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 0; }
 .toolbar :deep(.el-radio-group) { flex-wrap: wrap; row-gap: 6px; }
-.filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.filter-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.filter-field-label { font-size: 13px; color: #606266; flex-shrink: 0; }
 .link-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 /* 下钻明细底栏：分页居右 + 截断提示居左 */
 .drill-foot { display: flex; align-items: center; gap: 12px; margin-top: 8px; }

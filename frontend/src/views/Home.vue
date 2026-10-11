@@ -116,7 +116,8 @@
                         <el-button text size="small" type="danger" :icon="Close" title="移除卡片" @click.stop="removeCard(c.id)" />
                       </span>
                     </div>
-                    <div v-if="!g.cards.length" class="cards-empty">拖拽卡片到此分组</div>
+                    <div v-if="!g.cards.length && editing" class="cards-empty">拖拽卡片到此分组</div>
+                    <div v-else-if="!g.cards.length" class="cards-empty">暂无卡片</div>
                   </div>
                 </div>
               </template>
@@ -161,7 +162,9 @@
           </section>
         </GridItem>
       </GridLayout>
-      <el-empty v-else-if="!loading" description="还没有内容，点右上角「自定义」开始布置工作台" />
+      <el-empty v-else-if="!loading" description="还没有内容，布置一个属于你的工作台吧">
+        <el-button type="primary" :icon="EditPen" @click="startEdit">开始布置</el-button>
+      </el-empty>
     </div>
 
     <AddCardDialog
@@ -386,11 +389,16 @@ async function removeGroup(sec, g) {
   sec.groups = (sec.groups || []).filter((x) => x.id !== g.id)
 }
 
-// 查看态也可折叠分组，状态直接静默保存
+// 查看态也可折叠分组，状态直接保存（失败要提示，否则用户以为折好了实际没存上）
 async function toggleGroup(g) {
   g.collapsed = !g.collapsed
   if (!editing.value) {
-    try { await saveHomeLayout(payloadOf(layout.value.sections)) } catch { /* 忽略 */ }
+    try {
+      await saveHomeLayout(payloadOf(layout.value.sections))
+    } catch (e) {
+      g.collapsed = !g.collapsed   // 保存失败回滚状态，避免界面与后端不一致
+      ElMessage.error(e.message || '保存失败，请重试')
+    }
   }
 }
 

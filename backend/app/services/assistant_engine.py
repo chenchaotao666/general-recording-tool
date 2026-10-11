@@ -283,7 +283,7 @@ def _exec_create_table(db: Session, user: User, payload: dict) -> dict:
     if storage_mode not in ("json", "physical"):
         raise HTTPException(400, "storage_mode 必须是 json 或 physical")
     # 与建表接口同一道门槛：独立物理表需「创建独立表」权限
-    if storage_mode == "physical" and not has_perm(db, role, "create_physical_table"):
+    if storage_mode == "physical" and not has_perm(db, role, "create_physical_table", tid):
         raise HTTPException(403, "独立物理表需要「创建独立表」权限")
     try:
         tc = TableCreate(label=label, fields=payload.get("fields") or [], storage_mode=storage_mode)

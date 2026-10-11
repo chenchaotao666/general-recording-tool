@@ -29,6 +29,16 @@ def list_workflow_templates(db: Session = Depends(get_db), user: User = Depends(
     return list_templates(db, user)
 
 
+@router.get("/llm-providers")
+def list_llm_providers_safe(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """AI 节点配置用的模型服务商清单（任何登录用户可读）。
+    只暴露 id/name/is_default，绝不回传 base_url/密钥等敏感配置（完整管理在 /settings/llm，仅平台超管）。"""
+    from ..models import LLMProvider
+    rows = (db.query(LLMProvider).filter(LLMProvider.enabled == True)  # noqa: E712
+            .order_by(LLMProvider.is_default.desc(), LLMProvider.id).all())
+    return [{"id": r.id, "name": r.name, "is_default": r.is_default} for r in rows]
+
+
 class InstallIn(BaseModel):
     with_demo_data: bool = False   # 为新建的表生成 50 条示例数据
 
@@ -176,10 +186,11 @@ def list_workflows(db: Session = Depends(get_db), user: User = Depends(get_curre
 @router.post("")
 def create_workflow(payload: WorkflowIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     trigger = dict(payload.trigger or {"type": "manual"})
-    try:
-        engine.validate_definition(db, trigger, payload.nodes, payload.edges, user)
-    except WorkflowError as e:
-        raise HTTPException(400, str(e))
+    if not payload.draft:
+        try:
+            engine.validate_definition(db, trigger, payload.nodes, payload.edges, user)
+        except WorkflowError as e:
+            raise HTTPException(400, str(e))
     if trigger.get("type") in ("webhook", "form") and not trigger.get("secret"):
         trigger["secret"] = uuid.uuid4().hex
     from ..services.tenancy import default_tenant_id
@@ -205,10 +216,11 @@ def get_workflow(wf_id: int, db: Session = Depends(get_db), user: User = Depends
 def update_workflow(wf_id: int, payload: WorkflowIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     wf = _get_own(db, wf_id, user)
     trigger = dict(payload.trigger or {"type": "manual"})
-    try:
-        engine.validate_definition(db, trigger, payload.nodes, payload.edges, user)
-    except WorkflowError as e:
-        raise HTTPException(400, str(e))
+    if not payload.draft:
+        try:
+            engine.validate_definition(db, trigger, payload.nodes, payload.edges, user)
+        except WorkflowError as e:
+            raise HTTPException(400, str(e))
     if trigger.get("type") in ("webhook", "form") and not trigger.get("secret"):
         trigger["secret"] = (wf.trigger_json or {}).get("secret") or uuid.uuid4().hex
     wf.name, wf.description, wf.enabled = payload.name, payload.description, payload.enabled
@@ -299,6 +311,8 @@ def get_run(run_id: int, db: Session = Depends(get_db), user: User = Depends(get
         .order_by(WorkflowNodeRun.id)
         .all()
     )
+    # 节点显示名（画布上用户起的名字）随轨迹返回，排查不用对照画布猜 node_id
+    node_names = {n.get("id"): n.get("name") for n in (wf.nodes_json or [])}
     return {
         "id": run.id, "workflow_id": wf.id, "workflow_name": wf.name,
         "trigger": run.trigger, "status": run.status,
@@ -308,6 +322,7 @@ def get_run(run_id: int, db: Session = Depends(get_db), user: User = Depends(get
         "node_runs": [
             {
                 "id": nr.id, "node_id": nr.node_id, "node_type": nr.node_type,
+                "node_name": node_names.get(nr.node_id) or nr.node_id,
                 "status": nr.status, "input": nr.input_json, "output": nr.output_json,
                 "tokens_used": nr.tokens_used, "duration_ms": nr.duration_ms, "error": nr.error,
                 "warnings": nr.warnings_json or [],

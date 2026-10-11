@@ -1,11 +1,12 @@
 <template>
   <div class="share-page" v-loading="loading">
-    <!-- 密码验证 -->
+    <!-- 密码验证（POST body 校验，密码不进 URL；通过后拿 view_token 取数） -->
     <el-card v-if="needPassword" class="pwd-card">
       <div class="title">此内容受密码保护</div>
-      <el-input v-model="password" type="password" show-password placeholder="请输入访问密码" @keyup.enter="load" />
-      <el-button type="primary" style="width: 100%; margin-top: 12px" @click="load">访问</el-button>
+      <el-input v-model="password" type="password" show-password placeholder="请输入访问密码" @keyup.enter="verify" />
+      <el-button type="primary" style="width: 100%; margin-top: 12px" :loading="verifying" @click="verify">访问</el-button>
       <div v-if="error" class="error">{{ error }}</div>
+      <div class="pwd-brand">由「通用记录工具」提供的内容分享</div>
     </el-card>
 
     <template v-else-if="data">
@@ -27,8 +28,16 @@
         <el-pagination
           v-if="data.total > data.page_size"
           v-model:current-page="page" :page-size="data.page_size" :total="data.total"
-          layout="prev, pager, next" style="margin-top: 14px" @current-change="load"
+          layout="total, prev, pager, next" style="margin-top: 14px" @current-change="load"
         />
+      </template>
+
+      <!-- 思维导图（只读） -->
+      <template v-else-if="data.resource_type === 'mindmap'">
+        <div class="page-header"><h2>{{ data.label }}</h2></div>
+        <div class="mm-view">
+          <MindmapSimple v-if="data.data" :data="data.data" readonly />
+        </div>
       </template>
 
       <!-- 报表 -->
@@ -57,6 +66,7 @@
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import ReportDashboard from '../components/ReportDashboard.vue'
+import MindmapSimple from '../components/MindmapSimple.vue'
 
 const route = useRoute()
 const token = route.params.token
@@ -64,6 +74,8 @@ const token = route.params.token
 const loading = ref(false)
 const needPassword = ref(false)
 const password = ref('')
+const verifying = ref(false)
+const viewToken = ref('')   // 密码校验通过后派生的访问凭证（密码本体只走一次 POST）
 const error = ref('')
 const data = ref(null)
 const page = ref(1)
@@ -136,12 +148,36 @@ function mergedFilters() {
   return rules.length ? { logic: 'AND', rules } : null
 }
 
+async function verify() {
+  // 密码走 POST body（不进浏览器历史/服务端日志），通过后用派生 view_token 取数
+  verifying.value = true
+  error.value = ''
+  try {
+    const res = await fetch(`/api/share/${token}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: password.value }),
+    })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      error.value = d.detail || '访问密码错误'
+      return
+    }
+    viewToken.value = d.view_token || ''
+    load()
+  } catch {
+    error.value = '无法连接服务器'
+  } finally {
+    verifying.value = false
+  }
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
     const params = new URLSearchParams({ page: page.value, page_size: 50 })
-    if (password.value) params.set('password', password.value)
+    if (viewToken.value) params.set('view_token', viewToken.value)
     // 仅开放交互的链接会生效（后端按链接的 allow_interact 判定，未开放时忽略）
     if (rangeMode.value) params.set('mode', rangeMode.value)
     const f = mergedFilters()
@@ -183,6 +219,10 @@ onMounted(load)
 </script>
 
 <style scoped>
+.mm-view {
+  height: calc(100vh - 140px); background: #fff;
+  border: 1px solid #e4e7ed; border-radius: 8px; overflow: hidden;
+}
 .share-page { max-width: 1200px; margin: 0 auto; padding: 24px; }
 .pwd-card { max-width: 360px; margin: 120px auto; text-align: center; }
 .pwd-card .title { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
@@ -193,4 +233,7 @@ onMounted(load)
 /* 口径按钮多时换行而不是横向滚动（overflow-x 会连带裁掉按钮底部边框） */
 .share-toolbar :deep(.el-radio-group) { flex-wrap: wrap; row-gap: 6px; }
 .block { margin-bottom: 16px; }
+</style>
+<style scoped>
+.pwd-brand { margin-top: 16px; text-align: center; font-size: 12px; color: #c0c4cc; }
 </style>

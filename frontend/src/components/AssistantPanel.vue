@@ -1,7 +1,10 @@
 <template>
-  <!-- 全局 AI 助手：悬浮按钮（可拖动，位置记忆在浏览器）+ 聊天抽屉 -->
-  <el-tooltip content="AI 助手（可拖动）" placement="left" :show-after="300">
-    <button class="ai-fab" :class="{ dragging: fabDragging }" :style="fabStyle" @mousedown.prevent="onFabDown" @click="onFabClick">✨</button>
+  <!-- 全局 AI 助手：悬浮按钮（可拖动，双击复位默认位置，位置记忆在浏览器）+ 聊天抽屉 -->
+  <el-tooltip content="AI 助手（拖动移动，双击复位）" placement="left" :show-after="300">
+    <button
+      class="ai-fab" :class="{ dragging: fabDragging }" :style="fabStyle"
+      @mousedown.prevent="onFabDown" @click="onFabClick" @dblclick="resetFabPos"
+    >✨</button>
   </el-tooltip>
   <el-drawer v-model="visible" size="min(920px, 94vw)" destroy-on-close>
     <template #header>
@@ -166,7 +169,10 @@
 
               <!-- 执行结果 -->
               <div v-if="m.done" class="done-text" v-html="m.done" />
-              <div v-if="m.error" class="error-line">❌ {{ m.error }}</div>
+              <div v-if="m.error" class="error-line">
+                ❌ {{ m.error }}
+                <el-button link type="primary" size="small" @click="retryMessage(m)">重试</el-button>
+              </div>
             </div>
             <div v-if="m.ts" class="msg-time">{{ fmtTime(m.ts) }}</div>
           </div>
@@ -227,7 +233,7 @@
 <script setup>
 import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElButton, ElMessage, ElMessageBox } from 'element-plus'
 import { Promotion, CirclePlus } from '@element-plus/icons-vue'
 import { assistantChat, assistantDownloadUrl, assistantExecute } from '../api'
 
@@ -274,18 +280,18 @@ const WarningsView = (props) =>
   (props.list || []).map((w) => h('div', { class: 'warn-line' }, `⚠ ${w}`))
 WarningsView.props = { list: Array }
 
-// 卡片底部：确认按钮 / 执行中 / 完成占位
+// 卡片底部：确认按钮 / 执行中 / 完成占位（用 ElButton，不再游离在样式体系外）
 const CardFooter = (props, { emit }) =>
   !props.m.done
     ? h('div', { class: 'card-actions' }, [
         h(
-          'button',
+          ElButton,
           {
-            class: 'confirm-btn',
-            disabled: props.m.executing,
+            type: 'primary', size: 'small',
+            loading: props.m.executing,
             onClick: () => emit('confirm'),
           },
-          props.m.executing ? '执行中…' : props.confirmText,
+          () => (props.m.executing ? '执行中…' : props.confirmText),
         ),
       ])
     : null
@@ -395,6 +401,12 @@ function restoreFabPos() {
   } catch { /* 忽略坏数据 */ }
 }
 
+// 悬浮球复位：双击回默认右下角（拖到找不到时的自救入口）
+function resetFabPos() {
+  fabPos.value = null
+  try { localStorage.removeItem('grt_ai_fab_pos') } catch { /* 隐私模式 */ }
+}
+
 function onFabDown(e) {
   const startX = e.clientX
   const startY = e.clientY
@@ -449,8 +461,15 @@ function quick(text) {
   send()
 }
 
-// 新建会话：清空消息与未发送草稿，回到引导页（历史随 localStorage 一并清掉）
-function newSession() {
+// 新建会话：清空消息与未发送草稿（历史只存 localStorage，不可恢复，先确认）
+async function newSession() {
+  try {
+    await ElMessageBox.confirm(
+      '将清空当前全部对话记录，不可恢复。',
+      '新建会话',
+      { type: 'warning', confirmButtonText: '清空并开始新会话', cancelButtonText: '取消' },
+    )
+  } catch { return }
   messages.value = []
   draft.value = ''
   attachments.value = []
@@ -531,6 +550,13 @@ async function send() {
   const text = draft.value.trim()
   if ((!text && !attachments.value.length) || thinking.value) return
   const images = attachments.value.slice()
+  draft.value = ''
+  attachments.value = []
+  await sendMessage(text, images)
+}
+
+// 发送一条消息的核心流程（重试复用）
+async function sendMessage(text, images) {
   const history = messages.value.slice(-20).map((m) => {
     if (m.role === 'user') {
       const n = m.imageCount || m.images?.length || 0
@@ -540,8 +566,6 @@ async function send() {
     return { role: m.role, content: digest ? `${m.content}\n${digest}` : m.content }
   })
   messages.value.push({ role: 'user', content: text, images, imageCount: images.length, ts: Date.now() })
-  draft.value = ''
-  attachments.value = []
   thinking.value = true
   scrollBottom()
   try {
@@ -553,6 +577,16 @@ async function send() {
     thinking.value = false
     scrollBottom()
   }
+}
+
+// 回复失败重试：移除失败回复，用前一条用户消息重发
+async function retryMessage(m) {
+  const idx = messages.value.indexOf(m)
+  if (idx < 0 || thinking.value) return
+  const lastUser = [...messages.value.slice(0, idx)].reverse().find((x) => x.role === 'user')
+  if (!lastUser) return
+  messages.value.splice(idx, 1)
+  await sendMessage(lastUser.content, lastUser.images || [])
 }
 
 function fillColumns(card) {

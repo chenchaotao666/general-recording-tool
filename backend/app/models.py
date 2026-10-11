@@ -64,15 +64,20 @@ class Permission(Base):
 
 
 class Role(Base):
-    """角色：权限的集合。admin 为代码级超级角色（直接放行，不查表）"""
+    """角色：权限的集合。admin 为代码级超级角色（直接放行，不查表）。
+    tenant_id NULL=全局内置角色（平台超管维护，所有租户可用）；
+    非 NULL=租户自定义角色（租户 admin 维护，仅本租户可用，code 不得与全局角色重名）"""
     __tablename__ = "roles"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    code = Column(String(64), unique=True, nullable=False)     # 如 admin / vip / user
+    code = Column(String(64), nullable=False)                # 如 admin / vip / user；按 (tenant_id, code) 唯一
     name = Column(String(64), nullable=False)
     description = Column(String(256))
     is_system = Column(Boolean, default=False)                 # 内置角色不可删除
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)  # NULL=全局角色
     created_at = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "code", name="uq_roles_tenant_code"),)
 
 
 class RolePermission(Base):
@@ -85,6 +90,39 @@ class RolePermission(Base):
     value = Column(Integer)
 
     __table_args__ = (UniqueConstraint("role_id", "permission_id", name="uq_role_permissions"),)
+
+
+class TenantRolePerm(Base):
+    """租户级角色功能权限覆盖：租户 admin 调整角色（含全局内置角色）在本租户内的功能权限。
+    有行 → 以 granted 为准；无行 → 回落全局 role_permissions。平台超管直接改全局。"""
+    __tablename__ = "tenant_role_perms"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    role_id = Column(Integer, ForeignKey("roles.id"), index=True, nullable=False)
+    permission_id = Column(Integer, ForeignKey("permissions.id"), index=True, nullable=False)
+    granted = Column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "role_id", "permission_id",
+                                       name="uq_tenant_role_perms"),)
+
+
+class RoleTablePerm(Base):
+    """角色 × 表 的操作权限（租户内配置）：无行 = 四项全允许（现状）。
+    仅收窄 via=member 的企业成员默认访问；表主/租户 admin/显式分享不受限（与数据范围的击穿语义一致）。"""
+    __tablename__ = "role_table_perms"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    role_id = Column(Integer, ForeignKey("roles.id"), index=True, nullable=False)
+    table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
+    can_view = Column(Boolean, nullable=False, default=True)
+    can_create = Column(Boolean, nullable=False, default=True)
+    can_edit = Column(Boolean, nullable=False, default=True)
+    can_delete = Column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "role_id", "table_id",
+                                       name="uq_role_table_perms"),)
 
 
 class Record(Base):
@@ -258,7 +296,9 @@ class TenantMember(Base):
     invited_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.now)
 
-    __table_args__ = (UniqueConstraint("tenant_id", "user_id", name="uq_tenant_members"),)
+    # sqlite_autoincrement：id 单调不复用——通知 ref_id 等外部引用不会因"删行后 id 回收"串行
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", name="uq_tenant_members"),
+                      {"sqlite_autoincrement": True})
 
 
 class Plan(Base):
@@ -423,18 +463,50 @@ class ReportRunLog(Base):
 
 
 class Note(Base):
-    """记事本页面：块模型内容（Editor.js blocks），可嵌套（最多 3 层），严格私有。"""
+    """记事本页面：富文本内容（HTML），可嵌套（最多 3 层），严格私有。"""
     __tablename__ = "notes"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（仅本人可见，admin 也不例外）
     parent_id = Column(Integer, ForeignKey("notes.id"), nullable=True, index=True)  # 父页面，可空=顶级
     title = Column(String(200), default="")
-    blocks_json = Column(JSON, default=list)   # Editor.js blocks: [{id, type, data}]
+    content_html = Column(Text, default="")    # 富文本 HTML（服务端白名单清洗后存储）
     pinned = Column(Boolean, default=False)
     sort = Column(Integer, default=0)          # 同级手工排序
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class Mindmap(Base):
+    """思维导图：data 存引擎无关的纯文本树 {text, children[]}（前端各引擎组件自行转换），
+    租户内成员共享编辑；删除限 所有者/租户 admin。"""
+    __tablename__ = "mindmaps"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 创建人
+    title = Column(String(200), default="未命名导图")
+    data = Column(JSON, default=dict)   # {text: str, children: [...]}
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class MindmapShare(Base):
+    """思维导图成员分享（可跨租户给好友/组）：查看/编辑两个开关；直发 pending，组分享即时生效。"""
+    __tablename__ = "mindmap_shares"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    mindmap_id = Column(Integer, ForeignKey("mindmaps.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), index=True)
+    can_view = Column(Boolean, default=True)
+    can_edit = Column(Boolean, default=False)
+    shared_by = Column(Integer, ForeignKey("users.id"))
+    status = Column(String(16), default="pending")        # pending / accepted / rejected
+    created_at = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (UniqueConstraint("mindmap_id", "user_id", "group_id",
+                                       name="uq_mindmap_shares_target"),)
 
 
 class Notification(Base):
@@ -447,6 +519,10 @@ class Notification(Base):
     link = Column(String(256))
     user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 接收人
     read = Column(Boolean, default=False)
+    # 结构化引用：如 ref_type=tenant_invitation + ref_id=tenant_members.id，
+    # 前端据此在通知条目上直接渲染 接受/拒绝 等内联操作（无需跳转详情页）
+    ref_type = Column(String(32))
+    ref_id = Column(Integer)
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -547,6 +623,7 @@ class ImageFile(Base):
     table_id = Column(Integer, index=True)              # 归属数据表（上传后关联记录时回填）
     record_id = Column(BigInteger, index=True)          # 归属记录
     field_name = Column(String(64))                     # 归属字段
+    note_id = Column(Integer, ForeignKey("notes.id"), index=True)  # 归属记事本页面（富文本插图时回填）
     uploader_id = Column(Integer, ForeignKey("users.id"))
     filename = Column(String(256))                      # 原始文件名
     mime = Column(String(64))

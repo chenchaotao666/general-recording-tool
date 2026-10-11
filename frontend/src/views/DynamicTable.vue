@@ -6,7 +6,6 @@
         <el-tag v-if="meta && !meta.is_owner" size="small" style="margin-left: 8px">来自 {{ meta.owner_label }} 的分享</el-tag>
       </h2>
       <div>
-        <el-button :icon="Printer" @click="openPrint">打印</el-button>
         <el-popover placement="bottom-end" width="320" trigger="click">
           <template #reference>
             <el-button :icon="Grid">显示列</el-button>
@@ -16,11 +15,16 @@
               <span>选择要显示的列（{{ listFields.length }}/{{ columnCandidates.length }}）</span>
               <el-button text type="primary" size="small" @click="resetColumns">恢复默认</el-button>
             </div>
+            <!-- 字段多时按名称快速定位 -->
+            <el-input
+              v-if="orderedCandidates.length > 8" v-model="colPickerKw" size="small"
+              placeholder="搜索字段" clearable style="margin-bottom: 6px"
+            />
             <div class="col-picker-actions">
               <el-button size="small" @click="showAllColumns">全选</el-button>
               <el-button size="small" @click="hideAllColumns">全不选</el-button>
             </div>
-            <div v-for="(f, i) in orderedCandidates" :key="f.field_name" class="col-picker-row">
+            <div v-for="(f, i) in visiblePickerFields" :key="f.field_name" class="col-picker-row">
               <el-checkbox
                 :model-value="!effHidden.has(f.field_name)"
                 :label="f.label" size="small"
@@ -39,49 +43,68 @@
                 <el-button text size="small" :disabled="i === 0" title="上移" @click="moveColumn(f.field_name, -1)">
                   <el-icon><ArrowUp /></el-icon>
                 </el-button>
-                <el-button text size="small" :disabled="i === orderedCandidates.length - 1" title="下移" @click="moveColumn(f.field_name, 1)">
+                <el-button text size="small" :disabled="i === visiblePickerFields.length - 1" title="下移" @click="moveColumn(f.field_name, 1)">
                   <el-icon><ArrowDown /></el-icon>
                 </el-button>
-                <el-button text size="small" :disabled="i === orderedCandidates.length - 1" title="移到最下" @click="moveColumnTo(f.field_name, orderedCandidates.length - 1)">
+                <el-button text size="small" :disabled="i === visiblePickerFields.length - 1" title="移到最下" @click="moveColumnTo(f.field_name, orderedCandidates.length - 1)">
                   <el-icon><Bottom /></el-icon>
                 </el-button>
               </span>
             </div>
           </div>
         </el-popover>
-        <el-button v-if="canTransfer && selectedRows.length" :icon="Switch" @click="openTransfer(null)">
-          转移选中（{{ selectedRows.length }}）
-        </el-button>
-        <el-button v-if="canAlter" :icon="SetUp" @click="openStruct">表结构</el-button>
         <el-button :icon="Download" @click="exportXlsx">导出 Excel</el-button>
         <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">新增记录</el-button>
+        <!-- 低频操作收进「更多」：避免页头按钮过多 + 「转移选中」凭空出现造成位移 -->
+        <el-dropdown v-if="canAlter || canTransfer" trigger="click">
+          <el-button :icon="MoreFilled" />
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item :icon="Printer" @click="openPrint">打印</el-dropdown-item>
+              <el-dropdown-item v-if="canTransfer" :icon="Switch" :disabled="!selectedRows.length" @click="openTransfer(null)">
+                转移选中{{ selectedRows.length ? `（${selectedRows.length}）` : '' }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="canAlter" :icon="SetUp" @click="openStruct">表结构</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </div>
 
     <!-- 动态筛选区：各字段条件平铺，组合为 AND -->
     <el-card v-if="filterable.length || fields.length" class="filter-card" style="margin-bottom: 14px">
-      <div style="display: flex; justify-content: flex-end; margin-bottom: 6px">
-        <!-- 筛选条件显隐（用户级偏好，按表记忆；顺序由「显示列」统一控制） -->
-        <el-popover v-if="filterableAll.length" placement="bottom-end" width="280" trigger="click">
-          <template #reference>
-            <el-button text :icon="Setting" size="small">筛选设置</el-button>
-          </template>
-          <div class="col-picker">
-            <div class="col-picker-head">
-              <span>选择要显示的筛选条件（{{ filterable.length }}/{{ filterableAll.length }}）</span>
-              <el-button text type="primary" size="small" @click="resetFiltersLayout">恢复默认</el-button>
+      <div class="filter-top">
+        <el-input
+          v-model="keyword" class="kw-input" clearable placeholder="关键字：跨文本字段搜索（输入后自动查询）"
+          :prefix-icon="SearchIcon" @input="textSearch"
+        />
+        <div class="filter-top-ops">
+          <!-- 筛选条件显隐（用户级偏好，按表记忆；顺序由「显示列」统一控制） -->
+          <el-popover v-if="filterableAll.length" placement="bottom-end" width="280" trigger="click">
+            <template #reference>
+              <el-button text :icon="Setting" size="small">筛选设置</el-button>
+            </template>
+            <div class="col-picker">
+              <div class="col-picker-head">
+                <span>选择要显示的筛选条件（{{ filterable.length }}/{{ filterableAll.length }}）</span>
+                <el-button text type="primary" size="small" @click="resetFiltersLayout">恢复默认</el-button>
+              </div>
+              <div v-for="f in filterableAll" :key="f.field_name" class="col-picker-row">
+                <el-checkbox
+                  :model-value="!effHiddenFilters.has(f.field_name)"
+                  :label="f.label" size="small"
+                  @change="(v) => toggleFilter(f.field_name, v)"
+                />
+              </div>
             </div>
-            <div v-for="f in filterableAll" :key="f.field_name" class="col-picker-row">
-              <el-checkbox
-                :model-value="!effHiddenFilters.has(f.field_name)"
-                :label="f.label" size="small"
-                @change="(v) => toggleFilter(f.field_name, v)"
-              />
-            </div>
-          </div>
-        </el-popover>
+          </el-popover>
+          <!-- 筛选区收起/展开（字段多时别把表格挤出首屏；状态按表记忆） -->
+          <el-button text size="small" @click="toggleFiltersCollapsed">
+            {{ filtersCollapsed ? `展开筛选${activeFilterCount ? `（${activeFilterCount} 项生效）` : ''}` : '收起筛选' }}
+          </el-button>
+        </div>
       </div>
-      <el-form inline class="filter-form" label-width="88px">
+      <el-form v-show="!filtersCollapsed" inline class="filter-form" label-width="88px">
         <el-form-item v-for="f in filterable" :key="f.field_name" :label="f.label">
           <!-- 除文本输入框（回车/点查询触发）外，各控件变化即查询（autoSearch 带 250ms 防抖） -->
           <el-select
@@ -153,9 +176,8 @@
             <!-- today / null / not_null：无需输入值 -->
           </div>
           <el-input
-            v-else v-model="filterModel[f.field_name]" clearable placeholder="包含..."
-            style="width: 100%" @keyup.enter="search"
-            @focus="onTextFocus(f.field_name)" @blur="onTextBlur(f.field_name)"
+            v-else v-model="filterModel[f.field_name]" clearable placeholder="包含…（输入后自动查询）"
+            style="width: 100%" @input="textSearch"
           />
         </el-form-item>
         <el-form-item>
@@ -165,9 +187,15 @@
       </el-form>
     </el-card>
 
-    <!-- 动态列表：合计行固定显示数字列总和（口径 = 全部筛选结果） -->
+    <!-- 后台数据变化轻提示（轮询发现更新时不直接换位，由用户决定何时刷新） -->
+    <div v-if="staleNotice" class="stale-bar">
+      数据有更新
+      <el-button text type="primary" size="small" @click="load(); staleNotice = false">点击刷新</el-button>
+    </div>
+
+    <!-- 动态列表：合计行仅在有数字列时显示（口径 = 全部筛选结果） -->
     <el-table
-      :data="rows" v-loading="loading" border stripe show-summary :summary-method="summaryMethod"
+      :data="rows" v-loading="loading" border stripe :show-summary="hasNumericColumns" :summary-method="summaryMethod"
       @sort-change="onSortChange" @selection-change="(v) => (selectedRows = v)"
     >
       <el-table-column v-if="canTransfer" type="selection" width="42" fixed="left" />
@@ -200,30 +228,40 @@
         <template #default="{ row }">
           <el-button v-if="canEdit" text type="primary" size="small" @click="openEdit(row)">编辑</el-button>
           <el-button v-if="canTransfer" text type="warning" size="small" @click="openTransfer(row)">转移</el-button>
-          <el-popconfirm v-if="canDelete" title="确定删除该记录？" @confirm="del(row)">
+          <!-- L2 难恢复：指明删除的是哪条（主键 + 首个文本列值，方便行密集时自查） -->
+          <el-popconfirm v-if="canDelete" :title="`确定删除该记录（${rowLabel(row)}）？`" width="260" @confirm="del(row)">
             <template #reference>
               <el-button text type="danger" size="small">删除</el-button>
             </template>
           </el-popconfirm>
         </template>
       </el-table-column>
-      <template #empty>暂无数据</template>
+      <template #empty>
+        <el-empty v-if="hasAnyFilter" description="没有符合条件的记录">
+          <el-button size="small" @click="resetFilters">清空筛选</el-button>
+        </el-empty>
+        <el-empty v-else description="还没有记录">
+          <el-button v-if="canCreate" size="small" type="primary" @click="openCreate">新增第一条</el-button>
+        </el-empty>
+      </template>
     </el-table>
 
     <el-pagination
       v-model:current-page="page" v-model:page-size="pageSize"
-      :total="total" layout="total, sizes, prev, pager, next"
+      :total="total" layout="total, sizes, prev, pager, next, jumper"
       style="margin-top: 14px" @current-change="load" @size-change="load"
     />
 
     <el-dialog
       v-model="dialogVisible" :title="editing ? '编辑记录' : '新增记录'"
       :width="hasSubform || fields.length > 10 ? '860px' : '640px'" destroy-on-close
+      :before-close="onFormDialogClose"
     >
       <DynamicForm
+        ref="recordFormRef"
         :fields="formFields" :initial="editing || {}" :loading="saving"
         :table-id="tableId" :record-id="editing?.id || null"
-        @submit="onSave" @cancel="dialogVisible = false"
+        @submit="onSave" @cancel="onFormCancel"
       />
     </el-dialog>
 
@@ -325,7 +363,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Download, SetUp, Grid, ArrowUp, ArrowDown, Top, Bottom, Setting, Position, Printer, Switch } from '@element-plus/icons-vue'
+import { Plus, Download, SetUp, Grid, ArrowUp, ArrowDown, Top, Bottom, Setting, Position, Printer, Switch, MoreFilled, Search as SearchIcon } from '@element-plus/icons-vue'
 import DynamicForm from '../components/DynamicForm.vue'
 import FieldOptionsDialog from '../components/FieldOptionsDialog.vue'
 import PrintFormatPicker from '../components/PrintFormatPicker.vue'
@@ -358,6 +396,36 @@ const meta = ref(null)
 const metaLoading = ref(true)
 const rows = ref([])
 const summary = ref({})   // 数字列合计（服务端随列表返回，口径为全部筛选结果）
+// 合计行仅在有数字列时显示（没有数字列挂着一行空"合计"没意义）
+const hasNumericColumns = computed(() => listFields.value.some((f) => ['int', 'decimal'].includes(f.data_type)))
+const staleNotice = ref(false)   // 轮询发现后台数据变化 → 顶部"有更新，点击刷新"轻提示条
+
+// ---------- 筛选区状态 ----------
+const keyword = ref('')          // 全局关键字（跨文本字段搜索，走后端 kw 参数）
+// 筛选区收起/展开（按表记忆，字段多时避免把表格挤出首屏）
+const filtersCollapsed = ref(localStorage.getItem(`grt_dt_filters_collapsed_${tableId}`) === '1')
+function toggleFiltersCollapsed() {
+  filtersCollapsed.value = !filtersCollapsed.value
+  localStorage.setItem(`grt_dt_filters_collapsed_${tableId}`, filtersCollapsed.value ? '1' : '0')
+}
+// 当前是否有任何筛选/关键字生效（空态文案与收起提示用）
+const hasAnyFilter = computed(() => {
+  if (keyword.value.trim()) return true
+  return Object.values(filterModel).some((v) => v !== null && v !== undefined && v !== '')
+    || Object.values(filterMax).some((v) => v !== null && v !== undefined && v !== '')
+})
+const activeFilterCount = computed(() => {
+  let n = keyword.value.trim() ? 1 : 0
+  n += Object.values(filterModel).filter((v) => v !== null && v !== undefined && v !== '').length
+  return n
+})
+// 显示列 popover 的字段搜索
+const colPickerKw = ref('')
+const visiblePickerFields = computed(() => {
+  const kw = colPickerKw.value.trim().toLowerCase()
+  if (!kw) return orderedCandidates.value
+  return orderedCandidates.value.filter((f) => f.label.toLowerCase().includes(kw) || f.field_name.toLowerCase().includes(kw))
+})
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
@@ -389,6 +457,26 @@ const DATE_NO_VALUE_OPS = ['today', 'null', 'not_null']                // 无需
 const filterDateOps = reactive({})
 const dialogVisible = ref(false)
 const editing = ref(null)
+const recordFormRef = ref(null)
+
+// 记录表单防误丢：有改动时，遮罩/ESC/取消按钮关闭前都要确认
+async function confirmDiscardForm() {
+  if (!recordFormRef.value?.isDirty?.()) return true
+  try {
+    await ElMessageBox.confirm('表单有未保存的内容，确定放弃？', '未保存的修改', {
+      type: 'warning', confirmButtonText: '放弃', cancelButtonText: '继续编辑',
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+async function onFormDialogClose(done) {
+  if (await confirmDiscardForm()) done()
+}
+async function onFormCancel() {
+  if (await confirmDiscardForm()) dialogVisible.value = false
+}
 const saving = ref(false)
 
 const fields = computed(() => meta.value?.fields || [])
@@ -396,6 +484,12 @@ const fields = computed(() => meta.value?.fields || [])
 // 子表字段天然不进列表，总开关不适用于它（始终在表单中显示）
 const isFieldVisible = (f) => f.data_type === 'subform' || f.options?.show_in_list !== false
 const visibleFields = computed(() => fields.value.filter(isFieldVisible))
+// 删除确认用的记录摘要：#id + 第一个文本/单选字段的值（行密集时方便自查没点错行）
+function rowLabel(row) {
+  const f = fields.value.find((x) => ['varchar', 'text', 'select'].includes(x.data_type))
+  const v = f ? row[f.field_name] : null
+  return v ? `#${row.id} ${String(v).slice(0, 20)}` : `#${row.id}`
+}
 const canCreate = computed(() => meta.value?.my_perms?.can_create)
 const canEdit = computed(() => meta.value?.my_perms?.can_edit)
 const canAlter = computed(() => meta.value?.is_owner || meta.value?.my_perms?.is_admin)
@@ -712,11 +806,13 @@ function queryParams() {
     sort_by: sortBy.value || undefined,
     sort_order: sortOrder.value || undefined,
     filters: JSON.stringify(buildFilters()),
+    kw: keyword.value.trim() || undefined,   // 全局关键字（跨文本字段，后端 OR 匹配）
   }
 }
 
 async function load() {
   loading.value = true
+  staleNotice.value = false   // 主动加载即最新，清掉更新提示
   try {
     const res = await listRecords(tableId, queryParams())
     rows.value = res.items
@@ -729,27 +825,32 @@ async function load() {
   }
 }
 
-// 静默刷新：轮询用，不闪 loading、失败不打扰
-async function silentLoad() {
-  try {
-    const res = await listRecords(tableId, queryParams())
-    rows.value = res.items
-    total.value = res.total
-    summary.value = res.summary || {}
-  } catch { /* 静默刷新失败不打断用户 */ }
-}
-
-// 后台写入（工作流定时/webhook、其他同事编辑）感知：页面可见时每 15s 静默刷新
+// 后台写入（工作流定时/webhook、其他同事编辑）感知：页面可见时每 15s 探测一次；
+// 发现变化不直接换位（阅读中行位置会跳），改为顶部轻提示条，由用户决定何时刷新
 let pollTimer = null
 function startPoll() {
   stopPoll()
   pollTimer = setInterval(() => {
     if (document.hidden || loading.value || dialogVisible.value) return
-    silentLoad()
+    probeStale()
   }, 15000)
 }
 function stopPoll() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
+
+// 探测数据是否变化：签名 = total + 当前页 id 列表；不同则亮提示条（失败静默）
+function currentSignature() {
+  return `${total.value}:${rows.value.map((r) => r.id).join(',')}`
+}
+async function probeStale() {
+  if (staleNotice.value) return   // 已提示就别重复探测
+  try {
+    const before = currentSignature()
+    const res = await listRecords(tableId, queryParams())
+    const after = `${res.total}:${(res.items || []).map((r) => r.id).join(',')}`
+    if (after !== before) staleNotice.value = true
+  } catch { /* 探测失败不打扰 */ }
 }
 
 // 同页写入（AI 助手填表等）即时刷新：监听应用内广播
@@ -762,11 +863,18 @@ function search() {
   load()
 }
 
-// 筛选控件（文本输入框除外）变化即查询：轻防抖合并连续操作（如区间先填最小再填最大、切换日期类型）
+// 筛选控件变化即查询：轻防抖合并连续操作（如区间先填最小再填最大、切换日期类型）
 let _autoSearchTimer = null
 function autoSearch() {
   clearTimeout(_autoSearchTimer)
   _autoSearchTimer = setTimeout(search, 250)
+}
+
+// 文本类输入（筛选框/全局关键字）：防抖稍长，避免打字过程频繁请求
+let _textSearchTimer = null
+function textSearch() {
+  clearTimeout(_textSearchTimer)
+  _textSearchTimer = setTimeout(search, 500)
 }
 
 // 日期筛选类型切换：清空旧值后立即按新类型查询（today/null 等无值类型也即时生效）
@@ -776,19 +884,12 @@ function onDateOpChange(field, v) {
   autoSearch()
 }
 
-// 文本筛选：回车/失焦触发；失焦仅在值有变化时查（无变化不白查；
-// 失焦是因为去点「查询」时，250ms 防抖会把两次触发合并成一次）
-const _textFocusVal = {}
-function onTextFocus(field) { _textFocusVal[field] = filterModel[field] }
-function onTextBlur(field) {
-  if (filterModel[field] !== _textFocusVal[field]) autoSearch()
-}
-
 function resetFilters() {
   for (const k of Object.keys(filterModel)) filterModel[k] = null
   for (const k of Object.keys(filterMax)) filterMax[k] = null
   for (const k of Object.keys(filterOps)) filterOps[k] = 'eq'
   for (const k of Object.keys(filterDateOps)) filterDateOps[k] = 'range'
+  keyword.value = ''
   search()
 }
 
@@ -1151,6 +1252,15 @@ onUnmounted(() => {
 .num-sep { color: #909399; flex-shrink: 0; }
 /* 筛选卡片：收紧默认 body padding（el-card 默认 20px），减少筛选区上下的空隙 */
 .filter-card :deep(.el-card__body) { padding: 10px 16px 2px; }
+.filter-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+.kw-input { width: 320px; flex-shrink: 0; }
+.filter-top-ops { display: flex; align-items: center; flex-shrink: 0; }
+/* 后台数据更新轻提示条（替代静默刷新换位） */
+.stale-bar {
+  display: flex; align-items: center; gap: 4px; margin-bottom: 10px; padding: 6px 12px;
+  background: #fdf6ec; border: 1px solid #faecd8; border-radius: 6px;
+  font-size: 13px; color: #b88230;
+}
 /* 筛选区：等宽网格列对齐——每项一格、列宽一致（格宽按最宽组合控件「日期范围」≈430px 定） */
 .filter-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); column-gap: 18px; }
 .filter-form :deep(.el-form-item) { margin-right: 0; }

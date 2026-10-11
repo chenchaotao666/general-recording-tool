@@ -52,11 +52,11 @@
             <el-option label="私有化" value="private" />
           </el-select>
         </el-form-item>
-        <el-form-item label="月价（分）">
-          <el-input-number v-model="form.price_monthly" :min="0" style="width: 100%" />
+        <el-form-item label="月价（元）">
+          <el-input-number v-model="form.price_monthly_yuan" :min="0" :precision="2" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="年价（分）">
-          <el-input-number v-model="form.price_yearly" :min="0" style="width: 100%" />
+        <el-form-item label="年价（元）">
+          <el-input-number v-model="form.price_yearly_yuan" :min="0" :precision="2" style="width: 100%" />
         </el-form-item>
         <el-form-item label="排序">
           <el-input-number v-model="form.sort" :min="0" style="width: 100%" />
@@ -76,14 +76,20 @@
       <el-table :data="entRows" border size="small">
         <el-table-column label="键" min-width="200">
           <template #default="{ row }">
-            <el-select v-model="row.key" filterable allow-create placeholder="选择或输入键" style="width: 100%">
+            <!-- 只允许已知键：自由输入拼错会静默无效 -->
+            <el-select v-model="row.key" filterable placeholder="选择键" style="width: 100%">
               <el-option v-for="k in KNOWN_KEYS" :key="k.value" :label="`${k.value}（${k.label}）`" :value="k.value" />
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="值（空=不限 / 开关 1=开）" width="220">
+        <el-table-column label="值（空=不限）" width="220">
           <template #default="{ row }">
-            <el-input-number v-model="row.value" :min="0" placeholder="空=不限" style="width: 100%" />
+            <!-- 开关类权益用 switch（1=开 0=关）；数值类用 input-number -->
+            <el-switch
+              v-if="row.key.startsWith('feature_')" :model-value="!!row.value"
+              @change="(v) => (row.value = v ? 1 : 0)"
+            />
+            <el-input-number v-else v-model="row.value" :min="0" placeholder="空=不限" style="width: 100%" />
           </template>
         </el-table-column>
         <el-table-column label="" width="60">
@@ -103,7 +109,7 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { platformCreatePlan, platformListPlans, platformSetEntitlements, platformUpdatePlan } from '../api'
 
 const KNOWN_KEYS = [
@@ -134,10 +140,12 @@ const editVisible = ref(false)
 const entsVisible = ref(false)
 const isCreate = ref(false)
 const current = ref(null)
-const form = reactive({ code: '', name: '', audience: 'individual', price_monthly: 0, price_yearly: 0, sort: 0, is_public: true })
+const form = reactive({ code: '', name: '', audience: 'individual', price_monthly_yuan: 0, price_yearly_yuan: 0, sort: 0, is_public: true })
 const entRows = ref([])
 
 const fen = (v) => ((v || 0) / 100).toFixed(v % 100 ? 2 : 0)
+// 表单输入单位是元，提交时换算为分（避免输错两个数量级）
+const yuanToFen = (v) => Math.round((v || 0) * 100)
 
 function entBrief(ents) {
   const parts = []
@@ -164,7 +172,7 @@ onMounted(load)
 
 function openCreate() {
   isCreate.value = true
-  Object.assign(form, { code: '', name: '', audience: 'individual', price_monthly: 0, price_yearly: 0, sort: 0, is_public: true })
+  Object.assign(form, { code: '', name: '', audience: 'individual', price_monthly_yuan: 0, price_yearly_yuan: 0, sort: 0, is_public: true })
   editVisible.value = true
 }
 
@@ -173,7 +181,7 @@ function openEdit(row) {
   current.value = row
   Object.assign(form, {
     code: row.code, name: row.name, audience: row.audience,
-    price_monthly: row.price_monthly, price_yearly: row.price_yearly,
+    price_monthly_yuan: (row.price_monthly || 0) / 100, price_yearly_yuan: (row.price_yearly || 0) / 100,
     sort: row.sort, is_public: row.is_public,
   })
   editVisible.value = true
@@ -182,14 +190,18 @@ function openEdit(row) {
 async function save() {
   saving.value = true
   try {
+    const payload = {
+      price_monthly: yuanToFen(form.price_monthly_yuan), price_yearly: yuanToFen(form.price_yearly_yuan),
+      sort: form.sort, is_public: form.is_public,
+    }
     if (isCreate.value) {
       if (!form.code.trim() || !form.name.trim()) return ElMessage.warning('请填写标识与名称')
-      await platformCreatePlan(form)
+      await platformCreatePlan({
+        code: form.code.trim(), name: form.name.trim(), audience: form.audience, ...payload,
+      })
     } else {
       await platformUpdatePlan(current.value.id, {
-        name: form.name, audience: form.audience,
-        price_monthly: form.price_monthly, price_yearly: form.price_yearly,
-        sort: form.sort, is_public: form.is_public,
+        name: form.name, audience: form.audience, ...payload,
       })
     }
     ElMessage.success('已保存')
@@ -214,6 +226,14 @@ async function saveEnts() {
     if (!r.key?.trim()) continue
     ents[r.key.trim()] = r.value ?? null
   }
+  // 高危批量操作：影响全部订阅租户，保存前确认
+  try {
+    await ElMessageBox.confirm(
+      `保存后，订阅「${current.value.name}」套餐的全部租户将按新权益立即生效（配额/功能开关变化）。`,
+      '保存权益配置',
+      { type: 'warning', confirmButtonText: '确认保存', cancelButtonText: '再检查下' },
+    )
+  } catch { return }
   saving.value = true
   try {
     await platformSetEntitlements(current.value.id, ents)

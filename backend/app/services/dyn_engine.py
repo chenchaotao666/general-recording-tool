@@ -218,9 +218,10 @@ def _to_condition(table: Table, fields_by_name: dict, f: dict):
 
 def list_records(db: Session, table_id: int, page: int, page_size: int,
                  filters: list[dict] | None, sort_by: str | None, sort_order: str | None,
-                 page_cap: int = MAX_PAGE_SIZE, viewer=None) -> dict:
+                 page_cap: int = MAX_PAGE_SIZE, viewer=None, kw: str | None = None) -> dict:
     """page_cap：页大小上限，常规列表用默认 200；导出等批量场景可放宽（传 EXPORT_MAX）。
     filters 元素除单条规则外，也接受 {"logic": "AND"|"OR", "rules": [...]} 组合条件。
+    kw：全局关键字，跨所有 varchar/text 字段 OR 模糊匹配（不区分大小写由数据库 collation 决定）。
     viewer（P1 数据范围）：None=引擎内部不过滤；传 User 则按角色 scope 追加 owner_id 过滤。"""
     from . import scope as scope_mod
     mt, fields = load_meta(db, table_id)
@@ -229,12 +230,17 @@ def list_records(db: Session, table_id: int, page: int, page_size: int,
         from . import json_store
         if rule:
             filters = (filters or []) + [{"logic": "AND", "rules": [rule]}]
-        return json_store.list_records(db, mt, fields, page, page_size, filters, sort_by, sort_order, page_cap)
+        return json_store.list_records(db, mt, fields, page, page_size, filters, sort_by, sort_order, page_cap, kw=kw)
     _, fields, table = load_business(db, table_id)
     fields_by_name = {f.field_name: f for f in fields}
     conds = [c for c in (_to_condition(table, fields_by_name, f) for f in (filters or [])) if c is not None]
     if rule:
         conds.append(build_condition(table, fields_by_name, rule))
+    if kw:
+        text_fields = [f for f in fields if f.data_type in ("varchar", "text")]
+        if text_fields:
+            from sqlalchemy import or_
+            conds.append(or_(*[table.c[f.field_name].contains(kw) for f in text_fields]))
 
     page = max(page, 1)
     page_size = min(max(page_size, 1), page_cap)

@@ -22,6 +22,7 @@
               <template v-if="p.price_yearly">¥{{ fen(p.price_yearly) }}<span class="price-unit">/{{ p.audience === 'enterprise' ? '人/年' : '年' }}</span></template>
               <template v-else>免费</template>
             </div>
+            <div v-if="p.price_monthly" class="plan-price-monthly">或 ¥{{ fen(p.price_monthly) }}/{{ p.audience === 'enterprise' ? '人/月' : '月' }}</div>
             <ul class="plan-ents">
               <li>{{ entText(p.entitlements.max_tables, '张数据表', '数据表不限') }}</li>
               <li>{{ entText(p.entitlements.max_rows, '条记录', '记录不限', true) }}</li>
@@ -37,11 +38,17 @@
 
       <!-- 订单确认 -->
       <el-card v-if="selected" class="order-card">
-        <template #header>确认订单</template>
+        <template #header>
+          确认订单<el-tag v-if="isRenewal" size="small" type="success" style="margin-left: 8px">续费</el-tag>
+        </template>
+        <el-alert
+          v-if="isRenewal" type="success" :closable="false" class="renew-tip"
+          title="续费：未到期的时长将顺延累加，不会浪费已购买的时间"
+        />
         <el-form inline>
           <el-form-item v-if="selected.audience === 'enterprise'" label="席位数">
             <el-input-number v-model="seats" :min="selected.entitlements.min_seats || 1" :max="selected.entitlements.max_seats || 9999" />
-            <span class="seat-hint">20–49 席 9 折，50 席以上 8 折</span>
+            <span class="seat-hint">{{ seatDiscountHint }}</span>
           </el-form-item>
           <el-form-item label="购买时长">
             <el-select v-model="years" style="width: 120px">
@@ -54,20 +61,20 @@
           </el-form-item>
         </el-form>
         <el-button type="primary" size="large" :loading="submitting" @click="submitOrder">
-          提交订单并支付
+          {{ isRenewal ? '提交续费订单并支付' : '提交订单并支付' }}
         </el-button>
       </el-card>
     </div>
 
     <!-- 模拟支付 -->
-    <el-dialog v-model="payVisible" title="收银台" width="400px" :close-on-click-modal="false" destroy-on-close>
+    <el-dialog v-model="payVisible" title="收银台" width="400px" :close-on-click-modal="false" destroy-on-close :before-close="onPayDialogClose">
       <div class="pay-box">
         <div class="pay-amount">¥{{ fen(order?.amount || 0) }}</div>
         <div class="pay-desc">{{ order?.plan_name }} × {{ order?.years }} 年<template v-if="order?.seats > 1"> × {{ order?.seats }} 席</template></div>
         <el-alert type="info" :closable="false" title="演示环境：点击「确认支付」直接成功（真实支付渠道接入点已预留）" />
       </div>
       <template #footer>
-        <el-button @click="payVisible = false">取消</el-button>
+        <el-button @click="onPayCancel">取消</el-button>
         <el-button type="success" :loading="paying" @click="pay">确认支付</el-button>
       </template>
     </el-dialog>
@@ -77,14 +84,17 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { billingPlans, createOrder, payOrder } from '../api'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { billingPlans, createOrder, payOrder, updateCurrentTenant } from '../api'
 
 const router = useRouter()
 const loading = ref(false)
 const plans = ref([])
 const currentPlanCode = ref('')
 const isPersonal = ref(false)
+const seatTiers = ref([])   // 后端下发的席位阶梯折扣档位 [[threshold, discount], ...]
+
+const isRenewal = computed(() => !!selected.value && selected.value.code === currentPlanCode.value)
 
 const planGroups = computed(() => {
   const groups = []
@@ -119,8 +129,22 @@ const FEATURE_LABELS = {
 }
 const featureList = (ents) => Object.keys(FEATURE_LABELS).filter((k) => ents[k]).map((k) => FEATURE_LABELS[k])
 
-// 与后端 SEAT_DISCOUNT_TIERS 同口径（展示用，金额以后端订单为准）
-const discount = computed(() => (seats.value >= 50 ? 0.8 : seats.value >= 20 ? 0.9 : 1))
+// 折扣档位与提示文案都来自后端 seat_discount_tiers（改价只改后端，前端自动跟随）
+const discount = computed(() => {
+  for (const [threshold, d] of seatTiers.value) {
+    if (seats.value >= threshold) return d
+  }
+  return 1
+})
+const seatDiscountHint = computed(() => {
+  if (!seatTiers.value.length) return ''
+  const parts = seatTiers.value.map(([t, d], i) => {
+    const next = seatTiers.value[i - 1]   // tiers 降序：[50,0.8],[20,0.9]
+    const range = next ? `${t}–${next[0] - 1}` : `${t} 以上`
+    return `${range} 席 ${d * 10} 折`
+  })
+  return parts.join('，')
+})
 const amount = computed(() => {
   if (!selected.value) return 0
   const yearly = selected.value.price_yearly || 0
@@ -136,6 +160,7 @@ async function load() {
     plans.value = r.plans
     currentPlanCode.value = r.current_plan_code || ''
     isPersonal.value = r.tenant_type === 'personal'
+    seatTiers.value = r.seat_discount_tiers || []
     seats.value = 1
   } catch (e) {
     ElMessage.error(e.message)
@@ -147,7 +172,6 @@ onMounted(load)
 
 async function submitOrder() {
   if (!selected.value) return
-  if (selected.value.code === currentPlanCode.value) return ElMessage.warning('已是当前套餐，如需续费请直接提交（时长将累加）')
   submitting.value = true
   try {
     order.value = await createOrder({
@@ -163,12 +187,54 @@ async function submitOrder() {
   }
 }
 
+// 收银台取消/关闭：订单已是待支付状态，明确告知后续入口，不再死胡同
+async function confirmLeaveCashier() {
+  try {
+    await ElMessageBox.confirm(
+      '订单已保存为「待支付」，可随时在「套餐与用量 → 订单记录」继续支付或取消。',
+      '暂不支付',
+      { confirmButtonText: '继续支付', cancelButtonText: '稍后支付', type: 'info' },
+    )
+    return false   // 选择「继续支付」：留在收银台
+  } catch {
+    return true    // 选择「稍后支付」：关闭并去订单页
+  }
+}
+async function onPayCancel() {
+  if (await confirmLeaveCashier()) {
+    payVisible.value = false
+    router.push('/billing')
+  }
+}
+async function onPayDialogClose(done) {
+  if (await confirmLeaveCashier()) {
+    done()
+    router.push('/billing')
+  }
+}
+
 async function pay() {
   paying.value = true
   try {
     await payOrder(order.value.id)
     payVisible.value = false
     ElMessage.success('支付成功，套餐已生效')
+    // 个人空间刚升级为企业：引导设置公司名称（也可稍后在 系统设置 > 基础设置 修改）
+    if (selected.value?.audience === 'enterprise' && isPersonal.value) {
+      try {
+        const { value } = await ElMessageBox.prompt(
+          '空间已升级为企业版，请设置公司名称（成员登录选择空间、邀请通知中显示）',
+          '设置公司名称',
+          { confirmButtonText: '保存', cancelButtonText: '稍后再说',
+            inputPattern: /\S+/, inputErrorMessage: '公司名称不能为空' })
+        if (value?.trim()) {
+          const r = await updateCurrentTenant({ name: value.trim() })
+          const user = JSON.parse(localStorage.getItem('grt_user') || '{}')
+          if (user.tenant && user.tenant.id === r.tenant.id) user.tenant.name = r.tenant.name
+          localStorage.setItem('grt_user', JSON.stringify(user))
+        }
+      } catch { /* 取消：稍后在基础设置里改 */ }
+    }
     router.push('/billing')
   } catch (e) {
     ElMessage.error(e.message)
@@ -185,14 +251,16 @@ async function pay() {
 .plan-card.selected { border-color: #409eff; }
 .plan-card.current { border-color: #67c23a; }
 .plan-name { font-size: 16px; font-weight: 600; display: flex; gap: 8px; align-items: center; }
-.plan-price { font-size: 26px; font-weight: 700; color: #f56c6c; margin: 10px 0; }
+.plan-price { font-size: 26px; font-weight: 700; color: #303133; margin: 10px 0 2px; }
+.plan-price-monthly { font-size: 12px; color: #909399; margin-bottom: 8px; }
 .price-unit { font-size: 13px; font-weight: 400; color: #909399; }
 .plan-ents { margin: 0; padding-left: 18px; color: #606266; font-size: 13px; line-height: 1.9; }
 .order-card { margin-top: 16px; }
-.amount { font-size: 22px; font-weight: 700; color: #f56c6c; }
+.renew-tip { margin-bottom: 12px; }
+.amount { font-size: 22px; font-weight: 700; color: #303133; }
 .seat-hint { margin-left: 8px; color: #909399; font-size: 12px; }
 .discount-tag { margin-left: 8px; color: #67c23a; font-size: 12px; }
 .pay-box { text-align: center; }
-.pay-amount { font-size: 32px; font-weight: 700; color: #f56c6c; margin-bottom: 8px; }
+.pay-amount { font-size: 32px; font-weight: 700; color: #303133; margin-bottom: 8px; }
 .pay-desc { color: #606266; margin-bottom: 16px; }
 </style>

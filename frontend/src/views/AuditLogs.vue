@@ -24,17 +24,23 @@
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="load(1)">查询</el-button>
+        <el-button @click="resetFilters">重置</el-button>
       </el-form-item>
     </el-form>
 
     <el-table :data="items" v-loading="loading" border>
-      <el-table-column prop="created_at" label="时间" width="170" />
+      <el-table-column label="时间" width="150" :formatter="(r) => fmtTime(r.created_at)" />
       <el-table-column prop="user" label="操作人" width="110" />
       <el-table-column label="动作" width="120">
         <template #default="{ row }">{{ actionLabel(row.action) }}</template>
       </el-table-column>
       <el-table-column label="数据表" min-width="140">
-        <template #default="{ row }">{{ row.table_label || row.table_id || '—' }}</template>
+        <template #default="{ row }">
+          <el-link v-if="row.table_id" type="primary" @click="$router.push(`/t/${row.table_id}`)">
+            {{ row.table_label || row.table_id }}
+          </el-link>
+          <span v-else>—</span>
+        </template>
       </el-table-column>
       <el-table-column prop="record_id" label="记录" width="90">
         <template #default="{ row }">{{ row.record_id ?? '—' }}</template>
@@ -49,22 +55,36 @@
     </el-table>
 
     <el-pagination
-      class="pager" layout="total, prev, pager, next" :total="total"
-      :page-size="filters.page_size" :current-page="filters.page"
-      @current-change="load"
+      class="pager" layout="total, sizes, prev, pager, next, jumper" :total="total"
+      v-model:page-size="filters.page_size" :page-sizes="[20, 50, 100]" :current-page="filters.page"
+      @current-change="load" @size-change="load(1)"
     />
 
     <el-dialog v-model="diffVisible" title="变更内容" width="720px">
-      <el-row :gutter="12">
-        <el-col :span="12">
-          <div class="diff-title">变更前</div>
-          <pre class="diff-json">{{ pretty(current?.before) }}</pre>
-        </el-col>
-        <el-col :span="12">
-          <div class="diff-title">变更后</div>
-          <pre class="diff-json">{{ pretty(current?.after) }}</pre>
-        </el-col>
-      </el-row>
+      <!-- 字段级 diff：有变化才列出（大记录不用人工比对两段 JSON） -->
+      <template v-if="diffRows.length">
+        <el-table :data="diffRows" size="small" border max-height="480">
+          <el-table-column prop="field" label="字段" width="180" />
+          <el-table-column label="变更前" min-width="220">
+            <template #default="{ row }"><span class="diff-old">{{ row.before }}</span></template>
+          </el-table-column>
+          <el-table-column label="变更后" min-width="220">
+            <template #default="{ row }"><span class="diff-new">{{ row.after }}</span></template>
+          </el-table-column>
+        </el-table>
+      </template>
+      <template v-else>
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <div class="diff-title">变更前</div>
+            <pre class="diff-json">{{ pretty(current?.before) }}</pre>
+          </el-col>
+          <el-col :span="12">
+            <div class="diff-title">变更后</div>
+            <pre class="diff-json">{{ pretty(current?.after) }}</pre>
+          </el-col>
+        </el-row>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -73,6 +93,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listAuditLogs, listTables } from '../api'
+import { fmtTime } from '../utils/format'
 
 const actions = [
   { value: 'create', label: '新增记录' },
@@ -99,6 +120,35 @@ const current = ref(null)
 
 const pretty = (v) => (v ? JSON.stringify(v, null, 2) : '—')
 
+function resetFilters() {
+  filters.table_id = null
+  filters.user = ''
+  filters.action = ''
+  range.value = null
+  load(1)
+}
+
+// 字段级 diff：before/after 都是对象时按字段对比，只列有变化的字段；否则退回整段 JSON 对照
+const diffRows = ref([])
+function buildDiffRows(before, after) {
+  if (!before || !after || typeof before !== 'object' || typeof after !== 'object'
+      || Array.isArray(before) || Array.isArray(after)) return []
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+  const rows = []
+  for (const k of keys) {
+    const b = JSON.stringify(before[k] ?? null)
+    const a = JSON.stringify(after[k] ?? null)
+    if (b !== a) rows.push({ field: k, before: b, after: a })
+  }
+  return rows
+}
+
+function showDiff(row) {
+  current.value = row
+  diffRows.value = buildDiffRows(row.before, row.after)
+  diffVisible.value = true
+}
+
 async function load(page) {
   if (page) filters.page = page
   loading.value = true
@@ -121,11 +171,6 @@ async function load(page) {
   }
 }
 
-function showDiff(row) {
-  current.value = row
-  diffVisible.value = true
-}
-
 onMounted(async () => {
   load(1)
   try {
@@ -142,4 +187,6 @@ onMounted(async () => {
   background: #f5f7fa; padding: 10px; border-radius: 4px; font-size: 12px;
   max-height: 400px; overflow: auto; white-space: pre-wrap; word-break: break-all;
 }
+.diff-old { color: #f56c6c; word-break: break-all; }
+.diff-new { color: #67c23a; word-break: break-all; }
 </style>

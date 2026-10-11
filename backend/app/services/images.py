@@ -4,6 +4,7 @@
 归属：写入/更新记录时按 image 字段值回填 table_id/record_id/field_name；
 记录删除、字段删除、表删除时级联删除文件；未关联的孤儿文件超期自动清理。
 """
+import re
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -145,11 +146,40 @@ def delete_table_images(db: Session, table_id: int) -> None:
     _delete_rows(db, rows)
 
 
+# ---------- 记事本插图 ----------
+
+_NOTE_IMG_RE = re.compile(r"/api/uploads/image/([a-f0-9]{32})")
+
+
+def sync_note_images(db: Session, note_id: int, content_html: str, uploader_id: int | None = None) -> None:
+    """笔记保存后调用：HTML 里引用的图片回填 note_id；从笔记移除的图片级联删除。
+    只认领本人上传的图片（防止引用他人图片 id 抢占归属）。"""
+    used = set(_NOTE_IMG_RE.findall(content_html or ""))
+    for fid in used:
+        row = db.get(ImageFile, fid)
+        if not row or row.note_id == note_id or row.record_id:
+            continue
+        if uploader_id is not None and row.uploader_id != uploader_id:
+            continue
+        row.note_id = note_id
+    removed = db.query(ImageFile).filter(
+        ImageFile.note_id == note_id, ~ImageFile.id.in_(used),
+    ).all()
+    _delete_rows(db, removed)
+    db.commit()
+
+
+def delete_note_images(db: Session, note_id: int) -> None:
+    rows = db.query(ImageFile).filter_by(note_id=note_id).all()
+    _delete_rows(db, rows)
+
+
 def cleanup_orphans(db: Session) -> int:
-    """清理超期未关联记录的临时图片（上传后最终没保存进任何记录）。"""
+    """清理超期未关联记录/笔记的临时图片（上传后最终没保存进任何地方）。"""
     deadline = datetime.now() - timedelta(hours=ORPHAN_TTL_HOURS)
     rows = db.query(ImageFile).filter(
-        ImageFile.record_id.is_(None), ImageFile.created_at < deadline,
+        ImageFile.record_id.is_(None), ImageFile.note_id.is_(None),
+        ImageFile.created_at < deadline,
     ).all()
     n = _delete_rows(db, rows)
     if n:

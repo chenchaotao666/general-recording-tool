@@ -155,3 +155,4 @@ class WorkflowIn(BaseModel):
     trigger: dict = {}     # {type: schedule|record_created|record_updated|webhook|manual, ...}
     nodes: list[dict] = [] # [{id, type, name?, config, on_error?}]
     edges: list[dict] = [] # [{from, to, branch?}]
+    draft: bool = False    # 草稿：跳过完整性校验（前端体检有错误时用户选择"仍要保存草稿"）

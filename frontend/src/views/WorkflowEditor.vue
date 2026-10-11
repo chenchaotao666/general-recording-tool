@@ -17,16 +17,17 @@
       <el-button :icon="Grid" @click="tidyUp">整理画布</el-button>
       <el-button :icon="CircleCheck" :loading="checking" @click="runCheck(true)">检查问题</el-button>
       <el-button v-if="wfId" :icon="VideoPlay" :loading="running" title="沙盒试运行：发通知/HTTP/写表/审批/延迟/子流程只模拟，不真实生效" @click="doRun(true)">试运行</el-button>
-      <el-button v-if="wfId" :icon="Promotion" :loading="running" @click="doRun(false)">立即执行</el-button>
+      <el-button v-if="wfId" :icon="Promotion" :loading="running" title="真实执行：发通知/写表/调 HTTP 等副作用真实生效（首次执行前会确认）" @click="onRunReal">立即执行</el-button>
       <el-button v-if="wfId" :icon="Document" @click="openRuns">执行日志</el-button>
       <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存</el-button>
     </div>
 
     <div class="body">
-      <!-- 左侧：节点面板（可点击或拖拽入画布） -->
+      <!-- 左侧：节点面板（可搜索，点击或拖拽入画布） -->
       <div class="sidebar">
         <div class="side-section palette">
           <div class="side-title">节点（点击或拖入画布）</div>
+          <el-input v-model="paletteKw" size="small" placeholder="搜索节点" clearable class="palette-kw" />
           <div v-for="[cat, items] in paletteGroups" :key="cat" class="palette-group">
             <div class="palette-cat">{{ CAT_NAMES[cat] || cat }}</div>
             <div v-for="nt in items" :key="nt.type" class="palette-item" :title="nt.description" draggable="true"
@@ -34,6 +35,7 @@
               <span class="dot" :class="`cat-${nt.category}`" />{{ nt.name }}
             </div>
           </div>
+          <el-empty v-if="paletteKw && !paletteGroups.length" description="没有匹配的节点" :image-size="40" />
         </div>
       </div>
 
@@ -41,7 +43,7 @@
       <div class="canvas-wrap" @dragover.prevent @drop="onPaletteDrop">
         <VueFlow v-model:nodes="flowNodes" v-model:edges="flowEdges" class="canvas" :delete-key-code="['Backspace', 'Delete']"
           :min-zoom="0.3" :max-zoom="1.6" @init="onVfInit" @connect="onConnect" @node-click="onNodeClick"
-          @node-drag-stop="commitHistory" @pane-click="selectedId = null" @edge-click="selectedId = null">
+          @node-drag-stop="commitHistory" @pane-click="onPaneClick" @edge-click="onEdgeClick">
           <Background pattern-color="#d4d7de" :gap="16" />
           <Controls />
           <MiniMap pannable zoomable />
@@ -50,6 +52,13 @@
           </template>
           <div v-if="flowNodes.length <= 1" class="empty-hint">从左侧点击或拖入节点到画布，把「触发器」和节点连线串联流程</div>
         </VueFlow>
+        <!-- 连线删除入口（鼠标用户）：点连线后点击位置出现删除按钮 -->
+        <div
+          v-if="edgeMenu.show" class="edge-menu"
+          :style="{ left: edgeMenu.x + 'px', top: edgeMenu.y + 'px' }"
+        >
+          <el-button size="small" type="danger" @click="deleteEdge(edgeMenu.id)">删除连线</el-button>
+        </div>
       </div>
 
       <!-- 右侧：触发器 / 节点配置 -->
@@ -219,7 +228,7 @@ import '@vue-flow/minimap/dist/style.css'
 
 import {
   aiAssistWorkflow, aiExplainWorkflow, aiNodeConfig, checkWorkflow, createWorkflow, getTable, getWorkflow,
-  getWorkflowRun, listProviders, listReports, listTables, listWorkflows,
+  getWorkflowRun, listReports, listTables, listWorkflowProviders, listWorkflows,
   runWorkflow, testRunWorkflow, updateWorkflow, workflowNodeTypes, workflowRuns,
 } from '../api'
 import FlowNode from '../components/workflow/FlowNode.vue'
@@ -228,6 +237,7 @@ import TriggerForm from '../components/workflow/TriggerForm.vue'
 import JsonTree from '../components/workflow/JsonTree.vue'
 import { buildRecordOptions } from '../components/workflow/judgeObject'
 import NodeDoc from '../components/workflow/NodeDoc.vue'
+import { useDirtyGuard } from '../utils/useDirtyGuard'
 
 const CAT_NAMES = { data: '数据', ai: 'AI', logic: '逻辑', action: '动作', human: '人工' }
 
@@ -296,6 +306,10 @@ function focusCanvasNode(n) {
 function fitCanvas() { pendingFit = true }
 const saving = ref(false)
 const running = ref(false)
+// ---- 离开保护：画布/名称/触发器有未保存修改时拦截路由与浏览器关闭 ----
+const dirty = ref(false)
+let dirtyReady = false   // 初始加载完成后才开始追踪（加载过程不算修改）
+useDirtyGuard(dirty, '当前工作流有未保存的修改，离开后修改将丢失。')
 const idCounters = {}
 
 const selectedNode = computed(() => flowNodes.value.find((n) => n.id === selectedId.value))
@@ -319,7 +333,11 @@ function commitHistory() {
   if (histStack.value[histIndex.value] === s) return   // 无变化不压栈
   histStack.value = [...histStack.value.slice(0, histIndex.value + 1), s].slice(-50)
   histIndex.value = histStack.value.length - 1
+  if (dirtyReady) dirty.value = true
 }
+
+// 名称/描述/启用开关/触发器配置的修改（不进历史栈的部分）
+watch([meta, trigger], () => { if (dirtyReady) dirty.value = true }, { deep: true })
 
 function commitHistoryDebounced() {
   clearTimeout(histTimer)
@@ -353,6 +371,7 @@ function undo() {
   if (!canUndo.value) return
   histIndex.value -= 1
   restore(histStack.value[histIndex.value])
+  if (dirtyReady) dirty.value = true   // undo 后画布与已保存状态不同
 }
 
 function redo() {
@@ -360,6 +379,7 @@ function redo() {
   if (!canRedo.value) return
   histIndex.value += 1
   restore(histStack.value[histIndex.value])
+  if (dirtyReady) dirty.value = true
 }
 
 // 结构变化（节点/连线数量变化：添加、删除、连线、键盘 Delete）→ 提交历史。
@@ -782,11 +802,40 @@ function aiNodeContext() {
 }
 
 const nodeTypeOf = (t) => nodeTypes.value.find((x) => x.type === t)
+const paletteKw = ref('')
 const paletteGroups = computed(() => {
+  const kw = paletteKw.value.trim().toLowerCase()
   const groups = {}
-  for (const nt of nodeTypes.value) (groups[nt.category] ||= []).push(nt)
+  for (const nt of nodeTypes.value) {
+    if (kw && !`${nt.name} ${nt.description || ''} ${nt.type}`.toLowerCase().includes(kw)) continue
+    ;(groups[nt.category] ||= []).push(nt)
+  }
   return Object.entries(groups)
 })
+
+// ---------- 连线删除（鼠标入口）：点连线在点击处出现删除按钮，点空白/选节点/Esc 关闭 ----------
+const edgeMenu = reactive({ show: false, id: null, x: 0, y: 0 })
+
+function onEdgeClick({ event, edge }) {
+  const wrap = document.querySelector('.canvas-wrap').getBoundingClientRect()
+  edgeMenu.show = true
+  edgeMenu.id = edge.id
+  edgeMenu.x = event.clientX - wrap.left + 8
+  edgeMenu.y = event.clientY - wrap.top - 8
+}
+
+function closeEdgeMenu() { edgeMenu.show = false }
+
+function deleteEdge(id) {
+  flowEdges.value = flowEdges.value.filter((e) => e.id !== id)
+  closeEdgeMenu()
+  commitHistory()
+}
+
+function onPaneClick() {
+  selectedId.value = null
+  closeEdgeMenu()
+}
 
 // 点击添加的落点：视口中央偏上附近找第一个不重叠的空位（找不到就逐行下移），不再固定斜线叠加
 function freeSpot() {
@@ -854,7 +903,10 @@ function onConnect(params) {
   })
 }
 
-function onNodeClick({ node }) { selectedId.value = node.id }
+function onNodeClick({ node }) {
+  selectedId.value = node.id
+  closeEdgeMenu()
+}
 
 // ---- 节点悬停工具栏动作：试运行到此 / 停用 / 复制 / 删除 ----
 function nodeAction(action, id) {
@@ -1059,11 +1111,19 @@ async function save() {
     const list = await runCheck()
     if (list === null) return   // 体检请求失败（已提示），不继续保存
     const errs = list.filter((i) => i.level === 'error')
+    let saveAsDraft = false
     if (errs.length) {
-      ElMessage.error(`有 ${errs.length} 个错误需要处理（已标注在画布上，点「检查问题」查看清单）`)
-      return
+      // 错误级问题默认阻断，但给「仍要保存草稿」出口（先存半成品回头再补；后端 draft 标记跳过校验）
+      try {
+        await ElMessageBox.confirm(
+          `有 ${errs.length} 个错误需要处理（已标注在画布上）。可以先保存为草稿，稍后再修复。`,
+          '保存前检查',
+          { type: 'warning', confirmButtonText: '仍要保存草稿', cancelButtonText: '返回修复' },
+        )
+        saveAsDraft = true
+      } catch { return }
     }
-    const payload = buildPayload()
+    const payload = { ...buildPayload(), draft: saveAsDraft }
     const saved = wfId.value
       ? await updateWorkflow(wfId.value, payload)
       : await createWorkflow(payload)
@@ -1073,12 +1133,29 @@ async function save() {
     if (saved.trigger?.secret) trigger.secret = saved.trigger.secret
     if (list.length) ElMessage.warning(`已保存，还有 ${list.length} 个建议处理的问题（见问题清单）`)
     else ElMessage.success('已保存')
+    dirty.value = false
     router.replace(`/workflows/${saved.id}/edit`)
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
     saving.value = false
   }
+}
+
+// 「立即执行」与「试运行」相邻：真实副作用，每个流程每会话首次执行前确认一次
+async function onRunReal() {
+  const key = `grt_wf_run_ok_${wfId.value}`
+  if (!sessionStorage.getItem(key)) {
+    try {
+      await ElMessageBox.confirm(
+        `将真实执行工作流「${meta.name || '未命名'}」：可能发送通知、写入数据表或调用外部接口（「试运行」才是无副作用的沙盒）。`,
+        '立即执行',
+        { type: 'warning', confirmButtonText: '执行', cancelButtonText: '取消' },
+      )
+      sessionStorage.setItem(key, '1')
+    } catch { return }
+  }
+  doRun(false)
 }
 
 async function doRun(isTest) {
@@ -1231,7 +1308,8 @@ async function onAiGenerate() {
 onMounted(async () => {
   window.addEventListener('keydown', onEditorKeydown)
   ;[tables.value, providers.value, nodeTypes.value, allWorkflows.value, allReports.value] = await Promise.all([
-    listTables(), listProviders(), workflowNodeTypes(), listWorkflows(), listReports(),
+    // 服务商清单走登录可读的轻量端点（/settings/llm 仅平台超管，普通用户会 403）
+    listTables(), listWorkflowProviders().catch(() => []), workflowNodeTypes(), listWorkflows(), listReports(),
   ])
   if (wfId.value) {
     const wf = await getWorkflow(wfId.value)
@@ -1252,6 +1330,7 @@ onMounted(async () => {
   // 初始状态作为历史栈底（加载过程产生的中间快照丢弃）
   histStack.value = [snapshot()]
   histIndex.value = 0
+  dirtyReady = true   // 加载完成，开始追踪修改
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', onEditorKeydown)
@@ -1282,6 +1361,14 @@ onUnmounted(() => {
 .row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #606266; }
 .hint { font-size: 12px; color: #909399; }
 .webhook-url .hint { margin-bottom: 4px; }
+/* 连线删除悬浮按钮 */
+.edge-menu {
+  position: absolute; z-index: 30; padding: 4px;
+  background: #fff; border: 1px solid #e4e7ed; border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .12);
+}
+.canvas-wrap { position: relative; flex: 1; min-width: 0; }
+.palette-kw { margin-bottom: 8px; }
 .palette-cat { font-size: 12px; color: #909399; margin: 8px 0 4px; }
 .palette-item {
   padding: 6px 10px; margin-bottom: 4px; border: 1px solid #e4e7ed; border-radius: 6px;
@@ -1298,11 +1385,10 @@ onUnmounted(() => {
 .run-echo-io :deep(.el-collapse-item__content) { max-height: 260px; overflow: auto; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: #909399; }
 .dot.cat-data { background: #409eff; }
-.dot.cat-ai { background: #9b59b6; }
+.dot.cat-ai { background: var(--grt-ai); }
 .dot.cat-logic { background: #e6a23c; }
 .dot.cat-action { background: #67c23a; }
 .dot.cat-human { background: #f56c6c; }
-.canvas-wrap { flex: 1; min-width: 0; position: relative; }
 .canvas { width: 100%; height: 100%; }
 .empty-hint {
   position: absolute; top: 40%; left: 50%; transform: translateX(-50%);

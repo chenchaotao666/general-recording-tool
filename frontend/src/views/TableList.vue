@@ -2,18 +2,33 @@
   <div>
     <div class="page-header">
       <h2>数据表</h2>
-      <div>
-        <el-badge :value="pendingShares.length || ''" :hidden="!pendingShares.length" style="margin-right: 12px">
+      <div class="page-header-ops">
+        <!-- 搜索/排序（客户端，表多时不用肉眼扫卡片） -->
+        <el-input
+          v-if="tables.length > 3" v-model="kw" placeholder="搜索表名" clearable
+          :prefix-icon="SearchIcon" style="width: 180px"
+        />
+        <el-select v-if="tables.length > 3" v-model="sortMode" style="width: 130px">
+          <el-option label="最近创建" value="created_desc" />
+          <el-option label="最早创建" value="created_asc" />
+          <el-option label="名称 A→Z" value="label_asc" />
+        </el-select>
+        <el-badge :value="pendingShares.length || ''" :hidden="!pendingShares.length">
           <el-button @click="pendingVisible = true">待接受分享</el-button>
         </el-badge>
+        <el-button :icon="Plus" @click="createVisible = true">新建空白表</el-button>
         <el-button type="primary" :icon="Upload" @click="$router.push('/import')">导入 Excel 建表</el-button>
       </div>
     </div>
 
-    <el-empty v-if="!loading && tables.length === 0" description="还没有数据表，点击右上角导入 Excel 开始" />
+    <el-empty v-if="!loading && tables.length === 0" description="还没有数据表">
+      <el-button :icon="Plus" @click="createVisible = true">新建空白表</el-button>
+      <el-button type="primary" :icon="Upload" @click="$router.push('/import')">导入 Excel 建表</el-button>
+    </el-empty>
+    <el-empty v-else-if="!loading && !displayTables.length" :description="`没有匹配「${kw}」的数据表`" />
 
     <el-row :gutter="16" v-loading="loading">
-      <el-col v-for="t in tables" :key="t.id" :span="8" style="margin-bottom: 16px">
+      <el-col v-for="t in displayTables" :key="t.id" :xs="24" :sm="12" :md="8" :xl="6" style="margin-bottom: 16px">
         <el-card shadow="hover">
           <div class="card-title">
             {{ t.label }}
@@ -21,25 +36,45 @@
             <el-tag v-if="!t.is_owner" size="small" style="margin-left: 6px">来自 {{ t.owner_label }} 的分享</el-tag>
           </div>
           <div class="card-sub">{{ t.name }} · {{ t.record_count }} 条记录</div>
-          <div class="card-sub">创建于 {{ t.created_at }}</div>
+          <div class="card-sub">创建于 {{ fmtTime(t.created_at) }}</div>
           <div style="margin-top: 12px">
             <el-button type="primary" @click="$router.push(`/t/${t.id}`)">打开</el-button>
             <el-button text :icon="Download" @click="exportXlsx(t)">导出</el-button>
             <el-button v-if="canShare(t)" text type="primary" @click="openShare(t)">分享</el-button>
-            <el-popconfirm v-if="t.is_owner || t.is_admin" title="将删除该表及全部数据，确定？" width="240" @confirm="del(t)">
-              <template #reference>
-                <el-button type="danger" text>删除</el-button>
-              </template>
-            </el-popconfirm>
+            <el-button v-if="t.is_owner || t.is_admin" type="danger" text @click="del(t)">删除</el-button>
           </div>
         </el-card>
       </el-col>
     </el-row>
 
+    <!-- 新建空白表：不走 Excel 的起步路径（后续可在表页「表结构」里继续加字段） -->
+    <el-dialog v-model="createVisible" title="新建空白表" width="420px" destroy-on-close>
+      <el-form label-width="90px">
+        <el-form-item label="表名称" required>
+          <el-input v-model="createForm.label" placeholder="如：客户跟进记录" maxlength="64" @keyup.enter="doCreateTable" />
+        </el-form-item>
+        <el-form-item label="首个字段">
+          <el-input v-model="createForm.firstField" placeholder="默认：名称" maxlength="32" />
+          <div class="form-hint">先建一个文本字段起步，更多字段建好后在「表结构」里添加</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createVisible = false">取消</el-button>
+        <el-button type="primary" :loading="creating" @click="doCreateTable">创建</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 待接受的分享 -->
     <el-dialog v-model="pendingVisible" title="待接受的分享" width="620px">
       <el-table :data="pendingShares" size="small" border>
-        <el-table-column label="数据表" prop="table_label" min-width="140" />
+        <el-table-column label="类型" width="70" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.resource_type === 'mindmap' ? 'success' : 'info'">
+              {{ row.resource_type === 'mindmap' ? '导图' : '数据表' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="名称" prop="table_label" min-width="140" />
         <el-table-column label="分享者" prop="owner_label" width="110" />
         <el-table-column label="权限" min-width="140">
           <template #default="{ row }">{{ permsText(row) }}</template>
@@ -54,129 +89,79 @@
       <el-empty v-if="!pendingShares.length" description="暂无待接受的分享" :image-size="60" />
     </el-dialog>
 
-    <!-- 分享管理对话框 -->
-    <el-dialog v-model="shareVisible" :title="`分享「${shareTable?.label}」`" width="680px">
-      <el-tabs v-model="shareTab">
-        <!-- 成员分享 -->
-        <el-tab-pane label="成员分享" name="members">
-          <el-form inline @submit.prevent>
-            <el-form-item>
-              <el-radio-group v-model="shareForm.target_type">
-                <el-radio value="user">用户</el-radio>
-                <el-radio value="group">用户组</el-radio>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item v-if="shareForm.target_type === 'user'">
-              <el-select
-                v-model="shareForm.user_id" filterable remote :remote-method="searchShareable"
-                :loading="searching" placeholder="搜索好友/同组用户" style="width: 200px"
-              >
-                <el-option v-for="u in userOptions" :key="u.id" :label="u.username" :value="u.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item v-else>
-              <el-select v-model="shareForm.group_id" placeholder="选择用户组" style="width: 150px">
-                <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item>
-              <el-select v-model="shareForm.preset" style="width: 140px">
-                <el-option v-for="(p, k) in ROLE_PRESETS" :key="k" :label="p.label" :value="k" />
-              </el-select>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" :loading="shareSaving" @click="saveShare">添加/更新</el-button>
-            </el-form-item>
-          </el-form>
-          <div style="color: #909399; font-size: 12px; margin-bottom: 10px">
-            只能分享给好友或同组用户（左侧「好友」页可添加好友）；直发分享需对方接受后生效
-          </div>
-          <el-table :data="shares" size="small" border>
-            <el-table-column label="对象" width="160">
-              <template #default="{ row }">
-                {{ row.target }}
-                <el-tag v-if="row.target_type === 'group'" size="small" type="warning" style="margin-left: 4px">组</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="90" align="center">
-              <template #default="{ row }">
-                <el-tag v-if="row.status === 'pending'" size="small" type="warning">待确认</el-tag>
-                <el-tag v-else-if="row.status === 'rejected'" size="small" type="danger">已拒绝</el-tag>
-                <span v-else style="color: #909399">已生效</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="查看" width="60" align="center"><template #default="{ row }">{{ row.can_view ? '✓' : '—' }}</template></el-table-column>
-            <el-table-column label="新增" width="60" align="center"><template #default="{ row }">{{ row.can_create ? '✓' : '—' }}</template></el-table-column>
-            <el-table-column label="编辑" width="60" align="center"><template #default="{ row }">{{ row.can_edit ? '✓' : '—' }}</template></el-table-column>
-            <el-table-column label="删除" width="60" align="center"><template #default="{ row }">{{ row.can_delete ? '✓' : '—' }}</template></el-table-column>
-            <el-table-column label="操作" align="center">
-              <template #default="{ row }">
-                <el-button v-if="row.status === 'rejected'" text type="primary" size="small" @click="reShare(row)">重新发起</el-button>
-                <el-button text type="danger" size="small" @click="removeShare(row)">移除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-
-        <!-- 链接分享 -->
-        <el-tab-pane label="链接分享" name="links">
-          <el-form inline @submit.prevent>
-            <el-form-item>
-              <el-input v-model="linkForm.password" placeholder="访问密码（可选）" style="width: 160px" show-password />
-            </el-form-item>
-            <el-form-item>
-              <el-input-number v-model="linkForm.expires_in_days" :min="1" :max="365" placeholder="有效期" style="width: 130px" />
-              <span style="margin-left: 6px; color: #909399">天（留空永久）</span>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" :loading="linkSaving" @click="createLink">生成链接</el-button>
-            </el-form-item>
-          </el-form>
-          <el-table :data="links" size="small" border>
-            <el-table-column label="链接" min-width="280">
-              <template #default="{ row }">
-                <span class="link-url">{{ linkUrl(row.token) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="密码" width="70" align="center">
-              <template #default="{ row }">{{ row.has_password ? '有' : '—' }}</template>
-            </el-table-column>
-            <el-table-column label="有效期至" width="150">
-              <template #default="{ row }">{{ row.expires_at || '永久' }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="150" align="center">
-              <template #default="{ row }">
-                <el-button text type="primary" size="small" @click="copyLink(row)">复制</el-button>
-                <el-button text type="danger" size="small" @click="removeLink(row)">撤销</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <div v-if="!links.length" style="color: #c0c4cc; font-size: 13px; text-align: center; padding: 20px 0">
-            还没有分享链接，生成后任何人凭链接可只读查看此表
-          </div>
-        </el-tab-pane>
-      </el-tabs>
-    </el-dialog>
+    <!-- 分享管理对话框（与思维导图等共用同一组件） -->
+    <ShareDialog
+      v-model="shareVisible" resource-type="table"
+      :resource-id="shareTable?.id" :resource-name="shareTable?.label"
+    />
   </div>
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Upload, Download } from '@element-plus/icons-vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Upload, Download, Search as SearchIcon } from '@element-plus/icons-vue'
 import {
-  acceptShare, createShareLink, deleteShare, deleteShareLink, deleteTable,
-  listMyGroups, listPendingShares, listShareLinks, listShares, listTables,
-  putShare, recordExportUrl, rejectShare, searchUsers,
+  acceptMindmapShare, acceptShare, createTable, deleteTable, listPendingShares, listTables,
+  recordExportUrl, rejectMindmapShare, rejectShare,
 } from '../api'
+import ShareDialog from '../components/ShareDialog.vue'
+import { fmtTime } from '../utils/format'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
 
 // 导出整表（上限 5000 条）；打开表页后可按当前筛选导出
 function exportXlsx(t) {
-  window.open(recordExportUrl(t.id), '_blank')
+  const w = window.open(recordExportUrl(t.id), '_blank')
+  if (!w) ElMessage.warning('浏览器拦截了弹出窗口，请允许本站的弹出窗口后重试')
 }
 
 const tables = ref([])
 const loading = ref(false)
+
+// 搜索/排序（客户端过滤）
+const kw = ref('')
+const sortMode = ref('created_desc')
+const displayTables = computed(() => {
+  const k = kw.value.trim().toLowerCase()
+  let list = tables.value
+  if (k) list = list.filter((t) => (t.label || '').toLowerCase().includes(k) || (t.name || '').toLowerCase().includes(k))
+  const arr = [...list]
+  if (sortMode.value === 'label_asc') arr.sort((a, b) => (a.label || '').localeCompare(b.label || '', 'zh'))
+  else if (sortMode.value === 'created_asc') arr.sort((a, b) => (a.created_at > b.created_at ? 1 : -1))
+  else arr.sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+  return arr
+})
+
+// ---------- 新建空白表 ----------
+const createVisible = ref(false)
+const creating = ref(false)
+const createForm = reactive({ label: '', firstField: '' })
+
+async function doCreateTable() {
+  const label = createForm.label.trim()
+  if (!label) return ElMessage.warning('请填写表名称')
+  creating.value = true
+  try {
+    const fieldLabel = createForm.firstField.trim() || '名称'
+    const res = await createTable({
+      label,
+      fields: [{ field_name: 'name', label: fieldLabel, data_type: 'varchar', nullable: false }],
+    })
+    ElMessage.success(`已创建「${label}」，去添加字段和记录吧`)
+    createVisible.value = false
+    createForm.label = ''
+    createForm.firstField = ''
+    window.dispatchEvent(new Event('grt:tables-changed'))
+    // 直接进表页，顺势就能加字段/录数据
+    if (res?.table?.id) router.push(`/t/${res.table.id}`)
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    creating.value = false
+  }
+}
 
 const myPerms = JSON.parse(localStorage.getItem('grt_user') || '{}').perms || []
 
@@ -195,7 +180,15 @@ function canShare(t) {
   return (t.is_owner && myPerms.includes('share')) || t.is_admin
 }
 
+// L3 不可恢复：删除整表用弹窗确认并说明影响范围
 async function del(t) {
+  try {
+    await ElMessageBox.confirm(
+      `将删除数据表「${t.name}」及其全部 ${t.record_count} 条记录，不可恢复。`,
+      '删除数据表',
+      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger', cancelButtonText: '取消' },
+    )
+  } catch { return }
   try {
     await deleteTable(t.id)
     ElMessage.success('已删除')
@@ -205,156 +198,13 @@ async function del(t) {
   }
 }
 
-// ---------- 分享 ----------
+// ---------- 分享（对话框逻辑在 ShareDialog 组件） ----------
 const shareVisible = ref(false)
-const shareTab = ref('members')
 const shareTable = ref(null)
-const shares = ref([])
-const shareSaving = ref(false)
-const groups = ref([])
 
-// 角色预设：映射到 查看/新增/编辑/删除 四个开关
-const ROLE_PRESETS = {
-  viewer: { label: '查看者', perms: { can_view: true, can_create: false, can_edit: false, can_delete: false } },
-  editor: { label: '编辑者', perms: { can_view: true, can_create: true, can_edit: true, can_delete: false } },
-  manager: { label: '管理员', perms: { can_view: true, can_create: true, can_edit: true, can_delete: true } },
-}
-
-const shareForm = reactive({ target_type: 'user', user_id: null, group_id: null, preset: 'viewer' })
-const userOptions = ref([])
-const searching = ref(false)
-
-async function openShare(t) {
+function openShare(t) {
   shareTable.value = t
   shareVisible.value = true
-  Object.assign(shareForm, { target_type: 'user', user_id: null, group_id: null, preset: 'viewer' })
-  await Promise.all([loadShares(), loadGroups(), searchShareable('')])
-  loadLinks()
-}
-
-async function searchShareable(q) {
-  searching.value = true
-  try {
-    userOptions.value = await searchUsers(q, 'shareable')
-  } catch {
-    userOptions.value = []
-  } finally {
-    searching.value = false
-  }
-}
-
-async function loadShares() {
-  try {
-    shares.value = await listShares(shareTable.value.id)
-  } catch (e) {
-    ElMessage.error(e.message)
-  }
-}
-
-async function loadGroups() {
-  try {
-    groups.value = await listMyGroups()
-  } catch { /* 不在任何组时为空列表 */ }
-}
-
-async function saveShare() {
-  const payload = { ...ROLE_PRESETS[shareForm.preset].perms }
-  if (shareForm.target_type === 'user') {
-    if (!shareForm.user_id) return ElMessage.warning('请选择用户')
-    payload.user_id = shareForm.user_id
-  } else {
-    if (!shareForm.group_id) return ElMessage.warning('请选择用户组')
-    payload.group_id = shareForm.group_id
-  }
-  shareSaving.value = true
-  try {
-    await putShare(shareTable.value.id, payload)
-    ElMessage.success('已保存')
-    shareForm.user_id = null
-    await loadShares()
-  } catch (e) {
-    ElMessage.error(e.message)
-  } finally {
-    shareSaving.value = false
-  }
-}
-
-async function reShare(row) {
-  try {
-    await putShare(shareTable.value.id, {
-      username: row.target,
-      can_view: row.can_view, can_create: row.can_create,
-      can_edit: row.can_edit, can_delete: row.can_delete,
-    })
-    ElMessage.success('已重新发起')
-    await loadShares()
-  } catch (e) {
-    ElMessage.error(e.message)
-  }
-}
-
-async function removeShare(row) {
-  try {
-    await deleteShare(shareTable.value.id, row.id)
-    ElMessage.success('已移除')
-    await loadShares()
-  } catch (e) {
-    ElMessage.error(e.message)
-  }
-}
-
-// ---------- 链接分享 ----------
-const links = ref([])
-const linkSaving = ref(false)
-const linkForm = reactive({ password: '', expires_in_days: null })
-
-function linkUrl(token) {
-  return `${location.origin}/share/${token}`
-}
-
-async function loadLinks() {
-  try {
-    links.value = await listShareLinks(shareTable.value.id)
-  } catch (e) {
-    ElMessage.error(e.message)
-  }
-}
-
-async function createLink() {
-  linkSaving.value = true
-  try {
-    await createShareLink(shareTable.value.id, {
-      password: linkForm.password || null,
-      expires_in_days: linkForm.expires_in_days || null,
-    })
-    ElMessage.success('链接已生成')
-    linkForm.password = ''
-    linkForm.expires_in_days = null
-    await loadLinks()
-  } catch (e) {
-    ElMessage.error(e.message)
-  } finally {
-    linkSaving.value = false
-  }
-}
-
-async function copyLink(row) {
-  try {
-    await navigator.clipboard.writeText(linkUrl(row.token))
-    ElMessage.success('链接已复制')
-  } catch {
-    ElMessage.info(linkUrl(row.token))
-  }
-}
-
-async function removeLink(row) {
-  try {
-    await deleteShareLink(shareTable.value.id, row.id)
-    ElMessage.success('已撤销')
-    await loadLinks()
-  } catch (e) {
-    ElMessage.error(e.message)
-  }
 }
 
 // ---------- 待接受分享 ----------
@@ -376,7 +226,10 @@ function permsText(row) {
 
 async function respond(row, action) {
   try {
-    await (action === 'accept' ? acceptShare(row.id) : rejectShare(row.id))
+    const isMm = row.resource_type === 'mindmap'
+    await (action === 'accept'
+      ? (isMm ? acceptMindmapShare(row.id) : acceptShare(row.id))
+      : (isMm ? rejectMindmapShare(row.id) : rejectShare(row.id)))
     ElMessage.success(action === 'accept' ? '已接受' : '已拒绝')
     await Promise.all([loadPending(), load()])
   } catch (e) {
@@ -401,4 +254,6 @@ onBeforeUnmount(() => {
 .card-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
 .card-sub { font-size: 12px; color: #909399; margin-top: 4px; }
 .link-url { font-size: 12px; color: #409eff; word-break: break-all; }
+.page-header-ops { display: flex; align-items: center; gap: 8px; }
+.form-hint { font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.4; }
 </style>

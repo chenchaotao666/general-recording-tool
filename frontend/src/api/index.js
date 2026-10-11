@@ -46,6 +46,7 @@ export function handleBillingError(e) {
 // 登录 / 注册
 export const login = (username, password) => http.post('/auth/login', { username, password })
 export const register = (username, password) => http.post('/auth/register', { username, password })
+export const getMe = () => http.get('/auth/me')
 export const changePassword = (oldPassword, newPassword) =>
   http.put('/auth/password', { old_password: oldPassword, new_password: newPassword })
 
@@ -53,6 +54,7 @@ export const changePassword = (oldPassword, newPassword) =>
 export const listMyTenants = () => http.get('/tenants/mine')
 export const switchTenant = (tenantId) => http.post('/tenants/switch', { tenant_id: tenantId })
 export const getCurrentTenant = () => http.get('/tenants/current')
+export const updateCurrentTenant = (p) => http.put('/tenants/current', p)
 export const upgradeToEnterprise = () => http.post('/tenants/upgrade-to-enterprise')
 
 // 成员管理（当前工作空间）
@@ -60,6 +62,7 @@ export const listMembers = () => http.get('/members')
 export const listMyInvitations = () => http.get('/members/invitations')
 export const inviteMember = (username, role = 'user') => http.post('/members/invite', { username, role })
 export const acceptInvitation = (memberId) => http.post(`/members/${memberId}/accept`)
+export const declineInvitation = (memberId) => http.post(`/members/${memberId}/decline`)
 export const setMemberRole = (memberId, role) => http.put(`/members/${memberId}/role`, { role })
 export const setMemberOrg = (memberId, departmentId, managerId) =>
   http.put(`/members/${memberId}/org`, { department_id: departmentId, manager_id: managerId })
@@ -86,6 +89,7 @@ export const transferRecords = (tid, recordIds, ownerId) =>
 export const billingPlans = () => http.get('/billing/plans')
 export const createOrder = (p) => http.post('/billing/orders', p)
 export const payOrder = (orderId) => http.post(`/billing/orders/${orderId}/pay`)
+export const cancelOrder = (orderId) => http.post(`/billing/orders/${orderId}/cancel`)
 export const listOrders = () => http.get('/billing/orders')
 
 // 审计日志（租户 admin + feature_audit）
@@ -108,6 +112,9 @@ export const uploadExcel = (file) => {
   return http.post('/excel/upload', fd)
 }
 export const analyzeExcel = (payload) => http.post('/excel/analyze', payload)
+// 按表头行重新解析预览（调整表头行即时刷新用）
+export const excelPreview = (fileId, sheetName, headerRow) =>
+  http.get('/excel/preview', { params: { file_id: fileId, sheet_name: sheetName, header_row: headerRow } })
 
 // 图片附件
 export const uploadImage = (file) => {
@@ -116,6 +123,13 @@ export const uploadImage = (file) => {
   return http.post('/uploads/image', fd)
 }
 export const imageUrl = (id) => `/api/uploads/image/${id}?token=${localStorage.getItem('grt_token')}&tenant_id=${localStorage.getItem('grt_tenant_id') || ''}`
+
+// 单文件图片上传（富文本编辑器插图用），返回 {files: [{id, filename, size, mime}]}
+export const uploadImageFile = (file) => {
+  const fd = new FormData()
+  fd.append('files', file)
+  return http.post('/uploads/image', fd)
+}
 
 // 数据表
 export const listTables = (params) => http.get('/tables', { params })   // params.all=1：admin 返回全部表（配置场景用）
@@ -139,6 +153,8 @@ export const rejectShare = (id) => http.post(`/shares/${id}/reject`)
 export const listFriends = () => http.get('/friends')
 export const requestFriend = (username) => http.post('/friends/request', { username })
 export const listFriendRequests = () => http.get('/friends/requests')
+export const listOutgoingFriendRequests = () => http.get('/friends/requests/outgoing')
+export const withdrawFriendRequest = (id) => http.delete(`/friends/requests/outgoing/${id}`)
 export const acceptFriend = (id) => http.post(`/friends/${id}/accept`)
 export const rejectFriend = (id) => http.post(`/friends/${id}/reject`)
 export const deleteFriend = (id) => http.delete(`/friends/${id}`)
@@ -148,6 +164,18 @@ export const searchUsers = (q, scope) => http.get('/users/search', { params: { q
 export const listMyGroups = () => http.get('/groups/mine')
 
 // 链接分享
+// 通用资源链接分享（table/report/mindmap 同一套 shared_links）
+const SHARE_RES = { table: 'tables', report: 'reports', mindmap: 'mindmaps' }
+export const listResShareLinks = (type, id) => http.get(`/${SHARE_RES[type]}/${id}/share-links`)
+// 思维导图成员分享
+export const listMindmapShares = (mid) => http.get(`/mindmaps/${mid}/shares`)
+export const putMindmapShare = (mid, p) => http.post(`/mindmaps/${mid}/shares`, p)
+export const deleteMindmapShare = (mid, sid) => http.delete(`/mindmaps/${mid}/shares/${sid}`)
+export const acceptMindmapShare = (id) => http.post(`/shares/mindmap/${id}/accept`)
+export const rejectMindmapShare = (id) => http.post(`/shares/mindmap/${id}/reject`)
+export const createResShareLink = (type, id, p) => http.post(`/${SHARE_RES[type]}/${id}/share-links`, p)
+export const deleteResShareLink = (type, id, lid) => http.delete(`/${SHARE_RES[type]}/${id}/share-links/${lid}`)
+// 旧的表专用封装（Reports.vue 仍用 report 系列）
 export const listShareLinks = (tid) => http.get(`/tables/${tid}/share-links`)
 export const createShareLink = (tid, payload) => http.post(`/tables/${tid}/share-links`, payload)
 export const deleteShareLink = (tid, lid) => http.delete(`/tables/${tid}/share-links/${lid}`)
@@ -174,6 +202,8 @@ export const updateRole = (id, p) => http.put(`/roles/${id}`, p)
 export const deleteRole = (id) => http.delete(`/roles/${id}`)
 export const setRolePermissions = (id, grants) => http.put(`/roles/${id}/permissions`, { grants })
 export const listPermissions = () => http.get('/permissions')
+export const getRoleTablePerms = (roleId) => http.get(`/roles/${roleId}/table-perms`)
+export const putRoleTablePerm = (roleId, p) => http.put(`/roles/${roleId}/table-perms`, p)
 
 // 动态记录
 export const listRecords = (tid, params) => http.get(`/dyn/${tid}/records`, { params })
@@ -189,6 +219,8 @@ export const recordExportUrl = (tid, params) => {
 
 // LLM 设置
 export const listProviders = () => http.get('/settings/llm')
+// AI 节点配置用的服务商清单（任何登录用户可读，仅 id/name/is_default）
+export const listWorkflowProviders = () => http.get('/workflows/llm-providers')
 export const createProvider = (p) => http.post('/settings/llm', p)
 export const updateProvider = (id, p) => http.put(`/settings/llm/${id}`, p)
 export const deleteProvider = (id) => http.delete(`/settings/llm/${id}`)
@@ -328,6 +360,13 @@ export const deleteNote = (id) => http.delete(`/notes/${id}`)
 export const noteAiAssist = (p) => http.post('/notes/ai-assist', p)
 
 // 站内通知
+// 思维导图
+export const listMindmaps = () => http.get('/mindmaps')
+export const createMindmap = (p) => http.post('/mindmaps', p)
+export const getMindmap = (id) => http.get(`/mindmaps/${id}`)
+export const updateMindmap = (id, p) => http.put(`/mindmaps/${id}`, p)
+export const deleteMindmap = (id) => http.delete(`/mindmaps/${id}`)
+
 export const listNotifications = () => http.get('/notify')
 export const listNotificationsPage = (params) => http.get('/notify/page', { params })
 export const unreadCount = () => http.get('/notify/unread_count')

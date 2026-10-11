@@ -13,9 +13,9 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import GroupMember, MetaTable, TableShare, Tenant, TenantMember, User
+from ..models import GroupMember, MetaTable, RoleTablePerm, TableShare, Tenant, TenantMember, User
 from .context import Context, get_current_context
-from .rbac import tenant_role
+from .rbac import resolve_role, tenant_role
 
 PERM_ATTR = {"view": "can_view", "create": "can_create", "edit": "can_edit", "delete": "can_delete"}
 
@@ -84,11 +84,20 @@ def _resolve_grant(db: Session, table_id: int, user: User, ctx: Context | None =
     if mt.tenant_id is not None:
         tenant = db.get(Tenant, mt.tenant_id)
         if tenant and tenant.type in ("enterprise", "private"):
-            if ctx is not None and ctx.tenant.id == mt.tenant_id and ctx.membership is not None:
-                return TableAccess(mt, False, False, True, True, True, True, ctx, via="member")
-            if ctx is None and db.query(TenantMember).filter_by(
-                tenant_id=mt.tenant_id, user_id=user.id, status="active").first():
-                return TableAccess(mt, False, False, True, True, True, True, ctx, via="member")
+            is_member = (ctx is not None and ctx.tenant.id == mt.tenant_id and ctx.membership is not None)                 or (ctx is None and db.query(TenantMember).filter_by(
+                    tenant_id=mt.tenant_id, user_id=user.id, status="active").first())
+            if is_member:
+                # 角色×表操作权限（P2）：无配置行=四项全允许；有行则收窄
+                v, c, e, d = True, True, True, True
+                role = resolve_role(db, _role_for_table(db, user, mt, ctx) or "", mt.tenant_id)
+                if role:
+                    rtp = db.query(RoleTablePerm).filter_by(
+                        tenant_id=mt.tenant_id, role_id=role.id, table_id=mt.id).first()
+                    if rtp:
+                        v, c, e, d = rtp.can_view, rtp.can_create, rtp.can_edit, rtp.can_delete
+                if not v:
+                    return None   # 不可见视同无权限（404，不泄露表存在性）
+                return TableAccess(mt, False, False, v, c, e, d, ctx, via="member")
     return None
 
 

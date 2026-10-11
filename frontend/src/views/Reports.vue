@@ -89,7 +89,7 @@
       title="报表由多数据源 + 区块 + 栅格布局组成：设计器内拖字段即可成图，可配置定时推送与链接分享。" />
 
     <el-table :data="reports" v-loading="loading" border>
-      <el-table-column prop="name" label="报表名称" min-width="90">
+      <el-table-column prop="name" label="报表名称" min-width="140">
         <template #default="{ row }">
           <div>{{ row.name }}</div>
           <div v-if="row.description" style="font-size: 12px; color: #909399">{{ row.description }}</div>
@@ -128,19 +128,29 @@
           <span v-else style="color: #c0c4cc">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="630">
+      <!-- 操作列：高频 查看/设计/推送 外露，低频收进「更多」（导出注明口径，防止误以为导出的是查看页当前口径） -->
+      <el-table-column label="操作" width="270">
         <template #default="{ row }">
           <el-button text type="primary" size="small" @click="$router.push(`/reports/${row.id}/view`)">查看</el-button>
           <el-button text type="primary" size="small" @click="$router.push(`/reports/${row.id}/layout`)">设计</el-button>
-          <el-button text size="small" @click="exportFile(row, 'xlsx')">导出Excel</el-button>
-          <el-button text size="small" @click="exportFile(row, 'html')">导出HTML</el-button>
           <el-button v-if="row.schedule?.type" text size="small" :loading="pushingId === row.id" @click="push(row)">推送</el-button>
-          <el-button v-if="row.schedule?.type" text size="small" @click="showRuns(row)">日志</el-button>
-          <el-button text size="small" @click="openShare(row)">分享</el-button>
-          <el-button text size="small" @click="duplicate(row)">复制</el-button>
-          <el-popconfirm title="确定删除该报表模板？" @confirm="del(row)">
-            <template #reference><el-button text type="danger" size="small">删除</el-button></template>
-          </el-popconfirm>
+          <el-dropdown trigger="click">
+            <el-button text size="small">更多<el-icon><ArrowDown /></el-icon></el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="exportFile(row, 'xlsx')">导出 Excel（{{ row.range_desc || '默认口径' }}）</el-dropdown-item>
+                <el-dropdown-item @click="exportFile(row, 'html')">导出 HTML（{{ row.range_desc || '默认口径' }}）</el-dropdown-item>
+                <el-dropdown-item v-if="row.schedule?.type" @click="showRuns(row)">推送日志</el-dropdown-item>
+                <el-dropdown-item @click="openShare(row)">链接分享</el-dropdown-item>
+                <el-dropdown-item @click="duplicate(row)">复制报表</el-dropdown-item>
+                <el-dropdown-item divided>
+                  <el-popconfirm title="确定删除该报表模板？" @confirm="del(row)">
+                    <template #reference><span style="color: #f56c6c">删除</span></template>
+                  </el-popconfirm>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </template>
       </el-table-column>
       <template #empty>还没有报表，点击右上角新建</template>
@@ -237,7 +247,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Plus } from '@element-plus/icons-vue'
+import { ArrowDown, MagicStick, Plus } from '@element-plus/icons-vue'
 import {
   aiAssistReport, createReport, createReportShareLink, deleteReport, deleteReportShareLink, duplicateReport,
   installReportTemplate, listReportShareLinks, listReportTemplates,
@@ -255,8 +265,25 @@ const runsTpl = ref(null)
 
 function scheduleDesc(s) {
   if (s?.type === 'interval') return `每 ${s.minutes} 分钟`
-  if (s?.type === 'cron') return `cron: ${s.expr}`
+  if (s?.type === 'cron') return cronDesc(s.expr)
   return '-'
+}
+
+// 常见 cron 表达式翻译成中文（非技术用户看不懂 `0 9 * * *`）；不认识的形态兜底显示原文
+function cronDesc(expr) {
+  const parts = (expr || '').trim().split(/\s+/)
+  if (parts.length !== 5) return expr || '-'
+  const [m, h, dom, mon, dow] = parts
+  const time = /^\d{1,2}$/.test(h) && /^\d{1,2}$/.test(m) ? `${h.padStart(2, '0')}:${m.padStart(2, '0')}` : null
+  if (/^\*\/\d+$/.test(m) && h === '*') return `每 ${m.slice(2)} 分钟`
+  if (!time) return expr
+  if (dom === '*' && mon === '*' && dow === '*') return `每天 ${time}`
+  if (dom === '*' && mon === '*' && dow === '1-5') return `工作日 ${time}`
+  if (dom === '*' && mon === '*' && dow === '6,0') return `周末 ${time}`
+  if (dom === '*' && mon === '*' && /^[0-6]$/.test(dow)) {
+    return `每${['日', '一', '二', '三', '四', '五', '六'][Number(dow)]} ${time}`
+  }
+  return expr
 }
 
 async function load() {
@@ -413,12 +440,15 @@ async function doInstall() {
     confirmVisible.value = false
     tplVisible.value = false
     await load()
-    await ElMessageBox.alert(
-      res.notes || '已安装',
-      `已安装「${res.name}」`,
-      { confirmButtonText: '去设计器查看' },
-    )
-    router.push(`/reports/${res.report_id}/layout`)
+    // 安装完成给两个出口：去设计器或留在列表（不再强制跳转）
+    try {
+      await ElMessageBox.confirm(
+        res.notes || '已安装',
+        `已安装「${res.name}」`,
+        { confirmButtonText: '去设计器查看', cancelButtonText: '留在列表' },
+      )
+      router.push(`/reports/${res.report_id}/layout`)
+    } catch { /* 留在列表 */ }
   } catch (e) {
     if (e !== 'cancel') ElMessage.error(e.message || e)
   } finally {
@@ -437,7 +467,17 @@ async function duplicate(row) {
   }
 }
 
+// 启用定时推送前确认（停用是安全操作，不打扰）
 async function toggle(row) {
+  if (!row.enabled) {
+    try {
+      await ElMessageBox.confirm(
+        `启用后，报表「${row.name}」将按定时计划自动推送给外部渠道。`,
+        '启用定时推送',
+        { type: 'warning', confirmButtonText: '启用', cancelButtonText: '取消' },
+      )
+    } catch { return }
+  }
   try {
     await toggleReport(row.id)
     row.enabled = !row.enabled
@@ -451,7 +491,15 @@ function exportFile(row, format) {
   window.open(reportExportUrl(row.id, { format }), '_blank')
 }
 
+// L3 外部触达：推送真实发邮件/webhook 给收件人，先确认
 async function push(row) {
+  try {
+    await ElMessageBox.confirm(
+      `将立即向报表「${row.name}」配置的所有推送渠道（邮件/Webhook）发送报表，外部收件人会真实收到。`,
+      '立即推送',
+      { type: 'warning', confirmButtonText: '推送', cancelButtonText: '取消' },
+    )
+  } catch { return }
   pushingId.value = row.id
   try {
     const res = await testPushReport(row.id)
@@ -541,7 +589,15 @@ async function copyLink(row) {
   }
 }
 
+// L3 撤销后外部持链接者立即失效
 async function removeLink(row) {
+  try {
+    await ElMessageBox.confirm(
+      '撤销后，持有该链接的外部人员将立即无法访问，且链接不可恢复（需要重新创建）。',
+      '撤销分享链接',
+      { type: 'warning', confirmButtonText: '撤销', confirmButtonClass: 'el-button--danger', cancelButtonText: '取消' },
+    )
+  } catch { return }
   try {
     await deleteReportShareLink(shareTpl.value.id, row.id)
     ElMessage.success('已撤销')

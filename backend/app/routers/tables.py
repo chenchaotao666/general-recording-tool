@@ -7,7 +7,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Group, GroupMember, ImportBatch, MetaField, MetaTable, TableShare, User
+from ..models import Group, GroupMember, ImportBatch, MetaField, MetaTable, RoleTablePerm, TableShare, User
 from ..schemas import TableCreate, TableShareIn, TableUpdate
 from ..services import entitlement, meta_service
 from ..services.dyn_engine import log_audit
@@ -71,6 +71,17 @@ def list_tables(db: Session = Depends(get_db), ctx: Context = Depends(get_curren
         conds.append(MetaTable.tenant_id == ctx.tenant.id)
     q = db.query(MetaTable).filter(or_(*conds))
     rows = q.order_by(MetaTable.id.desc()).all()
+    # P2 角色×表权限：can_view=False 的表对企业成员隐藏（表主/显式分享不受限，与 access 层口径一致）
+    if (ctx.membership is not None and not ctx.is_tenant_admin
+            and ctx.tenant.type in ("enterprise", "private")):
+        from ..utils.rbac import resolve_role
+        role = resolve_role(db, ctx.membership.role, ctx.tenant.id)
+        if role:
+            hidden = {x.table_id for x in db.query(RoleTablePerm).filter_by(
+                tenant_id=ctx.tenant.id, role_id=role.id, can_view=False)}
+            if hidden:
+                rows = [t for t in rows
+                        if t.id not in hidden or t.owner_id == user.id or t.id in shared_ids]
     return [meta_service.table_out(db, t, with_fields=False, access=_share_perms(db, t, user, ctx)) for t in rows]
 
 
@@ -87,7 +98,7 @@ def create_table(payload: TableCreate, db: Session = Depends(get_db),
     user = ctx.user
     role = ctx.membership.role if ctx.membership else ("admin" if ctx.is_platform_admin else None)
     # 权限门槛：独立物理表需「创建独立表」权限；数据表数量受套餐配额约束（宽限期模型）
-    if payload.storage_mode == "physical" and not has_perm(db, role, "create_physical_table"):
+    if payload.storage_mode == "physical" and not has_perm(db, role, "create_physical_table", ctx.tenant.id):
         raise HTTPException(403, "独立物理表需要「创建独立表」权限")
     entitlement.assert_tenant_writable(db, ctx.tenant.id)
     entitlement.check_quota(db, ctx.tenant.id, "max_tables")
@@ -184,7 +195,7 @@ def _require_sharer(db: Session, mt: MetaTable, user: User) -> None:
         return
     if mt.owner_id != user.id:
         raise HTTPException(404, "数据表不存在")
-    if not has_perm(db, role, "share"):
+    if not has_perm(db, role, "share", mt.tenant_id):
         raise HTTPException(403, "分享需要「分享」权限")
 
 

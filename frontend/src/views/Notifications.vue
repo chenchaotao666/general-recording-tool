@@ -28,12 +28,21 @@
         <div class="notify-title">
           <span class="title-text">{{ n.title }}</span>
           <span class="notify-time">
-            {{ n.created_at }}
+            {{ fmtRelative(n.created_at) }}
             <el-icon class="del-btn" title="删除通知" @click.stop="removeOne(n)"><Delete /></el-icon>
           </span>
         </div>
         <div class="notify-content">{{ n.content }}</div>
-        <div v-if="n.link" class="notify-link">点击查看详情 →</div>
+        <!-- 邀请类通知：直接在条目上 接受/拒绝，已处理的显示结果标签 -->
+        <div v-if="n.ref_type === 'tenant_invitation'" class="invite-inline" @click.stop>
+          <template v-if="n.inv_status === 'invited'">
+            <el-button type="primary" size="small" :loading="actingInvId === n.ref_id" @click="acceptInv(n)">接受</el-button>
+            <el-button size="small" plain :loading="actingInvId === n.ref_id" @click="declineInv(n)">拒绝</el-button>
+          </template>
+          <el-tag v-else size="small" :type="invStatusTag(n).type">{{ invStatusTag(n).text }}</el-tag>
+        </div>
+        <!-- 历史邀请通知 link 指向 /notifications 自身，视同无详情 -->
+        <div v-else-if="n.link && n.link !== '/notifications'" class="notify-link">点击查看详情 →</div>
       </div>
       <el-pagination
         v-if="total > pageSize" v-model:current-page="page" :page-size="pageSize" :total="total"
@@ -71,7 +80,8 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete } from '@element-plus/icons-vue'
-import { approveWorkflowNode, deleteNotifications, listNotificationsPage, listPendingApprovals, markRead } from '../api'
+import { approveWorkflowNode, deleteNotifications, getMe, listMyInvitations, acceptInvitation, declineInvitation, listNotificationsPage, listPendingApprovals, markRead } from '../api'
+import { fmtRelative } from '../utils/format'
 
 const router = useRouter()
 const loading = ref(false)
@@ -80,6 +90,89 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 20
 const onlyUnread = ref(false)
+
+// 工作空间邀请：inv_status 随通知下发（无二次请求、无闪动）；
+// invitations 仅用于接受后 toast 里的空间名，历史通知（无 inv_status）走 handledInv/已处理 兜底
+const invitations = ref([])
+const handledInv = reactive({})   // { [member_id]: 'accepted' | 'rejected' }（仅本次会话内的历史通知用）
+const actingInvId = ref(null)
+
+function invStatusTag(n) {
+  if (n.inv_status === 'active') return { type: 'success', text: '已接受' }
+  if (n.inv_status === 'declined') return { type: 'info', text: '已拒绝' }
+  if (handledInv[n.ref_id] === 'accepted') return { type: 'success', text: '已接受' }
+  if (handledInv[n.ref_id] === 'rejected') return { type: 'info', text: '已拒绝' }
+  return { type: 'info', text: '已处理' }
+}
+
+async function loadInvitations() {
+  try {
+    invitations.value = await listMyInvitations()
+  } catch { /* 邀请列表失败不阻塞通知本体 */ }
+}
+
+// 接受后刷新 grt_user（tenants 列表变了），顶栏工作空间切换器才能看到新空间
+async function refreshMe() {
+  const me = await getMe()
+  localStorage.setItem('grt_user', JSON.stringify(me))
+}
+
+async function acceptInv(n) {
+  const inv = invitations.value.find((x) => x.id === n.ref_id)
+  actingInvId.value = n.ref_id
+  try {
+    await acceptInvitation(n.ref_id)
+    await refreshMe()
+    invitations.value = invitations.value.filter((x) => x.id !== n.ref_id)
+    handledInv[n.ref_id] = 'accepted'
+    n.inv_status = 'active'
+    markInvRead(n)
+    // 给「立即进入」出口，不用自己找切换器
+    try {
+      await ElMessageBox.confirm(
+        `已加入「${inv?.tenant_name || ''}」。现在切换到该空间吗？`,
+        '加入成功',
+        { confirmButtonText: '立即进入', cancelButtonText: '稍后自己切换', type: 'success' },
+      )
+      const tenant = (JSON.parse(localStorage.getItem('grt_user') || '{}').tenants || []).find((t) => t.name === inv?.tenant_name)
+      if (tenant) {
+        const { switchTenant } = await import('../api')
+        const payload = await switchTenant(tenant.id)
+        localStorage.setItem('grt_user', JSON.stringify(payload))
+        localStorage.setItem('grt_tenant_id', payload.tenant?.id || tenant.id)
+        location.reload()
+      }
+    } catch { /* 稍后自己切换 */ }
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    actingInvId.value = null
+  }
+}
+
+async function declineInv(n) {
+  actingInvId.value = n.ref_id
+  try {
+    await declineInvitation(n.ref_id)
+    ElMessage.success('已拒绝')
+    invitations.value = invitations.value.filter((x) => x.id !== n.ref_id)
+    handledInv[n.ref_id] = 'rejected'
+    n.inv_status = 'declined'
+    markInvRead(n)
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    actingInvId.value = null
+  }
+}
+
+// 处理后顺手把该通知标为已读（同步侧边未读角标）
+function markInvRead(n) {
+  if (n.read) return
+  markRead({ ids: [n.id] }).catch(() => {})
+  n.read = true
+  window.dispatchEvent(new Event('grt-notify-refresh'))
+}
 
 // 待审批 Tab
 const tab = ref('inbox')
@@ -127,7 +220,7 @@ async function open(n) {
     n.read = true
     window.dispatchEvent(new Event('grt-notify-refresh'))   // 同步侧边菜单的未读角标
   }
-  if (n.link) router.push(n.link)
+  if (n.link && n.link !== '/notifications' && n.ref_type !== 'tenant_invitation') router.push(n.link)
 }
 
 async function readAll() {
@@ -165,7 +258,15 @@ async function clearRead() {
   }
 }
 
+// L3 审批决定不可撤销：确认时说明审批对象
 async function act(t, approved) {
+  try {
+    await ElMessageBox.confirm(
+      `确定${approved ? '通过' : '驳回'}「${t.title || '该审批'}」？${approved ? '流程将继续执行。' : '驳回后流程将终止，不可撤销。'}`,
+      `${approved ? '通过' : '驳回'}审批`,
+      { type: 'warning', confirmButtonText: approved ? '通过' : '驳回', cancelButtonText: '取消' },
+    )
+  } catch { return }
   actingId.value = t.node_run_id
   try {
     await approveWorkflowNode(t.node_run_id, approved, comments[t.node_run_id] || '')
@@ -178,12 +279,11 @@ async function act(t, approved) {
   }
 }
 
-onMounted(() => { load(); loadTodos() })
+onMounted(() => { load(); loadTodos(); loadInvitations() })
 </script>
 
 <style scoped>
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.page-header h2 { margin: 0; }
+/* .page-header 用 App.vue 全局样式，不在此重复定义 */
 .header-actions { display: flex; align-items: center; gap: 10px; }
 .notify-item {
   padding: 12px 14px; border-radius: 8px; cursor: pointer; margin-bottom: 6px;
@@ -198,7 +298,7 @@ onMounted(() => { load(); loadTodos() })
   background: #f56c6c; margin-right: 7px; vertical-align: 1px;
 }
 .notify-time { color: #c0c4cc; font-size: 12px; flex-shrink: 0; }
-.del-btn { margin-left: 6px; vertical-align: -2px; cursor: pointer; opacity: 0; transition: opacity .15s; }
+.del-btn { margin-left: 6px; vertical-align: -2px; cursor: pointer; opacity: .45; transition: opacity .15s; }
 .notify-item:hover .del-btn { opacity: 1; }
 .del-btn:hover { color: #f56c6c; }
 .notify-content { font-size: 13px; color: #606266; margin-top: 4px; white-space: pre-wrap; }
@@ -208,4 +308,5 @@ onMounted(() => { load(); loadTodos() })
 .todo-wf { font-size: 12px; color: #909399; flex: 1; }
 .todo-comment { margin-top: 8px; }
 .todo-actions { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
+.invite-inline { margin-top: 8px; display: flex; align-items: center; gap: 8px; }
 </style>

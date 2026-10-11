@@ -54,11 +54,16 @@
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="subForm.status" style="width: 100%">
-            <el-option v-for="s in ['trial', 'active', 'grace', 'expired']" :key="s" :label="s" :value="s" />
+            <!-- 与列表页的中文标签一致，不再裸显英文原值 -->
+            <el-option v-for="s in SUB_STATUS_OPTIONS" :key="s.value" :label="s.label" :value="s.value" />
           </el-select>
         </el-form-item>
         <el-alert type="info" :closable="false" title="到期时间改到未来且当前为宽限/过期时，自动恢复为正常（续费）" />
       </el-form>
+      <!-- 变更预览：保存前确认改了什么（改订阅影响租户全部功能与配额） -->
+      <div v-if="subChanges.length" class="sub-changes">
+        <div v-for="c in subChanges" :key="c" class="sub-change-item">{{ c }}</div>
+      </div>
       <template #footer>
         <el-button @click="subVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="saveSub">保存</el-button>
@@ -96,8 +101,8 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { platformCreateTenant, platformListPlans, platformListTenants, platformSetSubscription } from '../api'
 
 const tenants = ref([])
@@ -109,6 +114,28 @@ const createVisible = ref(false)
 const current = ref(null)
 const subForm = reactive({ plan_code: null, seats: 1, expires_at: null, status: null })
 const createForm = reactive({ username: '', name: '', type: 'enterprise', plan_code: 'ent_standard' })
+
+const SUB_STATUS_OPTIONS = [
+  { value: 'trial', label: '试用中' },
+  { value: 'active', label: '正常' },
+  { value: 'grace', label: '宽限期' },
+  { value: 'expired', label: '已过期（只读）' },
+]
+const statusLabel = (s) => SUB_STATUS_OPTIONS.find((x) => x.value === s)?.label || s
+const planName = (code) => plans.value.find((p) => p.code === code)?.name || code
+
+// 变更预览：对照当前订阅列出将发生的改动
+const subChanges = computed(() => {
+  const sub = current.value?.subscription
+  if (!sub) return []
+  const changes = []
+  if (subForm.plan_code !== sub.plan_code) changes.push(`套餐：${planName(sub.plan_code)} → ${planName(subForm.plan_code)}`)
+  if (subForm.seats !== (sub.seats || 1)) changes.push(`席位：${sub.seats || 1} → ${subForm.seats}`)
+  if ((subForm.expires_at || null) !== (sub.expires_at || null))
+    changes.push(`到期：${sub.expires_at || '永不到期'} → ${subForm.expires_at || '永不到期'}`)
+  if (subForm.status !== sub.status) changes.push(`状态：${statusLabel(sub.status)} → ${statusLabel(subForm.status)}`)
+  return changes
+})
 
 async function load() {
   loading.value = true
@@ -136,6 +163,15 @@ function openSub(row) {
 }
 
 async function saveSub() {
+  if (!subChanges.value.length) return ElMessage.info('没有改动')
+  // 保存前二次确认（附变更预览，影响该租户全部功能与配额）
+  try {
+    await ElMessageBox.confirm(
+      subChanges.value.map((c) => `· ${c}`).join('\n'),
+      `确认修改「${current.value.name}」的订阅？`,
+      { type: 'warning', confirmButtonText: '确认保存', cancelButtonText: '再想想' },
+    )
+  } catch { return }
   saving.value = true
   try {
     await platformSetSubscription(current.value.id, {
@@ -169,3 +205,11 @@ async function createTenant() {
   }
 }
 </script>
+
+<style scoped>
+.sub-changes {
+  margin-top: 10px; padding: 8px 12px; background: #fdf6ec;
+  border: 1px solid #faecd8; border-radius: 6px;
+}
+.sub-change-item { font-size: 13px; color: #b88230; line-height: 1.8; }
+</style>

@@ -797,7 +797,8 @@ def align_assistant_action(db: Session, user, action: dict | None, notes: list) 
         from ...services.tenancy import default_tenant_id
         from ...utils.rbac import has_perm, tenant_role
         storage_mode = action.get("storage_mode") if action.get("storage_mode") in ("json", "physical") else "json"
-        if storage_mode == "physical" and not has_perm(db, tenant_role(db, user, default_tenant_id(db, user)), "create_physical_table"):
+        tid = default_tenant_id(db, user)
+        if storage_mode == "physical" and not has_perm(db, tenant_role(db, user, tid), "create_physical_table", tid):
             storage_mode = "json"
             notes.append("你没有「创建独立表」权限，已改为 JSON 存储表（如需物理表请联系管理员开通权限）")
         mode_label = "物理表" if storage_mode == "physical" else "JSON 表"
@@ -1101,7 +1102,7 @@ def assist_chat(db: Session, user, message: str, history: list | None, context: 
     from ...utils.rbac import has_perm, tenant_role
     prompt = build_assistant_prompt(message, history, table_briefs, current, datetime.now().strftime("%Y-%m-%d"),
                                     workflows=wf_briefs,
-                                    can_physical_table=has_perm(db, tenant_role(db, user, default_tenant_id(db, user)), "create_physical_table"))
+                                    can_physical_table=has_perm(db, tenant_role(db, user, (tid := default_tenant_id(db, user))), "create_physical_table", tid))
     if img_bytes:
         prompt += (f"\n\n注意：用户随消息附上了 {len(img_bytes)} 张图片，请结合图片内容理解需求"
                    "（例如从截图中提取信息填入数据表、根据图片中的表格建表等）。")

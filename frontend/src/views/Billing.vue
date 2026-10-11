@@ -26,6 +26,10 @@
           <div class="plan-meta" v-if="info?.subscription?.status === 'grace'">
             宽限期剩 {{ info.subscription.grace_remaining_days }} 天（至 {{ info.subscription.grace_until }}）
           </div>
+          <!-- 普通成员：升级入口仅管理员可见，给一句指引而不是无声的缺席 -->
+          <div v-if="info && info.my_role !== 'admin'" class="plan-meta member-tip">
+            套餐升级/续费请联系管理员在「套餐与用量」页操作
+          </div>
 
         </el-card>
       </el-col>
@@ -54,12 +58,17 @@
     <el-card v-if="orders.length" class="orders-card">
       <template #header>订单记录</template>
       <el-table :data="orders" border size="small">
-        <el-table-column prop="created_at" label="下单时间" width="160" />
-        <el-table-column prop="plan_name" label="套餐" min-width="130" />
-        <el-table-column label="规格" width="150">
+        <el-table-column label="下单时间" width="150" :formatter="(r) => fmtTime(r.created_at)" />
+        <el-table-column label="套餐" min-width="130">
+          <template #default="{ row }">
+            {{ row.plan_name }}
+            <el-tag v-if="row.kind === 'renewal'" size="small" type="success" effect="plain" style="margin-left: 4px">续费</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="规格" width="140">
           <template #default="{ row }">{{ row.years }} 年<template v-if="row.seats > 1"> × {{ row.seats }} 席</template></template>
         </el-table-column>
-        <el-table-column label="金额" width="110">
+        <el-table-column label="金额" width="100">
           <template #default="{ row }">¥{{ fen(row.amount) }}</template>
         </el-table-column>
         <el-table-column label="状态" width="90">
@@ -69,20 +78,45 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="paid_at" label="支付时间" width="160" />
+        <el-table-column label="支付时间" width="150" :formatter="(r) => r.paid_at ? fmtTime(r.paid_at) : '—'" />
+        <el-table-column label="操作" width="130" fixed="right">
+          <template #default="{ row }">
+            <template v-if="row.status === 'pending'">
+              <el-button text type="primary" size="small" @click="openPay(row)">去支付</el-button>
+              <el-button text type="danger" size="small" @click="cancel(row)">取消</el-button>
+            </template>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
+
+    <!-- 待支付订单的收银台（与升级页同一模拟支付） -->
+    <el-dialog v-model="payVisible" title="收银台" width="400px" :close-on-click-modal="false" destroy-on-close>
+      <div class="pay-box">
+        <div class="pay-amount">¥{{ fen(payOrderRow?.amount || 0) }}</div>
+        <div class="pay-desc">{{ payOrderRow?.plan_name }} × {{ payOrderRow?.years }} 年<template v-if="payOrderRow?.seats > 1"> × {{ payOrderRow?.seats }} 席</template></div>
+        <el-alert type="info" :closable="false" title="演示环境：点击「确认支付」直接成功（真实支付渠道接入点已预留）" />
+      </div>
+      <template #footer>
+        <el-button @click="payVisible = false">取消</el-button>
+        <el-button type="success" :loading="paying" @click="doPay">确认支付</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getCurrentTenant, listOrders } from '../api'
+import { cancelOrder, getCurrentTenant, listOrders, payOrder } from '../api'
+import { fmtTime } from '../utils/format'
 
 const info = ref(null)
 const orders = ref([])
 const loading = ref(false)
+const payVisible = ref(false)
+const paying = ref(false)
+const payOrderRow = ref(null)
 
 const fen = (v) => (v / 100).toFixed(v % 100 ? 2 : 0)
 const typeLabel = computed(() => ({ personal: '个人版', enterprise: '企业版', private: '私有化' }[info.value?.tenant?.type] || ''))
@@ -109,11 +143,49 @@ const quotaRows = computed(() => {
     { key: 'rows', label: '记录总条数', ...u.rows, usedText: u.rows?.used ?? 0, limitText: u.rows?.limit },
     {
       key: 'storage', label: '存储空间', limit: u.storage?.limit, percent: u.storage?.percent,
-      usedText: fmtBytes(u.storage?.used || 0), limitText: u.storage?.limit ? u.storage.limit + ' MB' : null,
+      usedText: fmtBytes(u.storage?.used || 0), limitText: u.storage?.limit ? fmtBytes(u.storage.limit * 1024 * 1024) : null,
     },
     { key: 'seats', label: '成员席位', ...u.seats, usedText: u.seats?.used ?? 0, limitText: u.seats?.limit },
   ]
 })
+
+// ---------- 待支付订单：去支付 / 取消（不再死胡同） ----------
+
+function openPay(row) {
+  payOrderRow.value = row
+  payVisible.value = true
+}
+
+async function doPay() {
+  paying.value = true
+  try {
+    await payOrder(payOrderRow.value.id)
+    payVisible.value = false
+    ElMessage.success('支付成功，套餐已生效')
+    load()
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    paying.value = false
+  }
+}
+
+async function cancel(row) {
+  try {
+    await ElMessageBox.confirm(
+      `取消该笔待支付订单（${row.plan_name} × ${row.years} 年，¥${fen(row.amount)}）？`,
+      '取消订单',
+      { type: 'warning', confirmButtonText: '取消订单', confirmButtonClass: 'el-button--danger', cancelButtonText: '保留' },
+    )
+  } catch { return }
+  try {
+    await cancelOrder(row.id)
+    ElMessage.success('订单已取消')
+    load()
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
 
 async function load() {
   loading.value = true
@@ -143,5 +215,9 @@ onMounted(load)
 .quota-unlimited { flex: 1; color: #909399; font-size: 13px; }
 .quota-value { width: 160px; text-align: right; font-size: 13px; color: #303133; }
 .readonly-tip { margin-top: 12px; }
+.member-tip { color: #909399; font-size: 12px; }
 .orders-card { margin-top: 16px; }
+.pay-box { text-align: center; }
+.pay-amount { font-size: 32px; font-weight: 700; color: #303133; margin-bottom: 8px; }
+.pay-desc { color: #606266; margin-bottom: 16px; }
 </style>

@@ -4,7 +4,7 @@
       <div class="wf-name">工作流：{{ info.workflow_name }}</div>
       <h2 class="title">{{ info.title }}</h2>
       <div v-if="info.detail" class="detail">{{ info.detail }}</div>
-      <div class="time">发起时间：{{ info.created_at }}</div>
+      <div class="time">发起时间：{{ fmtTime(info.created_at) }}</div>
 
       <template v-if="info.status === 'waiting' && !done">
         <el-input v-model="comment" type="textarea" :rows="3" placeholder="审批意见（可选）" class="mb" />
@@ -26,7 +26,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessageBox } from 'element-plus'
 import { getPublicApproval, submitPublicApproval } from '../api'
+import { fmtTime } from '../utils/format'
 
 const route = useRoute()
 const token = route.params.token
@@ -44,7 +46,15 @@ const resultTitle = computed(() => {
   return info.value?.approved ? '该审批已通过' : '该审批已驳回'
 })
 
+// L3 审批决定不可撤销（免登录页，手机误触风险高，必须二次确认）
 async function act(approved) {
+  try {
+    await ElMessageBox.confirm(
+      `确定${approved ? '通过' : '驳回'}「${info.value.title}」？${approved ? '流程将继续执行。' : '驳回后流程将终止，不可撤销。'}`,
+      `${approved ? '通过' : '驳回'}审批`,
+      { type: 'warning', confirmButtonText: approved ? '通过' : '驳回', cancelButtonText: '取消' },
+    )
+  } catch { return }
   acting.value = true
   error.value = ''
   try {

@@ -14,19 +14,26 @@
 
       <div class="tb-divider" />
 
-      <!-- 组2：页签（可横向滚动） -->
+      <!-- 组2：页签（可横向滚动；操作收进「⋯」菜单，避免小图标误删） -->
       <div class="page-bar">
         <div
           v-for="(p, pi) in pages" :key="p.id" class="page-tab" :class="{ active: p.id === activePageId }"
           @click="activePageId = p.id" @dblclick="renamePage(p)"
         >
           <span>{{ p.title }}</span>
-          <template v-if="p.id === activePageId">
-            <el-icon v-if="pi > 0" title="前移" @click.stop="movePage(pi, -1)"><ArrowLeftBold /></el-icon>
-            <el-icon v-if="pi < pages.length - 1" title="后移" @click.stop="movePage(pi, 1)"><ArrowRightBold /></el-icon>
-            <el-icon title="重命名" @click.stop="renamePage(p)"><EditPen /></el-icon>
-            <el-icon v-if="pages.length > 1" title="删除页签" @click.stop="deletePage(p)"><Close /></el-icon>
-          </template>
+          <el-dropdown v-if="p.id === activePageId" trigger="click" @command="(cmd) => onPageCommand(cmd, p, pi)">
+            <el-icon class="page-tab-more" title="页签操作" @click.stop><MoreFilled /></el-icon>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-if="pi > 0" command="movePrev">前移</el-dropdown-item>
+                <el-dropdown-item v-if="pi < pages.length - 1" command="moveNext">后移</el-dropdown-item>
+                <el-dropdown-item command="rename">重命名</el-dropdown-item>
+                <el-dropdown-item v-if="pages.length > 1" command="delete">
+                  <span style="color: #f56c6c">删除页签</span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
         <el-button v-if="pages.length < PAGES_MAX" link type="primary" :icon="Plus" @click="addPage">页签</el-button>
       </div>
@@ -49,15 +56,20 @@
         <div class="tb-divider" />
       </template>
 
-      <!-- 组4：操作按钮 -->
+      <!-- 组4：操作按钮（高频外露；AI/排版/试运行收进「更多」，1366px 下不挤压页签条） -->
       <div class="tb-group">
         <el-button :icon="RefreshLeft" :disabled="!canUndo" title="撤销（Ctrl+Z）" @click="undo">撤销</el-button>
         <el-button :icon="RefreshRight" :disabled="!canRedo" title="重做（Ctrl+Y）" @click="redo">重做</el-button>
-        <el-button class="ai-btn" title="用一句话描述需求，AI 生成区块草稿" @click="openAi">
-          <el-icon><MagicStick /></el-icon>AI 生成
-        </el-button>
-        <el-button :icon="Grid" @click="autoArrange">自动排版</el-button>
-        <el-button :icon="VideoPlay" :loading="previewLoading" title="沙盒试运行：用当前未保存的配置生成预览，不落库" @click="previewRun">试运行</el-button>
+        <el-dropdown trigger="click">
+          <el-button :icon="MoreFilled">更多</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item :icon="MagicStick" @click="openAi">AI 生成（一句话出区块草稿）</el-dropdown-item>
+              <el-dropdown-item :icon="Grid" @click="autoArrange">自动排版</el-dropdown-item>
+              <el-dropdown-item :icon="VideoPlay" @click="previewRun">试运行（沙盒预览，不落库）</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button :icon="View" title="打开报表查看页（已保存的内容）" @click="onGoView">查看</el-button>
         <el-button :icon="Setting" @click="openSettings">设置</el-button>
         <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存</el-button>
@@ -95,8 +107,8 @@
             </div>
             <div
               v-for="f in fieldsOf(d.id)" :key="f.field_name" class="field-chip" draggable="true"
-              :title="`${f.label}（${f.data_type}）— 点击或拖入画布成图`"
-              @click="onFieldClick(d, f)" @dragstart="onFieldDragStart($event, d, f)"
+              :title="`${f.label}（${f.data_type}）— 双击或拖入画布成图`"
+              @dblclick="onFieldClick(d, f)" @dragstart="onFieldDragStart($event, d, f)"
             >
               <span class="fc-type" :class="ftypeClass(f)">{{ ftypeShort(f) }}</span>
               <span class="fc-label">{{ f.label }}</span>
@@ -106,8 +118,8 @@
         </div>
       </div>
 
-      <!-- 栅格画布（点空白处收起配置面板） -->
-      <div ref="canvasEl" class="canvas-wrap" @dragover.prevent @drop="onFieldDrop" @click="onCanvasBackdropClick">
+      <!-- 栅格画布（配置面板只通过「收起」按钮或 Esc 关闭，点空白不再误触收起） -->
+      <div ref="canvasEl" class="canvas-wrap" @dragover.prevent @drop="onFieldDrop">
         <GridLayout
           :layout="glItems" :col-num="GRID_COLS" :row-height="ROW_HEIGHT"
           :margin="[GRID_MARGIN, GRID_MARGIN]" :vertical-compact="false" @layout-updated="onLayoutUpdated"
@@ -235,7 +247,7 @@
         <!-- 关联表 -->
         <div class="src-sec">
           <div class="src-sec-head">
-            <div class="src-sec-title">🔗 关联表</div>
+            <div class="src-sec-title">关联表</div>
             <el-button text type="primary" size="small" :disabled="editingDs.joins.length >= 3"
               @click="editingDs.joins.push({ table_id: null, prefix: '', on: [{ left: null, right: null }] })">+ 添加关联</el-button>
           </div>
@@ -288,7 +300,7 @@
         <!-- 计算字段 -->
         <div class="src-sec">
           <div class="src-sec-head">
-            <div class="src-sec-title">🧮 计算字段</div>
+            <div class="src-sec-title">计算字段</div>
             <el-button text type="primary" size="small"
               @click="editingDs.computed_fields.push({ name: '', expr: '', type: '' })">+ 添加字段</el-button>
           </div>
@@ -339,7 +351,7 @@
         <!-- 结果字段预览 -->
         <div class="src-sec">
           <div class="src-sec-head">
-            <div class="src-sec-title">👁 结果字段预览</div>
+            <div class="src-sec-title">结果字段预览</div>
           </div>
           <div class="src-sec-desc">按当前配置，数据集最终提供的字段</div>
           <div class="dsd-preview">
@@ -349,7 +361,7 @@
         </div>
       </template>
       <template #footer>
-        <el-button @click="dsEditorVisible = false">关闭</el-button>
+        <el-button @click="onDsDrawerClose">关闭</el-button>
         <el-button type="primary" @click="applyDatasetEditor">应用</el-button>
       </template>
     </el-drawer>
@@ -571,8 +583,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft, ArrowLeftBold, ArrowRightBold, Calendar, Check, CircleCheck, Close, Coin, CopyDocument, Delete, Document,
-  EditPen, Filter, Grid, Histogram, MagicStick, Odometer, Plus, QuestionFilled, RefreshLeft, RefreshRight, Setting, Tickets, VideoPlay, View,
+  ArrowLeft, Calendar, Check, CircleCheck, Close, Coin, CopyDocument, Delete, Document,
+  Filter, Grid, Histogram, MagicStick, MoreFilled, Odometer, Plus, QuestionFilled, RefreshLeft, RefreshRight, Setting, Tickets, VideoPlay, View,
 } from '@element-plus/icons-vue'
 import { GridLayout, GridItem } from 'grid-layout-plus'
 import { aiAssistBlock, aiAssistReport, checkExpr, getReport, getTable, listTables, previewPushReport, runReport, updateReport } from '../api'
@@ -615,8 +627,8 @@ const tplName = computed({
   set: (v) => { if (tpl.value) tpl.value.name = v },
 })
 
-// 右侧配置面板：可拖宽（与工作流编辑器一致）
-const panelWidth = ref(400)
+// 右侧配置面板：可拖宽（与工作流编辑器一致），宽度记忆在 localStorage
+const panelWidth = ref(Number(localStorage.getItem('grt_rp_panel_w')) || 400)
 
 function startResize(e) {
   e.preventDefault()
@@ -628,6 +640,7 @@ function startResize(e) {
   const onUp = () => {
     window.removeEventListener('mousemove', onMove)
     window.removeEventListener('mouseup', onUp)
+    localStorage.setItem('grt_rp_panel_w', String(panelWidth.value))
   }
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
@@ -761,6 +774,7 @@ const joinableTables = computed(() =>
 
 async function openDatasetEditor(d) {
   editingDs.value = d
+  dsSnapshot = JSON.stringify(d)   // 关闭时对比，有改动给提示
   await loadBaseFields(d.base_table_id)
   for (const j of d.joins || []) {
     if (j.table_id && !joinMeta.value[j.table_id]) {
@@ -768,6 +782,21 @@ async function openDatasetEditor(d) {
     }
   }
   dsEditorVisible.value = true
+}
+
+// 数据集抽屉「关闭」：有未应用的改动时说明后果（修改已生效在当前编辑会话里，但区块不重绘、不落库）
+let dsSnapshot = ''
+async function onDsDrawerClose() {
+  if (JSON.stringify(editingDs.value) !== dsSnapshot) {
+    try {
+      await ElMessageBox.confirm(
+        '数据集有未点「应用」的修改。修改会保留在当前编辑会话中，但相关区块不会重绘、不会保存到后端；如需生效请点「应用」。',
+        '关闭数据集设置',
+        { type: 'info', confirmButtonText: '仍要关闭', cancelButtonText: '返回编辑' },
+      )
+    } catch { return }
+  }
+  dsEditorVisible.value = false
 }
 
 async function onJoinTableChange(j) {
@@ -1101,9 +1130,12 @@ function addFieldBlock(did, f, pos) {
   refreshData(true)   // 新块立即绘制
 }
 
-// 点画布空白处收起配置面板（点块时 gi-card 已 stop）
-function onCanvasBackdropClick(e) {
-  if (!e.target.closest('.gi-card')) selectedBlockId.value = null
+// 配置面板只通过「收起」按钮或 Esc 关闭（点画布空白不收起，避免误触丢配置上下文）
+function onPageCommand(cmd, p, pi) {
+  if (cmd === 'movePrev') movePage(pi, -1)
+  else if (cmd === 'moveNext') movePage(pi, 1)
+  else if (cmd === 'rename') renamePage(p)
+  else if (cmd === 'delete') deletePage(p)
 }
 
 function onKeydown(e) {
@@ -1574,7 +1606,8 @@ const aiAppend = ref(true)      // 生成意图：true=只生成本次要求的�
 
 function openAi() {
   aiResult.value = null
-  aiMode.value = 'replace'
+  // 应用方式默认追加（有存量时），破坏性的「替换全部」不作为默认项
+  aiMode.value = blocks.value.length ? 'append_page' : 'replace'
   aiAppend.value = !!blocks.value.length   // 有存量默认追加意图
   aiTableId.value = datasets.value[0]?.base_table_id || null
   aiVisible.value = true

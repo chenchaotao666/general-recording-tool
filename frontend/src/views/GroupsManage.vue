@@ -9,20 +9,29 @@
       title="用户组可用于批量分享：把表分享给组后，组内所有成员自动获得对应权限（与直接分享取并集）。" />
 
     <el-table :data="groups" v-loading="loading" border>
+      <template #empty><el-empty description="还没有用户组，点右上角「新建用户组」把同事归组，分享数据时按组授权更方便" /></template>
       <el-table-column prop="name" label="组名" width="160" />
       <el-table-column prop="description" label="说明" min-width="180" show-overflow-tooltip />
       <el-table-column label="成员" min-width="300">
         <template #default="{ row }">
           <el-tag
-            v-for="m in row.members" :key="m.id" :closable="row.can_manage" size="small"
-            style="margin-right: 6px" @close="removeMember(row, m)"
-          >{{ m.username }}</el-tag>
+            v-for="m in row.members" :key="m.id" size="small"
+            style="margin-right: 6px"
+          >
+            <span class="tag-inner">
+              {{ m.username }}
+              <el-popconfirm v-if="row.can_manage" :title="`将「${m.username}」移出「${row.name}」？`" width="240" @confirm="removeMember(row, m)">
+                <template #reference><el-icon class="tag-close" title="移出该成员"><Close /></el-icon></template>
+              </el-popconfirm>
+            </span>
+          </el-tag>
           <el-button v-if="row.can_manage" text type="primary" size="small" @click="openAddMember(row)">+ 添加成员</el-button>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="100" fixed="right">
+      <el-table-column label="操作" width="150" fixed="right">
         <template #default="{ row }">
           <template v-if="row.can_manage">
+            <el-button text type="primary" size="small" @click="openEdit(row)">编辑</el-button>
             <el-popconfirm title="删除组将同步取消其所有分享授权，确定？" width="240" @confirm="del(row)">
               <template #reference><el-button text type="danger" size="small">删除</el-button></template>
             </el-popconfirm>
@@ -68,7 +77,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Close } from '@element-plus/icons-vue'
 import {
   addGroupMember, createGroup, deleteGroup, listFriends, listGroups, removeGroupMember, updateGroup,
 } from '../api'
@@ -103,6 +112,13 @@ async function load() {
 function openCreate() {
   editing.value = null
   Object.assign(form, { name: '', description: '' })
+  dialogVisible.value = true
+}
+
+// 编辑入口：组建成后可改名/改说明（此前对话框支持编辑态但没有入口可达）
+function openEdit(row) {
+  editing.value = row
+  Object.assign(form, { name: row.name, description: row.description || '' })
   dialogVisible.value = true
 }
 
@@ -173,3 +189,9 @@ onMounted(() => {
   if (!isAdmin.value) listFriends().then((f) => { friends.value = f }).catch(() => {})
 })
 </script>
+
+<style scoped>
+.tag-inner { display: inline-flex; align-items: center; gap: 3px; }
+.tag-close { font-size: 12px; cursor: pointer; border-radius: 50%; }
+.tag-close:hover { color: #f56c6c; background: rgba(0, 0, 0, .08); }
+</style>

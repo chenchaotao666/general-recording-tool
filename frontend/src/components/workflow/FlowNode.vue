@@ -129,7 +129,7 @@ function copyId() {
 .node-id:hover { color: #409eff; border-color: #409eff; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: #909399; }
 .cat-data .dot { background: #409eff; }
-.cat-ai .dot { background: #9b59b6; }
+.cat-ai .dot { background: var(--grt-ai); }
 .cat-logic .dot { background: #e6a23c; }
 .cat-action .dot { background: #67c23a; }
 .cat-human .dot { background: #f56c6c; }

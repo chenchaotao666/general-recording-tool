@@ -6,9 +6,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Department, Role, TenantMember, User
+from ..models import Department, Notification, Role, TenantMember, User
 from ..services import entitlement, scope as scope_mod
 from ..services.notify import notify_user
+from ..utils.auth import get_current_user
 from ..utils.context import Context, get_current_context, require_tenant_admin
 
 router = APIRouter(prefix="/api/members", tags=["members"])
@@ -38,8 +39,12 @@ def _out(db: Session, m: TenantMember) -> dict:
     }
 
 
-def _check_role(db: Session, role: str) -> None:
-    if role == "admin" or db.query(Role).filter_by(code=role).first():
+def _check_role(db: Session, role: str, tenant_id: int) -> None:
+    """角色须存在且本租户可用：全局内置角色（tenant_id NULL）或本租户自定义角色。"""
+    if role == "admin":
+        return
+    if db.query(Role).filter(Role.code == role,
+                             (Role.tenant_id.is_(None)) | (Role.tenant_id == tenant_id)).first():
         return
     raise HTTPException(400, f"角色不存在：{role}")
 
@@ -50,11 +55,20 @@ def list_members(db: Session = Depends(get_db), ctx: Context = Depends(require_t
     return [_out(db, m) for m in rows]
 
 
+def _notify_invite(db: Session, ctx: Context, target: User, m: TenantMember, role_code: str) -> None:
+    role = db.query(Role).filter(Role.code == role_code,
+                                 (Role.tenant_id.is_(None)) | (Role.tenant_id == ctx.tenant.id)).first()
+    role_name = role.name if role else role_code
+    notify_user(db, target.id, "工作空间邀请",
+                f"{ctx.user.username} 邀请你加入工作空间「{ctx.tenant.name}」（角色：{role_name}）",
+                ref_type="tenant_invitation", ref_id=m.id)
+
+
 @router.get("/invitations")
-def my_invitations(db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+def my_invitations(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """我的待接受邀请（跨全部租户），配合通知中心使用。"""
     from ..models import Tenant
-    rows = db.query(TenantMember).filter_by(user_id=ctx.user.id, status="invited").all()
+    rows = db.query(TenantMember).filter_by(user_id=user.id, status="invited").all()
     return [{"id": m.id, "tenant_id": m.tenant_id, "role": m.role,
              "tenant_name": (db.get(Tenant, m.tenant_id) or Tenant(name="?")).name}
             for m in rows]
@@ -65,7 +79,7 @@ def invite(body: InviteIn, db: Session = Depends(get_db), ctx: Context = Depends
     target = db.query(User).filter(User.username == body.username.strip()).first()
     if not target:
         raise HTTPException(404, "用户不存在（对方需先注册账号）")
-    _check_role(db, body.role)
+    _check_role(db, body.role, ctx.tenant.id)
     existing = db.query(TenantMember).filter_by(tenant_id=ctx.tenant.id, user_id=target.id).first()
     if existing:
         if existing.status == "disabled":
@@ -74,6 +88,7 @@ def invite(body: InviteIn, db: Session = Depends(get_db), ctx: Context = Depends
             existing.role = body.role
             existing.invited_by = ctx.user.id
             entitlement.bump_usage(db, ctx.tenant.id, "seat_count", 1)
+            _notify_invite(db, ctx, target, existing, body.role)
             db.commit()
             return _out(db, existing)
         raise HTTPException(400, "该用户已是本空间成员")
@@ -81,19 +96,18 @@ def invite(body: InviteIn, db: Session = Depends(get_db), ctx: Context = Depends
     m = TenantMember(tenant_id=ctx.tenant.id, user_id=target.id, role=body.role,
                      status="invited", invited_by=ctx.user.id, created_at=datetime.now())
     db.add(m)
+    db.flush()   # 拿到 m.id 作为通知的 ref_id
     entitlement.bump_usage(db, ctx.tenant.id, "seat_count", 1)
-    notify_user(db, target.id, "工作空间邀请",
-                f"{ctx.user.username} 邀请你加入工作空间「{ctx.tenant.name}」（角色：{body.role}）",
-                link="/members")
+    _notify_invite(db, ctx, target, m, body.role)
     db.commit()
     return _out(db, m)
 
 
 @router.post("/{member_id}/accept")
-def accept(member_id: int, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+def accept(member_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """本人接受邀请（invited → active）。席位已含 invited，不再重复计数。"""
     m = db.get(TenantMember, member_id)
-    if not m or m.user_id != ctx.user.id or m.status != "invited":
+    if not m or m.user_id != user.id or m.status != "invited":
         raise HTTPException(404, "邀请不存在")
     m.status = "active"
     db.commit()
@@ -151,12 +165,28 @@ def set_role(member_id: int, body: RoleIn, db: Session = Depends(get_db),
     m = db.get(TenantMember, member_id)
     if not m or m.tenant_id != ctx.tenant.id:
         raise HTTPException(404, "成员不存在")
-    _check_role(db, body.role)
+    _check_role(db, body.role, ctx.tenant.id)
     if m.user_id == ctx.tenant.owner_user_id and body.role != "admin":
         raise HTTPException(400, "空间所有者必须保持管理员角色")
     m.role = body.role
     db.commit()
     return _out(db, m)
+
+
+@router.post("/{member_id}/decline")
+def decline(member_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """本人拒绝邀请：删除 invited membership 并释放席位。"""
+    m = db.get(TenantMember, member_id)
+    if not m or m.user_id != user.id or m.status != "invited":
+        raise HTTPException(404, "邀请不存在")
+    tenant_id = m.tenant_id
+    db.delete(m)
+    # 拒绝留痕：通知标已读保留（ref 悬空，前端据 inv_status 显示「已拒绝」）
+    db.query(Notification).filter_by(
+        user_id=user.id, ref_type="tenant_invitation", ref_id=member_id).update({"read": True})
+    entitlement.bump_usage(db, tenant_id, "seat_count", -1)
+    db.commit()
+    return {"ok": True}
 
 
 @router.delete("/{member_id}")

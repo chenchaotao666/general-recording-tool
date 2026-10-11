@@ -195,7 +195,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
   createMcpToken, createProvider, deleteProvider, getGeneralSettings, getMcpConfig, listProviders,
@@ -248,7 +248,15 @@ async function onCreateMcpToken() {
   }
 }
 
+// L3 不可恢复：吊销后所有外部客户端立即断联
 async function onRevokeMcp() {
+  try {
+    await ElMessageBox.confirm(
+      '吊销后，所有使用该 token 的外部 AI 客户端将立即无法连接，需要重新生成并配置新 token。',
+      '吊销 MCP token',
+      { type: 'warning', confirmButtonText: '吊销', confirmButtonClass: 'el-button--danger', cancelButtonText: '取消' },
+    )
+  } catch { return }
   await revokeMcpToken()
   mcp.has_token = false
   mcp.token = ''
@@ -316,6 +324,14 @@ async function sendTestSearch() {
 
 async function sendTestEmail() {
   if (!testEmailTo.value.trim()) return ElMessage.warning('请填写收件邮箱')
+  // 测试前会先落库当前配置（用户可能只想试一下，明确告知）
+  try {
+    await ElMessageBox.confirm(
+      '发送测试邮件前，会先把当前页面上的 SMTP 配置保存到服务器（测试按已保存的配置发送）。继续？',
+      '发送测试邮件',
+      { type: 'info', confirmButtonText: '保存并发送', cancelButtonText: '取消' },
+    )
+  } catch { return }
   testEmailSending.value = true
   try {
     await saveGeneral()   // 先保存配置再测试

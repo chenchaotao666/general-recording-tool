@@ -11,7 +11,12 @@
       <el-tab-pane label="成员" name="members">
         <el-alert
           v-if="seatTip" :type="seatTip.type" :closable="false" class="seat-tip" :title="seatTip.text" />
-        <el-table :data="members" v-loading="loading" border>
+        <!-- 搜索（客户端，成员多时不用肉眼扫） -->
+        <div v-if="members.length > 10" class="members-filter">
+          <el-input v-model="kw" placeholder="搜索用户名" clearable size="small" :prefix-icon="SearchIcon" style="width: 200px" />
+          <span class="hint">{{ filteredMembers.length }} 人</span>
+        </div>
+        <el-table :data="pagedMembers" v-loading="loading" border>
           <el-table-column prop="username" label="用户名" min-width="120" />
           <el-table-column label="角色" width="170">
             <template #default="{ row }">
@@ -54,7 +59,7 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="加入时间" width="160" />
+          <el-table-column label="加入时间" width="150" :formatter="(r) => fmtTime(r.created_at)" />
           <el-table-column label="操作" width="90">
             <template #default="{ row }">
               <el-button
@@ -66,6 +71,11 @@
           </el-table-column>
           <template #empty>暂无成员</template>
         </el-table>
+        <el-pagination
+          v-if="filteredMembers.length > pageSize" v-model:current-page="page" :page-size="pageSize"
+          :total="filteredMembers.length" layout="total, prev, pager, next"
+          style="margin-top: 12px; justify-content: flex-end"
+        />
       </el-tab-pane>
 
       <!-- ============ 部门树 ============ -->
@@ -86,12 +96,17 @@
                   </span>
                   <span class="dept-ops">
                     <el-button link size="small" type="primary" @click.stop="openDeptEdit(null, data.id)">加子部门</el-button>
-                    <el-button link size="small" @click.stop="openDeptEdit(data)">编辑</el-button>
-                    <el-button link size="small" @click.stop="openMove(data)">移动</el-button>
-                    <el-button link size="small" :type="data.enabled ? 'warning' : 'success'" @click.stop="toggleDept(data)">
-                      {{ data.enabled ? '停用' : '启用' }}
-                    </el-button>
-                    <el-button link size="small" type="danger" @click.stop="delDept(data)">删除</el-button>
+                    <el-dropdown trigger="click" @command="(cmd) => onDeptCommand(cmd, data)">
+                      <el-button link size="small" @click.stop>更多</el-button>
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                          <el-dropdown-item command="move">移动</el-dropdown-item>
+                          <el-dropdown-item command="toggle">{{ data.enabled ? '停用' : '启用' }}</el-dropdown-item>
+                          <el-dropdown-item command="delete"><span style="color: #f56c6c">删除</span></el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
                   </span>
                 </div>
               </template>
@@ -105,44 +120,6 @@
         </el-row>
       </el-tab-pane>
 
-      <!-- ============ 数据范围 ============ -->
-      <el-tab-pane v-if="hasDataScope" label="数据范围" name="scopes">
-        <el-alert type="info" :closable="false" class="seat-tip"
-          title="数据范围 = 角色 × 数据表 的记录可见范围（按记录归属人过滤）。「全部」不限制；显式分享的表不受范围限制；管理员恒为全部。" />
-        <div class="scope-toolbar">
-          <el-button type="primary" plain @click="applyPresets">应用预设模板（经理=本部门及下级，员工=仅本人）</el-button>
-        </div>
-        <el-table :data="scopeRows" v-loading="loadingScopes" border>
-          <el-table-column label="角色" width="160">
-            <template #default="{ row }">{{ row.name }}（{{ row.code }}）</template>
-          </el-table-column>
-          <el-table-column label="默认范围（全部表）" width="220">
-            <template #default="{ row }">
-              <el-select
-                :model-value="row.defaultScope" size="small" style="width: 190px"
-                @change="(v) => setScope(row.id, null, v)"
-              >
-                <el-option v-for="o in SCOPE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
-              </el-select>
-            </template>
-          </el-table-column>
-          <el-table-column label="按表覆盖" min-width="320">
-            <template #default="{ row }">
-              <div v-for="ov in row.overrides" :key="ov.table_id" class="scope-ov">
-                <span class="ov-table">{{ tableLabel(ov.table_id) }}</span>
-                <el-select
-                  :model-value="ov.scope" size="small" style="width: 160px"
-                  @change="(v) => setScope(row.id, ov.table_id, v)"
-                >
-                  <el-option v-for="o in SCOPE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
-                </el-select>
-                <el-button link type="danger" size="small" @click="setScope(row.id, ov.table_id, 'all')">移除</el-button>
-              </div>
-              <el-button size="small" @click="openOverride(row)">+ 按表覆盖</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-tab-pane>
     </el-tabs>
 
     <!-- 邀请 -->
@@ -153,7 +130,8 @@
         </el-form-item>
         <el-form-item label="角色">
           <el-select v-model="inviteForm.role" style="width: 100%">
-            <el-option v-for="r in roles" :key="r.code" :label="`${r.name}（${r.code}）`" :value="r.code" />
+            <!-- 邀请不设 admin：管理员只能由现有管理员在成员列表里逐个调整（防一次误操作放权） -->
+            <el-option v-for="r in invitableRoles" :key="r.code" :label="`${r.name}（${r.code}）`" :value="r.code" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -197,61 +175,55 @@
       </template>
     </el-dialog>
 
-    <!-- 按表覆盖 -->
-    <el-dialog v-model="ovVisible" :title="`按表覆盖：${ovRole?.name}`" width="420px" destroy-on-close>
-      <el-form label-width="80px">
-        <el-form-item label="数据表">
-          <el-select v-model="ovTableId" filterable style="width: 100%">
-            <el-option v-for="t in allTables" :key="t.id" :label="t.label" :value="t.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="范围">
-          <el-select v-model="ovScope" style="width: 100%">
-            <el-option v-for="o in SCOPE_OPTIONS.filter((x) => x.value !== 'all')" :key="o.value" :label="o.label" :value="o.value" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="ovVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveOverride">保存</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { Search as SearchIcon } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  applyScopePresets, createDepartment, deleteDepartment, getCurrentTenant, getScopes,
-  inviteMember, listDepartments, listMembers, listRoles, listTables, moveDepartment,
-  putScope, removeMember, setMemberOrg, setMemberRole, updateDepartment,
+  createDepartment, deleteDepartment, getCurrentTenant,
+  inviteMember, listDepartments, listMembers, listRoles, moveDepartment,
+  removeMember, setMemberOrg, setMemberRole, updateDepartment,
 } from '../api'
-
-const SCOPE_OPTIONS = [
-  { value: 'all', label: '全部' },
-  { value: 'dept_tree', label: '本部门及下级' },
-  { value: 'subtree', label: '本人及下属' },
-  { value: 'own', label: '仅本人' },
-]
+import { fmtTime } from '../utils/format'
 
 const tab = ref('members')
 const members = ref([])
 const roles = ref([])
 const departments = ref([])
-const allTables = ref([])
 const loading = ref(false)
 const loadingDepts = ref(false)
-const loadingScopes = ref(false)
 const saving = ref(false)
 const inviting = ref(false)
 const inviteVisible = ref(false)
 const inviteForm = reactive({ username: '', role: 'user' })
+
+// ---------- 成员搜索/分页 ----------
+const kw = ref('')
+const page = ref(1)
+const pageSize = 20
+const filteredMembers = computed(() => {
+  const k = kw.value.trim().toLowerCase()
+  if (!k) return members.value
+  return members.value.filter((m) => m.username.toLowerCase().includes(k))
+})
+const pagedMembers = computed(() => filteredMembers.value.slice((page.value - 1) * pageSize, page.value * pageSize))
+
+// 邀请可选角色：排除 admin（管理员由现有管理员在成员列表里逐个调整，不开放直接邀请）
+const invitableRoles = computed(() => roles.value.filter((r) => r.code !== 'admin'))
+
+// 部门树节点的「更多」菜单
+function onDeptCommand(cmd, data) {
+  if (cmd === 'edit') openDeptEdit(data)
+  else if (cmd === 'move') openMove(data)
+  else if (cmd === 'toggle') toggleDept(data)
+  else if (cmd === 'delete') delDept(data)
+}
 const tenant = ref(null)
 const ownerId = ref(0)
-const scopeData = ref(null)
 
-const hasDataScope = computed(() => !!tenant.value?.entitlements?.feature_data_scope)
 
 const seatTip = computed(() => {
   const seats = tenant.value?.usage?.seats
@@ -274,23 +246,13 @@ const deptTree = computed(() => {
   return roots
 })
 
-const scopeRows = computed(() => {
-  if (!scopeData.value) return []
-  return scopeData.value.roles.map((r) => ({
-    ...r,
-    defaultScope: scopeData.value.default[r.id] || 'all',
-    overrides: scopeData.value.overrides.filter((o) => o.role_id === r.id),
-  }))
-})
-
-const tableLabel = (id) => allTables.value.find((t) => t.id === id)?.label || `#${id}`
 
 async function load() {
   loading.value = true
   try {
     const [m, r, t, d] = await Promise.all([listMembers(), listRoles(), getCurrentTenant(), listDepartments()])
     members.value = m
-    roles.value = r.filter((x) => x.code !== 'admin' || true)
+    roles.value = r   // 全量角色（成员列表改角色可选全部；邀请时下拉已排除 admin）
     tenant.value = t
     departments.value = d
     ownerId.value = m.find((x) => x.status === 'active' && x.user_id === t?.tenant?.owner_user_id)?.user_id
@@ -302,27 +264,23 @@ async function load() {
   }
 }
 
-async function loadScopes() {
-  if (!hasDataScope.value) return
-  loadingScopes.value = true
-  try {
-    const [sc, ts] = await Promise.all([getScopes(), listTables({ all: 1 })])
-    scopeData.value = sc
-    allTables.value = ts
-  } catch (e) {
-    ElMessage.error(e.message)
-  } finally {
-    loadingScopes.value = false
-  }
-}
-
-onMounted(async () => {
-  await load()          // 先拿到租户权益（feature_data_scope 判定依赖它）
-  loadScopes()
-})
+onMounted(load)
 
 // ---------- 成员 ----------
+// L3 权限变更即生效：先确认；给自己降权额外强提醒（可能立刻失去管理权限）
 async function changeRole(row, role) {
+  const me = JSON.parse(localStorage.getItem('grt_user') || 'null')
+  const isSelf = row.user_id === me?.id
+  const roleName = roles.value.find((r) => r.code === role)?.name || role
+  try {
+    await ElMessageBox.confirm(
+      isSelf
+        ? `你正在把自己「${row.username}」的角色改为「${roleName}」，如果不是管理员，你将立刻失去本页面的管理权限。确定继续？`
+        : `确定把成员「${row.username}」的角色改为「${roleName}」？`,
+      '调整角色',
+      { type: 'warning', confirmButtonText: '确定调整', cancelButtonText: '取消' },
+    )
+  } catch { return }   // 取消：select 是 :model-value 非受控回写，界面自然保持原值
   try {
     await setMemberRole(row.id, role)
     row.role = role
@@ -423,56 +381,12 @@ async function delDept(dept) {
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.message) }
 }
 
-// ---------- 数据范围 ----------
-const ovVisible = ref(false)
-const ovRole = ref(null)
-const ovTableId = ref(null)
-const ovScope = ref('own')
-
-async function setScope(roleId, tableId, scope) {
-  try {
-    await putScope(roleId, tableId, scope)
-    ElMessage.success('数据范围已更新')
-    loadScopes()
-  } catch (e) {
-    ElMessage.error(e.message)
-    loadScopes()
-  }
-}
-
-function openOverride(row) {
-  ovRole.value = row
-  ovTableId.value = null
-  ovScope.value = 'own'
-  ovVisible.value = true
-}
-
-async function saveOverride() {
-  if (!ovTableId.value) return ElMessage.warning('请选择数据表')
-  saving.value = true
-  try {
-    await putScope(ovRole.value.id, ovTableId.value, ovScope.value)
-    ElMessage.success('已添加按表覆盖')
-    ovVisible.value = false
-    loadScopes()
-  } catch (e) { ElMessage.error(e.message) } finally { saving.value = false }
-}
-
-async function applyPresets() {
-  try {
-    await ElMessageBox.confirm('将把「经理」默认范围设为本部门及下级、「普通用户」设为仅本人（租户级默认，已被按表覆盖的不受影响）。继续？', '应用预设模板', { type: 'info' })
-    await applyScopePresets()
-    ElMessage.success('预设已应用')
-    loadScopes()
-  } catch (e) { if (e !== 'cancel') ElMessage.error(e.message) }
-}
 </script>
 
 <style scoped>
+.members-filter { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.members-filter .hint { font-size: 12px; color: #909399; }
 .seat-tip { margin-bottom: 12px; }
-.scope-toolbar { margin-bottom: 12px; }
-.scope-ov { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
-.ov-table { min-width: 110px; color: #303133; }
 .dept-node { display: flex; justify-content: space-between; align-items: center; width: 100%; padding-right: 8px; }
 .dept-meta { color: #909399; font-size: 12px; margin-left: 8px; }
 .dept-disabled { color: #909399; text-decoration: line-through; }
