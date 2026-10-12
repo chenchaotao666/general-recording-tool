@@ -35,6 +35,8 @@ const router = createRouter({
     { path: '/mindmaps/:id', component: () => import('../views/MindMapEditor.vue'), meta: { perm: 'menu_mindmaps', title: '思维导图编辑器' } },   // 不用正则参数：vue-router 4.6 对 :id(\d+) 不匹配
     // 懒加载隔离富文本编辑器（wangEditor）体积
     { path: '/notes', component: () => import('../views/Notes.vue') , meta: { perm: 'menu_notes', title: '记事本' } },
+    // 画板：懒加载隔离 React 白板（excalidraw/tldraw）体积
+    { path: '/whiteboard', component: () => import('../views/Whiteboards.vue'), meta: { perm: 'menu_whiteboard', title: '画板' } },
     // 工作流：编辑器懒加载隔离 vue-flow 体积
     { path: '/workflows', component: () => import('../views/Workflows.vue') , meta: { perm: 'menu_workflows', title: '工作流' } },
     { path: '/workflows/new', component: () => import('../views/WorkflowEditor.vue'), meta: { title: '工作流编辑器' } },

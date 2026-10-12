@@ -477,6 +477,23 @@ class Note(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class Whiteboard(Base):
+    """画板页面：画布 JSON（Excalidraw 序列化格式），可嵌套（最多 3 层），严格私有。
+    engine 字段为将来多引擎预留，当前固定 excalidraw。"""
+    __tablename__ = "whiteboards"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（仅本人可见，admin 也不例外）
+    parent_id = Column(Integer, ForeignKey("whiteboards.id"), nullable=True, index=True)  # 父页面，可空=顶级
+    title = Column(String(200), default="")
+    engine = Column(String(16), default="excalidraw")   # excalidraw / tldraw，创建时选定后不改
+    content_json = Column(Text, default="")             # 画布序列化 JSON（服务端只校验长度与 JSON 合法性）
+    pinned = Column(Boolean, default=False)
+    sort = Column(Integer, default=0)                   # 同级手工排序
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class Mindmap(Base):
     """思维导图：data 存引擎无关的纯文本树 {text, children[]}（前端各引擎组件自行转换），
     租户内成员共享编辑；删除限 所有者/租户 admin。"""

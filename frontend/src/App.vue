@@ -23,6 +23,9 @@
           <el-menu-item v-if="hasMenu('menu_mindmaps')" index="/mindmaps">
             <el-icon><Share /></el-icon><span>思维导图</span>
           </el-menu-item>
+          <el-menu-item v-if="hasMenu('menu_whiteboard')" index="/whiteboard">
+            <el-icon><Brush /></el-icon><span>画板</span>
+          </el-menu-item>
           <el-menu-item v-if="hasMenu('menu_reports')" index="/reports">
             <el-icon><DataAnalysis /></el-icon><span>报表</span>
           </el-menu-item>
@@ -162,7 +165,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElLoading, ElMessage } from 'element-plus'
-import { Avatar, Bell, Collection, Connection, DataAnalysis, Document, Expand, Fold, Grid, HomeFilled, Notebook, OfficeBuilding, Postcard, PriceTag, Setting, Share, Upload, User, UserFilled, Wallet } from '@element-plus/icons-vue'
+import { Avatar, Bell, Brush, Collection, Connection, DataAnalysis, Document, Expand, Fold, Grid, HomeFilled, Notebook, OfficeBuilding, Postcard, PriceTag, Setting, Share, Upload, User, UserFilled, Wallet } from '@element-plus/icons-vue'
 import { changePassword as changePasswordApi, getCurrentTenant, switchTenant, unreadCount } from './api'
 import AssistantPanel from './components/AssistantPanel.vue'
 

@@ -97,6 +97,7 @@ def _seed_rbac(conn) -> None:
         ("menu_groups", "菜单-用户组", "侧边「用户组」入口"),
         ("menu_billing", "菜单-套餐与用量", "侧边「套餐与用量」入口"),
         ("menu_mindmaps", "菜单-思维导图", "侧边「思维导图」入口"),
+        ("menu_whiteboard", "菜单-画板", "侧边「画板」入口"),
     ]
     for code, name, desc in perms:
         conn.execute(

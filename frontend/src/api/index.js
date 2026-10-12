@@ -359,6 +359,14 @@ export const updateNote = (id, p) => http.put(`/notes/${id}`, p)
 export const deleteNote = (id) => http.delete(`/notes/${id}`)
 export const noteAiAssist = (p) => http.post('/notes/ai-assist', p)
 
+// 画板（界面模式同记事本：左树右画布，内容存 excalidraw/tldraw 序列化 JSON）
+export const whiteboardTree = () => http.get('/whiteboards/tree')
+export const searchWhiteboards = (keyword) => http.get('/whiteboards/search', { params: { keyword } })
+export const createWhiteboard = (p) => http.post('/whiteboards', p)
+export const getWhiteboard = (id) => http.get(`/whiteboards/${id}`)
+export const updateWhiteboard = (id, p) => http.put(`/whiteboards/${id}`, p)
+export const deleteWhiteboard = (id) => http.delete(`/whiteboards/${id}`)
+
 // 站内通知
 // 思维导图
 export const listMindmaps = () => http.get('/mindmaps')

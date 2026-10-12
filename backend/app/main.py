@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import assistant, audit, auth, billing, departments, dyn, excel, friends, groups, home, images, mcp, members, mindmaps, notes, notify, platform, print_templates, rbac, reports, scopes, settings as settings_router, share_links, shares, tables, tenants, users, vision, workflows
+from .routers import assistant, audit, auth, billing, departments, dyn, excel, friends, groups, home, images, mcp, members, mindmaps, notes, notify, platform, print_templates, rbac, reports, scopes, settings as settings_router, share_links, shares, tables, tenants, users, vision, whiteboards, workflows
 from .services import scheduler
 from .services.migrate import run_migrations
 from .utils.auth import get_current_user, hash_password
@@ -92,6 +92,7 @@ app.include_router(print_templates.router, dependencies=protected)
 app.include_router(print_templates.nested, dependencies=protected)
 app.include_router(assistant.router, dependencies=protected)
 app.include_router(notes.router, dependencies=protected)
+app.include_router(whiteboards.router, dependencies=protected)
 app.include_router(mindmaps.router, dependencies=protected)
 app.include_router(notify.router, dependencies=protected)
 app.include_router(home.router, dependencies=protected)
@@ -107,6 +108,11 @@ app.include_router(scopes.router, dependencies=protected)
 app.include_router(billing.router, dependencies=protected)
 
 # 前端构建产物存在时直接由后端托管（生产模式）
+# Excalidraw 素材库：独立目录按需托管（前端打开素材库面板时才加载，不进前端 dist；静态资源不做鉴权）
+excalidrawlibs = Path(__file__).resolve().parent.parent / "excalidrawlibs"
+if excalidrawlibs.exists():
+    app.mount("/api/excalidrawlibs", StaticFiles(directory=excalidrawlibs), name="excalidrawlibs")
+
 dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if dist.exists():
     from starlette.responses import FileResponse
