@@ -34,6 +34,7 @@
           <el-button link size="small" @click="openEnts(row)">权益配置</el-button>
         </template>
       </el-table-column>
+      <template #empty><el-empty description="还没有套餐，点右上角「新建套餐」" /></template>
     </el-table>
 
     <!-- 套餐基本信息 -->
@@ -97,6 +98,7 @@
             <el-button type="danger" link size="small" @click="entRows.splice($index, 1)">删</el-button>
           </template>
         </el-table-column>
+        <template #empty><el-empty description="暂无权益，点击下方「+ 添加键」" :image-size="60" /></template>
       </el-table>
       <el-button class="add-ent" size="small" @click="entRows.push({ key: '', value: null })">+ 添加键</el-button>
       <template #footer>

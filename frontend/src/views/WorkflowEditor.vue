@@ -161,8 +161,8 @@
         <el-table-column label="错误">
           <template #default="{ row }"><span class="run-err">{{ row.error }}</span></template>
         </el-table-column>
+        <template #empty><el-empty v-if="!runsLoading" description="暂无执行记录" :image-size="60" /></template>
       </el-table>
-      <el-empty v-if="!runsLoading && !runs.length" description="暂无执行记录" />
     </el-drawer>
 
     <!-- AI 生成整个工作流草稿 -->

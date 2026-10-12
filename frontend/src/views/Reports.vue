@@ -89,7 +89,7 @@
       title="报表由多数据源 + 区块 + 栅格布局组成：设计器内拖字段即可成图，可配置定时推送与链接分享。" />
 
     <el-table :data="reports" v-loading="loading" border>
-      <el-table-column prop="name" label="报表名称" min-width="140">
+      <el-table-column prop="name" label="报表名称" min-width="110">
         <template #default="{ row }">
           <div>{{ row.name }}</div>
           <div v-if="row.description" style="font-size: 12px; color: #909399">{{ row.description }}</div>
@@ -128,32 +128,27 @@
           <span v-else style="color: #c0c4cc">-</span>
         </template>
       </el-table-column>
-      <!-- 操作列：高频 查看/设计/推送 外露，低频收进「更多」（导出注明口径，防止误以为导出的是查看页当前口径） -->
-      <el-table-column label="操作" width="270">
+      <!-- 操作列：全部按钮外露且不换行；导出口径放 tooltip 注明，防止误以为导出的是查看页当前口径 -->
+      <el-table-column label="操作" width="470" fixed="right" class-name="op-cell">
         <template #default="{ row }">
-          <el-button text type="primary" size="small" @click="$router.push(`/reports/${row.id}/view`)">查看</el-button>
-          <el-button text type="primary" size="small" @click="$router.push(`/reports/${row.id}/layout`)">设计</el-button>
-          <el-button v-if="row.schedule?.type" text size="small" :loading="pushingId === row.id" @click="push(row)">推送</el-button>
-          <el-dropdown trigger="click">
-            <el-button text size="small">更多<el-icon><ArrowDown /></el-icon></el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item @click="exportFile(row, 'xlsx')">导出 Excel（{{ row.range_desc || '默认口径' }}）</el-dropdown-item>
-                <el-dropdown-item @click="exportFile(row, 'html')">导出 HTML（{{ row.range_desc || '默认口径' }}）</el-dropdown-item>
-                <el-dropdown-item v-if="row.schedule?.type" @click="showRuns(row)">推送日志</el-dropdown-item>
-                <el-dropdown-item @click="openShare(row)">链接分享</el-dropdown-item>
-                <el-dropdown-item @click="duplicate(row)">复制报表</el-dropdown-item>
-                <el-dropdown-item divided>
-                  <el-popconfirm title="确定删除该报表模板？" @confirm="del(row)">
-                    <template #reference><span style="color: #f56c6c">删除</span></template>
-                  </el-popconfirm>
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <div style="white-space: nowrap">
+            <el-button text type="primary" size="small" @click="$router.push(`/reports/${row.id}/view`)">查看</el-button>
+            <el-button text type="primary" size="small" @click="$router.push(`/reports/${row.id}/layout`)">设计</el-button>
+            <el-button v-if="row.schedule?.type" text size="small" :loading="pushingId === row.id" @click="push(row)">推送</el-button>
+            <el-tooltip :content="`按「${row.range_desc || '默认口径'}」口径导出`" placement="top">
+              <el-button text size="small" @click="exportFile(row, 'xlsx')">导出Excel</el-button>
+            </el-tooltip>
+            <el-tooltip :content="`按「${row.range_desc || '默认口径'}」口径导出`" placement="top">
+              <el-button text size="small" @click="exportFile(row, 'html')">导出HTML</el-button>
+            </el-tooltip>
+            <el-button v-if="row.schedule?.type" text size="small" @click="showRuns(row)">日志</el-button>
+            <el-button text type="primary" size="small" @click="openShare(row)">分享</el-button>
+            <el-button text size="small" @click="duplicate(row)">复制</el-button>
+            <el-button text type="danger" size="small" @click="del(row)">删除</el-button>
+          </div>
         </template>
       </el-table-column>
-      <template #empty>还没有报表，点击右上角新建</template>
+      <template #empty><el-empty description="还没有报表，点击右上角新建" /></template>
     </el-table>
 
     <!-- 新建：名称 + 初始数据源，创建后直进设计器 -->
@@ -247,7 +242,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, MagicStick, Plus } from '@element-plus/icons-vue'
+import { MagicStick, Plus } from '@element-plus/icons-vue'
 import {
   aiAssistReport, createReport, createReportShareLink, deleteReport, deleteReportShareLink, duplicateReport,
   installReportTemplate, listReportShareLinks, listReportTemplates,
@@ -524,11 +519,12 @@ async function showRuns(row) {
 
 async function del(row) {
   try {
+    await ElMessageBox.confirm(`确定删除报表「${row.name}」？删除后不可恢复。`, '删除确认', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
     await deleteReport(row.id)
     ElMessage.success('已删除')
     load()
   } catch (e) {
-    ElMessage.error(e.message)
+    if (e !== 'cancel') ElMessage.error(e.message || e)
   }
 }
 
@@ -624,4 +620,7 @@ onMounted(load)
 .cf-tables { margin-bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
 .cf-cb { margin-bottom: 4px; }
 .tpl-hint { font-size: 12px; color: #909399; }
+/* 操作列按钮全外露：压缩按钮间距，保证一行放下 */
+:deep(.op-cell .el-button + .el-button) { margin-left: 4px; }
+:deep(.op-cell .el-button) { padding-left: 6px; padding-right: 6px; }
 </style>

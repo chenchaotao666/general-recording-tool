@@ -59,9 +59,12 @@
           <div class="ai-panel-head" @mousedown="startAiDrag">
             ✨ AI 写作<span class="ai-drag-hint">按住拖动</span>
           </div>
+          <div v-if="ai.selected" class="ai-selected" :title="ai.selected">
+            📌 基于选中内容（{{ ai.selected.length }} 字）：{{ ai.selected.slice(0, 60) }}{{ ai.selected.length > 60 ? '…' : '' }}
+          </div>
           <input
             ref="aiInputRef" v-model="ai.instruction" class="ai-input"
-            placeholder="描述要生成的内容，如：写一份本周工作总结"
+            :placeholder="ai.selected ? '对选中内容做什么？如：润色 / 扩写 / 总结 / 翻译' : '描述要生成的内容，如：写一份本周工作总结'"
             @keydown.enter.prevent="aiGenerate"
           />
           <div v-if="ai.preview" class="ai-preview" v-html="ai.preview" />
@@ -71,7 +74,8 @@
               <template v-if="ai.preview">
                 <el-button size="small" text @click="closeAi(true)">丢弃</el-button>
                 <el-button size="small" :loading="ai.loading" @click="aiGenerate">重新生成</el-button>
-                <el-button size="small" type="primary" @click="aiInsert">插入</el-button>
+                <el-button size="small" type="primary" @click="aiInsert(false)">插入</el-button>
+                <el-button v-if="ai.selected" size="small" type="danger" plain @click="aiInsert(true)">替换选中</el-button>
               </template>
               <el-button v-else size="small" type="primary" :loading="ai.loading" @click="aiGenerate">生成</el-button>
             </div>
@@ -239,7 +243,10 @@ const onTitleInput = debounce(async () => {
 // ---------- AI 写作 ----------
 
 function openAi() {
-  ai.value = { visible: true, loading: false, instruction: '', error: '', preview: null, x: null, y: null }
+  // 面板聚焦前抓取选区：有选中内容时它是本次 AI 操作的主要对象
+  const sel = (editorRef.value?.getSelectionText() || '').trim()
+  ai.value = { visible: true, loading: false, instruction: '', error: '', preview: null,
+               x: null, y: null, selected: sel }
   nextTick(() => aiInputRef.value?.focus())
   // 点击面板外 / 任意位置 Esc 关闭（capture 阶段，面板内 Esc 也能生效）
   document.addEventListener('mousedown', onAiDocDown, true)
@@ -293,7 +300,8 @@ async function aiGenerate() {
   try {
     const text = editorRef.value?.getText() || ''
     const context = text.split('\n').map((s) => s.trim()).filter(Boolean).slice(-20)
-    const res = await noteAiAssist({ instruction, note_title: current.value?.title || '', context })
+    const res = await noteAiAssist({ instruction, note_title: current.value?.title || '', context,
+                                     selection: ai.value.selected || '' })
     ai.value.preview = res.html  // 只预览，不写入；用户点「插入」才进文档
   } catch (e) {
     ai.value.error = e.message
@@ -303,9 +311,9 @@ async function aiGenerate() {
 }
 
 // 确认插入：HTML 片段写入光标处（编辑器的 change 事件会自动触发保存）
-function aiInsert() {
+function aiInsert(replaceSelection = false) {
   if (!ai.value.preview) return
-  editorRef.value?.insertHtml(ai.value.preview)
+  editorRef.value?.insertHtml(ai.value.preview, { replaceSelection })
   closeAi(true)
 }
 
@@ -455,6 +463,11 @@ onBeforeUnmount(async () => {
 .main-ops { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .save-state { font-size: 12px; color: #909399; margin-right: 4px; }
 .save-state.err { color: #f56c6c; }
+
+.ai-selected {
+  font-size: 12px; color: #7c5cff; background: #f4f0ff; border-radius: 6px;
+  padding: 4px 10px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 /* AI 写作面板：默认右上悬浮，可拖动换位 */
 .ai-panel {

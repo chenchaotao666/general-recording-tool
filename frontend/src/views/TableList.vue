@@ -85,8 +85,8 @@
             <el-button text type="danger" size="small" @click="respond(row, 'reject')">拒绝</el-button>
           </template>
         </el-table-column>
+        <template #empty><el-empty description="暂无待接受的分享" :image-size="60" /></template>
       </el-table>
-      <el-empty v-if="!pendingShares.length" description="暂无待接受的分享" :image-size="60" />
     </el-dialog>
 
     <!-- 分享管理对话框（与思维导图等共用同一组件） -->
@@ -255,5 +255,7 @@ onBeforeUnmount(() => {
 .card-sub { font-size: 12px; color: #909399; margin-top: 4px; }
 .link-url { font-size: 12px; color: #409eff; word-break: break-all; }
 .page-header-ops { display: flex; align-items: center; gap: 8px; }
+/* 间距统一交给 gap：清掉相邻 el-button 默认的 12px 左外边距，否则按钮之间会比其它元素之间宽 */
+.page-header-ops :deep(.el-button + .el-button) { margin-left: 0; }
 .form-hint { font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.4; }
 </style>

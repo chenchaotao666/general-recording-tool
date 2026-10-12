@@ -4,8 +4,8 @@
       <h2>工作流</h2>
       <div>
         <el-button @click="openTemplates">模板市场</el-button>
-        <el-button class="ai-btn" @click="aiVisible = true">AI 生成</el-button>
-        <el-button type="primary" @click="$router.push('/workflows/new')">新建工作流</el-button>
+        <el-button class="ai-btn" :icon="MagicStick" @click="aiVisible = true">AI 生成</el-button>
+        <el-button type="primary" :icon="Plus" @click="$router.push('/workflows/new')">新建工作流</el-button>
       </div>
     </div>
 
@@ -130,7 +130,7 @@
           </el-popconfirm>
         </template>
       </el-table-column>
-      <template #empty>还没有工作流，点击右上角新建或从模板市场安装</template>
+      <template #empty><el-empty description="还没有工作流，点击右上角新建或从模板市场安装" /></template>
     </el-table>
     <el-pagination
       v-if="filteredRows.length > pageSize" v-model:current-page="listPage" :page-size="pageSize"
@@ -169,6 +169,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { MagicStick, Plus } from '@element-plus/icons-vue'
 import { aiAssistWorkflow, deleteWorkflow, installWorkflowTemplate, listWorkflows, listWorkflowTemplates, runWorkflow, toggleWorkflow, workflowRuns } from '../api'
 
 const AI_EXAMPLES = [

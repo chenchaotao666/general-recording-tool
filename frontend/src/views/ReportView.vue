@@ -88,6 +88,7 @@
             v-for="c in drill.columns" :key="c.prop" :prop="c.prop" :label="c.label"
             show-overflow-tooltip
           />
+          <template #empty><el-empty v-if="!drill.loading" description="该分组暂无记录" :image-size="60" /></template>
         </el-table>
         <div class="drill-foot">
           <el-pagination
@@ -98,7 +99,6 @@
             共 {{ drill.total }} 条，仅加载前 {{ drill.rows.length }} 条
           </span>
         </div>
-        <el-empty v-if="!drill.loading && !drill.rows.length" description="该分组暂无记录" :image-size="60" />
       </div>
     </el-dialog>
   </div>

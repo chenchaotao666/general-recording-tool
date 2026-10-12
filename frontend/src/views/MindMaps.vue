@@ -14,7 +14,7 @@
     </div>
 
     <el-table :data="filtered" v-loading="loading" border>
-      <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip>
+      <el-table-column prop="title" label="标题" min-width="140" show-overflow-tooltip>
         <template #default="{ row }">
           <el-link type="primary" @click="$router.push(`/mindmaps/${row.id}`)">{{ row.title }}</el-link>
           <el-tag v-if="row.shared" size="small" :type="row.can_edit ? 'success' : 'info'" effect="plain" style="margin-left: 6px">
@@ -25,7 +25,7 @@
       <el-table-column prop="owner_name" label="创建人" width="130" show-overflow-tooltip />
       <el-table-column label="更新时间" width="150" :formatter="(r) => fmtTime(r.updated_at)" />
       <el-table-column label="创建时间" width="150" :formatter="(r) => fmtTime(r.created_at)" />
-      <el-table-column label="操作" width="250" fixed="right">
+      <el-table-column label="操作" width="210" fixed="right" class-name="op-cell">
         <template #default="{ row }">
           <el-button text type="primary" size="small" @click="$router.push(`/mindmaps/${row.id}`)">打开</el-button>
           <el-button text size="small" @click="rename(row)">重命名</el-button>
@@ -146,4 +146,7 @@ onMounted(load)
 .list-filter { display: flex; gap: 10px; margin-bottom: 12px; }
 /* 列内容不换行：标题超长省略号（tooltip 展示全名） */
 :deep(.el-table .cell) { white-space: nowrap; }
+/* 操作列：按钮全部平铺一行，收紧 Element 默认的 12px 按钮间距与内边距 */
+:deep(.op-cell .el-button) { margin-left: 4px; padding-left: 6px; padding-right: 6px; }
+:deep(.op-cell .el-button:first-child) { margin-left: 0; }
 </style>

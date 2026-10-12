@@ -43,7 +43,7 @@
             </el-popconfirm>
           </template>
         </el-table-column>
-        <template #empty>还没有模型服务，点击右上角添加</template>
+        <template #empty><el-empty description="还没有模型服务，点击右上角添加" /></template>
       </el-table>
     </el-card>
 

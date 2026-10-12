@@ -63,6 +63,7 @@
               <el-button text type="danger" size="small" @click="removeShare(row)">移除</el-button>
             </template>
           </el-table-column>
+          <template #empty><el-empty description="还没有分享给任何人" :image-size="60" /></template>
         </el-table>
       </el-tab-pane>
 
@@ -98,10 +99,8 @@
               <el-button text type="danger" size="small" @click="removeLink(row)">撤销</el-button>
             </template>
           </el-table-column>
+          <template #empty><el-empty description="还没有分享链接，生成后任何人凭链接可只读查看" :image-size="60" /></template>
         </el-table>
-        <div v-if="!links.length" style="color: #c0c4cc; font-size: 13px; text-align: center; padding: 20px 0">
-          还没有分享链接，生成后任何人凭链接可只读查看
-        </div>
       </el-tab-pane>
     </el-tabs>
   </el-dialog>

@@ -44,7 +44,7 @@ import { imageUrl, uploadImageFile } from '../../api'
 // 模块级 bus 会导致"菜单读到旧模块的空 handler，点击没反应"（悬浮栏 AI/格式刷失效的根因）
 const G = (window.__grtNotes ??= {
   aiHandler: null, frHandler: null,
-  brush: null, brushTimer: null, menusRegistered: false,
+  brush: null, brushTimer: null, brushMouseDown: false, markerDrag: null, editorDrag: null, menusRegistered: false,
   brushListeners: new Set(),   // brush 状态变化通知（组件据此切换刷子光标）
 })
 
@@ -128,31 +128,216 @@ class FormatPainterMenu {
 }
 
 // 应用格式刷到当前选区（单击模式用一次即失效，连续模式保持）
+// 逐文本节点套用：整选区 addMark/removeMark 遇到空行会抛 slate 内部错误（Cannot find a descendant）
+// 导致"中间失效"；逐节点 + try/catch 跳过异常节点（空行）不中断整体
+const LIST_BLOCK_TYPES = ['numbered-list', 'bulleted-list', 'list-item']
+
 function applyBrush(editor) {
   if (!G.brush || !editor?.selection || SlateRange.isCollapsed(editor.selection)) return
-  for (const k of BRUSH_MARK_KEYS) SlateEditor.removeMark(editor, k)   // 先清目标原有行内格式
-  for (const [k, v] of Object.entries(G.brush.marks)) SlateEditor.addMark(editor, k, v)
-  SlateTransforms.setNodes(editor, G.brush.blockProps, {
-    match: (n) => SlateElement.isElement(n) && SlateEditor.isBlock(editor, n),
-  })
+  const at = editor.selection
+  // 行内格式：加粗/斜体/颜色等，逐文本节点套用
+  const entries = [...SlateEditor.nodes(editor, { at, match: (n) => SlateText.isText(n) })]
+  for (const [, path] of entries) {
+    try {
+      const props = {}
+      for (const k of BRUSH_MARK_KEYS) props[k] = undefined   // 清旧行内格式（undefined=删键）
+      Object.assign(props, G.brush.marks)
+      SlateTransforms.setNodes(editor, props, { at: path, match: (n) => SlateText.isText(n) })
+    } catch { /* 空行等异常节点跳过 */ }
+  }
+  // 块级格式：对齐/缩进所有块可套；类型只在源是标题时套用，且跳过列表项（不毁列表结构）
+  const blockProps = { ...G.brush.blockProps }
+  if (blockProps.type === 'paragraph') delete blockProps.type   // 源是普通段落时不强制改类型
+  if (Object.keys(blockProps).some((k) => blockProps[k] !== undefined)) {
+    try {
+      SlateTransforms.setNodes(editor, blockProps, {
+        match: (n) => SlateElement.isElement(n) && SlateEditor.isBlock(editor, n)
+          && !LIST_BLOCK_TYPES.includes(n.type),
+      })
+    } catch { /* 块级套用失败不影响行内结果 */ }
+  }
   if (!G.brush.locked) G.brush = null
   notifyBrush()
 }
 
-// 用 selectionchange 而不是 mouseup：wangEditor 的 editor.selection 在 mouseup 时可能还没更新，
-// 会套用到旧选区（看起来就是"没生效"）。selectionchange 等选区落定后再应用，鼠标/键盘选择都覆盖
+// 应用时机：鼠标拖动选择时 selectionchange 会持续触发——移动慢一点（停顿 >80ms）就会
+// 中途套用到半成品选区（"格式化中间失效"）。改为：鼠标按下期间不套用，松开才套用；
+// 键盘选择（Shift/Ctrl+A 无鼠标按下）走 80ms 防抖套用。
+function tryApplyBrush(getEditor) {
+  const ed = getEditor()
+  if (!G.brush || !ed) return
+  // 选区必须在当前编辑器内（防止选中页面别处文字也触发）
+  const container = ed.getEditableContainer()
+  const sel = window.getSelection()
+  if (!sel?.rangeCount || !container.contains(sel.anchorNode)) return
+  let slateSel = ed.selection
+  if ((!slateSel || SlateRange.isCollapsed(slateSel)) && !sel.isCollapsed) {
+    // 慢拖丢 mouseup 的场景下 slate 与 DOM 选区会脱节（slate 塌了、DOM 还在）——以 DOM 为准先同步
+    try {
+      const anchor = DomEditor.toSlatePoint(ed, [sel.anchorNode, sel.anchorOffset], { suppressThrow: true })
+      const focus = DomEditor.toSlatePoint(ed, [sel.focusNode, sel.focusOffset], { suppressThrow: true })
+      if (anchor && focus) ed.select({ anchor, focus })
+    } catch { /* 同步失败按无选区处理 */ }
+    slateSel = ed.selection
+  }
+  if (!slateSel || SlateRange.isCollapsed(slateSel)) return
+  applyBrush(ed)
+}
+
 function onBrushSelectionChange(getEditor) {
   if (!G.brush) return
+  if (G.brushMouseDown) return   // 拖动中不套用，等 mouseup
+  clearTimeout(G.brushTimer)
+  G.brushTimer = setTimeout(() => tryApplyBrush(getEditor), 80)
+}
+
+function onBrushDocDown(e) {
+  G.brushMouseDown = true
+  // 兜底自愈：mouseup 若因任何原因丢失（目标元素在拖拽中被重绘脱离 DOM 等），
+  // 2s 后自动复位，格式刷不会永久卡死在"拖动中"状态
+  clearTimeout(G.brushMouseDownTimer)
+  G.brushMouseDownTimer = setTimeout(() => {
+    if (G.brushMouseDown) {
+      G.brushMouseDown = false
+      onBrushDocUp()
+    }
+  }, 2000)
+}
+
+function onBrushDocUp(e) {
+  G.brushMouseDown = false
+  clearTimeout(G.brushMouseDownTimer)
+  if (!G.brush) return
+  // 松开后选区已定，但 wangEditor 的 editor.selection 可能滞后一拍
   clearTimeout(G.brushTimer)
   G.brushTimer = setTimeout(() => {
-    const ed = getEditor()
-    if (!G.brush || !ed?.selection || SlateRange.isCollapsed(ed.selection)) return
-    // 选区必须在当前编辑器内（防止选中页面别处文字也触发）
-    const container = ed.getEditableContainer()
-    const sel = window.getSelection()
-    if (!sel?.rangeCount || !container.contains(sel.anchorNode)) return
-    applyBrush(ed)
-  }, 80)
+    const ed = G.editor
+    if (ed) tryApplyBrush(() => ed)
+  }, 50)
+}
+
+// 列表序号（data-w-e-reserve 的 contenteditable=false span）上按下鼠标：
+// 该区域不参与选区定位（slate selection 为 null），拖选从序号区起/经过会清掉选区。
+// 把序号上的按下映射到该列表项文本开头；之后的拖动由我们手动用 caretRangeFromPoint 扩展选区
+//（preventDefault 后浏览器不再进入原生拖选模式，必须自己续拖）。
+
+// 跨浏览器的 坐标→DOM文本点：Chrome/Edge 用 caretRangeFromPoint，Firefox 用 caretPositionFromPoint
+function caretPointAt(x, y) {
+  if (document.caretRangeFromPoint) {
+    const r = document.caretRangeFromPoint(x, y)
+    return r ? [r.startContainer, r.startOffset] : null
+  }
+  if (document.caretPositionFromPoint) {
+    const p = document.caretPositionFromPoint(x, y)
+    return p ? [p.offsetNode, p.offset] : null
+  }
+  return null
+}
+
+function onMarkerDown(e, getEditor) {
+  const ed = getEditor()
+  if (!ed) return
+  // 序号 span 已 pointer-events:none，按下点落在序号区时 target 是块 div 本身（而非文本节点后代）
+  const block = e.target.closest?.('[data-slate-node="element"]')
+  const marker = e.target.closest?.('span[data-w-e-reserve="true"]')
+    || ((block && e.target === block) ? block.querySelector('span[data-w-e-reserve="true"]') : null)
+  if (marker) {
+    // 按下点在序号上：映射到该列表项文本开头（preventDefault 后浏览器不再进入原生拖选，
+    // 后续拖动由 onMarkerDragMove 手动续拖）
+    // stopImmediatePropagation：wangEditor 自己的 mousedown 处理器在不可编辑区做 DOM→slate
+    // 映射会抛 "Cannot resolve a Slate point from DOM point"，一并拦掉
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    try {
+      const block = marker.closest('[data-slate-node="element"]')
+      const node = DomEditor.toSlateNode(ed, block)
+      const path = DomEditor.findPath(ed, node)
+      const firstText = SlateEditor.nodes(ed, { at: path, match: (n) => SlateText.isText(n) })
+      const [, textPath] = firstText.next().value || []
+      if (textPath) {
+        G.markerDrag = { editor: ed, anchor: { path: textPath, offset: 0 } }
+        SlateTransforms.select(ed, { path: textPath, offset: 0 })
+      }
+    } catch { /* 定位失败则交给默认行为 */ }
+    return
+  }
+  // 按下点必须在正文文本区（防止按下点在悬浮栏等覆盖层上时算出错误锚点）
+  if (!e.target.closest?.('[data-slate-editor]')) return
+  // 按下点在正文：记录拖拽锚点。之后拖动经过序号区时（原生选区扩展会在那里塌陷，
+  // 尤其是从下往上拖到首行序号），由 onMarkerDragMove 手动把焦点续到该列表项文本开头
+  try {
+    const cp = caretPointAt(e.clientX, e.clientY)
+    if (cp) {
+      const pt = DomEditor.toSlatePoint(ed, cp, { suppressThrow: true })
+      if (pt) G.editorDrag = { editor: ed, anchor: pt }
+    }
+  } catch { /* 记录失败不影响原生拖选 */ }
+}
+
+function _markerTextStart(ed, marker) {
+  const block = marker.closest('[data-slate-node="element"]')
+  const node = DomEditor.toSlateNode(ed, block)
+  const path = DomEditor.findPath(ed, node)
+  const firstText = SlateEditor.nodes(ed, { at: path, match: (n) => SlateText.isText(n) })
+  const [, textPath] = firstText.next().value || []
+  return textPath ? { path: textPath, offset: 0 } : null
+}
+
+function onMarkerDragMove(e) {
+  // 序号起拖：全程手动续拖
+  if (G.markerDrag && e.buttons) {
+    const { editor: ed, anchor } = G.markerDrag
+    const cp = caretPointAt(e.clientX, e.clientY)
+    if (cp) {
+      try {
+        const pt = DomEditor.toSlatePoint(ed, cp, { suppressThrow: true })
+        if (pt) {
+          G.markerDrag.lastFocus = pt
+          SlateTransforms.setSelection(ed, { anchor, focus: pt })
+        }
+      } catch { /* 落在不可映射区域时忽略本帧 */ }
+    }
+    return
+  }
+  // 正文起拖、经过序号区：原生扩展会塌陷，手动把焦点续到该序号所在行的文本开头
+  if (G.editorDrag && e.buttons) {
+    const marker = e.target.closest?.('span[data-w-e-reserve="true"]')
+    if (!marker) return
+    const { editor: ed, anchor } = G.editorDrag
+    try {
+      const focus = _markerTextStart(ed, marker)
+      if (focus) {
+        G.editorDrag.lastFocus = focus
+        SlateTransforms.setSelection(ed, { anchor, focus })
+      }
+    } catch { /* 忽略本帧 */ }
+  }
+}
+
+function onMarkerDragUp(e) {
+  const marker = e?.target?.closest?.('span[data-w-e-reserve="true"]')
+  const drag = G.markerDrag || G.editorDrag
+  if (marker && drag) {
+    // 松开点在序号区：浏览器/wangEditor 会把选区塌掉且无法拦截（preventDefault 无效）。
+    // 记录此刻应有的选区，塌掉后下一帧重新落定
+    const { editor: ed, anchor } = drag
+    const focus = drag.lastFocus
+      || (() => { try { return _markerTextStart(ed, marker) } catch { return null } })()
+    if (anchor && focus) {
+      // 塌选区发生在 mouseup 后 30~120ms（wangEditor 的异步收尾），无法拦截；
+      // 塌之前选区看似完好，不能用"选区为空才补"的判断——直接按塌窗节奏强制落定几帧
+      for (const delay of [50, 150, 300]) {
+        setTimeout(() => {
+          try {
+            SlateTransforms.setSelection(ed, { anchor, focus })
+            ed.focus()
+          } catch { /* 编辑器已卸载等场景忽略 */ }
+        }, delay)
+      }
+    }
+  }
+  G.markerDrag = null
+  G.editorDrag = null
 }
 
 if (!G.menusRegistered) {
@@ -174,6 +359,7 @@ const wrapRef = ref(null)
 // 无条件清空会把新实例刚注册的 handler 抹掉
 const aiHandler = () => emit('ai')
 const brushSelectionHandler = () => onBrushSelectionChange(() => editorRef.value)
+const markerDownHandler = (e) => onMarkerDown(e, () => editorRef.value)
 // 格式刷启用状态 → 根节点 class（切换刷子光标；连续模式用紫色刷子区分）
 const brushActive = ref(false)
 const brushLocked = ref(false)
@@ -400,6 +586,7 @@ function injectAiButton() {
 
 function onCreated(editor) {
   editorRef.value = editor
+  G.editor = editor   // 调试/自动化测试入口（卸载时清理）
   G.frHandler = openFr
   G.aiHandler = aiHandler
   G.brushListeners.add(syncBrushCursor)
@@ -410,8 +597,13 @@ function onCreated(editor) {
   })
   // Ctrl+F 唤起查找替换（拦掉浏览器默认的页面查找）
   editor.getEditableContainer()?.addEventListener('keydown', onCtrlF)
-  // 格式刷：选区落定后套用；Esc 取消
+  // 格式刷：选区落定后套用；Esc 取消；鼠标按下/松开跟踪（拖动中不套用）
   document.addEventListener('selectionchange', brushSelectionHandler)
+  document.addEventListener('mousedown', onBrushDocDown, true)
+  document.addEventListener('mouseup', onBrushDocUp, true)
+  editor.getEditableContainer()?.addEventListener('mousedown', markerDownHandler, true)
+  document.addEventListener('mousemove', onMarkerDragMove, true)
+  document.addEventListener('mouseup', onMarkerDragUp, true)
   editor.getEditableContainer()?.addEventListener('keydown', onBrushEsc)
 }
 
@@ -450,9 +642,15 @@ onBeforeUnmount(() => {
   wrapRef.value?.removeEventListener('contextmenu', onContextMenu)
   editorRef.value?.getEditableContainer()?.removeEventListener('keydown', onCtrlF)
   document.removeEventListener('selectionchange', brushSelectionHandler)
+  document.removeEventListener('mousedown', onBrushDocDown, true)
+  document.removeEventListener('mouseup', onBrushDocUp, true)
   editorRef.value?.getEditableContainer()?.removeEventListener('keydown', onBrushEsc)
+  editorRef.value?.getEditableContainer()?.removeEventListener('mousedown', markerDownHandler, true)
+  document.removeEventListener('mousemove', onMarkerDragMove, true)
+  document.removeEventListener('mouseup', onMarkerDragUp, true)
   if (G.frHandler === openFr) G.frHandler = null
   if (G.aiHandler === aiHandler) G.aiHandler = null
+  if (G.editor === editorRef.value) G.editor = null
   editorRef.value?.destroy()
   editorRef.value = null
 })
@@ -460,11 +658,26 @@ onBeforeUnmount(() => {
 defineExpose({
   getHtml: () => editorRef.value?.getHtml() ?? html.value,
   getText: () => editorRef.value?.getText() ?? '',
-  insertHtml(fragment) {
+  // 当前选区文本（无选区/光标态返回 ''）；AI 写作打开面板前由父组件抓取（面板聚焦后选区丢失）
+  getSelectionText: () => {
+    const ed = editorRef.value
+    if (!ed?.selection || SlateRange.isCollapsed(ed.selection)) return ''
+    return ed.getSelectionText() || ''
+  },
+  // 是否处于选区展开态（供「替换选中」判断）
+  hasSelection: () => !!(editorRef.value?.selection && !SlateRange.isCollapsed(editorRef.value.selection)),
+  insertHtml(fragment, { replaceSelection = false } = {}) {
     const ed = editorRef.value
     if (!ed) return
     ed.focus()
     ed.restoreSelection?.()   // 面板输入后选区丢失，先恢复最后的光标位置
+    if (ed.selection && !SlateRange.isCollapsed(ed.selection)) {
+      if (replaceSelection) {
+        ed.deleteFragment()     // 替换选中：先删选区内容，再插入
+      } else {
+        SlateTransforms.collapse(ed, { edge: 'end' })   // 插入：折叠到选区末尾，保留选中内容
+      }
+    }
     ed.dangerouslyInsertHtml(fragment)
   },
   focus: () => editorRef.value?.focus(),
@@ -490,6 +703,10 @@ defineExpose({
 /* 编辑区留白：左侧与页面对齐（标题栏 padding 24px），底部留足滚动余量 */
 .re-body :deep(.w-e-text-container [data-slate-editor]) { padding: 8px 24px 120px; }
 .re-body :deep(.w-e-text-placeholder) { left: 24px; top: 17px; }
+
+/* 列表序号/符号列穿透：拖选经过序号区时浏览器直接命中正文文本（原生选区扩展不再塌陷）；
+   序号区按下由 onMarkerDown 重定向到文本开头接管。待办 checkbox 容器无此属性，不受影响 */
+.re-body :deep(.w-e-text-container span[data-w-e-reserve="true"]) { pointer-events: none; }
 
 /* 行距收紧（wangEditor 默认 p margin 15px 偏大） */
 .re-body :deep(.w-e-text-container [data-slate-editor] p) { margin: 5px 0; }

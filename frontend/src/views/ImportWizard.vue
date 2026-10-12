@@ -40,6 +40,7 @@
             v-for="(h, i) in previewHeaders" :key="i"
             :prop="String(i)" :label="h" show-overflow-tooltip
           />
+          <template #empty><el-empty description="没有可预览的数据" :image-size="60" /></template>
         </el-table>
 
         <el-button type="primary" :loading="analyzing" style="margin-top: 16px" @click="doAnalyze">
@@ -139,6 +140,7 @@
             </el-popconfirm>
           </template>
         </el-table-column>
+        <template #empty><el-empty description="暂无字段，点下方「添加字段」" :image-size="60" /></template>
       </el-table>
 
       <el-alert

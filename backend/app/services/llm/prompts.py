@@ -343,12 +343,20 @@ NOTE_AI_SYSTEM = (
 )
 
 
-def build_note_ai_prompt(instruction: str, note_title: str, context_texts: list[str], today: str) -> str:
-    """记事本 AI 写作：指令 + 笔记上下文 → HTML 片段（会被服务端白名单清洗）。"""
+def build_note_ai_prompt(instruction: str, note_title: str, context_texts: list[str], today: str,
+                         selection: str = "") -> str:
+    """记事本 AI 写作：指令 + 笔记上下文（+ 可选选中内容）→ HTML 片段（会被服务端白名单清洗）。
+    selection：用户在编辑器里选中的内容——有选中时它是本次操作的主要对象，指令作用于它。"""
     lines = [
         f"今天日期：{today}",
         f"当前笔记标题：{note_title or '（无标题）'}",
     ]
+    if selection.strip():
+        lines += [
+            "",
+            "用户选中的内容（本次操作的主要对象，指令作用于它——润色/扩写/总结/翻译等都以它为准）：",
+            selection.strip(),
+        ]
     if context_texts:
         lines.append("笔记已有内容（供衔接，不要重复）：")
         lines += [f"- {t}" for t in context_texts[-20:] if t.strip()]

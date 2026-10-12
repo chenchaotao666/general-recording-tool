@@ -291,6 +291,7 @@ class NoteAiIn(BaseModel):
     instruction: str
     note_title: str = ""
     context: list[str] = []   # 现有正文的纯文本（前端提取，最多取后 20 段）
+    selection: str = ""       # 编辑器中选中的内容（有则作为本次操作的主要对象）
 
 
 @router.post("/ai-assist")
@@ -308,7 +309,8 @@ def note_ai_assist(payload: NoteAiIn, db: Session = Depends(get_db), user: User 
     provider = get_default_provider(db)
     prompt = build_note_ai_prompt(instruction[:2000], (payload.note_title or "")[:200],
                                   [str(t)[:500] for t in (payload.context or [])[-20:]],
-                                  datetime.now().strftime("%Y-%m-%d"))
+                                  datetime.now().strftime("%Y-%m-%d"),
+                                  selection=(payload.selection or "")[:2000])
     last_err: Exception | None = None
     for attempt in range(2):
         current_prompt = prompt if attempt == 0 else (

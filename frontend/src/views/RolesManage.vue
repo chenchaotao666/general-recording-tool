@@ -104,8 +104,8 @@
                   />
                 </template>
               </el-table-column>
+              <template #empty><el-empty v-if="!loadingTablePerms" description="本空间还没有数据表" :image-size="60" /></template>
             </el-table>
-            <el-empty v-if="!tableRows.length && !loadingTablePerms" description="本空间还没有数据表" :image-size="60" />
           </div>
 
           <!-- 数据范围（记录级：能看哪些记录；依赖 feature_data_scope 套餐权益） -->
@@ -145,6 +145,7 @@
                   <el-button link type="danger" size="small" :disabled="!editable(selected)" @click="setScope(row.table_id, 'all')">移除</el-button>
                 </template>
               </el-table-column>
+              <template #empty><el-empty description="暂无按表覆盖，全部表使用上方默认范围" :image-size="60" /></template>
             </el-table>
             <div v-if="editable(selected)" class="scope-add">
               <el-select v-model="ovTableId" filterable size="small" placeholder="选择数据表" style="width: 200px">

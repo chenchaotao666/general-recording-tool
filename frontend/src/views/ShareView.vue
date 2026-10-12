@@ -24,6 +24,7 @@
           >
             <template #default="{ row }">{{ fmt(f, row[f.field_name]) }}</template>
           </el-table-column>
+          <template #empty><el-empty description="暂无数据" /></template>
         </el-table>
         <el-pagination
           v-if="data.total > data.page_size"

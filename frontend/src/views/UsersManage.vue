@@ -33,7 +33,7 @@
         </template>
       </el-table-column>
       <el-table-column label="注册时间" width="150" :formatter="(r) => fmtTime(r.created_at)" />
-      <template #empty>暂无用户</template>
+      <template #empty><el-empty description="暂无用户" /></template>
     </el-table>
     <el-pagination
       v-if="filtered.length > pageSize" v-model:current-page="page" :page-size="pageSize"

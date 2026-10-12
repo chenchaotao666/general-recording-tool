@@ -69,7 +69,7 @@
               <el-tag v-else size="small" effect="plain">所有者</el-tag>
             </template>
           </el-table-column>
-          <template #empty>暂无成员</template>
+          <template #empty><el-empty description="暂无成员" /></template>
         </el-table>
         <el-pagination
           v-if="filteredMembers.length > pageSize" v-model:current-page="page" :page-size="pageSize"

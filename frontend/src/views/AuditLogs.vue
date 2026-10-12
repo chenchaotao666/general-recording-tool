@@ -51,7 +51,7 @@
           <span v-else>—</span>
         </template>
       </el-table-column>
-      <template #empty>暂无审计记录</template>
+      <template #empty><el-empty description="暂无审计记录" /></template>
     </el-table>
 
     <el-pagination

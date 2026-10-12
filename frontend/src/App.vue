@@ -20,14 +20,14 @@
           <el-menu-item v-if="hasMenu('menu_notes')" index="/notes">
             <el-icon><Notebook /></el-icon><span>记事本</span>
           </el-menu-item>
+          <el-menu-item v-if="hasMenu('menu_mindmaps')" index="/mindmaps">
+            <el-icon><Share /></el-icon><span>思维导图</span>
+          </el-menu-item>
           <el-menu-item v-if="hasMenu('menu_reports')" index="/reports">
             <el-icon><DataAnalysis /></el-icon><span>报表</span>
           </el-menu-item>
           <el-menu-item v-if="hasMenu('menu_workflows')" index="/workflows">
             <el-icon><Connection /></el-icon><span>工作流</span>
-          </el-menu-item>
-          <el-menu-item v-if="hasMenu('menu_mindmaps')" index="/mindmaps">
-            <el-icon><Share /></el-icon><span>思维导图</span>
           </el-menu-item>
         </el-menu-item-group>
         <el-menu-item-group v-if="hasMenu('menu_notifications') || hasMenu('menu_friends') || hasMenu('menu_groups')">

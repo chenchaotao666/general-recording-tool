@@ -36,8 +36,8 @@
               </el-popconfirm>
             </template>
           </el-table-column>
+          <template #empty><el-empty description="还没有好友，搜索用户名发送申请" /></template>
         </el-table>
-        <el-empty v-if="!friends.length" description="还没有好友，搜索用户名发送申请" :image-size="70" />
       </el-tab-pane>
 
       <el-tab-pane name="requests">
@@ -56,8 +56,8 @@
               </el-popconfirm>
             </template>
           </el-table-column>
+          <template #empty><el-empty description="暂无待处理的申请" /></template>
         </el-table>
-        <el-empty v-if="!requests.length" description="暂无待处理的申请" :image-size="70" />
       </el-tab-pane>
 
       <!-- 我发出的申请：可查看状态、撤回 -->
@@ -81,8 +81,8 @@
               </el-popconfirm>
             </template>
           </el-table-column>
+          <template #empty><el-empty description="没有待处理的申请" /></template>
         </el-table>
-        <el-empty v-if="!outgoing.length" description="没有待处理的申请" :image-size="70" />
       </el-tab-pane>
     </el-tabs>
   </div>

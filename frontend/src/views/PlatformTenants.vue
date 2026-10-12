@@ -33,6 +33,7 @@
           <el-button type="primary" link size="small" @click="openSub(row)">改订阅</el-button>
         </template>
       </el-table-column>
+      <template #empty><el-empty description="暂无租户" /></template>
     </el-table>
 
     <!-- 改订阅（收银台） -->

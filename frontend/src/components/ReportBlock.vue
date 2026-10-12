@@ -85,6 +85,7 @@
             align="right" sortable="custom"
           />
           <el-table-column v-if="block.totals" label="合计" prop="__rt" align="right" sortable="custom" />
+          <template #empty><el-empty description="暂无数据" :image-size="60" /></template>
         </el-table>
         <div v-if="drillable" class="drill-hint">点击数值单元格可查看明细</div>
       </div>
@@ -101,6 +102,7 @@
             v-for="c in block.columns" :key="c.prop" :prop="c.prop" :label="c.label"
             show-overflow-tooltip sortable="custom"
           />
+          <template #empty><el-empty description="暂无数据" :image-size="60" /></template>
         </el-table>
         <div class="table-foot">
           <!-- 服务端分页（block.page 存在）：翻页上抛由父级带 block_pages 重跑；否则客户端分页 -->

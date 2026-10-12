@@ -52,6 +52,7 @@
                       <el-button text type="danger" size="small" @click="m.card.payload.records.splice($index, 1)">删</el-button>
                     </template>
                   </el-table-column>
+                  <template #empty><el-empty description="暂无数据" :image-size="40" /></template>
                 </el-table>
                 <warnings-view :list="m.card.warnings" />
                 <card-footer :m="m" confirm-text="确认填入" @confirm="confirm(m)" />
@@ -144,11 +145,13 @@
                   <el-table :data="chartRows(m.card.result)" size="small" border max-height="220">
                     <el-table-column label="分组" prop="label" min-width="90" />
                     <el-table-column v-for="s in m.card.result.series" :key="s.name" :label="s.name || '值'" :prop="s.name" align="right" min-width="80" />
+                    <template #empty><el-empty description="暂无数据" :image-size="40" /></template>
                   </el-table>
                 </template>
                 <template v-else-if="m.card.result.type === 'table'">
                   <el-table :data="m.card.result.rows" size="small" border max-height="220">
                     <el-table-column v-for="c in m.card.result.columns" :key="c.prop" :prop="c.prop" :label="c.label" show-overflow-tooltip min-width="90" />
+                    <template #empty><el-empty description="暂无数据" :image-size="40" /></template>
                   </el-table>
                   <div v-if="m.card.result.truncated" class="warn-line">共 {{ m.card.result.total }} 条，仅显示前 {{ m.card.result.rows.length }} 条</div>
                 </template>

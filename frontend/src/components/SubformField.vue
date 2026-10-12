@@ -14,7 +14,7 @@
           <el-button text type="danger" size="small" @click="removeRow($index)">删</el-button>
         </template>
       </el-table-column>
-      <template #empty>暂无明细，点击下方按钮添加</template>
+      <template #empty><el-empty description="暂无明细，点击下方按钮添加" :image-size="60" /></template>
     </el-table>
     <el-button style="margin-top: 8px" type="primary" plain size="small" :icon="Plus" @click="openRow(-1)">
       添加明细
