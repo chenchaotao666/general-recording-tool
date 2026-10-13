@@ -7,7 +7,16 @@
           v-model="keyword" placeholder="搜索画板" clearable :prefix-icon="Search"
           @input="onSearchInput" @clear="searchResults = null"
         />
-        <el-button type="primary" :icon="Plus" @click="createPage()">新建</el-button>
+        <!-- 新建时选引擎；建好后引擎固定（数据格式不同不能互转） -->
+        <el-dropdown trigger="click" @command="(eng) => createPage(null, eng)">
+          <el-button type="primary" :icon="Plus">新建</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="excalidraw">Excalidraw（手绘风）</el-dropdown-item>
+              <el-dropdown-item command="drawio">drawio（图形库全）</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
       <div v-loading="treeLoading" class="tree">
         <template v-if="displayTree.length">
@@ -25,6 +34,7 @@
             </span>
             <el-icon class="tree-doc"><Brush /></el-icon>
             <span class="tree-title">{{ n.title || '无标题画板' }}</span>
+            <el-tag v-if="n.engine === 'drawio'" size="small" type="warning" effect="plain" class="engine-tag">drawio</el-tag>
             <span class="tree-ops" @click.stop>
               <el-icon v-if="n.level < 2" title="新增子页" @click="createPage(n)"><Plus /></el-icon>
               <el-icon title="上移" @click="moveUp(n)"><ArrowUp /></el-icon>
@@ -39,19 +49,24 @@
       </div>
     </div>
 
-    <!-- 右侧：画布编辑器（Excalidraw / tldraw） -->
+    <!-- 右侧：画布编辑器（Excalidraw / drawio，按画板 engine 分发） -->
     <div class="wb-main">
       <template v-if="current">
         <div class="main-top">
           <input v-model="current.title" class="title-input" placeholder="无标题画板" maxlength="200" @input="onTitleInput" />
           <div class="main-ops">
             <span class="save-state" :class="{ err: saveState === '保存失败' }">{{ saveState }}</span>
-            <el-button size="small" type="success" plain @click="editorRef?.exportPng()">导出 PNG</el-button>
+            <!-- AI 生成：目前只支持 excalidraw 画板（drawio 引擎待接入） -->
+            <el-button
+              v-if="current.engine !== 'drawio'" size="small" type="primary" plain
+              :icon="MagicStick" @click="aiVisible = true"
+            >AI 生成</el-button>
           </div>
         </div>
         <div class="editor-wrap">
           <!-- :key = 画板 id：切页时整体重建，content 只在挂载时读入 -->
-          <ExcalidrawBoard
+          <component
+            :is="current.engine === 'drawio' ? DrawioBoard : ExcalidrawBoard"
             :key="current.id"
             ref="editorRef" :initial="current.content" @change="onEditorChange"
           />
@@ -59,21 +74,35 @@
       </template>
       <el-empty v-else description="选择左侧画板，或新建一个开始涂画" />
     </div>
+
+    <!-- AI 生成对话框：描述 → 后端 LLM 产 nodes/edges → 编辑器转换渲染（替换当前画布，需确认） -->
+    <el-dialog v-model="aiVisible" title="AI 生成图" width="520px" destroy-on-close>
+      <el-input
+        v-model="aiDesc" type="textarea" :rows="4" maxlength="500" show-word-limit
+        placeholder="描述你想要的图，例如：请假审批流程，主管审批通过后人事备案，驳回则退回重新填写"
+      />
+      <div class="ai-hint">会替换当前画布内容；生成后可以继续在画布上手动调整</div>
+      <template #footer>
+        <el-button @click="aiVisible = false">取消</el-button>
+        <el-button type="primary" :loading="aiGenerating" @click="generateAi">生成</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 // 画板页：界面模式对齐记事本（Notes.vue）——左树右编辑器 + 防抖自动保存。
-// 画布内容是 Excalidraw 的序列化 JSON 字符串，前端不解析，直接透传存储。
+// 双引擎：excalidraw 存其序列化 JSON；drawio 存 {"xml": ...}；前端不解析，直接透传存储。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { ArrowRight, ArrowUp, Brush, Delete, Plus, Search, Top } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowRight, ArrowUp, Brush, Delete, MagicStick, Plus, Search, Top } from '@element-plus/icons-vue'
 import {
-  createWhiteboard, deleteWhiteboard, getWhiteboard,
+  createWhiteboard, deleteWhiteboard, generateDiagram, getWhiteboard,
   searchWhiteboards, updateWhiteboard, whiteboardTree,
 } from '../api'
 import ExcalidrawBoard from './whiteboard/ExcalidrawBoard.vue'
+import DrawioBoard from './whiteboard/DrawioBoard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -91,6 +120,45 @@ let latestContent = ''   // 编辑器最近一次 change 的 JSON（flushSave �
 let saveTimer = null
 let saving = false
 let dirty = false
+
+// ---------- AI 生成（excalidraw） ----------
+const aiVisible = ref(false)
+const aiDesc = ref('')
+const aiGenerating = ref(false)
+
+async function generateAi() {
+  const desc = aiDesc.value.trim()
+  if (!desc) {
+    ElMessage.warning('先描述一下想要的图')
+    return
+  }
+  aiGenerating.value = true
+  try {
+    const d = await generateDiagram(desc)
+    if (!d.nodes?.length) {
+      ElMessage.warning('没有生成有效内容，换个说法再试试')
+      return
+    }
+    // 画布已有内容时先确认（生成是替换语义）
+    let hasContent = false
+    try { hasContent = (JSON.parse(latestContent || '{}').elements || []).length > 0 } catch { /* 空画布 */ }
+    if (hasContent) {
+      try {
+        await ElMessageBox.confirm('生成结果将替换当前画布内容，继续？', 'AI 生成', {
+          confirmButtonText: '替换', cancelButtonText: '取消', type: 'warning',
+        })
+      } catch { return }
+    }
+    editorRef.value?.applyDiagram(d)
+    aiVisible.value = false
+    aiDesc.value = ''
+    ElMessage.success(`已生成「${d.title || '图'}」，可在画布上继续调整`)
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    aiGenerating.value = false
+  }
+}
 
 function toggleCollapse(n) {
   if (!n.hasChildren) return
@@ -217,9 +285,11 @@ const onTitleInput = debounce(async () => {
 
 // ---------- 页面操作 ----------
 
-async function createPage(parent = null) {
+async function createPage(parent = null, engine = 'excalidraw') {
   try {
-    const res = await createWhiteboard(parent ? { parent_id: parent.id } : {})
+    // 子页继承父页引擎（树上点 + 时不弹引擎选择）；顶级页用新建下拉选的引擎
+    const eng = parent ? (parent.engine || 'excalidraw') : engine
+    const res = await createWhiteboard(parent ? { parent_id: parent.id, engine: eng } : { engine: eng })
     await loadTree()
     ElMessage.success(parent ? `已在「${parent.title || '无标题画板'}」下新建子页` : '已新建画板')
     open(res)
@@ -337,6 +407,7 @@ onBeforeUnmount(async () => {
 .tree-doc { color: #a8abb2; font-size: 15px; flex-shrink: 0; margin: 0 3px; }
 .tree-item.active .tree-doc { color: #409eff; }
 .tree-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.engine-tag { flex-shrink: 0; transform: scale(.85); transform-origin: left center; margin-right: 2px; }
 .tree-ops { display: none; gap: 2px; flex-shrink: 0; color: #909399; }
 .tree-item:hover .tree-ops { display: inline-flex; }
 .tree-ops .el-icon { padding: 3px; border-radius: 4px; font-size: 14px; }
@@ -360,5 +431,6 @@ onBeforeUnmount(async () => {
 .main-ops { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .save-state { font-size: 12px; color: #909399; margin-right: 4px; }
 .save-state.err { color: #f56c6c; }
+.ai-hint { font-size: 12px; color: #909399; margin-top: 8px; }
 .editor-wrap { flex: 1; min-height: 0; padding: 4px 16px 16px; }
 </style>

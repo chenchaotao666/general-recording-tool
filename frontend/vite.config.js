@@ -10,7 +10,8 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     port: 5173,
-    proxy: { '/api': 'http://localhost:8000' },
+    // 代理目标可用 VITE_API_TARGET 覆盖（本地并行起第二个后端联调时用）
+    proxy: { '/api': process.env.VITE_API_TARGET || 'http://localhost:8000' },
   },
   // vitest 只收 tests/ 下的单元测试；e2e/ 是 Playwright 真实浏览器测试，不走 vitest
   test: {

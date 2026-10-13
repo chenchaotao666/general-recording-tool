@@ -110,7 +110,8 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  createResShareLink, deleteMindmapShare, deleteResShareLink, deleteShare, listMindmapShares,
+  createResShareLink, deleteMindmapShare, deleteResShareLink, deleteShare,
+  listMindmapShares,
   listMyGroups, listResShareLinks, listShares, putMindmapShare, putShare, searchUsers,
 } from '../api'
 
@@ -122,11 +123,13 @@ const props = defineProps({
 })
 defineEmits(['update:modelValue'])
 
-// 预设与 API 按资源类型分流（成员分享：表/导图各自后端，UI 同一套）
-const ROLE_PRESETS = computed(() => props.resourceType === 'mindmap' ? MINDMAP_PRESETS : TABLE_PRESETS)
-const shareApi = computed(() => props.resourceType === 'mindmap'
-  ? { list: listMindmapShares, put: putMindmapShare, del: deleteMindmapShare }
-  : { list: listShares, put: putShare, del: deleteShare })
+// 预设与 API 按资源类型分流（成员分享：表/导图/流程图各自后端，UI 同一套；导图/流程图同为 查看/编辑 两开关）
+const isTable = computed(() => props.resourceType === 'table')
+const ROLE_PRESETS = computed(() => isTable.value ? TABLE_PRESETS : MINDMAP_PRESETS)
+const shareApi = computed(() => {
+  if (props.resourceType === 'mindmap') return { list: listMindmapShares, put: putMindmapShare, del: deleteMindmapShare }
+  return { list: listShares, put: putShare, del: deleteShare }
+})
 
 // 角色预设：数据表映射 查看/新增/编辑/删除 四开关；思维导图只有 查看/编辑
 const TABLE_PRESETS = {
@@ -209,9 +212,9 @@ async function saveShare() {
 
 async function reShare(row) {
   try {
-    const perms = props.resourceType === 'mindmap'
-      ? { can_view: row.can_view, can_edit: row.can_edit }
-      : { can_view: row.can_view, can_create: row.can_create, can_edit: row.can_edit, can_delete: row.can_delete }
+    const perms = isTable.value
+      ? { can_view: row.can_view, can_create: row.can_create, can_edit: row.can_edit, can_delete: row.can_delete }
+      : { can_view: row.can_view, can_edit: row.can_edit }
     await shareApi.value.put(props.resourceId, { username: row.target, ...perms })
     ElMessage.success('已重新发起')
     await loadShares()

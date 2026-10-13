@@ -85,9 +85,6 @@
       </template>
     </el-dialog>
 
-    <el-alert type="info" :closable="false" style="margin-bottom: 14px"
-      title="报表由多数据源 + 区块 + 栅格布局组成：设计器内拖字段即可成图，可配置定时推送与链接分享。" />
-
     <el-table :data="reports" v-loading="loading" border>
       <el-table-column prop="name" label="报表名称" min-width="110">
         <template #default="{ row }">

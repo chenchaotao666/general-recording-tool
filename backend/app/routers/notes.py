@@ -306,7 +306,10 @@ def note_ai_assist(payload: NoteAiIn, db: Session = Depends(get_db), user: User 
     instruction = (payload.instruction or "").strip()
     if not instruction:
         raise HTTPException(400, "请输入要生成的内容描述")
-    provider = get_default_provider(db)
+    try:
+        provider = get_default_provider(db)
+    except LLMError as e:
+        raise HTTPException(400, str(e))
     prompt = build_note_ai_prompt(instruction[:2000], (payload.note_title or "")[:200],
                                   [str(t)[:500] for t in (payload.context or [])[-20:]],
                                   datetime.now().strftime("%Y-%m-%d"),
@@ -322,8 +325,9 @@ def note_ai_assist(payload: NoteAiIn, db: Session = Depends(get_db), user: User 
             if not _plain_text(fragment).strip():
                 raise ValueError("输出没有可用的内容")
             return {"html": fragment}
-        except LLMError:
-            raise
+        except LLMError as e:
+            # 模型服务类错误（未配置/调用失败/超时）不重试，直接返回可读信息
+            raise HTTPException(400, str(e))
         except Exception as e:  # noqa: BLE001 — 解析失败重试一次
             last_err = e
     raise HTTPException(400, f"模型输出解析失败：{last_err}")

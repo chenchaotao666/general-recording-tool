@@ -167,6 +167,9 @@ def delete_mindmap_link(mid: int, link_id: int, db: Session = Depends(get_db),
     return {"ok": True}
 
 
+# ---------- 流程图的链接分享（闸与导图相同：创建人/本租户 admin） ----------
+
+
 # ---------- 公开访问（免登录） ----------
 
 class _VerifyIn(BaseModel):

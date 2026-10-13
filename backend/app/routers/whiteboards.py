@@ -1,7 +1,8 @@
 """画板：页面树 + 画布 JSON 内容的 CRUD。严格私有（admin 也不可见他人画板），与记事本一致。
 
-content 为 Excalidraw 的序列化 JSON 字符串，服务端只做长度与 JSON 合法性校验，
-不做内容清洗（纯 JSON 无 HTML 注入面）。engine 字段保留以便将来支持多引擎，当前仅 excalidraw。
+content 为画布的序列化 JSON 字符串，服务端只做长度与 JSON 合法性校验，
+不做内容清洗（纯 JSON 无 HTML 注入面）。多引擎：excalidraw 存其序列化 JSON；
+drawio 存 {"xml": "<mxfile...>"}（iframe embed 协议收发，XML 包在 JSON 里过同一道校验）。
 """
 import json
 
@@ -17,7 +18,7 @@ router = APIRouter(prefix="/api/whiteboards", tags=["whiteboards"])
 
 MAX_DEPTH = 3                 # 页面最多 3 层嵌套（顶级为第 1 层）
 MAX_CONTENT = 2_000_000       # 单页画布 JSON 长度上限（含内嵌图片 base64，给足余量）
-ENGINES = {"excalidraw"}
+ENGINES = {"excalidraw", "drawio"}
 
 
 class WhiteboardIn(BaseModel):
@@ -120,6 +121,23 @@ def create_whiteboard(payload: WhiteboardIn, db: Session = Depends(get_db), user
     db.add(w)
     db.commit()
     return _out(w, with_content=True)
+
+
+class DiagramIn(BaseModel):
+    description: str
+
+
+@router.post("/generate-diagram")
+def generate_diagram_api(payload: DiagramIn, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    """AI 生成图结构（引擎无关的 nodes/edges；excalidraw/drawio/X6 前端各自转换渲染）。
+    注意注册在 /{wb_id} 之前：Starlette 只按路径模板匹配，放后面会被当成 wb_id 命中 422。"""
+    from ..services.llm import LLMError
+    from ..services.llm.gateway import generate_diagram
+    try:
+        return generate_diagram(db, payload.description)
+    except LLMError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @router.get("/{wb_id}")

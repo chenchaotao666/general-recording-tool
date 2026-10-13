@@ -53,7 +53,8 @@
         <!-- AI 写作面板：可拖动（拖标题栏移动）；点击外部 / Esc 关闭 -->
         <div
           v-if="ai.visible" class="ai-panel"
-          :style="ai.x !== null ? { left: ai.x + 'px', top: ai.y + 'px', right: 'auto' } : {}"
+          :style="ai.x !== null ? { left: ai.x + 'px', top: ai.y + 'px', right: 'auto',
+                                    maxHeight: ai.maxH ? ai.maxH + 'px' : undefined } : {}"
           @keydown.stop
         >
           <div class="ai-panel-head" @mousedown="startAiDrag">
@@ -64,9 +65,16 @@
           </div>
           <input
             ref="aiInputRef" v-model="ai.instruction" class="ai-input"
-            :placeholder="ai.selected ? '对选中内容做什么？如：润色 / 扩写 / 总结 / 翻译' : '描述要生成的内容，如：写一份本周工作总结'"
+            :placeholder="ai.selected ? '对选中内容做什么？如：润色 / 扩写 / 总结 / 翻译（直接回车=润色）' : '描述要生成的内容，如：写一份本周工作总结'"
             @keydown.enter.prevent="aiGenerate"
           />
+          <!-- 选中内容时的快捷指令：点一下直接生成，不用打字 -->
+          <div v-if="ai.selected && !ai.preview" class="ai-quick">
+            <button
+              v-for="q in AI_QUICK_ACTIONS" :key="q" class="ai-chip" type="button"
+              :disabled="ai.loading" @click="aiQuick(q)"
+            >{{ q }}</button>
+          </div>
           <div v-if="ai.preview" class="ai-preview" v-html="ai.preview" />
           <div class="ai-panel-ops">
             <span class="ai-hint">{{ ai.preview ? '确认后插入到光标处 · Esc 丢弃' : 'Enter 生成 · Esc 取消' }}</span>
@@ -246,11 +254,48 @@ function openAi() {
   // 面板聚焦前抓取选区：有选中内容时它是本次 AI 操作的主要对象
   const sel = (editorRef.value?.getSelectionText() || '').trim()
   ai.value = { visible: true, loading: false, instruction: '', error: '', preview: null,
-               x: null, y: null, selected: sel }
+               x: null, y: null, maxH: null, selected: sel }
+  placeAiPanel()
   nextTick(() => aiInputRef.value?.focus())
   // 点击面板外 / 任意位置 Esc 关闭（capture 阶段，面板内 Esc 也能生效）
   document.addEventListener('mousedown', onAiDocDown, true)
   document.addEventListener('keydown', onAiEsc, true)
+}
+
+// 面板定位：有选中内容 → 跟在选区旁边（下方放不下翻到上方）；
+// 无选中（点工具栏按钮唤起）→ 贴「✨ AI 写作」按钮下方，与入口视觉呼应；
+// 都拿不到 → 编辑区中上方居中兜底。全程限制在编辑区内。
+function placeAiPanel() {
+  const main = mainRef.value?.getBoundingClientRect()
+  if (!main) return
+  const PANEL_W = 460
+  const s = window.getSelection()
+  let rect = s?.rangeCount ? s.getRangeAt(0).getBoundingClientRect() : null
+  // 光标态（折叠选区）个别浏览器返回全 0 矩形，视为无选区
+  if (rect && !rect.width && !rect.height && !rect.top && !rect.left) rect = null
+  if (!rect || (s.isCollapsed && !ai.value.selected)) {
+    // 无选中内容：贴工具栏 AI 按钮（按钮在编辑器组件内，从主区里查）
+    const btn = mainRef.value?.querySelector('.ai-write-btn')
+    const br = btn?.getBoundingClientRect()
+    if (br) {
+      ai.value.x = Math.max(8, Math.min(br.left - main.left, main.width - PANEL_W - 8))
+      ai.value.y = br.bottom - main.top + 6
+    } else {
+      ai.value.x = Math.max(8, (main.width - PANEL_W) / 2)
+      ai.value.y = 72
+    }
+    return
+  }
+  ai.value.x = Math.max(8, Math.min(rect.left - main.left, main.width - PANEL_W - 8))
+  ai.value.y = Math.max(8, rect.bottom - main.top + 8)
+  nextTick(() => {
+    const panel = document.querySelector('.ai-panel')
+    if (!panel) return
+    const ph = panel.offsetHeight
+    if (ai.value.y + ph > main.height - 8) {
+      ai.value.y = Math.max(8, rect.top - main.top - ph - 8)   // 下方放不下 → 翻到上方
+    }
+  })
 }
 
 function closeAi(refocus = false) {
@@ -292,8 +337,17 @@ function startAiDrag(e) {
   document.addEventListener('mouseup', up)
 }
 
+// 选中内容时的快捷指令（面板输入框上方的 chips）
+const AI_QUICK_ACTIONS = ['润色', '扩写', '总结要点', '翻译成英文', '修正错别字']
+
+function aiQuick(q) {
+  ai.value.instruction = q
+  aiGenerate()
+}
+
 async function aiGenerate() {
-  const instruction = ai.value.instruction.trim()
+  // 选中内容时 Enter 空提交 = 默认「润色」，不用先打字
+  const instruction = ai.value.instruction.trim() || (ai.value.selected ? '润色' : '')
   if (!instruction || ai.value.loading) return
   ai.value.loading = true
   ai.value.error = ''
@@ -303,11 +357,29 @@ async function aiGenerate() {
     const res = await noteAiAssist({ instruction, note_title: current.value?.title || '', context,
                                      selection: ai.value.selected || '' })
     ai.value.preview = res.html  // 只预览，不写入；用户点「插入」才进文档
+    clampAiPanel()               // 预览撑高面板后重新校准位置/高度，防止底部被编辑区裁掉
   } catch (e) {
     ai.value.error = e.message
   } finally {
     ai.value.loading = false
   }
+}
+
+// 生成结果撑高面板后：底部超出编辑区先整体上移；已到顶仍超高则限高，预览区内部滚动
+function clampAiPanel() {
+  nextTick(() => {
+    const panel = document.querySelector('.ai-panel')
+    const main = mainRef.value?.getBoundingClientRect()
+    if (!panel || !main || ai.value.y === null) return
+    const r = panel.getBoundingClientRect()
+    if (r.bottom > main.bottom - 8) {
+      ai.value.y = Math.max(8, ai.value.y - (r.bottom - main.bottom + 8))
+    }
+    const r2 = panel.getBoundingClientRect()
+    if (r2.bottom > main.bottom - 8) {
+      ai.value.maxH = Math.max(220, main.bottom - 8 - r2.top)
+    }
+  })
 }
 
 // 确认插入：HTML 片段写入光标处（编辑器的 change 事件会自动触发保存）
@@ -469,13 +541,15 @@ onBeforeUnmount(async () => {
   padding: 4px 10px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* AI 写作面板：默认右上悬浮，可拖动换位 */
+/* AI 写作面板：位置由 placeAiPanel 计算（选区/光标附近，兜底中上方居中），可拖动换位 */
 .ai-panel {
-  position: absolute; top: 64px; right: 24px; z-index: 100; width: 460px;
+  position: absolute; top: 72px; right: 24px; z-index: 100; width: 640px;
   padding: 12px 14px; background: #fff; border: 1px solid #e4e7ed; border-radius: 12px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, .12);
-  display: flex; flex-direction: column;
+  display: flex; flex-direction: column; overflow: hidden;
 }
+/* 限高时（生成内容很长）：只有预览区收缩滚动，标题/输入/按钮保持原位 */
+.ai-panel-head, .ai-selected, .ai-input, .ai-quick, .ai-panel-ops { flex-shrink: 0; }
 .ai-panel-head {
   font-size: 13px; font-weight: 600; color: #303133; margin-bottom: 8px;
   cursor: move; user-select: none; display: flex; align-items: center; justify-content: space-between;
@@ -486,12 +560,21 @@ onBeforeUnmount(async () => {
   padding: 6px 0; background: transparent; box-sizing: border-box;
 }
 .ai-input::placeholder { color: #c0c4cc; }
+/* 选中内容的快捷指令 chips */
+.ai-quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.ai-chip {
+  height: 24px; padding: 0 10px; border: 1px solid #dcdfe6; border-radius: 12px;
+  background: #fff; color: #606266; font-size: 12px; cursor: pointer;
+}
+.ai-chip:hover:not(:disabled) { border-color: var(--grt-ai, #7c5cff); color: var(--grt-ai, #7c5cff); }
+.ai-chip:disabled { color: #c0c4cc; cursor: not-allowed; }
 .ai-panel-ops { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
 .ai-hint { font-size: 12px; color: #c0c4cc; }
 .ai-error { font-size: 12px; color: #f56c6c; margin-top: 6px; }
 .ai-preview {
   max-height: 40vh; overflow-y: auto; margin-top: 8px; padding: 8px 2px 2px;
   border-top: 1px dashed #e4e7ed; font-size: 14px; line-height: 1.8; color: #303133;
+  min-height: 0;   /* 面板限高时允许收缩，配合内部滚动 */
 }
 .ai-preview :deep(h1) { font-size: 20px; margin: 8px 0 4px; }
 .ai-preview :deep(h2) { font-size: 17px; margin: 6px 0 4px; }

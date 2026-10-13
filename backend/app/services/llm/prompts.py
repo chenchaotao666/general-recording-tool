@@ -374,6 +374,58 @@ def build_note_ai_prompt(instruction: str, note_title: str, context_texts: list[
     return "\n".join(lines)
 
 
+# ---------- 思维导图 AI 生成 ----------
+
+MINDMAP_AI_SYSTEM = (
+    "你是思维导图整理助手，把用户的需求整理成结构清晰、层次合理的思维导图，"
+    "并恰当运用备注、超链接、颜色、图标、概要、关联线让重点更突出。"
+    "内容用中文（用户要求其他语言除外），只输出 JSON。"
+)
+
+
+def build_mindmap_ai_prompt(instruction: str, mode: str, node_text: str,
+                            context_texts: list[str]) -> str:
+    """思维导图 AI：rebuild=整图重建（输出完整树）；expand=在指定节点下扩写（只输出子分支）。
+    节点支持装饰字段（备注/超链接/颜色/图标），顶层支持概要/关联线。"""
+    lines = []
+    if mode == "expand":
+        lines.append(f"扩写的父节点主题：{node_text or '（未提供）'}")
+    if context_texts:
+        lines.append("导图已有内容（供衔接，不要重复）：")
+        lines += [f"- {t}" for t in context_texts[-30:] if t.strip()]
+    lines += [
+        "",
+        f"用户的需求：{instruction}",
+        "",
+    ]
+    if mode == "expand":
+        lines.append('输出 JSON：{"children": [<节点>, ...]}，children 是该父节点下要新增的子分支。')
+    else:
+        lines.append('输出 JSON：{"text": "中心主题", "children": [<节点>, ...], "associativeLines": [...], "generalizations": [...]}。')
+    lines += [
+        "",
+        "每个<节点>对象：",
+        '- text（必填）：节点文字，精炼（不超过 20 字），不要编号前缀',
+        "- children：子节点数组（可空）",
+        "- note（可选）：需要解释/补充/举例时的备注（一两句话）",
+        "- hyperlink（可选）：相关资料网址（完整 http(s) 链接；需求中出现网址、文档、官网、资料来源时必须用上）",
+        "- color（可选）：重点节点文字色，如 #f56c6c（红）#e6a23c（橙）#409eff（蓝）",
+        "- fillColor（可选）：重点节点背景色，浅色系如 #fdf6ec #fef0f0 #ecf5ff",
+        "- icon（可选）：图标数组，从 priority_1~priority_3（优先级，1最高）、sign_1（星标）、"
+        "progress_1~progress_4（进度）中选，最多 2 个",
+        "",
+        "顶层可选（仅 rebuild）：",
+        '- associativeLines：[{"from": "起点节点文字", "to": "终点节点文字"}]，跨分支的重要关联，最多 3 条',
+        '- generalizations：[{"text": "概要文字", "members": ["同一父节点下的兄弟节点文字", ...]}]，'
+        "把同类的兄弟节点归纳为概要，最多 2 个",
+        "",
+        "规则：2~4 层；总节点数不超过 40；一级分支 3~7 个；"
+        "装饰宁缺毋滥——color/fillColor 只给真正重要的 1~3 个节点，大多数节点保持纯文本；"
+        "associativeLines/generalizations 引用不存在的节点文字会被丢弃，请确保与节点 text 完全一致。",
+    ]
+    return "\n".join(lines)
+
+
 ASSISTANT_SYSTEM = (
     "你是一个通用 AI 助手（像豆包、DeepSeek 那样能聊能答），同时具备两项工具能力："
     "① 联网搜索——查询实时/公开信息（电话、排班、招投标、新闻等）；"
@@ -533,3 +585,43 @@ def build_search_answer_prompt(message: str, history: list[dict], queries: list[
         "请基于这些结果回答用户的问题，只输出回答正文。",
     ]
     return "\n".join(lines)
+
+
+# ---------- 画板 AI 生成（引擎无关的节点/连线结构，前端各自转换） ----------
+
+DIAGRAM_SYSTEM = (
+    "你是图表结构设计师。用户用自然语言描述想要的流程图/结构图，"
+    "你设计出节点和连线的结构。只输出 JSON，不要输出任何其他内容。"
+)
+
+_DIAGRAM_OUTPUT_EXAMPLE = {
+    "title": "请假审批流程",
+    "nodes": [
+        {"id": "n1", "label": "开始", "shape": "ellipse"},
+        {"id": "n2", "label": "填写请假单", "shape": "rect"},
+        {"id": "n3", "label": "主管审批", "shape": "diamond"},
+        {"id": "n4", "label": "人事备案", "shape": "rect"},
+        {"id": "n5", "label": "结束", "shape": "ellipse"},
+    ],
+    "edges": [
+        {"source": "n1", "target": "n2"},
+        {"source": "n2", "target": "n3"},
+        {"source": "n3", "target": "n4", "label": "通过"},
+        {"source": "n3", "target": "n2", "label": "驳回"},
+        {"source": "n4", "target": "n5"},
+    ],
+}
+
+
+def build_diagram_prompt(description: str) -> str:
+    """画板 AI 生成提示词：描述 → 节点/连线结构 JSON（坐标布局由前端 dagre 负责，模型不输出坐标）。"""
+    return (
+        f"用户需求：{description}\n\n"
+        "请设计这张图的节点与连线结构，要求：\n"
+        "1. 节点 5~15 个，label 简洁（2~8 个字），id 用 n1、n2、… 顺序编号\n"
+        "2. shape 取值：ellipse=开始/结束节点，diamond=判断/审批节点，rect=普通步骤（默认）\n"
+        "3. edges 表达流向，source/target 必须是已定义的节点 id；判断节点的分支边要写 label（如 通过/驳回）\n"
+        "4. 不要输出坐标/样式，布局由程序自动完成\n"
+        "5. title 给图起个简短标题\n\n"
+        f"输出格式示例：\n{json.dumps(_DIAGRAM_OUTPUT_EXAMPLE, ensure_ascii=False, indent=2)}"
+    )

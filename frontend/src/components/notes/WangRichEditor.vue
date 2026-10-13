@@ -239,8 +239,19 @@ function onMarkerDown(e, getEditor) {
   if (!ed) return
   // 序号 span 已 pointer-events:none，按下点落在序号区时 target 是块 div 本身（而非文本节点后代）
   const block = e.target.closest?.('[data-slate-node="element"]')
-  const marker = e.target.closest?.('span[data-w-e-reserve="true"]')
-    || ((block && e.target === block) ? block.querySelector('span[data-w-e-reserve="true"]') : null)
+  let marker = e.target.closest?.('span[data-w-e-reserve="true"]')
+  if (!marker && block && e.target === block) {
+    // 兜底：只有按下点确实落在序号/符号矩形内才重定向到文本开头；
+    // 点在行尾空白、ul/ol 容器边缘时交给浏览器默认定位（否则点击列表任意空白都会跳到行首/列表首项）
+    const m = block.querySelector('span[data-w-e-reserve="true"]')
+    if (m) {
+      const r = m.getBoundingClientRect()
+      if (e.clientX >= r.left - 2 && e.clientX <= r.right + 2 &&
+          e.clientY >= r.top - 2 && e.clientY <= r.bottom + 2) {
+        marker = m
+      }
+    }
+  }
   if (marker) {
     // 按下点在序号上：映射到该列表项文本开头（preventDefault 后浏览器不再进入原生拖选，
     // 后续拖动由 onMarkerDragMove 手动续拖）
@@ -698,6 +709,14 @@ defineExpose({
   cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"><path d="M18 4V3c0-.55-.45-1-1-1H5c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1h12c.55 0 1-.45 1-1V6h1v4H9v11c0 .55.45 1 1 1h2c.55 0 1-.45 1-1v-9h8V4h-3z" fill="%237c5cff"/></svg>') 3 19, text;
 }
 .re-toolbar { border-bottom: 1px solid #ebeef5; flex-shrink: 0; }
+/* 工具栏放大一号且单行不换行（窗口过窄时裁切右侧低频按钮，undo/redo 有快捷键兜底）；
+   overflow-x: clip 不会把 overflow-y 变成 auto，下拉面板（字号/颜色等）不会被纵向裁掉 */
+.re-toolbar :deep(.w-e-toolbar) { flex-wrap: nowrap; overflow-x: clip; overflow-y: visible; }
+.re-toolbar :deep(.w-e-bar-item) { height: 40px; padding: 2px 1px; flex-shrink: 0; }
+.re-toolbar :deep(.w-e-bar-item button) { height: 36px; padding: 0 6px; font-size: 15px; }
+.re-toolbar :deep(.w-e-bar-item button svg) { width: 1.15em; height: 1.15em; }
+.re-toolbar :deep(.w-e-bar-divider) { height: 40px; flex-shrink: 0; margin-left: 2px; margin-right: 2px; }
+.re-toolbar :deep(.w-e-select-list) { margin-top: 40px; }
 .re-body { flex: 1; min-height: 0; overflow-y: hidden !important; }
 
 /* 编辑区留白：左侧与页面对齐（标题栏 padding 24px），底部留足滚动余量 */
@@ -709,7 +728,8 @@ defineExpose({
 .re-body :deep(.w-e-text-container span[data-w-e-reserve="true"]) { pointer-events: none; }
 
 /* 行距收紧（wangEditor 默认 p margin 15px 偏大） */
-.re-body :deep(.w-e-text-container [data-slate-editor] p) { margin: 5px 0; }
+.re-body :deep(.w-e-text-container [data-slate-editor]) { line-height: 1.2; }
+.re-body :deep(.w-e-text-container [data-slate-editor] p) { margin: 2px 0; }
 .re-body :deep(.w-e-text-container [data-slate-editor] h1),
 .re-body :deep(.w-e-text-container [data-slate-editor] h2),
 .re-body :deep(.w-e-text-container [data-slate-editor] h3) { margin: 12px 0 6px; }
@@ -722,11 +742,11 @@ defineExpose({
 .re-body :deep(.w-e-text-container [data-slate-editor] table td),
 .re-body :deep(.w-e-text-container [data-slate-editor] table th) { min-width: 120px; }
 
-/* 工具栏最左侧的 AI 写作按钮 */
+/* 工具栏最左侧的 AI 写作按钮（与工具栏同高） */
 .re-toolbar :deep(.ai-write-item) { display: flex; align-items: center; }
 .re-toolbar :deep(.ai-write-btn) {
-  height: 32px; padding: 0 10px; border: none; border-radius: 4px; background: transparent;
-  color: var(--grt-ai); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  height: 36px; padding: 0 10px; border: none; border-radius: 4px; background: transparent;
+  color: var(--grt-ai); font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .re-toolbar :deep(.ai-write-btn:hover) { background-color: var(--w-e-toolbar-active-bg-color); }
 

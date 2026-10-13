@@ -69,7 +69,7 @@
       <el-table :data="pendingShares" size="small" border>
         <el-table-column label="类型" width="70" align="center">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.resource_type === 'mindmap' ? 'success' : 'info'">
+            <el-tag size="small" :type="row.resource_type === 'table' ? 'info' : 'success'">
               {{ row.resource_type === 'mindmap' ? '导图' : '数据表' }}
             </el-tag>
           </template>
@@ -226,10 +226,12 @@ function permsText(row) {
 
 async function respond(row, action) {
   try {
-    const isMm = row.resource_type === 'mindmap'
-    await (action === 'accept'
-      ? (isMm ? acceptMindmapShare(row.id) : acceptShare(row.id))
-      : (isMm ? rejectMindmapShare(row.id) : rejectShare(row.id)))
+    // 按资源类型分发 accept/reject（表/导图各自的响应接口）
+    const RESPOND = {
+      table: { accept: acceptShare, reject: rejectShare },
+      mindmap: { accept: acceptMindmapShare, reject: rejectMindmapShare },
+    }
+    await RESPOND[row.resource_type || 'table'][action](row.id)
     ElMessage.success(action === 'accept' ? '已接受' : '已拒绝')
     await Promise.all([loadPending(), load()])
   } catch (e) {

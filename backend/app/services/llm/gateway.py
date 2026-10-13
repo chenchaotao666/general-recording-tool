@@ -1131,3 +1131,76 @@ def assist_chat(db: Session, user, message: str, history: list | None, context: 
         except Exception as e:
             last_err = e
     raise LLMError(f"模型输出解析失败：{last_err}")
+
+
+# ---------- 画板 AI 生成（引擎无关：返回节点/连线结构，excalidraw/drawio/X6 前端各自转换） ----------
+
+_DIAGRAM_SHAPES = {"rect", "ellipse", "diamond"}
+_DIAGRAM_MAX_NODES = 30
+
+
+def _clean_diagram(data: dict) -> dict:
+    """清洗 LLM 输出的图结构：节点去重/形状合法化、边端点必须存在，非法内容丢弃。"""
+    nodes_in = [n for n in (data.get("nodes") or []) if isinstance(n, dict)]
+    if not nodes_in:
+        raise ValueError("输出缺少 nodes 数组")
+
+    nodes, used = [], set()
+    for i, n in enumerate(nodes_in[:_DIAGRAM_MAX_NODES]):
+        label = str(n.get("label") or "").strip()[:32]
+        if not label:
+            continue
+        nid = str(n.get("id") or "").strip() or f"n{i + 1}"
+        if nid in used:
+            nid = f"n{i + 1}"
+        used.add(nid)
+        shape = n.get("shape") if n.get("shape") in _DIAGRAM_SHAPES else "rect"
+        nodes.append({"id": nid, "label": label, "shape": shape})
+    if not nodes:
+        raise ValueError("没有有效节点")
+    # LLM 编号被打乱/重号时边可能指到不存在的 id：以清洗后的 id 集为准
+    valid_ids = {n["id"] for n in nodes}
+
+    edges, seen = [], set()
+    for e in (data.get("edges") or []):
+        if not isinstance(e, dict):
+            continue
+        s, t = str(e.get("source") or ""), str(e.get("target") or "")
+        if s not in valid_ids or t not in valid_ids or (s, t) in seen:
+            continue
+        seen.add((s, t))
+        edge = {"source": s, "target": t}
+        if str(e.get("label") or "").strip():
+            edge["label"] = str(e["label"]).strip()[:16]
+        edges.append(edge)
+
+    return {
+        "title": str(data.get("title") or "")[:64],
+        "nodes": nodes,
+        "edges": edges,
+    }
+
+
+def generate_diagram(db: Session, description: str) -> dict:
+    """LLM 把自然语言描述转成图结构（nodes/edges）；JSON 解析失败回喂重试一次。"""
+    from .prompts import DIAGRAM_SYSTEM, build_diagram_prompt
+
+    desc = (description or "").strip()
+    if not desc:
+        raise LLMError("请输入图的描述")
+    provider = get_default_provider(db)
+    prompt = build_diagram_prompt(desc[:500])
+    last_err: Exception | None = None
+    for attempt in range(2):
+        current = prompt if attempt == 0 else (
+            f"你上次的输出无法解析为合法 JSON，错误：{last_err}。"
+            "请重新输出，只输出 JSON。\n\n原始任务：\n" + prompt
+        )
+        try:
+            raw = provider.complete(current, system=DIAGRAM_SYSTEM)
+            return _clean_diagram(extract_json(raw))
+        except LLMError:
+            raise
+        except Exception as e:
+            last_err = e
+    raise LLMError(f"模型输出解析失败：{last_err}")

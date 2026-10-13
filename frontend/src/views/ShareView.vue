@@ -41,6 +41,8 @@
         </div>
       </template>
 
+
+
       <!-- 报表 -->
       <template v-else>
         <div class="page-header"><h2>{{ data.label }}</h2></div>

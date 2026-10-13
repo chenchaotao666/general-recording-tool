@@ -1,4 +1,5 @@
 """思维导图：租户内共享的导图 CRUD。data 为引擎无关纯文本树，引擎切换由前端转换。"""
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -87,6 +88,127 @@ def _check_editable(db: Session, m: Mindmap, ctx: Context) -> None:
     if grant and grant["can_edit"]:
         return
     raise HTTPException(404, "思维导图不存在")
+
+
+# ---------- AI 生成（渐进渲染由前端完成，接口一次返回整棵树） ----------
+
+class MindmapAiIn(BaseModel):
+    instruction: str
+    mode: str = "rebuild"        # rebuild=整图重建 | expand=在选中节点下扩写
+    node_text: str = ""          # expand 模式的父节点文本
+    context: list[str] = []      # 现有节点文本（供衔接，可选）
+
+
+def _clean_ai_tree(node, depth, budget: list) -> dict | None:
+    """递归清洗 AI 输出的节点树：限 5 层、共 50 节点；装饰字段白名单透传。"""
+    if not isinstance(node, dict) or depth > 5 or budget[0] <= 0:
+        return None
+    text = str(node.get("text") or "").strip()[:30]
+    if not text:
+        return None
+    budget[0] -= 1
+    out = {"text": text, "children": []}
+    # 备注：需要详细解释的内容
+    note = str(node.get("note") or "").strip()[:500]
+    if note:
+        out["note"] = note
+    # 超链接：仅 http(s)
+    link = str(node.get("hyperlink") or "").strip()[:300]
+    if link.lower().startswith(("http://", "https://")):
+        out["hyperlink"] = link
+    # 颜色：#rgb/#rrggbb 才放行（重点文字色/背景色）
+    for key in ("color", "fillColor"):
+        v = str(node.get(key) or "").strip()
+        if re.fullmatch(r"#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?", v):
+            out[key] = v
+    # 图标：合法分组前缀白名单，最多 2 个
+    icons = [
+        str(i) for i in (node.get("icon") or [])
+        if re.fullmatch(r"(priority|progress|expression|sign)_[0-9a-zA-Z一-龥]+", str(i))
+    ][:2]
+    if icons:
+        out["icon"] = icons
+    for c in (node.get("children") or []):
+        cc = _clean_ai_tree(c, depth + 1, budget)
+        if cc:
+            out["children"].append(cc)
+    return out
+
+
+def _clean_ai_lines(data: dict, budget: list) -> list:
+    """关联线 [{from, to}]：文字截断，最多 3 条。"""
+    out = []
+    for l in (data.get("associativeLines") or [])[:3]:
+        if not isinstance(l, dict):
+            continue
+        a, b = str(l.get("from") or "").strip()[:30], str(l.get("to") or "").strip()[:30]
+        if a and b and a != b:
+            out.append({"from": a, "to": b})
+    return out
+
+
+def _clean_ai_gens(data: dict) -> list:
+    """概要 [{text, members[]}]：members 2~6 个，最多 2 组。"""
+    out = []
+    for g in (data.get("generalizations") or [])[:2]:
+        if not isinstance(g, dict):
+            continue
+        text = str(g.get("text") or "").strip()[:30]
+        members = [str(m).strip()[:30] for m in (g.get("members") or [])][:6]
+        members = [m for m in members if m]
+        if text and len(members) >= 2:
+            out.append({"text": text, "members": members})
+    return out
+
+
+@router.post("/ai-assist")
+def mindmap_ai_assist(payload: MindmapAiIn, db: Session = Depends(get_db),
+                      ctx: Context = Depends(get_current_context)):
+    """AI 生成导图结构：rebuild 返回 {text, children}；expand 返回 {children}。"""
+    from ..services.llm import LLMError
+    from ..services.llm.gateway import extract_json, get_default_provider
+    from ..services.llm.prompts import MINDMAP_AI_SYSTEM, build_mindmap_ai_prompt
+
+    instruction = (payload.instruction or "").strip()
+    if not instruction:
+        raise HTTPException(400, "请输入要生成的内容描述")
+    try:
+        provider = get_default_provider(db)
+    except LLMError as e:
+        raise HTTPException(400, str(e))
+    mode = "expand" if payload.mode == "expand" else "rebuild"
+    prompt = build_mindmap_ai_prompt(instruction[:2000], mode, (payload.node_text or "")[:100],
+                                     [str(t)[:60] for t in (payload.context or [])[-30:]])
+    last_err: Exception | None = None
+    for attempt in range(2):
+        current_prompt = prompt if attempt == 0 else (
+            f"你上次的输出无法解析为合法 JSON，错误：{last_err}。请重新输出，只输出 JSON。\n\n原始任务：\n" + prompt
+        )
+        try:
+            data = extract_json(provider.complete(current_prompt, system=MINDMAP_AI_SYSTEM))
+            if not isinstance(data, dict):
+                raise ValueError("输出不是 JSON 对象")
+            if mode == "expand":
+                # 宽容解析：模型可能返回整棵树，取其 children
+                kids = data.get("children") or (data.get("root") or {}).get("children") or []
+                budget = [50]
+                cleaned = [_clean_ai_tree(c, 1, budget) for c in kids]
+                cleaned = [c for c in cleaned if c]
+                if not cleaned:
+                    raise ValueError("输出没有可用的分支")
+                return {"children": cleaned}
+            budget = [50]
+            tree = _clean_ai_tree(data.get("root") or data, 0, budget)
+            if not tree or not tree["children"]:
+                raise ValueError("输出没有可用的导图结构")
+            tree["associativeLines"] = _clean_ai_lines(data, budget)
+            tree["generalizations"] = _clean_ai_gens(data)
+            return tree
+        except LLMError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:  # noqa: BLE001 — 解析失败回喂重试一次
+            last_err = e
+    raise HTTPException(400, f"模型输出解析失败：{last_err}")
 
 
 # ---------- 成员分享（好友/用户组；直发 pending，组即时生效） ----------
