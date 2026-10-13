@@ -54,6 +54,9 @@ _NEW_COLUMNS = [
     ("image_files", "note_id", "INTEGER"),
     # 智能表：字段类型标识（text/singleSelect/...，NULL=存量老字段）
     ("meta_fields", "field_type", "VARCHAR(32)"),
+    # 智能表 V2：树形子记录 + 最后编辑人
+    ("records", "parent_id", "BIGINT"),
+    ("records", "updated_by", "INTEGER"),
 ]
 
 

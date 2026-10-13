@@ -7,7 +7,7 @@ from ..models import MetaTable, MetaView, SmartDoc, SmartDocEntry
 from ..schemas import FieldIn, TableCreate
 from ..services import entitlement, meta_service
 from ..services.dyn_engine import log_audit
-from ..services.field_registry import default_sheet_fields, gen_field_name, to_field_in
+from ..services.field_registry import FIELD_TYPES, default_sheet_fields, gen_field_name, to_field_in
 from ..services.meta_service import MetaError
 from ..utils.access import get_table_access
 from ..utils.context import Context, get_current_context
@@ -93,8 +93,8 @@ def create_entry(doc_id: int, payload: dict, db: Session = Depends(get_db),
     etype = payload.get("type")
     name = str(payload.get("name") or "").strip()
     parent_id = payload.get("parent_id")
-    if etype not in ("folder", "sheet"):
-        raise HTTPException(400, "条目类型必须是 folder 或 sheet")
+    if etype not in ("folder", "sheet", "dashboard"):
+        raise HTTPException(400, "条目类型必须是 folder / sheet / dashboard")
     if parent_id is not None:
         parent = db.get(SmartDocEntry, parent_id)
         if not parent or parent.doc_id != doc_id or parent.type != "folder":
@@ -103,6 +103,14 @@ def create_entry(doc_id: int, payload: dict, db: Session = Depends(get_db),
     if etype == "folder":
         e = SmartDocEntry(doc_id=doc_id, parent_id=parent_id, type="folder",
                           name=name or "文件夹", order_no=_next_order(db, doc_id, parent_id))
+        db.add(e)
+        db.commit()
+        db.refresh(e)
+        return {"entry": _entry_out(e)}
+
+    if etype == "dashboard":
+        e = SmartDocEntry(doc_id=doc_id, parent_id=parent_id, type="dashboard",
+                          name=name or "仪表盘", order_no=_next_order(db, doc_id, parent_id))
         db.add(e)
         db.commit()
         db.refresh(e)
@@ -220,3 +228,76 @@ def entry_table(entry_id: int, db: Session = Depends(get_db),
     if not access.can_view:
         raise HTTPException(404, "数据表不存在")
     return meta_service.table_out(db, mt, with_fields=True, access=access.my_perms())
+
+
+# ---------- 导入本地 Excel（复用 excel.py 探测/推断 + tables._run_import 批次导入） ----------
+
+_EXCEL_TYPE_MAP = {"varchar": "text", "text": "text", "int": "number", "decimal": "number",
+                   "date": "date", "datetime": "date", "bool": "checkbox"}
+
+
+@router.post("/docs/{doc_id}/import-excel")
+def import_excel(doc_id: int, payload: dict, db: Session = Depends(get_db),
+                 ctx: Context = Depends(get_current_context)):
+    """导入本地 Excel 建工作表：{file_id, sheet_name, header_row, name, parent_id, columns?}。
+    columns 缺省时用本地统计推断（excel_parser.infer_column_type）→ 映射为智能表字段类型。"""
+    from ..services.excel_parser import read_sheet, trim_rows
+    from ..services.typemap import infer_column_type
+    from ..services.uploads import get_upload_path
+    from .tables import _run_import
+    from ..schemas import SourceIn
+
+    _get_doc(db, doc_id, ctx)
+    file_id = payload.get("file_id")
+    sheet_name = payload.get("sheet_name")
+    header_row = int(payload.get("header_row") or 1)
+    if not file_id or not sheet_name:
+        raise HTTPException(400, "缺少 file_id / sheet_name")
+
+    path = get_upload_path(file_id)
+    rows = trim_rows(read_sheet(path, sheet_name))
+    if len(rows) < header_row:
+        raise HTTPException(400, "表头行超出范围")
+    headers = [str(h or f"列{i + 1}") for i, h in enumerate(rows[header_row - 1])]
+    samples = rows[header_row: header_row + 50]
+
+    # 列映射：默认本地推断；调用方可传 columns 覆盖（label/field_type）
+    overrides = {c["index"]: c for c in (payload.get("columns") or []) if isinstance(c, dict)}
+    fields = []
+    names = set()
+    for i, h in enumerate(headers):
+        ov = overrides.get(i) or {}
+        ft = ov.get("field_type")
+        if ft not in FIELD_TYPES:
+            ft = _EXCEL_TYPE_MAP.get(infer_column_type([r[i] if i < len(r) else None for r in samples]), "text")
+        fn = gen_field_name(names)
+        names.add(fn)
+        fin = to_field_in(ft, str(ov.get("label") or h), fn)
+        fin["source_header"] = h
+        fields.append(FieldIn(**fin))
+
+    entitlement.assert_tenant_writable(db, ctx.tenant.id)
+    entitlement.check_quota(db, ctx.tenant.id, "max_tables")
+    try:
+        mt = meta_service.create_business_table(
+            db, TableCreate(label=str(payload.get("name") or "导入的工作表"), fields=fields, storage_mode="json"),
+            owner_id=ctx.user.id, tenant_id=ctx.tenant.id)
+        v = MetaView(table_id=mt.id, name="表格视图", type="grid", config={}, is_default=True,
+                     created_by=ctx.user.id)
+        db.add(v)
+        db.flush()
+        e = SmartDocEntry(doc_id=doc_id, parent_id=payload.get("parent_id"), type="sheet",
+                          name=mt.label, ref_table_id=mt.id,
+                          order_no=_next_order(db, doc_id, payload.get("parent_id")))
+        db.add(e)
+        db.commit()
+        report = _run_import(db, mt, SourceIn(file_id=file_id, sheet_name=sheet_name, header_row=header_row))
+    except MetaError as ex:
+        db.rollback()
+        raise HTTPException(400, str(ex))
+    entitlement.bump_usage(db, ctx.tenant.id, "table_count", 1)
+    log_audit(db, "create_table", mt.id, after={"name": mt.name, "label": mt.label, "via": "smart_import"},
+              user=ctx.user.username, tenant_id=ctx.tenant.id)
+    db.commit()
+    db.refresh(e)
+    return {"entry": _entry_out(e), "table_id": mt.id, "import_report": report}

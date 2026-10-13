@@ -22,8 +22,7 @@
 
     <SmartGrid
       :fields="fields" :rows="rows" :total="rows.length"
-      :aggregations="aggs" :row-height="rowHeight"
-      :frozen-field-id="frozen ? 'f_1' : null"
+      :aggregations="aggs" :view="viewCfg"
       :height="gridHeight"
       @cell-commit="onCommit" @add-row="addRow"
     />
@@ -37,6 +36,7 @@ import SmartGrid from '../../components/smart/grid/SmartGrid.vue'
 
 const rowHeight = ref('default')
 const frozen = ref(true)
+const viewCfg = computed(() => ({ config: { rowHeight: rowHeight.value, frozenFieldId: frozen.value ? 'f_1' : null } }))
 const changes = ref(0)
 
 const fields = [
@@ -75,10 +75,10 @@ const aggs = computed(() => ({ f_4: rows.reduce((s, r) => s + (r.f_4 || 0), 0) }
 
 const gridHeight = computed(() => window.innerHeight - 180)
 
-function onCommit({ rowId, field, value }) {
-  const row = rows.find(r => r.id === rowId)
-  if (row) {
-    row[field.field_name] = value
+function onCommit({ row, field, value }) {
+  const target = rows.find(r => r.id === row.id)
+  if (target) {
+    target[field.field_name] = value
     changes.value++
   }
 }

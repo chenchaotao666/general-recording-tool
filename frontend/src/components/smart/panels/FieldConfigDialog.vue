@@ -1,0 +1,257 @@
+<template>
+  <!-- 字段配置弹窗（设计文档 §3.2 统一骨架）：名称 + 类型下拉 + 类型专属配置区 + 确定/取消 -->
+  <el-dialog :model-value="visible" :title="field ? '修改字段' : '添加列'" width="480px"
+             @update:model-value="$emit('close')" destroy-on-close>
+    <div class="cfg">
+      <el-input v-model="form.label" placeholder="字段名称" class="cfg-name" />
+      <el-select :teleported="false" v-model="form.field_type" class="cfg-type" :disabled="!!field && isSystemLike"
+                 @change="onTypeChange">
+        <el-option-group v-for="g in FIELD_TYPE_GROUPS" :key="g" :label="g">
+          <el-option v-for="(reg, ft) in typesOf(g)" :key="ft" :value="ft" :label="`${reg.icon} ${reg.label}`" />
+        </el-option-group>
+      </el-select>
+
+      <!-- 单选/多选：选项编辑 -->
+      <template v-if="['singleSelect', 'multiSelect'].includes(form.field_type)">
+        <div class="cfg-sec">
+          <div class="sec-title">选项</div>
+          <div v-for="(o, i) in form.config.options" :key="o.id" class="opt-row">
+            <el-color-picker :model-value="optionColor(o.color).value" size="small"
+                             @change="(v) => { o.color = nearestColor(v) }" />
+            <el-input v-model="o.label" size="small" />
+            <span class="del" @click="form.config.options.splice(i, 1)">⊖</span>
+          </div>
+          <el-button link type="primary" size="small" @click="addOption">⊕ 添加选项</el-button>
+          <el-checkbox v-model="form.config.allowAddOptionWhenEditing" size="small">允许填写时新增选项</el-checkbox>
+        </div>
+      </template>
+
+      <!-- 数字/百分数/货币/进度 -->
+      <template v-if="['number', 'percent', 'currency'].includes(form.field_type)">
+        <div class="cfg-sec">
+          <el-select :teleported="false" v-model="form.config.precision" size="small" class="sec-item">
+            <el-option value="default" label="默认小数位" />
+            <el-option v-for="n in [0, 1, 2, 3, 4]" :key="n" :value="n" :label="`${n} 位小数`" />
+          </el-select>
+          <el-checkbox v-model="form.config.thousandSeparator" size="small">使用千位符</el-checkbox>
+        </div>
+      </template>
+      <template v-if="form.field_type === 'currency'">
+        <div class="cfg-sec">
+          <el-select :teleported="false" v-model="form.config.currencyCode" size="small" class="sec-item">
+            <el-option v-for="(s, c) in CURRENCIES" :key="c" :value="c" :label="`${c} - ${s}`" />
+          </el-select>
+        </div>
+      </template>
+      <template v-if="form.field_type === 'progress'">
+        <div class="cfg-sec">
+          <el-input-number v-model="form.config.range.min" size="small" />
+          <span>—</span>
+          <el-input-number v-model="form.config.range.max" size="small" />
+          <el-checkbox v-model="form.config.showNumber" size="small">展示数字</el-checkbox>
+        </div>
+      </template>
+
+      <!-- 日期 -->
+      <template v-if="['date', 'createdTime', 'lastModifiedTime'].includes(form.field_type)">
+        <div class="cfg-sec">
+          <el-select :teleported="false" v-model="form.config.format" size="small" class="sec-item">
+            <el-option value="yyyy-MM-dd" label="2018-04-20" />
+            <el-option value="yyyy/MM/dd" label="2018/4/20" />
+            <el-option value="yyyy年M月d日" label="2018年4月20日" />
+            <el-option value="yyyy-MM-dd HH:mm" label="2018-04-20 15:30" />
+          </el-select>
+          <el-checkbox v-if="form.field_type === 'date'" v-model="form.config.autoFillCreatedTime" size="small">默认填充创建时间</el-checkbox>
+        </div>
+      </template>
+
+      <!-- 人员 -->
+      <template v-if="form.field_type === 'member'">
+        <div class="cfg-sec">
+          <el-checkbox v-model="form.config.multiple" size="small">允许添加多个人员</el-checkbox>
+          <el-checkbox v-model="form.config.notifyOnAdd" size="small">添加人员时通知他</el-checkbox>
+        </div>
+      </template>
+
+      <!-- 复选框 -->
+      <template v-if="form.field_type === 'checkbox'">
+        <div class="cfg-sec"><el-checkbox v-model="form.config.defaultChecked" size="small">默认勾选</el-checkbox></div>
+      </template>
+
+      <!-- 自动编号 -->
+      <template v-if="form.field_type === 'autoNumber'">
+        <div class="cfg-sec col">
+          <el-radio-group v-model="form.config.numberType" size="small">
+            <el-radio-button value="autoIncrement">自增数字</el-radio-button>
+            <el-radio-button value="custom">自定义编号</el-radio-button>
+          </el-radio-group>
+          <template v-if="form.config.numberType === 'custom'">
+            <div class="seg-preview">预览：{{ segPreview }}</div>
+            <div v-for="(s, i) in form.config.segments" :key="i" class="seg-row">
+              <el-select :teleported="false" v-model="s.type" size="small" style="width: 110px">
+                <el-option value="autoIncrement" label="自增数字" />
+                <el-option value="fixedText" label="固定字符" />
+                <el-option value="createDate" label="创建日期" />
+              </el-select>
+              <el-input-number v-if="s.type === 'autoIncrement'" v-model="s.digits" :min="1" :max="8" size="small" />
+              <el-input v-if="s.type === 'fixedText'" v-model="s.text" size="small" placeholder="请输入" />
+              <el-select :teleported="false" v-if="s.type === 'createDate'" v-model="s.format" size="small">
+                <el-option value="yyyyMMdd" label="20261013" />
+                <el-option value="yyyy-MM-dd" label="2026-10-13" />
+                <el-option value="yyyyMM" label="202610" />
+              </el-select>
+              <span class="del" @click="form.config.segments.splice(i, 1)">⊖</span>
+            </div>
+            <el-button link type="primary" size="small" @click="form.config.segments.push({ type: 'fixedText', text: '' })">＋ 添加编号字段</el-button>
+          </template>
+        </div>
+      </template>
+
+      <!-- 公式 -->
+      <template v-if="form.field_type === 'formula'">
+        <div class="cfg-sec col">
+          <el-input v-model="form.config.formula" type="textarea" :rows="3"
+                    placeholder='公式表达式，如 [数字] * 2（字段用 [字段名] 引用；函数：iff/abs/round/min/max/year/month/day/datediff/concat 等）' />
+          <el-select :teleported="false" v-model="form.config.returnType" size="small" class="sec-item">
+            <el-option value="text" label="返回：文本" />
+            <el-option value="number" label="返回：数字" />
+          </el-select>
+        </div>
+      </template>
+
+      <!-- 关联 -->
+      <template v-if="form.field_type === 'relation'">
+        <div class="cfg-sec col">
+          <el-select :teleported="false" v-model="form.config.targetTableId" size="small" placeholder="关联的智能表" filterable>
+            <el-option v-for="t in tables" :key="t.id" :value="t.id" :label="t.label" />
+          </el-select>
+          <el-checkbox v-model="form.config.multiple" size="small">允许多选</el-checkbox>
+        </div>
+      </template>
+
+      <!-- 查找引用 -->
+      <template v-if="form.field_type === 'lookup'">
+        <div class="cfg-sec col">
+          <el-select :teleported="false" v-model="form.config.sourceTableId" size="small" placeholder="要引用的表" filterable
+                     @change="form.config.sourceFieldId = null">
+            <el-option v-for="t in tables" :key="t.id" :value="t.id" :label="t.label" />
+          </el-select>
+          <el-select :teleported="false" v-model="form.config.sourceFieldId" size="small" placeholder="要引用的字段">
+            <el-option v-for="f in sourceFields" :key="f.field_name" :value="f.field_name" :label="f.label" />
+          </el-select>
+          <el-select :teleported="false" v-model="form.config.aggregation" size="small" class="sec-item">
+            <el-option v-for="(l, k) in LOOKUP_AGGS" :key="k" :value="k" :label="l" />
+          </el-select>
+          <div v-for="(c, i) in form.config.conditions" :key="i" class="seg-row">
+            <el-select :teleported="false" v-model="c.sourceFieldId" size="small" placeholder="引用表的字段">
+              <el-option v-for="f in sourceFields" :key="f.field_name" :value="f.field_name" :label="f.label" />
+            </el-select>
+            <el-select :teleported="false" v-model="c.op" size="small" style="width: 80px">
+              <el-option value="eq" label="等于" /><el-option value="contains" label="包含" />
+            </el-select>
+            <el-select :teleported="false" v-model="c.rightFieldId" size="small" placeholder="本表的字段" clearable>
+              <el-option v-for="f in fields" :key="f.field_name" :value="f.field_name" :label="f.label" />
+            </el-select>
+            <span class="del" @click="form.config.conditions.splice(i, 1)">⊖</span>
+          </div>
+          <el-button link type="primary" size="small"
+                     @click="form.config.conditions.push({ sourceFieldId: null, op: 'eq', rightFieldId: null })">＋ 添加条件</el-button>
+        </div>
+      </template>
+    </div>
+    <template #footer>
+      <el-button @click="$emit('close')">取消</el-button>
+      <el-button type="primary" :disabled="!form.label" @click="save">确定</el-button>
+    </template>
+  </el-dialog>
+</template>
+
+<script setup>
+import { computed, reactive, ref, watch } from 'vue'
+import { FIELD_REGISTRY, FIELD_TYPE_GROUPS, optionColor } from '../../../smart/registry/fieldRegistry.js'
+
+const props = defineProps({
+  visible: Boolean,
+  field: Object,          // 编辑态传入现有字段；新增为 null
+  fields: { type: Array, default: () => [] },   // 本表字段（lookup 条件右值用）
+  tables: { type: Array, default: () => [] },   // 可选的关联/引用目标表
+  sourceFieldsOf: { type: Function, default: () => () => [] },  // (tableId) => Promise<fields[]>
+})
+const emit = defineEmits(['close', 'save'])
+
+const CURRENCIES = { CNY: '￥', USD: '$', EUR: '€', JPY: '¥', HKD: 'HK$', GBP: '£' }
+const LOOKUP_AGGS = { raw: '原样引用', rawDistinct: '去重引用', sum: '求和', count: '计数', countDistinct: '去重计数', avg: '平均值', max: '最大值', min: '最小值' }
+
+const form = reactive({ label: '', field_type: 'text', config: {} })
+const srcFields = ref([])
+
+watch(() => props.visible, async (v) => {
+  if (!v) return
+  if (props.field) {
+    form.label = props.field.label
+    form.field_type = props.field.field_type || 'text'
+    form.config = JSON.parse(JSON.stringify(props.field.options || {}))
+    normalizeConfig()
+  } else {
+    form.label = ''
+    form.field_type = 'text'
+    form.config = FIELD_REGISTRY.text.defaultConfig()
+  }
+})
+
+const isSystemLike = computed(() => ['createdBy', 'lastModifiedBy', 'createdTime', 'lastModifiedTime'].includes(props.field?.field_type))
+
+function typesOf(group) {
+  return Object.fromEntries(Object.entries(FIELD_REGISTRY).filter(([, r]) => r.group === group))
+}
+function onTypeChange(ft) {
+  form.config = FIELD_REGISTRY[ft].defaultConfig()
+  if (!form.label) form.label = FIELD_REGISTRY[ft].label
+}
+function normalizeConfig() {
+  if (['singleSelect', 'multiSelect'].includes(form.field_type) && !form.config.options) form.config.options = []
+  if (form.field_type === 'progress' && !form.config.range) form.config.range = { min: 0, max: 100 }
+  if (form.field_type === 'autoNumber' && !form.config.segments) form.config.segments = [{ type: 'autoIncrement', digits: 3 }]
+  if (form.field_type === 'lookup' && !form.config.conditions) form.config.conditions = []
+}
+
+const sourceFields = computed(() => srcFields.value)
+watch(() => form.config?.sourceTableId, async (tid) => {
+  srcFields.value = tid ? await props.sourceFieldsOf(tid) : []
+})
+
+let optSeq = 1
+function addOption() {
+  const opts = form.config.options
+  const id = `opt_${Date.now()}_${optSeq++}`
+  opts.push({ id, label: `选项${opts.length + 1}`, color: 'blue', order: opts.length })
+}
+function nearestColor(v) {
+  return v || 'blue'   // el-color-picker 给 hex；色板 key 由渲染层 optionColor 兜底
+}
+
+const segPreview = computed(() => {
+  if (form.field_type !== 'autoNumber') return ''
+  return (form.config.segments || []).map(s => {
+    if (s.type === 'autoIncrement') return '0'.repeat(Math.max(1, (s.digits || 3) - 1)) + '1'
+    if (s.type === 'fixedText') return s.text || ''
+    return '20261013'
+  }).join('')
+})
+
+function save() {
+  emit('save', { label: form.label, field_type: form.field_type, config: form.config })
+}
+</script>
+
+<style scoped>
+.cfg { display: flex; flex-direction: column; gap: 10px; }
+.cfg-name { font-weight: 600; }
+.cfg-sec { border-top: 1px solid var(--el-border-color-lighter); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.cfg-sec.col { align-items: flex-start; }
+.sec-title { font-size: 12px; color: var(--el-text-color-secondary); }
+.sec-item { width: 220px; }
+.opt-row, .seg-row { display: flex; align-items: center; gap: 6px; }
+.del { cursor: pointer; color: var(--el-color-danger); }
+.seg-preview { font-size: 12px; color: var(--el-text-color-secondary); background: var(--el-fill-color-light); padding: 4px 8px; border-radius: 4px; }
+</style>

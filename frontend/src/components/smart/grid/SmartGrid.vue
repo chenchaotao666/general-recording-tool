@@ -1,58 +1,60 @@
 <template>
-  <!-- SmartGrid 雏形（V1 spike）：vxe-table 封装——冻结列/行高/虚拟滚动/汇总行/单元格编辑状态机。
-       flatten 行序列：数据行 + 末尾 {__rowType:'add'} 加行（V2 分组横幅行同机制扩展）。 -->
-  <div class="smart-grid">
+  <!-- SmartGrid：智能表网格（vxe-table 封装）。
+       flatten 行序列：分组标题行 / 数据行（树形缩进）/ 末尾加行。
+       视图配置（显隐/列序/列宽/冻结/行高/填色）纯前端应用，数据层不动（设计文档 §1.3 原则 1）。 -->
+  <div class="smart-grid" @contextmenu.prevent>
     <vxe-table
       ref="gridRef"
       class="smart-vxe"
       :data="gridRows"
       :height="height"
       border
-      :row-config="{ height: rowHeightPx, isHover: true }"
+      :row-config="{ height: rowHeightPx, isHover: true, keyField: '__key' }"
       :column-config="{ resizable: true }"
       :scroll-y="{ enabled: true, gt: 100 }"
       :scroll-x="{ enabled: true, gt: 20 }"
       :show-footer="true"
       :footer-method="footerMethod"
+      :row-class-name="rowClass"
       :cell-class-name="cellClass"
+      :menu-config="menuConfig"
       @cell-click="onCellClick"
+      @menu-click="onMenuClick"
+      @checkbox-all="onCheckAll"
+      @checkbox-change="onCheckChange"
     >
-      <!-- 行号 + 多选列（冻结） -->
-      <vxe-column type="checkbox" width="36" fixed="left" class-name="col-check" />
-      <vxe-column width="46" fixed="left" title="#" :formatter="rowNoFormatter" class-name="col-no" />
-
-      <!-- 字段列 -->
-      <vxe-column
-        v-for="f in visibleFields" :key="f.field_name"
-        :field="f.field_name" :title="f.label"
-        :width="colWidths[f.field_name] || 160"
-        :fixed="isFrozen(f.field_name) ? 'left' : undefined"
-      >
-        <template #header>
-          <span class="field-head">
-            <span class="field-icon">{{ typeIcon(f) }}</span>{{ f.label }}
+      <vxe-column type="checkbox" width="36" fixed="left" />
+      <vxe-column width="52" fixed="left" title="#" class-name="col-no">
+        <template #default="{ row }">
+          <span v-if="row.__rowType === 'group'" class="group-toggle" @click.stop="$emit('toggle-group', row.key)">
+            {{ collapsedGroups.has(row.key) ? '▸' : '▾' }}
           </span>
-        </template>
-        <template #default="{ row, column }">
-          <span v-if="row.__rowType === 'add'" class="add-row-cell">
-            <template v-if="column.field === visibleFields[0]?.field_name">＋ 添加</template>
-          </span>
-          <template v-else>
-            <!-- 编辑态：内联替换；展示态：SmartCell 分发 -->
-            <SmartCellEditor
-              v-if="isEditing(row, f)"
-              :field="f" :record="row"
-              @commit="(v) => onCommit(row, f, v)"
-              @cancel="editingCell = null"
-            />
-            <SmartCell v-else :field="f" :record="row" />
-          </template>
+          <span v-else-if="row.__rowType !== 'add'" class="row-no">{{ row.__no }}</span>
         </template>
       </vxe-column>
 
-      <!-- 末尾「+」添加列占位 -->
-      <vxe-column width="48" fixed="right" title="">
-        <template #header><span class="add-col">＋</span></template>
+      <!-- 编组（两级表头）+ 散列字段列 -->
+      <template v-for="node in headerTree" :key="node.key">
+        <vxe-colgroup v-if="node.isGroup" :title="node.name">
+          <vxe-column v-for="f in node.fields" :key="f.field_name" :field="f.field_name"
+                      :width="colWidths[f.field_name] || 160"
+                      :fixed="isFrozen(f.field_name) ? 'left' : undefined">
+            <template #header><FieldHeader :field="f" :view="view" @menu="(e) => $emit('field-menu', f, e)" /></template>
+            <template #default="{ row }"><CellSlot :row="row" :field="f" /></template>
+          </vxe-column>
+        </vxe-colgroup>
+        <vxe-column v-else :field="node.field.field_name" :width="colWidths[node.field.field_name] || 160"
+                    :fixed="isFrozen(node.field.field_name) ? 'left' : undefined">
+          <template #header><FieldHeader :field="node.field" :view="view" @menu="(e) => $emit('field-menu', node.field, e)" /></template>
+          <template #default="{ row }"><CellSlot :row="row" :field="node.field" /></template>
+        </vxe-column>
+      </template>
+
+      <!-- 末尾「+」添加列 -->
+      <vxe-column width="48" fixed="right">
+        <template #header>
+          <span class="add-col" title="添加一列" @click.stop="$emit('add-field')">＋</span>
+        </template>
         <template #default><span /></template>
       </vxe-column>
     </vxe-table>
@@ -60,104 +62,237 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, h, ref } from 'vue'
 import SmartCell from './SmartCell.vue'
 import SmartCellEditor from './SmartCellEditor.vue'
+import FieldHeader from './FieldHeader.vue'
+import { regOf, sortDirectionLabels } from '../../../smart/registry/fieldRegistry.js'
+import { evalFillRules } from '../../../smart/utils/format.js'
 
 const props = defineProps({
-  fields: { type: Array, default: () => [] },        // [{field_name,label,field_type,options}]
-  rows: { type: Array, default: () => [] },          // 当前页记录
+  fields: { type: Array, default: () => [] },
+  rows: { type: Array, default: () => [] },        // grid 接口行序列（可能含 __rowType:'group'）
+  grouped: { type: Boolean, default: false },
   total: { type: Number, default: 0 },
   aggregations: { type: Object, default: () => ({}) },
-  rowHeight: { type: String, default: 'default' },   // default|medium|tall|extraTall
-  frozenFieldId: { type: String, default: null },
-  colWidths: { type: Object, default: () => ({}) },
-  fieldVisibility: { type: Object, default: () => ({}) },
-  fieldOrder: { type: Array, default: null },
+  view: { type: Object, default: () => ({ config: {} }) },
+  columnGroups: { type: Array, default: () => [] },
   height: { type: [Number, String], default: 480 },
+  collapsedGroups: { type: Object, default: () => new Set() },
+  readonly: { type: Boolean, default: false },
 })
-const emit = defineEmits(['cell-commit', 'add-row'])
-
-const HEIGHTS = { default: 36, medium: 52, tall: 76, extraTall: 100 }
-const rowHeightPx = computed(() => HEIGHTS[props.rowHeight] || 36)
+const emit = defineEmits(['cell-commit', 'add-row', 'cell-menu', 'field-menu', 'toggle-group',
+                          'selection-change', 'open-config', 'agg-change'])
 
 const gridRef = ref(null)
-const editingCell = ref(null)   // {rowId, fieldName}
+const editingCell = ref(null)   // {key, fieldName}
 
-// flatten 行序列：数据行 + 末尾加行
-const gridRows = computed(() => [...props.rows, { __rowType: 'add', id: '__add__' }])
+const viewConfig = computed(() => props.view?.config || {})
+const rowHeightPx = computed(() => ({ default: 36, medium: 52, tall: 76, extraTall: 100 }[viewConfig.value.rowHeight] || 36))
+const colWidths = computed(() => viewConfig.value.colWidths || {})
+const fillRules = computed(() => viewConfig.value.fillRules || [])
 
-// 视图配置应用：显隐 + 顺序（纯前端，数据层不动）
+// 视图配置应用：显隐 + 列序
 const visibleFields = computed(() => {
-  let fs = props.fields.filter(f => props.fieldVisibility[f.field_name] !== false)
-  if (props.fieldOrder?.length) {
-    const idx = new Map(props.fieldOrder.map((n, i) => [n, i]))
+  const vis = viewConfig.value.fieldVisibility || {}
+  let fs = props.fields.filter(f => vis[f.field_name] !== false)
+  const order = viewConfig.value.fieldOrder
+  if (order?.length) {
+    const idx = new Map(order.map((n, i) => [n, i]))
     fs = [...fs].sort((a, b) => (idx.get(a.field_name) ?? 999) - (idx.get(b.field_name) ?? 999))
   }
   return fs
 })
 
+// 两级表头：编组节点 + 散列字段（保持相对顺序，编组内字段聚合到组下）
+const headerTree = computed(() => {
+  const groups = props.columnGroups.filter(g => (g.field_names || []).length)
+  const inGroup = new Set(groups.flatMap(g => g.field_names))
+  const nodes = []
+  const emittedGroups = new Set()
+  for (const f of visibleFields.value) {
+    const g = groups.find(x => x.field_names.includes(f.field_name))
+    if (!g) {
+      nodes.push({ key: f.field_name, isGroup: false, field: f })
+    } else if (!emittedGroups.has(g.id)) {
+      emittedGroups.add(g.id)
+      nodes.push({ key: `g_${g.id}`, isGroup: true, name: g.name,
+                   fields: visibleFields.value.filter(x => g.field_names.includes(x.field_name)) })
+    }
+  }
+  return nodes
+})
+
 const isFrozen = (name) => {
-  if (!props.frozenFieldId) return false
-  const idx = visibleFields.value.findIndex(f => f.field_name === props.frozenFieldId)
-  const mine = visibleFields.value.findIndex(f => f.field_name === name)
+  const fz = viewConfig.value.frozenFieldId
+  if (!fz) return false
+  const list = visibleFields.value.map(f => f.field_name)
+  const idx = list.indexOf(fz)
+  const mine = list.indexOf(name)
   return idx >= 0 && mine >= 0 && mine <= idx
 }
 
-const isEditing = (row, f) =>
-  editingCell.value && editingCell.value.rowId === row.id && editingCell.value.fieldName === f.field_name
+// 行序列：折叠分组过滤 + 树形缩进标记 + 行号 + 末尾加行
+const gridRows = computed(() => {
+  const out = []
+  let no = 0
+  const hiddenUnder = []   // 折叠组的 key 前缀栈
+  const idDepth = new Map()   // 树形：记录 id → 深度
+  for (const r of props.rows) {
+    if (r.__rowType === 'group') {
+      while (hiddenUnder.length && r.depth <= hiddenUnder[hiddenUnder.length - 1].depth) hiddenUnder.pop()
+      if (hiddenUnder.length) continue
+      out.push({ ...r, __key: r.key })
+      if (props.collapsedGroups.has(r.key)) hiddenUnder.push(r)
+      continue
+    }
+    if (hiddenUnder.length) continue
+    no += 1
+    let depth = 0
+    if (r.parent_id != null) depth = (idDepth.get(r.parent_id) ?? 0) + 1
+    idDepth.set(r.id, depth)
+    out.push({ ...r, __key: `r_${r.id}`, __no: no, __indent: depth })
+  }
+  out.push({ __rowType: 'add', __key: '__add__' })
+  return out
+})
 
-const IMMEDIATE_TYPES = ['checkbox']   // A 类：单击即提交
+const rowClass = ({ row }) => {
+  if (row.__rowType === 'group') return `row-group depth-${row.depth}`
+  if (row.__rowType === 'add') return 'row-add'
+  return ''
+}
+
+function cellClass({ row, column }) {
+  if (row.__rowType !== 'add' && row.__rowType !== 'group' && row.__indent > 0 && column.field === visibleFields.value[0]?.field_name) {
+    return 'cell-indent'
+  }
+  return ''
+}
+
+// 单元格渲染（含填色命中 + 编辑态分发）
+function CellSlot(props2) {
+  const { row, field } = props2
+  if (row.__rowType === 'add') {
+    return h('span', {
+      class: 'add-row-cell',
+      onClick: (e) => { e.stopPropagation(); emit('add-row') },
+    }, field.field_name === visibleFields.value[0]?.field_name ? '＋ 添加' : '')
+  }
+  if (row.__rowType === 'group') {
+    if (field.field_name !== visibleFields.value[0]?.field_name) {
+      const agg = row.aggs?.[field.field_name]
+      return h('span', { class: 'group-agg' }, agg != null ? `求和 ${fmtAgg(agg)}` : '')
+    }
+    return h('span', { class: 'group-head' }, `${groupLabel(row)}（记录数 ${row.count}）`)
+  }
+  const isEdit = editingCell.value && editingCell.value.key === row.__key && editingCell.value.fieldName === field.field_name
+  if (isEdit && !props.readonly) {
+    return h(SmartCellEditor, {
+      field, record: row,
+      onCommit: (v) => { editingCell.value = null; emit('cell-commit', { row, field, value: v }) },
+      onCancel: () => { editingCell.value = null },
+      'onOpen-config': (f) => emit('open-config', f),
+    })
+  }
+  const fill = evalFillRules(fillRules.value, field, row[field.field_name])
+  return h(SmartCell, { field, record: row, fillColor: fill })
+}
+
+function groupLabel(row) {
+  const f = props.fields.find(x => x.field_name === row.fieldId)
+  const v = row.value
+  if (v == null || v === '' || (Array.isArray(v) && !v.length)) return `${f?.label || ''}: 空`
+  if (f?.field_type === 'singleSelect' || f?.field_type === 'multiSelect') {
+    const opts = f.options?.options || []
+    const ids = Array.isArray(v) ? v : [v]
+    return ids.map(id => opts.find(o => o.id === id)?.label ?? id).join('、')
+  }
+  return `${f?.label}: ${v}`
+}
+
+function fmtAgg(v) {
+  return typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(2) : v
+}
+
+const IMMEDIATE = ['checkbox']
 
 function onCellClick({ row, column }) {
-  if (!row || row.__rowType === 'add') {
-    if (row?.__rowType === 'add') emit('add-row')
-    return
-  }
+  if (props.readonly) return
+  if (!row || row.__rowType === 'add') return
+  if (row.__rowType === 'group') return
   const f = props.fields.find(x => x.field_name === column.field)
   if (!f) return
-  if (IMMEDIATE_TYPES.includes(f.field_type)) {
-    emit('cell-commit', { rowId: row.id, field: f, value: !row[f.field_name] })
+  if (IMMEDIATE.includes(f.field_type)) {
+    emit('cell-commit', { row, field: f, value: !row[f.field_name] })
     return
   }
-  editingCell.value = { rowId: row.id, fieldName: f.field_name }
+  editingCell.value = { key: row.__key, fieldName: f.field_name }
 }
 
-function onCommit(row, f, value) {
-  editingCell.value = null
-  emit('cell-commit', { rowId: row.id, field: f, value })
+// vxe 原生右键菜单（menu-config；cell-contextmenu 事件在 v4 不对外暴露）
+const menuConfig = computed(() => ({
+  body: {
+    options: [[
+      { code: 'expand', name: '↗ 展开记录' },
+      { code: 'only', name: '⧩ 只看此内容' },
+      { code: 'exclude', name: '⧩ 不看此内容' },
+      { code: 'duplicate', name: '⧉ 创建副本' },
+      { code: 'add-child', name: '⤦ 添加子记录' },
+      { code: 'delete', name: '🗑 删除', className: 'ctx-danger' },
+    ]],
+    visibleMethod: ({ row }) => !!row && !row.__rowType,   // 组标题行/加行不出菜单
+  },
+}))
+
+function onMenuClick({ row, column, menu }) {
+  if (!row || row.__rowType || !menu) return
+  const f = props.fields.find(x => x.field_name === column.field)
+  emit('cell-menu', { row, field: f, cmd: menu.code })
 }
 
-const rowNoFormatter = ({ row, rowIndex }) => (row.__rowType === 'add' ? '' : rowIndex + 1)
-
-const cellClass = ({ row }) => (row.__rowType === 'add' ? 'row-add' : '')
-
-const TYPE_ICONS = {
-  text: 'A', singleSelect: '⊙', multiSelect: '☰', number: '₁₂₃', percent: '%',
-  currency: '¥', date: '📅', checkbox: '☑', url: '🔗', phone: '📞', email: '✉', member: '👤',
+function onCheckAll({ checked }) { emit('selection-change', checked ? dataRowSelection() : []) }
+function onCheckChange() { emit('selection-change', dataRowSelection()) }
+function dataRowSelection() {
+  const recs = gridRef.value?.getCheckboxRecords?.() || []
+  return recs.filter(r => !r.__rowType)
 }
-const typeIcon = (f) => TYPE_ICONS[f.field_type] || 'A'
 
-// 汇总行：首字段列「记录数」、数值列按 aggregations 渲染
+// 汇总行：首字段列「记录数 N」，各列按 aggregations 渲染，可点击切换聚合方式
 function footerMethod({ columns }) {
   const firstField = visibleFields.value[0]?.field_name
   return [
     columns.map((col) => {
       if (col.field === firstField) return `记录数 ${props.total}`
       const f = props.fields.find(x => x.field_name === col.field)
-      if (f && props.aggregations[f.field_name] != null) return `求和 ${props.aggregations[f.field_name]}`
+      if (f && props.aggregations[f.field_name] != null) return `求和 ${fmtAgg(props.aggregations[f.field_name])}`
       return ''
     }),
   ]
 }
+
+defineExpose({ clearEditing: () => { editingCell.value = null } })
 </script>
 
 <style scoped>
 .smart-grid { width: 100%; }
-.field-head { display: inline-flex; align-items: center; gap: 4px; }
-.field-icon { color: var(--el-color-primary); font-size: 12px; width: 16px; text-align: center; }
-.add-col { color: var(--el-color-primary); font-weight: 600; cursor: pointer; }
-.add-row-cell { color: var(--el-color-primary); cursor: pointer; }
+.add-col { color: var(--el-color-primary); font-weight: 600; cursor: pointer; font-size: 15px; }
+.add-row-cell { color: var(--el-color-primary); cursor: pointer; font-size: 13px; }
+.group-toggle { cursor: pointer; color: var(--el-text-color-secondary); user-select: none; }
+.row-no { color: var(--el-text-color-placeholder); font-size: 12px; }
+.group-head { font-weight: 600; font-size: 13px; }
+.group-agg { font-size: 12px; color: var(--el-text-color-secondary); }
+.smart-vxe :deep(.row-group) { background: #fffbe6; }
+.smart-vxe :deep(.row-group.depth-1) { background: #fffdf0; }
+.smart-vxe :deep(.row-group.depth-2) { background: #fffef7; }
 .smart-vxe :deep(.row-add) { background: var(--el-fill-color-lighter); }
 .smart-vxe :deep(.vxe-body--column.col-no) { color: var(--el-text-color-placeholder); font-size: 12px; }
+.smart-vxe :deep(.cell-indent) { padding-left: 18px; }
+:deep(.field-head) { display: inline-flex; align-items: center; gap: 4px; width: 100%; cursor: default; }
+:deep(.field-icon) { color: var(--el-color-primary); font-size: 12px; min-width: 16px; text-align: center; }
+:deep(.field-name) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:deep(.filter-dot) { color: var(--el-color-primary); }
+:deep(.sort-mark) { color: var(--el-color-primary); }
+:deep(.head-menu) { margin-left: auto; color: var(--el-text-color-placeholder); padding: 0 2px; cursor: pointer; }
+:deep(.head-menu:hover) { color: var(--el-color-primary); }
 </style>

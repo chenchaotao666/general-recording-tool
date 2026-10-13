@@ -22,7 +22,7 @@ OP_MAP = {
 AGGREGATIONS = {"count", "sum", "avg", "max", "min"}
 
 # V1 视图 config 允许的键（白名单，防注入脏数据）
-CONFIG_KEYS = {"filters", "sorts", "fillRules", "rowHeight", "fieldVisibility",
+CONFIG_KEYS = {"filters", "sorts", "groups", "fillRules", "rowHeight", "fieldVisibility",
                "fieldOrder", "colWidths", "frozenFieldId", "aggregations", "autoSort"}
 
 # 填色/筛选共用的无值运算符
@@ -61,6 +61,15 @@ def validate_view_config(config: dict | None, fields: list) -> dict:
             raise HTTPException(400, f"排序引用了不存在的字段：{s.get('fieldId')}")
         if s.get("direction", "asc") not in ("asc", "desc"):
             raise HTTPException(400, "排序方向必须是 asc/desc")
+
+    groups = cfg.get("groups") or []
+    if not isinstance(groups, list) or len(groups) > 3:
+        raise HTTPException(400, "分组层级格式无效（最多 3 级）")
+    for g in groups:
+        if g.get("fieldId") not in names:
+            raise HTTPException(400, f"分组引用了不存在的字段：{g.get('fieldId')}")
+        if g.get("direction", "asc") not in ("asc", "desc"):
+            raise HTTPException(400, "分组方向必须是 asc/desc")
 
     for rule in cfg.get("fillRules") or []:
         if rule.get("fieldId") not in names:
@@ -147,6 +156,8 @@ def scan_field_deps(views: list, field_name: str) -> list[dict]:
             usages.append("排序")
         if any(r.get("fieldId") == field_name for r in cfg.get("fillRules") or []):
             usages.append("填色")
+        if any(g.get("fieldId") == field_name for g in cfg.get("groups") or []):
+            usages.append("分组")
         if field_name in (cfg.get("aggregations") or {}):
             usages.append("汇总聚合")
         if cfg.get("frozenFieldId") == field_name:
@@ -154,3 +165,59 @@ def scan_field_deps(views: list, field_name: str) -> list[dict]:
         if usages:
             deps.append({"viewId": v.id, "viewName": v.name, "usages": usages})
     return deps
+
+
+# ---------- 分组（设计文档 §5.2）：多级分桶 + 组内排序 + 自底向上聚合 ----------
+
+def _group_sort_key(v, field):
+    """分组键排序值：单选/多选按选项定义序，其余按值；空值排最前。"""
+    if v is None or v == "" or v == []:
+        return (-1, 0)
+    opts = ((field.options or {}).get("options") or []) if field else []
+    if opts:
+        order = {str(o.get("id")): i for i, o in enumerate(opts)}
+        if isinstance(v, list):
+            return (0, min((order.get(str(x), 999) for x in v), default=999))
+        return (0, order.get(str(v), 999))
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return (0, float(v))
+    if isinstance(v, list):
+        return (0, str(v[0]) if v else "")
+    return (0, str(v))
+
+
+def flatten_grouped(recs: list[dict], levels: list[dict], fields_by_name: dict,
+                    sorts: list[dict] | None, aggs_cfg: dict | None) -> list[dict]:
+    """筛选后的规范化记录 → 扁平行序列：[{__rowType:'group', ...}, ...数据行]。
+    分组桶按 direction 排序；组内行按 sorts 多级排序；每组计算聚合（记录数+数值列）。"""
+    from .pyquery import sort_records_multi
+
+    def build(rows: list[dict], depth: int, path: list) -> list[dict]:
+        if depth >= len(levels):
+            return sort_records_multi(rows, sorts, fields_by_name)
+        lv = levels[depth]
+        fn = lv["fieldId"]
+        field = fields_by_name.get(fn)
+        buckets: dict[str, list] = {}
+        keys: dict[str, object] = {}
+        for r in rows:
+            v = r.get(fn)
+            k = "__empty__" if v is None or v == "" or v == [] else (
+                ",".join(map(str, v)) if isinstance(v, list) else str(v))
+            buckets.setdefault(k, []).append(r)
+            keys[k] = v
+        ordered = sorted(buckets.keys(),
+                         key=lambda k: _group_sort_key(keys[k], field),
+                         reverse=(lv.get("direction") == "desc"))
+        out = []
+        for k in ordered:
+            sub = buckets[k]
+            aggs = compute_aggregations(sub, aggs_cfg, list(fields_by_name.values()))
+            out.append({
+                "__rowType": "group", "key": "|".join(path + [k]), "depth": depth,
+                "fieldId": fn, "value": keys[k], "count": len(sub), "aggs": aggs,
+            })
+            out.extend(build(sub, depth + 1, path + [k]))
+        return out
+
+    return build(recs, 0, [])

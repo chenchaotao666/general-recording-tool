@@ -27,8 +27,10 @@ const router = createRouter({
     // 首页工作台：懒加载隔离 grid-layout-plus 体积
     { path: '/home', component: () => import('../views/Home.vue'), meta: { title: '首页' } },
     { path: '/tables', component: TableList , meta: { perm: 'menu_tables', title: '数据表' } },
-    // 智能表（智慧表格）：V1 MVP 开发中，先占位菜单入口
-    { path: '/smart', component: () => import('../views/SmartTables.vue'), meta: { perm: 'menu_smart_tables', title: '智能表' } },
+    // 智能表（智慧表格）：条目树首页 + 网格页 + 仪表盘
+    { path: '/smart', component: () => import('../views/smart/SmartHome.vue'), meta: { perm: 'menu_smart_tables', title: '智能表' } },
+    { path: '/smart/table/:tableId', component: () => import('../views/smart/SmartTablePage.vue'), meta: { perm: 'menu_smart_tables', title: '智能表' } },
+    { path: '/smart/dashboard/:entryId', component: () => import('../views/smart/SmartDashboardPage.vue'), meta: { perm: 'menu_smart_tables', title: '仪表盘' } },
     // vxe-table spike（V1 技术验证页，mock 数据不依赖后端）
     { path: '/smart/spike', component: () => import('../views/smart/SpikeGrid.vue'), meta: { perm: 'menu_smart_tables', title: '智能表-Spike' } },
     { path: '/friends', component: Friends , meta: { perm: 'menu_friends', title: '好友' } },

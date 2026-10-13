@@ -21,14 +21,22 @@ def serialize_data(cleaned: dict) -> dict:
 
 def _row_to_client(rec: Record, fields_by_name: dict) -> dict:
     """records 行 → 前端 dict（data 展开 + 未赋值字段补 None + id/created_at/updated_at，值序列化）。
-    形状与物理表 row_to_dict 对齐：物理表 NULL 列也出现在结果里。"""
+    形状与物理表 row_to_dict 对齐：物理表 NULL 列也出现在结果里。
+    智能表系统字段（createdBy/createdTime 等）：从记录系统列注入（sys_key 映射）。"""
+    from .field_registry import FIELD_TYPES
     out = {name: None for name in fields_by_name}
     out.update(rec.data or {})
     out["id"] = rec.id
     out["tenant_id"] = rec.tenant_id
     out["owner_id"] = rec.owner_id
+    out["parent_id"] = rec.parent_id
+    out["updated_by"] = rec.updated_by
     out["created_at"] = dyn_engine.serialize_value(rec.created_at)
     out["updated_at"] = dyn_engine.serialize_value(rec.updated_at)
+    for name, f in fields_by_name.items():
+        sys_key = FIELD_TYPES.get(getattr(f, "field_type", None) or "", {}).get("sys_key")
+        if sys_key:
+            out[name] = out.get(sys_key)
     return {k: dyn_engine.serialize_value(v) for k, v in out.items()}
 
 
@@ -47,6 +55,8 @@ def all_dicts(db: Session, table_id: int, fields: list[MetaField], normalized: b
         rec["id"] = r.id
         rec["owner_id"] = r.owner_id      # P1 数据范围过滤用（引擎/报表 json 链路）
         rec["tenant_id"] = r.tenant_id
+        rec["parent_id"] = r.parent_id    # 智能表树形子记录
+        rec["updated_by"] = r.updated_by  # 智能表系统字段（最后编辑人）
         rec["created_at"] = r.created_at
         rec["updated_at"] = r.updated_at
         out.append(normalize_record(rec, fields_by_name))
@@ -105,9 +115,17 @@ def get_record(db: Session, table_id: int, record_id: int, fields: list[MetaFiel
     return _row_to_client(rec, {f.field_name: f for f in (fields or [])})
 
 
+def _strip_readonly(fields: list[MetaField], data: dict) -> dict:
+    """智能表只读/系统/读时计算字段（公式/查找引用/创建人等）不接收提交值（设计文档 §3.3 系统字段纪律）。"""
+    from .field_registry import READONLY_TYPES
+    blocked = {f.field_name for f in fields if (f.field_type or "") in READONLY_TYPES}
+    return {k: v for k, v in (data or {}).items() if k not in blocked}
+
+
 def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dict,
-                  user: str | None = None, owner_id: int | None = None) -> dict:
-    cleaned, errors = dyn_engine.coerce_payload(fields, data)
+                  user: str | None = None, owner_id: int | None = None,
+                  parent_id: int | None = None) -> dict:
+    cleaned, errors = dyn_engine.coerce_payload(fields, _strip_readonly(fields, data))
     if errors:
         raise HTTPException(422, detail=errors)
     for f in fields:
@@ -121,6 +139,8 @@ def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dic
     now = datetime.now()
     rec = Record(table_id=mt.id, tenant_id=mt.tenant_id,
                  owner_id=owner_id if owner_id is not None else mt.owner_id,
+                 parent_id=parent_id,
+                 updated_by=owner_id if owner_id is not None else mt.owner_id,
                  data=serialize_data(cleaned), created_at=now, updated_at=now)
     db.add(rec)
     db.commit()
@@ -133,7 +153,7 @@ def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dic
 
 
 def update_record(db: Session, mt: MetaTable, fields: list[MetaField], record_id: int, data: dict,
-                  user: str | None = None) -> dict:
+                  user: str | None = None, editor_id: int | None = None) -> dict:
     rec = db.execute(
         select(Record).where(Record.table_id == mt.id, Record.id == record_id)
     ).scalars().first()
@@ -141,7 +161,7 @@ def update_record(db: Session, mt: MetaTable, fields: list[MetaField], record_id
         raise HTTPException(404, "记录不存在")
     fbn = {f.field_name: f for f in fields}
     before = _row_to_client(rec, fbn)
-    cleaned, errors = dyn_engine.coerce_payload(fields, data, partial=True)
+    cleaned, errors = dyn_engine.coerce_payload(fields, _strip_readonly(fields, data), partial=True)
     if errors:
         raise HTTPException(422, detail=errors)
     dyn_engine.strip_serial_fields(fields, cleaned)
@@ -150,6 +170,8 @@ def update_record(db: Session, mt: MetaTable, fields: list[MetaField], record_id
     merged.update(serialize_data(cleaned))
     rec.data = merged
     rec.updated_at = datetime.now()
+    if editor_id is not None:
+        rec.updated_by = editor_id
     db.commit()
     after = _row_to_client(rec, fbn)
     dyn_engine.log_audit(db, "update", mt.id, record_id, before=before, after=after, user=user,

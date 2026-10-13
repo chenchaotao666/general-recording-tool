@@ -34,6 +34,7 @@ const routeState = vi.hoisted(() => ({ params: {}, query: {} }))
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  onBeforeRouteLeave: () => {},
 }))
 
 beforeAll(() => {

@@ -191,6 +191,8 @@ class Record(Base):
     tenant_id = Column(Integer, index=True)                  # 冗余自 meta_tables（配额计数/范围过滤免 join）
     owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # 记录归属人（P1 数据范围用）
     data = Column(JSON, nullable=False, default=dict)
+    parent_id = Column(BigInteger, index=True)               # 智能表树形子记录：父记录 id（V2）
+    updated_by = Column(Integer, ForeignKey("users.id"))     # 最后编辑人（智能表系统字段，V2）
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -723,3 +725,31 @@ class HomeDefaultLayout(Base):
     layout_json = Column(JSON, default=dict)
     updated_by = Column(Integer, ForeignKey("users.id"))
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class MetaColumnGroup(Base):
+    """智能表列编组（多级表头，设计文档 §6.3）：一组字段共享一个组头"""
+    __tablename__ = "meta_column_groups"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
+    name = Column(String(100), nullable=False)
+    field_names = Column(JSON, default=list)         # 成员字段 field_name 列表
+    order_no = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class DashboardWidget(Base):
+    """智能表仪表盘图表（设计文档 §2.5.1）：引用工作表数据的图表 widget"""
+    __tablename__ = "dashboard_widgets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entry_id = Column(Integer, ForeignKey("smart_doc_entries.id"), index=True, nullable=False)
+    title = Column(String(200), default="图表")
+    chart_type = Column(String(16), default="bar")   # bar/line/pie/barH/metric/table
+    sub_type = Column(String(32))                    # stacked / percentStacked
+    theme = Column(String(32))
+    config = Column(JSON, default=dict)              # {sourceTableId, filter, dimension, subDimension, metric:{field?,agg}, sort}
+    layout = Column(JSON, default=dict)              # {x,y,w,h}
+    order_no = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)

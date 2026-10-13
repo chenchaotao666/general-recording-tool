@@ -406,3 +406,42 @@ export const assistantDownloadUrl = (fileId) => {
   return `/api/assistant/download/${fileId}?token=${encodeURIComponent(token)}&tenant_id=${localStorage.getItem('grt_tenant_id') || ''}`
 }
 export const testSearchSettings = () => http.post('/settings/general/test-search')
+
+// ---------- 智能表（smart） ----------
+export const smartGetDoc = () => http.get('/smart/docs/current')
+export const smartGetTree = (docId) => http.get(`/smart/docs/${docId}/tree`)
+export const smartCreateEntry = (docId, payload) => http.post(`/smart/docs/${docId}/entries`, payload)
+export const smartUpdateEntry = (eid, payload) => http.patch(`/smart/entries/${eid}`, payload)
+export const smartDeleteEntry = (eid) => http.delete(`/smart/entries/${eid}`)
+export const smartEntryTable = (eid) => http.get(`/smart/entries/${eid}/table`)
+export const smartImportExcel = (docId, payload) => http.post(`/smart/docs/${docId}/import-excel`, payload)
+// 视图
+export const smartListViews = (tid) => http.get(`/smart/tables/${tid}/views`)
+export const smartCreateView = (tid, payload) => http.post(`/smart/tables/${tid}/views`, payload)
+export const smartUpdateView = (vid, payload) => http.patch(`/smart/views/${vid}`, payload)
+export const smartDeleteView = (vid) => http.delete(`/smart/views/${vid}`)
+export const smartDuplicateView = (vid) => http.post(`/smart/views/${vid}/duplicate`)
+export const smartSetDefaultView = (vid) => http.post(`/smart/views/${vid}/set-default`)
+export const smartPutViewPref = (vid, config) => http.put(`/smart/views/${vid}/prefs`, { config })
+export const smartDeleteViewPref = (vid) => http.delete(`/smart/views/${vid}/prefs`)
+export const smartFieldDeps = (tid, fieldName) => http.get(`/smart/tables/${tid}/fields/${fieldName}/deps`)
+// 网格与记录
+export const smartGrid = (tid, params) => http.get(`/smart/tables/${tid}/grid`, { params })
+export const smartCreateRecord = (tid, payload) => http.post(`/smart/tables/${tid}/records`, payload)
+export const smartUpdateRecord = (tid, rid, payload) => http.patch(`/smart/tables/${tid}/records/${rid}`, payload)
+export const smartDeleteRecord = (tid, rid) => http.delete(`/smart/tables/${tid}/records/${rid}`)
+export const smartBatchDelete = (tid, ids) => http.post(`/smart/tables/${tid}/records:batch-delete`, { ids })
+export const smartDuplicateRecord = (tid, rid) => http.post(`/smart/tables/${tid}/records/${rid}/duplicate`)
+export const smartDuplicateField = (tid, fieldName) => http.post(`/smart/tables/${tid}/fields/${fieldName}/duplicate`)
+export const smartSearchReplace = (tid, payload) => http.post(`/smart/tables/${tid}/search-replace`, payload)
+// 列编组
+export const smartListColumnGroups = (tid) => http.get(`/smart/tables/${tid}/column-groups`)
+export const smartCreateColumnGroup = (tid, payload) => http.post(`/smart/tables/${tid}/column-groups`, payload)
+export const smartUpdateColumnGroup = (gid, payload) => http.patch(`/smart/column-groups/${gid}`, payload)
+export const smartDeleteColumnGroup = (gid) => http.delete(`/smart/column-groups/${gid}`)
+// 仪表盘
+export const smartListWidgets = (entryId) => http.get(`/smart/dashboards/${entryId}/widgets`)
+export const smartCreateWidget = (entryId, payload) => http.post(`/smart/dashboards/${entryId}/widgets`, payload)
+export const smartUpdateWidget = (wid, payload) => http.patch(`/smart/widgets/${wid}`, payload)
+export const smartDeleteWidget = (wid) => http.delete(`/smart/widgets/${wid}`)
+export const smartChartPreview = (payload) => http.post('/smart/charts/preview', payload)

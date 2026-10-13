@@ -93,6 +93,67 @@ FIELD_TYPES: dict[str, dict] = {
         "default_config": {"multiple": True, "notifyOnAdd": True},
         "filter_ops": OP_ENUM, "aggregations": ["count"],
     },
+    # ---------- V2：数据组织能力 ----------
+    "progress": {
+        "label": "进度", "data_type": "decimal", "widget": "number",
+        "default_config": {"color": "green", "numberFormat": "value", "precision": "default",
+                           "range": {"min": 0, "max": 100}, "showNumber": True},
+        "filter_ops": OP_NUMBER, "aggregations": ["count", "sum", "avg", "max", "min"],
+    },
+    "image": {
+        "label": "图片", "data_type": "image", "widget": "image-uploader",
+        "default_config": {"cameraOnly": False},
+        "filter_ops": ["isEmpty", "isNotEmpty"], "aggregations": ["count"],
+    },
+    "file": {
+        "label": "文件", "data_type": "json", "widget": "input",
+        "default_config": {},
+        "filter_ops": ["isEmpty", "isNotEmpty"], "aggregations": ["count"],
+    },
+    "autoNumber": {
+        "label": "自动编号", "data_type": "serial", "widget": "serial",
+        # segments → options.serial.pattern（自增段 {000}、固定字符、创建日期 {YYYY}{MM}{DD}）
+        "default_config": {"numberType": "autoIncrement", "segments": [{"type": "autoIncrement", "digits": 3}]},
+        "filter_ops": OP_TEXT, "aggregations": ["count"], "readonly": True,
+    },
+    "relation": {
+        "label": "关联", "data_type": "json", "widget": "input",
+        "default_config": {"targetTableId": None, "multiple": True, "bidirectional": False},
+        "filter_ops": OP_ENUM, "aggregations": ["count"],
+    },
+    "lookup": {
+        "label": "查找引用", "data_type": "json", "widget": "input",
+        "default_config": {"sourceTableId": None, "sourceFieldId": None, "conditionLogic": "and",
+                           "conditions": [], "aggregation": "raw"},
+        "filter_ops": ["isEmpty", "isNotEmpty"], "aggregations": ["count"],
+        "readonly": True, "computed": True,   # 读时计算，不落库、不可写
+    },
+    "formula": {
+        "label": "公式", "data_type": "varchar", "widget": "input",
+        # 表达式存 options.formula（复用 expr.py 引擎 + apply_computed 写时重算）
+        "default_config": {"formula": "", "returnType": "text"},
+        "filter_ops": OP_TEXT, "aggregations": ["count"],
+        "readonly": True,
+    },
+    # 系统字段：值来自记录系统列（owner_id/updated_by/created_at/updated_at），不可写
+    "createdBy": {
+        "label": "创建人", "data_type": "varchar", "widget": "input", "sys_key": "owner_id",
+        "default_config": {}, "filter_ops": OP_ENUM, "aggregations": ["count"], "readonly": True, "system": True,
+    },
+    "lastModifiedBy": {
+        "label": "最后编辑人", "data_type": "varchar", "widget": "input", "sys_key": "updated_by",
+        "default_config": {}, "filter_ops": OP_ENUM, "aggregations": ["count"], "readonly": True, "system": True,
+    },
+    "createdTime": {
+        "label": "创建时间", "data_type": "datetime", "widget": "datetime-picker", "sys_key": "created_at",
+        "default_config": {"format": "yyyy-MM-dd"}, "filter_ops": OP_DATE, "aggregations": ["count"],
+        "readonly": True, "system": True,
+    },
+    "lastModifiedTime": {
+        "label": "最后编辑时间", "data_type": "datetime", "widget": "datetime-picker", "sys_key": "updated_at",
+        "default_config": {"format": "yyyy-MM-dd"}, "filter_ops": OP_DATE, "aggregations": ["count"],
+        "readonly": True, "system": True,
+    },
 }
 
 # 数字家族无损互转（共享 decimal 存储）
@@ -144,6 +205,36 @@ def validate_field_type_config(field_type: str, config: dict, label: str = "") -
             if k in cfg and not isinstance(cfg[k], bool):
                 raise FieldTypeError(f"{prefix}的 {k} 必须是布尔值")
 
+    # ---------- V2 类型校验 ----------
+    if field_type == "progress":
+        rng = cfg.get("range") or {}
+        if not isinstance(rng.get("min", 0), (int, float)) or not isinstance(rng.get("max", 100), (int, float)):
+            raise FieldTypeError(f"{prefix}的进度条范围无效")
+        if rng.get("max", 100) <= rng.get("min", 0):
+            raise FieldTypeError(f"{prefix}的进度条最大值必须大于最小值")
+
+    if field_type == "autoNumber":
+        segs = cfg.get("segments") or []
+        if cfg.get("numberType") == "custom" and not segs:
+            raise FieldTypeError(f"{prefix}自定义编号至少需要一个编号段")
+        if not any(s.get("type") == "autoIncrement" for s in segs) and cfg.get("numberType") == "custom":
+            raise FieldTypeError(f"{prefix}自定义编号必须包含一个自增数字段")
+
+    if field_type == "relation":
+        if not cfg.get("targetTableId"):
+            raise FieldTypeError(f"{prefix}必须选择关联的智能表")
+
+    if field_type == "lookup":
+        if not cfg.get("sourceTableId") or not cfg.get("sourceFieldId"):
+            raise FieldTypeError(f"{prefix}必须选择要引用的表和字段")
+        if cfg.get("aggregation", "raw") not in LOOKUP_AGGS:
+            raise FieldTypeError(f"{prefix}的统计方式不支持：{cfg.get('aggregation')}")
+
+    if field_type == "formula":
+        expr = (cfg.get("formula") or "").strip()
+        if not expr:
+            raise FieldTypeError(f"{prefix}的公式内容不能为空")
+
 
 def default_sheet_fields() -> list[dict]:
     """新建工作表的默认字段模板（设计文档 §2.5：文本/单选/人员/数字/日期）。"""
@@ -161,12 +252,20 @@ def default_sheet_fields() -> list[dict]:
 
 
 def to_field_in(field_type: str, label: str, field_name: str, config: dict | None = None) -> dict:
-    """注册项 → FieldIn 字典（建表/加字段用）。"""
+    """注册项 → FieldIn 字典（建表/加字段用）。
+    autoNumber：segments → options.serial.pattern；formula：config.formula → options.formula（复用 expr.py 引擎）。"""
     reg = FIELD_TYPES[field_type]
+    cfg = config if config is not None else default_config(field_type)
+    options = dict(cfg)
+    if field_type == "autoNumber":
+        options["serial"] = {"pattern": autonumber_segments_to_pattern(cfg.get("segments")),
+                             "reset": "never", "allow_manual": False}
+    if field_type == "formula":
+        options["formula"] = cfg.get("formula", "")
     return {
         "field_name": field_name, "label": label,
         "data_type": reg["data_type"], "widget": reg["widget"],
-        "options": config if config is not None else default_config(field_type),
+        "options": options,
         "field_type": field_type,
     }
 
@@ -177,3 +276,30 @@ def gen_field_name(existing: set[str]) -> str:
     while f"f_{n}" in existing:
         n += 1
     return f"f_{n}"
+
+
+# ---------- V2 补充常量与帮助函数 ----------
+
+# 只读/系统/读时计算字段：写入时一律忽略（防提交污染）
+READONLY_TYPES = {ft for ft, reg in FIELD_TYPES.items() if reg.get("readonly")}
+SYSTEM_TYPES = {ft for ft, reg in FIELD_TYPES.items() if reg.get("system")}
+COMPUTED_TYPES = {"formula", "lookup"}
+
+# 查找引用统计方式（设计文档 §8.2）
+LOOKUP_AGGS = {"raw", "rawDistinct", "sum", "count", "countDistinct", "avg", "max", "min"}
+
+
+def autonumber_segments_to_pattern(segments: list) -> str:
+    """自定义编号段 → serial pattern。自增段 {000}（位数补零）、固定字符原样、创建日期 {YYYY}{MM}{DD}。"""
+    parts = []
+    for seg in segments or []:
+        t = seg.get("type")
+        if t == "autoIncrement":
+            parts.append("{" + "0" * int(seg.get("digits", 3)) + "}")
+        elif t == "fixedText":
+            parts.append(str(seg.get("text") or ""))
+        elif t == "createDate":
+            fmt = seg.get("format", "yyyyMMdd")
+            parts.append({"yyyyMMdd": "{YYYY}{MM}{DD}", "yyyy-MM-dd": "{YYYY}-{MM}-{DD}",
+                          "yyyyMM": "{YYYY}{MM}", "yyyy": "{YYYY}"}.get(fmt, "{YYYY}{MM}{DD}"))
+    return "".join(parts) or "{000}"
