@@ -52,6 +52,8 @@ _NEW_COLUMNS = [
     ("notes", "content_html", "TEXT"),
     # 记事本插图归属（孤儿清理跳过已关联笔记的图片）
     ("image_files", "note_id", "INTEGER"),
+    # 智能表：字段类型标识（text/singleSelect/...，NULL=存量老字段）
+    ("meta_fields", "field_type", "VARCHAR(32)"),
 ]
 
 
@@ -98,6 +100,7 @@ def _seed_rbac(conn) -> None:
         ("menu_billing", "菜单-套餐与用量", "侧边「套餐与用量」入口"),
         ("menu_mindmaps", "菜单-思维导图", "侧边「思维导图」入口"),
         ("menu_whiteboard", "菜单-画板", "侧边「画板」入口"),
+        ("menu_smart_tables", "菜单-智能表", "侧边「智能表」入口（智慧表格）"),
     ]
     for code, name, desc in perms:
         conn.execute(

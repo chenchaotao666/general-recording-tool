@@ -78,9 +78,17 @@ def _validate_subform_columns(db: Session, columns, own_names: set[str], field_l
 
 
 def validate_field_options(db: Session, data_type: str, widget: str | None,
-                           options: dict | None, own_names: set[str], field_label: str = "") -> None:
+                           options: dict | None, own_names: set[str], field_label: str = "",
+                           field_type: str | None = None) -> None:
     """字段级业务配置校验（建表/改结构时把关，保存记录时不再报错）。"""
     opts = options or {}
+    if field_type:
+        # 智能表字段类型：config 校验委托给字段注册表
+        from .field_registry import validate_field_type_config
+        try:
+            validate_field_type_config(field_type, opts, field_label)
+        except ValueError as e:
+            raise MetaError(str(e))
     has_serial = data_type == "serial" or bool(opts.get("serial"))
     if opts.get("serial") and data_type not in ("serial", "varchar", "text"):
         raise MetaError(f"字段「{field_label}」的类型不支持自动编号（仅 单行文本/多行文本/自动编号）")
@@ -150,7 +158,8 @@ def create_business_table(db: Session, payload: TableCreate, owner_id: int,
     validate_fields(payload.fields)
     new_names = {f.field_name for f in payload.fields}
     for f in payload.fields:
-        validate_field_options(db, f.data_type, f.widget, f.options, new_names, f.label)
+        validate_field_options(db, f.data_type, f.widget, f.options, new_names, f.label,
+                               getattr(f, "field_type", None))
     base = payload.name or slugify(payload.label)
     name = unique_physical_name(db, base)
     storage_mode = getattr(payload, "storage_mode", None) or "json"
@@ -187,6 +196,7 @@ def create_business_table(db: Session, payload: TableCreate, owner_id: int,
             table_id=mt.id, field_name=f.field_name, label=f.label, data_type=f.data_type,
             length=f.length, nullable=f.nullable, default_value=f.default_value,
             widget=f.widget, options=options, sort_order=i,
+            field_type=getattr(f, "field_type", None),
         ))
     db.commit()
     db.refresh(mt)
@@ -255,7 +265,8 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
             opts = dict(fin.options or {})
             if fin.data_type == "subform":
                 opts.setdefault("show_in_list", False)   # 明细字段默认不进列表
-            validate_field_options(db, fin.data_type, widget, opts, set(by_name) | {fin.field_name}, fin.label)
+            validate_field_options(db, fin.data_type, widget, opts, set(by_name) | {fin.field_name}, fin.label,
+                                   fin.field_type)
             if not is_json:
                 if not _physical_exists(mt.name):
                     raise MetaError("物理表不存在，无法加列")
@@ -266,6 +277,7 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
                 length=fin.length, nullable=fin.nullable, default_value=fin.default_value,
                 widget=widget, options=opts,
                 sort_order=(fields[-1].sort_order + 1) if fields else 0,
+                field_type=fin.field_type,
             )
             db.add(f)
             db.flush()
@@ -332,11 +344,12 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
         # update_field：只改出现的键
         new_widget = op.get("widget") or f.widget
         new_options = op.get("options") if op.get("options") is not None else (f.options or {})
+        new_field_type = op.get("field_type") or f.field_type
         validate_field_options(db, op.get("data_type") or f.data_type, new_widget, new_options,
-                               set(by_name), f.label)
+                               set(by_name), f.label, new_field_type)
         new_type = op.get("data_type")
         if new_type and new_type != f.data_type:
-            if new_type not in ("varchar", "text", "int", "decimal", "date", "datetime", "bool"):
+            if new_type not in ("varchar", "text", "int", "decimal", "date", "datetime", "bool", "json"):
                 raise MetaError(f"不支持的字段类型：{new_type}")
             if not is_json:
                 raise MetaError("physical 模式表暂不支持修改字段类型（可导出数据后重建表，或联系管理员）")
@@ -359,7 +372,7 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
             msg = f"字段「{f.label}」类型 {old_type} → {new_type}（转换 {n} 条存量数据"
             msg += f"，{cleared} 条无法转换已置空）" if cleared else "）"
             changes.append(msg)
-        for attr in ("label", "nullable", "widget", "options", "default_value", "sort_order"):
+        for attr in ("label", "nullable", "widget", "options", "default_value", "sort_order", "field_type"):
             if op.get(attr) is not None:
                 setattr(f, attr, op[attr])
         if op.get("label"):
@@ -392,6 +405,7 @@ def field_out(f: MetaField) -> dict:
         "data_type": f.data_type, "length": f.length, "nullable": f.nullable,
         "default_value": f.default_value, "widget": f.widget,
         "options": f.options or {}, "sort_order": f.sort_order,
+        "field_type": f.field_type,
     }
 
 

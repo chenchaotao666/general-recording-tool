@@ -24,6 +24,7 @@ class FieldIn(BaseModel):
     default_value: str | None = None
     widget: str = "input"
     options: dict = {}
+    field_type: str | None = None     # 智能表字段类型（text/singleSelect/...）；None=普通字段
 
     @field_validator("field_name")
     @classmethod

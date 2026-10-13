@@ -14,6 +14,9 @@
           <el-menu-item v-if="hasMenu('menu_tables')" index="/tables">
             <el-icon><Grid /></el-icon><span>数据表</span>
           </el-menu-item>
+          <el-menu-item v-if="hasMenu('menu_smart_tables')" index="/smart">
+            <el-icon><Tickets /></el-icon><span>智能表</span>
+          </el-menu-item>
           <el-menu-item v-if="hasMenu('menu_import')" index="/import">
             <el-icon><Upload /></el-icon><span>导入 Excel</span>
           </el-menu-item>
@@ -165,7 +168,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElLoading, ElMessage } from 'element-plus'
-import { Avatar, Bell, Brush, Collection, Connection, DataAnalysis, Document, Expand, Fold, Grid, HomeFilled, Notebook, OfficeBuilding, Postcard, PriceTag, Setting, Share, Upload, User, UserFilled, Wallet } from '@element-plus/icons-vue'
+import { Avatar, Bell, Brush, Collection, Connection, DataAnalysis, Document, Expand, Fold, Grid, HomeFilled, Notebook, OfficeBuilding, Postcard, PriceTag, Setting, Share, Tickets, Upload, User, UserFilled, Wallet } from '@element-plus/icons-vue'
 import { changePassword as changePasswordApi, getCurrentTenant, switchTenant, unreadCount } from './api'
 import AssistantPanel from './components/AssistantPanel.vue'
 

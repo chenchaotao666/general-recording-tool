@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import assistant, audit, auth, billing, departments, dyn, excel, friends, groups, home, images, mcp, members, mindmaps, notes, notify, platform, print_templates, rbac, reports, scopes, settings as settings_router, share_links, shares, tables, tenants, users, vision, whiteboards, workflows
+from .routers import assistant, audit, auth, billing, departments, dyn, excel, friends, groups, home, images, mcp, members, mindmaps, notes, notify, platform, print_templates, rbac, reports, scopes, settings as settings_router, share_links, shares, smart_docs, smart_records, smart_views, tables, tenants, users, vision, whiteboards, workflows
 from .services import scheduler
 from .services.migrate import run_migrations
 from .utils.auth import get_current_user, hash_password
@@ -106,6 +106,9 @@ app.include_router(audit.router, dependencies=protected)
 app.include_router(departments.router, dependencies=protected)
 app.include_router(scopes.router, dependencies=protected)
 app.include_router(billing.router, dependencies=protected)
+app.include_router(smart_docs.router, dependencies=protected)
+app.include_router(smart_views.router, dependencies=protected)
+app.include_router(smart_records.router, dependencies=protected)
 
 # 前端构建产物存在时直接由后端托管（生产模式）
 # Excalidraw 素材库：独立目录按需托管（前端打开素材库面板时才加载，不进前端 dist；静态资源不做鉴权）

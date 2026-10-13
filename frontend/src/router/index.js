@@ -27,6 +27,10 @@ const router = createRouter({
     // 首页工作台：懒加载隔离 grid-layout-plus 体积
     { path: '/home', component: () => import('../views/Home.vue'), meta: { title: '首页' } },
     { path: '/tables', component: TableList , meta: { perm: 'menu_tables', title: '数据表' } },
+    // 智能表（智慧表格）：V1 MVP 开发中，先占位菜单入口
+    { path: '/smart', component: () => import('../views/SmartTables.vue'), meta: { perm: 'menu_smart_tables', title: '智能表' } },
+    // vxe-table spike（V1 技术验证页，mock 数据不依赖后端）
+    { path: '/smart/spike', component: () => import('../views/smart/SpikeGrid.vue'), meta: { perm: 'menu_smart_tables', title: '智能表-Spike' } },
     { path: '/friends', component: Friends , meta: { perm: 'menu_friends', title: '好友' } },
     { path: '/import', component: ImportWizard , meta: { perm: 'menu_import', title: '导入 Excel' } },
     { path: '/t/:id', component: DynamicTable, meta: { title: '数据表详情' } },

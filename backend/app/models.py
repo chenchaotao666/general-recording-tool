@@ -29,13 +29,70 @@ class MetaField(Base):
     table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
     field_name = Column(String(64), nullable=False)
     label = Column(String(128), nullable=False)
-    data_type = Column(String(16), nullable=False)   # varchar/text/int/decimal/date/datetime/bool
+    data_type = Column(String(16), nullable=False)   # varchar/text/int/decimal/date/datetime/bool/json
     length = Column(Integer, default=255)
     nullable = Column(Boolean, default=True)
     default_value = Column(String(256))
     widget = Column(String(32), default="input")
-    options = Column(JSON, default=dict)             # source_header / 枚举项 / show_in_list 等
+    options = Column(JSON, default=dict)             # source_header / 枚举项 / 字段类型 config 等
     sort_order = Column(Integer, default=0)
+    field_type = Column(String(32))                  # 智能表字段类型（text/singleSelect/...）；NULL=存量老字段
+
+
+class SmartDoc(Base):
+    """智能表文档：V1 每租户一个默认文档（is_default=1，惰性创建）"""
+    __tablename__ = "smart_docs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    name = Column(String(128), nullable=False, default="智能表")
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)
+    is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class SmartDocEntry(Base):
+    """智能表文档条目树：folder / sheet（sheet 通过 ref_table_id 关联 meta_tables）"""
+    __tablename__ = "smart_doc_entries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    doc_id = Column(Integer, ForeignKey("smart_docs.id"), index=True, nullable=False)
+    parent_id = Column(Integer, ForeignKey("smart_doc_entries.id"), index=True)  # NULL=根级
+    type = Column(String(16), nullable=False)        # folder | sheet
+    name = Column(String(128), nullable=False)
+    ref_table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True)  # type=sheet 时非空
+    order_no = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class MetaView(Base):
+    """表格视图：同一数据的多套展示配置（筛选/排序/填色/行高/列显隐等，见设计文档 §2.3）"""
+    __tablename__ = "meta_views"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
+    name = Column(String(100), nullable=False, default="表格视图")
+    type = Column(String(16), default="grid")        # V1 仅 grid
+    config = Column(JSON, default=dict)              # filters/sorts/fillRules/rowHeight/fieldVisibility/fieldOrder/colWidths/frozenFieldId/aggregations
+    is_default = Column(Boolean, default=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class MetaViewPref(Base):
+    """视图的个人覆盖（「调整仅你可见」）：V1 仅承载 filters 键，合并语义=替换视图 filters"""
+    __tablename__ = "meta_view_prefs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    view_id = Column(Integer, ForeignKey("meta_views.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    config = Column(JSON, default=dict)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (UniqueConstraint("view_id", "user_id", name="uq_view_prefs"),)
 
 
 class SerialCounter(Base):

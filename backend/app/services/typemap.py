@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation
 from dateutil import parser as dtparser
 from sqlalchemy import BigInteger, Boolean, Column, Date, DateTime, Numeric, String, Text
 
-DATA_TYPES = ["varchar", "text", "int", "decimal", "date", "datetime", "bool", "image", "subform", "serial"]
+DATA_TYPES = ["varchar", "text", "int", "decimal", "date", "datetime", "bool", "image", "subform", "serial", "json"]
 WIDGETS = ["input", "textarea", "number", "date-picker", "datetime-picker", "select", "switch", "image-uploader",
            "relation-picker", "subform", "serial"]
 
@@ -72,6 +72,8 @@ def sa_column(field) -> Column:
         col_type = Text()   # 存图片 file_id 的 JSON 数组
     elif t == "subform":
         col_type = Text()   # 存明细行的 JSON 数组（行结构见 field.options.columns）
+    elif t == "json":
+        col_type = Text()   # 智能表复合值（多选/人员/链接等）的 JSON 文本
     else:
         raise ValueError(f"不支持的字段类型：{t}")
     return Column(field.field_name, col_type, nullable=field.nullable, comment=field.label)
@@ -199,6 +201,11 @@ def coerce_value(v, data_type: str, nullable: bool = True, options: dict | None 
             return (True, out or None, None) if out else (True, None, None)
         if data_type == "subform":
             return _coerce_subform(v, options or {})
+        if data_type == "json":
+            # 智能表复合值：数组/对象原样通过（细校验由 field_registry 按 field_type 做）
+            if isinstance(v, (list, dict)):
+                return True, v, None
+            return False, None, f"值「{v}」必须是数组或对象"
         raise ValueError
     except (ValueError, InvalidOperation):
         return False, None, f"值「{v}」无法转换为 {data_type}"

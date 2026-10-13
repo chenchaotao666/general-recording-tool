@@ -48,8 +48,8 @@ def _image_field_names(fields: list[MetaField]) -> list[str]:
 
 
 def _json_field_names(fields: list[MetaField]) -> list[str]:
-    """physical 模式下以 JSON 字符串存 Text 列的字段（image / subform）。"""
-    return [f.field_name for f in fields if f.data_type in ("image", "subform")]
+    """physical 模式下以 JSON 字符串存 Text 列的字段（image / subform / json）。"""
+    return [f.field_name for f in fields if f.data_type in ("image", "subform", "json")]
 
 
 def _encode_json_fields(cleaned: dict, fields: list[MetaField]) -> None:

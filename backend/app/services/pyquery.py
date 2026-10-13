@@ -48,6 +48,8 @@ def normalize_value(v, data_type: str):
         return v if isinstance(v, list) else None   # 图片字段存 file_id 列表，原样保留
     if data_type == "subform":
         return v if isinstance(v, list) else None   # 明细行存 JSON 数组，原样保留（不参与筛选语义）
+    if data_type == "json":
+        return v   # 智能表复合值（多选/人员/链接等）：原样保留 list/dict/str
     return str(v)
 
 
@@ -100,8 +102,27 @@ def match_rule(rec: dict, fields_by_name: dict, flt: dict) -> bool:
         return v is None
     if op == "not_null":
         return v is not None
+    # 空语义扩展（智能表视图 DSL isEmpty/isNotEmpty）：覆盖 None / 空串 / 空数组 / 空对象
+    if op == "empty":
+        return v is None or v == "" or v == [] or v == {}
+    if op == "not_empty":
+        return not (v is None or v == "" or v == [] or v == {})
 
     f = fields_by_name.get(name)
+
+    # 数组字段（多选/人员等 json 类型）的集合语义
+    if isinstance(v, list) and op in ("contains", "not_contains", "eq", "ne"):
+        cell = {str(x) for x in v}
+        want = value if isinstance(value, list) else [value]
+        want_set = {str(x) for x in want}
+        hit = bool(cell & want_set)
+        if op == "contains":
+            return hit            # 交集非空
+        if op == "not_contains":
+            return not hit
+        if op == "eq":
+            return len(want_set) == 1 and hit   # 单值归属
+        return not (len(want_set) == 1 and hit)
     is_date = f is not None and f.data_type == "date"
     now = datetime.now()
     today = now.date()
@@ -139,6 +160,8 @@ def match_rule(rec: dict, fields_by_name: dict, flt: dict) -> bool:
 
     if op == "contains":
         return v is not None and str(value).casefold() in str(v).casefold()
+    if op == "not_contains":
+        return v is not None and str(value).casefold() not in str(v).casefold()
     if op == "startswith":
         return v is not None and str(v).casefold().startswith(str(value).casefold())
     if op == "in":
@@ -191,3 +214,40 @@ def sort_records(recs: list[dict], sort_by: str | None, sort_order: str | None,
         return (0, str(v))
 
     return sorted(recs, key=key, reverse=reverse)
+
+
+def sort_records_multi(recs: list[dict], sorts: list[dict] | None,
+                       fields_by_name: dict) -> list[dict]:
+    """多级稳定排序：sorts=[{field, direction}]，数组序=优先级；direction 缺省 asc。
+    None 视为最小值（与单列排序一致）。sorts 为空时回落 id desc。"""
+    if not sorts:
+        return sort_records(recs, None, None, fields_by_name)
+    sortable = set(fields_by_name) | {"id", "created_at", "updated_at"}
+    keys = [((s.get("fieldId") or s.get("field")), s.get("direction", "asc"))
+            for s in sorts]
+    keys = [(f, d) for f, d in keys if f in sortable]
+    if not keys:
+        return sort_records(recs, None, None, fields_by_name)
+
+    def key_for(name):
+        def k(rec):
+            v = rec.get(name)
+            if v is None:
+                return (-1, 0)
+            if isinstance(v, bool):
+                return (0, int(v))
+            if isinstance(v, (int, float, Decimal)):
+                return (0, float(v))
+            if isinstance(v, datetime):
+                return (0, v.timestamp())
+            if isinstance(v, date):
+                return (0, float(v.toordinal()))
+            if isinstance(v, list):   # 多选等：按选项序排序需 options 上下文，V1 取首个元素
+                return (0, str(v[0]) if v else "")
+            return (0, str(v))
+        return k
+
+    out = list(recs)
+    for name, direction in reversed(keys):   # 稳定排序：从最低优先级键开始排
+        out.sort(key=key_for(name), reverse=(direction == "desc"))
+    return out
