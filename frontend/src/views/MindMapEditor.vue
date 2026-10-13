@@ -103,8 +103,9 @@
     <el-dialog v-model="ai.visible" title="AI 生成思维导图" width="520px" append-to-body destroy-on-close>
       <el-input
         v-model="ai.instruction" type="textarea" :rows="3"
-        placeholder="描述导图主题，如：帮我整理一份 Vue3 学习路线 / 制定一次北京三日游计划"
+        placeholder="描述导图主题，如：帮我整理一份 Vue3 学习路线 / 制定一次北京三日游计划；也可附图，从图片中提取结构"
       />
+      <AiImagePicker v-model="ai.images" />
       <el-radio-group v-if="ai.canExpand" v-model="ai.mode" style="margin-top: 10px">
         <el-radio value="rebuild">重建整图（清空现有内容）</el-radio>
         <el-radio value="expand">在选中节点「{{ ai.nodeText }}」下扩写</el-radio>
@@ -140,6 +141,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowDown, Back, Check, RefreshLeft, RefreshRight } from '@element-plus/icons-vue'
 import { getMindmap, mindmapAiAssist, updateMindmap } from '../api'
 import MindmapSimple from '../components/MindmapSimple.vue'
+import AiImagePicker from '../components/AiImagePicker.vue'
 
 // simple-mind-map 主题（simple-mind-map-plugin-themes 注册；中文标签为本项目翻译）
 // 分组展示 + 预览色块（swatch 为各主题主色，近似即可）
@@ -275,7 +277,7 @@ function applyStyle(prop, v) {
 }
 
 // ---------- AI 生成（渐进渲染：节点逐个出现在画布上） ----------
-const ai = reactive({ visible: false, loading: false, instruction: '', mode: 'rebuild', canExpand: false, nodeText: '' })
+const ai = reactive({ visible: false, loading: false, instruction: '', mode: 'rebuild', canExpand: false, nodeText: '', images: [] })
 
 function openAi() {
   // 选中非根节点时提供「在该节点下扩写」选项
@@ -283,6 +285,7 @@ function openAi() {
   ai.canExpand = !!target && !target.isRoot
   ai.nodeText = target?.getData('text')?.replace(/<[^>]+>/g, '').slice(0, 20) || ''
   ai.mode = ai.canExpand ? 'expand' : 'rebuild'
+  ai.images = []
   ai.visible = true
 }
 
@@ -298,6 +301,7 @@ async function aiGenerate() {
       mode: expand ? 'expand' : 'rebuild',
       node_text: ai.nodeText,
       context: context.slice(-30),
+      images: ai.images,
     })
     ai.visible = false
     // 渐进渲染：节点逐个出现（每节点 ~150ms），期间 loading 保持，结束后自动保存由防抖兜底

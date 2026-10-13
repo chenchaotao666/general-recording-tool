@@ -22,6 +22,7 @@
 // 协议要点：iframe 就绪发 init → 我们回 {action:'load', autosave:1, xml}
 // → 之后每次画布变动 iframe 自动发 autosave（带 xml）
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { buildMxfile, mergeMxfile, partUnits, shiftUnits, unitsBBox, xmlBBox, xmlContext } from './drawioAi'
 
 const ORIGIN = 'https://embed.diagrams.net'
 // ui=kennedy 经典全套界面；libraries=1 开图形库侧栏；关掉保存/退出按钮（保存由画板页自动保存接管）
@@ -105,6 +106,61 @@ function getContent() {
   return currentJson()
 }
 
+// ---------- AI 生成：parts（结构图/绘画）→ units → drawio mxfile，通过 load 动作下发 ----------
+
+// 对外：把 AI 生成的内容应用到画布。replace=全新 mxfile（视口居中内容）；
+// append=解析现有 XML 合并新 cells（保留原视口，新内容放右侧），解析失败回退替换。
+// 注意：drawio embed 协议拿不到 iframe 内的选区（跨域 + 协议无此消息），
+// 所以 modify 只能是整画布重新生成，不像 excalidraw 侧支持选中局部替换。
+// 返回是否真正写入（编辑器未就绪/无内容时 false，调用方据此提示）
+function applyAiContent(d, { append = false } = {}) {
+  if (!ready.value) return false
+  const parts = d?.parts?.length ? d.parts : [d]
+  const stamp = Date.now().toString(36)
+  // 逐部分转 units：id 带时间戳前缀（与画布已有元素、跨部分都隔离），横向排开
+  let units = []
+  parts.forEach((part, i) => {
+    const us = partUnits(part, `ai-${stamp}-p${i}-`)
+    const bb = unitsBBox(us)
+    if (!bb) return
+    const cur = unitsBBox(units)
+    units = units.concat(cur ? shiftUnits(us, cur.maxX + 160 - bb.minX, 0) : us)
+  })
+  if (!units.length) return false
+
+  if (append) {
+    const merged = mergeMxfile(latestXml, shiftToRight(units))
+    if (merged) {
+      loadXml(merged)
+      return true
+    }
+    // 现有 XML 为空/损坏：按替换处理
+  }
+  loadXml(buildMxfile(units, frameEl.value?.clientWidth || 960, frameEl.value?.clientHeight || 640))
+  return true
+}
+
+// 下发 load 动作并同步 latestXml + 触发保存：load 本身不会让 drawio 标脏，
+// 不主动回发 autosave，不更新的话切页/卸载时 AI 内容会丢
+function loadXml(xml) {
+  post({ action: 'load', autosave: 1, xml })
+  latestXml = xml
+  scheduleEmit()
+}
+
+// 追加时的偏移：现有内容右侧 120px、顶对齐；无现有内容保持原坐标
+function shiftToRight(units) {
+  const bb = unitsBBox(units)
+  const ex = xmlBBox(latestXml)
+  if (!bb || !ex) return units
+  return shiftUnits(units, ex.maxX + 120 - bb.minX, ex.minY - bb.minY)
+}
+
+// 对外：提取画布概要（供 AI 追加/修改/汇总参考）
+function getContext() {
+  return xmlContext(latestXml)
+}
+
 onMounted(() => {
   window.addEventListener('message', onMessage)
   armInitTimeout()
@@ -116,7 +172,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('message', onMessage)
 })
 
-defineExpose({ getContent })
+defineExpose({ getContent, applyAiContent, getContext })
 </script>
 
 <style scoped>

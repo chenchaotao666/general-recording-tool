@@ -587,14 +587,16 @@ def build_search_answer_prompt(message: str, history: list[dict], queries: list[
     return "\n".join(lines)
 
 
-# ---------- 画板 AI 生成（引擎无关的节点/连线结构，前端各自转换） ----------
+# ---------- 画板 AI 生成（操作路由：替换/追加/修改/汇总；内容路由：结构图=节点/连线，绘画=带坐标的元素） ----------
 
-DIAGRAM_SYSTEM = (
-    "你是图表结构设计师。用户用自然语言描述想要的流程图/结构图，"
-    "你设计出节点和连线的结构。只输出 JSON，不要输出任何其他内容。"
+BOARD_SYSTEM = (
+    "你是画板内容设计师。用户用自然语言描述想在画板上做的操作，"
+    "你判断操作类型（生成/追加/修改/汇总）和内容类型（结构图/绘画/表格组件），按对应格式输出；"
+    "一个需求包含多个独立内容时，用 parts 数组输出多个部分。只输出 JSON，不要输出任何其他内容。"
 )
 
-_DIAGRAM_OUTPUT_EXAMPLE = {
+_BOARD_DIAGRAM_EXAMPLE = {
+    "type": "diagram",
     "title": "请假审批流程",
     "nodes": [
         {"id": "n1", "label": "开始", "shape": "ellipse"},
@@ -612,16 +614,152 @@ _DIAGRAM_OUTPUT_EXAMPLE = {
     ],
 }
 
+_BOARD_DRAWING_EXAMPLE = {
+    "type": "drawing",
+    "title": "小人",
+    "elements": [
+        {"type": "ellipse", "x": -40, "y": -170, "width": 80, "height": 80},
+        {"type": "line", "x": 0, "y": -90, "points": [[0, 0], [0, 120]]},
+        {"type": "line", "x": -60, "y": -60, "points": [[0, 0], [120, 0]]},
+        {"type": "line", "x": 0, "y": 30, "points": [[0, 0], [-45, 80]]},
+        {"type": "line", "x": 0, "y": 30, "points": [[0, 0], [45, 80]]},
+    ],
+}
 
-def build_diagram_prompt(description: str) -> str:
-    """画板 AI 生成提示词：描述 → 节点/连线结构 JSON（坐标布局由前端 dagre 负责，模型不输出坐标）。"""
-    return (
-        f"用户需求：{description}\n\n"
-        "请设计这张图的节点与连线结构，要求：\n"
-        "1. 节点 5~15 个，label 简洁（2~8 个字），id 用 n1、n2、… 顺序编号\n"
-        "2. shape 取值：ellipse=开始/结束节点，diamond=判断/审批节点，rect=普通步骤（默认）\n"
-        "3. edges 表达流向，source/target 必须是已定义的节点 id；判断节点的分支边要写 label（如 通过/驳回）\n"
-        "4. 不要输出坐标/样式，布局由程序自动完成\n"
-        "5. title 给图起个简短标题\n\n"
-        f"输出格式示例：\n{json.dumps(_DIAGRAM_OUTPUT_EXAMPLE, ensure_ascii=False, indent=2)}"
+# 复合需求示例：一个流程图部分 + 一个绘画部分
+_BOARD_PARTS_EXAMPLE = {
+    "mode": "replace",
+    "title": "辞职流程与喝咖啡的人",
+    "parts": [
+        {
+            "type": "diagram",
+            "title": "辞职流程",
+            "nodes": [
+                {"id": "n1", "label": "提交辞职申请", "shape": "rect"},
+                {"id": "n2", "label": "主管审批", "shape": "diamond"},
+                {"id": "n3", "label": "办理交接", "shape": "rect"},
+            ],
+            "edges": [
+                {"source": "n1", "target": "n2"},
+                {"source": "n2", "target": "n3", "label": "通过"},
+            ],
+        },
+        {
+            "type": "drawing",
+            "title": "喝咖啡的人",
+            "elements": [
+                {"type": "ellipse", "x": -40, "y": -170, "width": 80, "height": 80},
+                {"type": "line", "x": 0, "y": -90, "points": [[0, 0], [0, 120]]},
+                {"type": "rectangle", "x": 30, "y": -70, "width": 36, "height": 44},
+                {"type": "line", "x": 0, "y": -60, "points": [[0, 0], [36, -12]]},
+            ],
+        },
+    ],
+}
+
+# 表格组件示例（原生表格组件：drawio 渲染为 shape=table 嵌套结构，excalidraw 渲染为矩形网格）
+_BOARD_TABLE_EXAMPLE = {
+    "type": "component",
+    "kind": "table",
+    "title": "项目排期表",
+    "headers": ["阶段", "负责人", "时间"],
+    "rows": [
+        ["需求评审", "张三", "10月第1周"],
+        ["开发", "李四", "10月第2-3周"],
+        ["测试上线", "王五", "10月第4周"],
+    ],
+}
+
+# 内容 schema 说明（替换/追加/修改共用；坐标规则不同：结构图不输出坐标，绘画必须输出）
+_BOARD_SCHEMA_SPEC = (
+    "内容类型 type 的判断：\n"
+    '- "diagram"：强调事物之间的流程/层级/关系，如审批流程、系统架构、组织结构、学习计划\n'
+    '- "drawing"：画一个具体形象的简笔画/图案，如"画一个人""画一只猫""画个房子"。'
+    "描述里出现「画/画一个/画只」且对象是具体物体时，选 drawing\n"
+    '- "component"：行列结构的表格数据，如人员名单、对比表、排期表、清单。'
+    "描述里出现「表格/清单/对比/排期/名单」时选它，用原生表格组件而不是矩形拼接\n\n"
+    "【diagram 格式】要求：\n"
+    "1. 节点 5~15 个，label 简洁（2~8 个字），id 用 n1、n2、… 顺序编号\n"
+    "2. shape 取值：ellipse=开始/结束节点，diamond=判断/审批节点，rect=普通步骤（默认）\n"
+    "3. edges 表达流向，source/target 必须是已定义的节点 id；判断节点的分支边要写 label（如 通过/驳回）\n"
+    "4. 不要输出坐标，布局由程序自动完成\n"
+    f"示例：\n{json.dumps(_BOARD_DIAGRAM_EXAMPLE, ensure_ascii=False, indent=2)}\n\n"
+    "【drawing 格式】要求：\n"
+    "1. 用基础图形拼出图案，element 的 type 取值：rectangle/ellipse/diamond/line/arrow，共 3~40 个\n"
+    "2. 图形元素（rectangle/ellipse/diamond）给 x、y、width、height\n"
+    "3. 线元素（line/arrow）给 x、y 和 points：points 是相对 x,y 的折点数组，第一个点用 [0,0]，至少 2 个点\n"
+    "4. 以画面中心为坐标原点 (0,0)，整体尺寸控制在 800×800 以内\n"
+    "5. 像简笔画一样概括轮廓，注意各部件的位置和比例关系\n"
+    f"示例：\n{json.dumps(_BOARD_DRAWING_EXAMPLE, ensure_ascii=False, indent=2)}\n\n"
+    "【component 格式】kind 目前只有 table，要求：\n"
+    "1. headers 为表头数组（1~6 列，每列 2~6 个字），rows 为数据行数组（0~12 行，每行单元格数与表头一致）\n"
+    "2. 单元格内容简洁（≤20 个字）；没有明确表头时根据内容自拟首行\n"
+    f"示例：\n{json.dumps(_BOARD_TABLE_EXAMPLE, ensure_ascii=False, indent=2)}\n\n"
+    "【多个内容】用户需求包含多个相互独立的内容时（常见信号：用「和」「以及」「再」连接不同对象，"
+    "如\"画一个辞职流程图和一个人喝咖啡的画\"），输出 parts 数组，每个部分各自遵循上面的 diagram/drawing/component "
+    "格式（各自带 type/title 和 nodes+edges 或 elements 或 headers+rows），程序会把各部分横向排开渲染；"
+    "单个内容时不要包 parts，直接输出。\n"
+    f"示例：\n{json.dumps(_BOARD_PARTS_EXAMPLE, ensure_ascii=False, indent=2)}"
+)
+
+# 画布上下文（前端提取的元素概要）截断上限，防 token 爆炸
+_BOARD_CONTEXT_MAX_ITEMS = 200
+_BOARD_CONTEXT_MAX_CHARS = 6000
+
+
+def _format_board_context(context: list | None) -> str:
+    if not context:
+        return ""
+    return json.dumps(context[:_BOARD_CONTEXT_MAX_ITEMS], ensure_ascii=False)[:_BOARD_CONTEXT_MAX_CHARS]
+
+
+def build_board_prompt(description: str, mode: str = "auto", context: list | None = None) -> str:
+    """画板 AI 提示词。mode：replace/append/modify/summarize/auto（auto 由模型判断，输出带 mode 字段）。
+    修改/汇总/追加依赖 context（当前画布元素概要，selected=true 是用户选中的元素）；
+    结构图不输出坐标，绘画必须输出坐标。有选中元素时的修改：只输出选中部分，前端局部替换。"""
+    ctx = _format_board_context(context)
+    has_selection = any(isinstance(c, dict) and c.get("selected") for c in (context or []))
+    sel_note = "，selected=true 表示用户当前选中的元素" if has_selection else ""
+    ctx_block = f"当前画布内容（元素概要 JSON{sel_note}）：\n{ctx}\n\n" if ctx else ""
+
+    if mode == "summarize":
+        scope = ("用户选中了部分元素（context 里 selected=true 的项）。"
+                 "如果需求提到「这些/选中的/这部分」等，只汇总选中部分；否则汇总整个画布。\n"
+                 if has_selection else "")
+        return (
+            f"用户需求：{description}\n\n"
+            f"{ctx_block}"
+            f"{scope}"
+            "请汇总内容，输出 JSON：\n"
+            '{"mode": "summarize", "summary": "汇总文字（200 字以内，分要点、有条理）"}'
+        )
+
+    # 修改的输出范围：有选中 → 只输出选中部分（前端局部替换，未选中内容原样保留）；
+    # 无选中 → 输出修改后的完整画布内容（前端整体替换）
+    modify_rule = (
+        "用户选中了画布中的部分元素（context 里 selected=true 的项），需求就是针对它们。"
+        "只输出选中部分修改后的完整内容（程序会用输出替换这些选中元素）；"
+        "未选中的元素保持不变，绝对不要输出。"
+        if has_selection else
+        "输出修改后的完整画布内容，不能只输出改动部分。"
     )
+
+    if mode == "auto":
+        task = (
+            "第一步，判断操作类型 mode，输出时带上该字段：\n"
+            '- "replace"：生成全新内容替换画布（描述没提及已有内容时用；画布为空时也只能用它）\n'
+            '- "append"：在现有内容上追加（如"再加一个…""补充…""旁边画个…"），不要重复已有内容\n'
+            f'- "modify"：修改现有内容（如"把…改成…""删除…""调整…"）。{modify_rule}\n'
+            '- "summarize"：汇总/总结画布内容（如"总结一下""汇总这张画布"），'
+            '只输出 {"mode": "summarize", "summary": "汇总文字（200 字以内）"}，不进行下面的步骤\n\n'
+            "第二步（replace/append/modify 时），判断内容类型并按格式输出。\n\n"
+        )
+    else:
+        note = {
+            "replace": "生成新内容，替换画布现有内容。",
+            "append": "生成新内容追加到画布，不要重复已有内容。",
+            "modify": f"按用户需求修改画布内容。{modify_rule}",
+        }[mode]
+        task = f"任务：{note}输出时带上 \"mode\": \"{mode}\" 字段。\n\n"
+
+    return f"用户需求：{description}\n\n{ctx_block}{task}{_BOARD_SCHEMA_SPEC}"

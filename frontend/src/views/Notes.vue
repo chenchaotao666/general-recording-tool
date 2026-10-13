@@ -65,9 +65,10 @@
           </div>
           <input
             ref="aiInputRef" v-model="ai.instruction" class="ai-input"
-            :placeholder="ai.selected ? '对选中内容做什么？如：润色 / 扩写 / 总结 / 翻译（直接回车=润色）' : '描述要生成的内容，如：写一份本周工作总结'"
+            :placeholder="ai.selected ? '对选中内容做什么？如：润色 / 扩写 / 总结 / 翻译（直接回车=润色）' : '描述要生成的内容，如：写一份本周工作总结；也可粘贴截图按图生成'"
             @keydown.enter.prevent="aiGenerate"
           />
+          <AiImagePicker v-if="!ai.preview" v-model="ai.images" />
           <!-- 选中内容时的快捷指令：点一下直接生成，不用打字 -->
           <div v-if="ai.selected && !ai.preview" class="ai-quick">
             <button
@@ -103,6 +104,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowRight, ArrowUp, Delete, Document, Plus, Search, Top } from '@element-plus/icons-vue'
 import { createNote, deleteNote, getNote, noteAiAssist, noteTree, searchNotes, updateNote } from '../api'
 import WangRichEditor from '../components/notes/WangRichEditor.vue'
+import AiImagePicker from '../components/AiImagePicker.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -117,7 +119,7 @@ const editorRef = ref(null)
 const collapsed = ref(new Set())  // 目录树中收起的页面 id
 
 // AI 写作面板（可拖动；点击外部 / Esc 关闭）
-const ai = ref({ visible: false, loading: false, instruction: '', error: '', preview: null, x: null, y: null })
+const ai = ref({ visible: false, loading: false, instruction: '', error: '', preview: null, x: null, y: null, images: [] })
 const aiInputRef = ref(null)
 const mainRef = ref(null)
 
@@ -254,7 +256,7 @@ function openAi() {
   // 面板聚焦前抓取选区：有选中内容时它是本次 AI 操作的主要对象
   const sel = (editorRef.value?.getSelectionText() || '').trim()
   ai.value = { visible: true, loading: false, instruction: '', error: '', preview: null,
-               x: null, y: null, maxH: null, selected: sel }
+               x: null, y: null, maxH: null, selected: sel, images: [] }
   placeAiPanel()
   nextTick(() => aiInputRef.value?.focus())
   // 点击面板外 / 任意位置 Esc 关闭（capture 阶段，面板内 Esc 也能生效）
@@ -355,7 +357,7 @@ async function aiGenerate() {
     const text = editorRef.value?.getText() || ''
     const context = text.split('\n').map((s) => s.trim()).filter(Boolean).slice(-20)
     const res = await noteAiAssist({ instruction, note_title: current.value?.title || '', context,
-                                     selection: ai.value.selected || '' })
+                                     selection: ai.value.selected || '', images: ai.value.images || [] })
     ai.value.preview = res.html  // 只预览，不写入；用户点「插入」才进文档
     clampAiPanel()               // 预览撑高面板后重新校准位置/高度，防止底部被编辑区裁掉
   } catch (e) {

@@ -97,6 +97,7 @@ class MindmapAiIn(BaseModel):
     mode: str = "rebuild"        # rebuild=整图重建 | expand=在选中节点下扩写
     node_text: str = ""          # expand 模式的父节点文本
     context: list[str] = []      # 现有节点文本（供衔接，可选）
+    images: list[str] | None = None   # 附图（截图/照片）data URL，非空走视觉模型
 
 
 def _clean_ai_tree(node, depth, budget: list) -> dict | None:
@@ -164,9 +165,9 @@ def _clean_ai_gens(data: dict) -> list:
 @router.post("/ai-assist")
 def mindmap_ai_assist(payload: MindmapAiIn, db: Session = Depends(get_db),
                       ctx: Context = Depends(get_current_context)):
-    """AI 生成导图结构：rebuild 返回 {text, children}；expand 返回 {children}。"""
+    """AI 生成导图结构：rebuild 返回 {text, children}；expand 返回 {children}；支持附图识别。"""
     from ..services.llm import LLMError
-    from ..services.llm.gateway import extract_json, get_default_provider
+    from ..services.llm.gateway import _decode_data_urls, extract_json, get_default_provider
     from ..services.llm.prompts import MINDMAP_AI_SYSTEM, build_mindmap_ai_prompt
 
     instruction = (payload.instruction or "").strip()
@@ -174,18 +175,26 @@ def mindmap_ai_assist(payload: MindmapAiIn, db: Session = Depends(get_db),
         raise HTTPException(400, "请输入要生成的内容描述")
     try:
         provider = get_default_provider(db)
+        img_bytes = _decode_data_urls(payload.images)
     except LLMError as e:
         raise HTTPException(400, str(e))
     mode = "expand" if payload.mode == "expand" else "rebuild"
     prompt = build_mindmap_ai_prompt(instruction[:2000], mode, (payload.node_text or "")[:100],
                                      [str(t)[:60] for t in (payload.context or [])[-30:]])
+    if img_bytes:
+        prompt += (f"\n\n注意：用户附上了 {len(img_bytes)} 张图片，请从图片中提取主题和层次结构生成导图"
+                   "（例如：大纲文档、板书/白板照片、流程图、表格）。")
     last_err: Exception | None = None
     for attempt in range(2):
         current_prompt = prompt if attempt == 0 else (
             f"你上次的输出无法解析为合法 JSON，错误：{last_err}。请重新输出，只输出 JSON。\n\n原始任务：\n" + prompt
         )
         try:
-            data = extract_json(provider.complete(current_prompt, system=MINDMAP_AI_SYSTEM))
+            if img_bytes:
+                raw = provider.recognize(img_bytes, current_prompt, system=MINDMAP_AI_SYSTEM)
+            else:
+                raw = provider.complete(current_prompt, system=MINDMAP_AI_SYSTEM)
+            data = extract_json(raw)
             if not isinstance(data, dict):
                 raise ValueError("输出不是 JSON 对象")
             if mode == "expand":

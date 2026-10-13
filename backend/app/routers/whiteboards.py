@@ -5,6 +5,7 @@ content 为画布的序列化 JSON 字符串，服务端只做长度与 JSON 合
 drawio 存 {"xml": "<mxfile...>"}（iframe embed 协议收发，XML 包在 JSON 里过同一道校验）。
 """
 import json
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -123,19 +124,23 @@ def create_whiteboard(payload: WhiteboardIn, db: Session = Depends(get_db), user
     return _out(w, with_content=True)
 
 
-class DiagramIn(BaseModel):
+class GenerateIn(BaseModel):
     description: str
+    # auto=模型判断；replace/append/modify/summarize=用户指定。context=当前画布元素概要（修改/汇总/追加用）
+    mode: Literal["auto", "replace", "append", "modify", "summarize"] = "auto"
+    context: list[dict] | None = None
+    images: list[str] | None = None   # 附图（截图/照片）data URL，非空走视觉模型
 
 
-@router.post("/generate-diagram")
-def generate_diagram_api(payload: DiagramIn, db: Session = Depends(get_db),
+@router.post("/generate-content")
+def generate_content_api(payload: GenerateIn, db: Session = Depends(get_db),
                          user: User = Depends(get_current_user)):
-    """AI 生成图结构（引擎无关的 nodes/edges；excalidraw/drawio/X6 前端各自转换渲染）。
-    注意注册在 /{wb_id} 之前：Starlette 只按路径模板匹配，放后面会被当成 wb_id 命中 422。"""
+    """AI 画板操作：替换/追加/修改返回内容（结构图 nodes/edges，绘画 elements，组件如表格），
+    汇总返回文字；支持附图识别。注意注册在 /{wb_id} 之前：Starlette 只按路径模板匹配。"""
     from ..services.llm import LLMError
-    from ..services.llm.gateway import generate_diagram
+    from ..services.llm.gateway import generate_board_content
     try:
-        return generate_diagram(db, payload.description)
+        return generate_board_content(db, payload.description, payload.mode, payload.context, payload.images)
     except LLMError as e:
         raise HTTPException(400, str(e)) from e
 

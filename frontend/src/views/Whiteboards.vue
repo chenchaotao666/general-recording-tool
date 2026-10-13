@@ -56,9 +56,9 @@
           <input v-model="current.title" class="title-input" placeholder="无标题画板" maxlength="200" @input="onTitleInput" />
           <div class="main-ops">
             <span class="save-state" :class="{ err: saveState === '保存失败' }">{{ saveState }}</span>
-            <!-- AI 生成：目前只支持 excalidraw 画板（drawio 引擎待接入） -->
+            <!-- AI 生成：两种引擎都支持（excalidraw/drawio 各自实现转换层） -->
             <el-button
-              v-if="current.engine !== 'drawio'" size="small" type="primary" plain
+              size="small" type="primary" plain
               :icon="MagicStick" @click="aiVisible = true"
             >AI 生成</el-button>
           </div>
@@ -75,16 +75,33 @@
       <el-empty v-else description="选择左侧画板，或新建一个开始涂画" />
     </div>
 
-    <!-- AI 生成对话框：描述 → 后端 LLM 产 nodes/edges → 编辑器转换渲染（替换当前画布，需确认） -->
-    <el-dialog v-model="aiVisible" title="AI 生成图" width="520px" destroy-on-close>
+    <!-- AI 对话框：描述 + 模式（自动/替换/追加/修改/汇总）→ 后端 LLM → 编辑器转换渲染 -->
+    <el-dialog v-model="aiVisible" title="AI 生成" width="520px" destroy-on-close>
+      <el-radio-group v-model="aiMode" size="small" class="ai-modes">
+        <el-radio-button value="auto">自动判断</el-radio-button>
+        <el-radio-button value="replace">替换画布</el-radio-button>
+        <el-radio-button value="append">追加内容</el-radio-button>
+        <el-radio-button value="modify">修改内容</el-radio-button>
+        <el-radio-button value="summarize">汇总画布</el-radio-button>
+      </el-radio-group>
       <el-input
         v-model="aiDesc" type="textarea" :rows="4" maxlength="500" show-word-limit
-        placeholder="描述你想要的图，例如：请假审批流程，主管审批通过后人事备案，驳回则退回重新填写"
+        :placeholder="aiPlaceholder"
       />
-      <div class="ai-hint">会替换当前画布内容；生成后可以继续在画布上手动调整</div>
+      <AiImagePicker v-model="aiImages" />
+      <div class="ai-hint">替换/修改会覆盖当前画布（执行前确认）；追加保留现有内容；汇总不动画布。可附图（截图/照片）让 AI 按图生成</div>
       <template #footer>
         <el-button @click="aiVisible = false">取消</el-button>
         <el-button type="primary" :loading="aiGenerating" @click="generateAi">生成</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 汇总结果：只读展示 + 一键复制 -->
+    <el-dialog v-model="summaryVisible" title="画布汇总" width="520px">
+      <el-input v-model="summaryText" type="textarea" :rows="10" readonly />
+      <template #footer>
+        <el-button @click="summaryVisible = false">关闭</el-button>
+        <el-button type="primary" @click="copySummary">复制</el-button>
       </template>
     </el-dialog>
   </div>
@@ -98,11 +115,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowRight, ArrowUp, Brush, Delete, MagicStick, Plus, Search, Top } from '@element-plus/icons-vue'
 import {
-  createWhiteboard, deleteWhiteboard, generateDiagram, getWhiteboard,
+  createWhiteboard, deleteWhiteboard, generateBoardContent, getWhiteboard,
   searchWhiteboards, updateWhiteboard, whiteboardTree,
 } from '../api'
 import ExcalidrawBoard from './whiteboard/ExcalidrawBoard.vue'
 import DrawioBoard from './whiteboard/DrawioBoard.vue'
+import AiImagePicker from '../components/AiImagePicker.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -121,42 +139,84 @@ let saveTimer = null
 let saving = false
 let dirty = false
 
-// ---------- AI 生成（excalidraw） ----------
+// ---------- AI 生成（excalidraw/drawio 双引擎，编辑器各自实现 applyAiContent/getContext） ----------
 const aiVisible = ref(false)
 const aiDesc = ref('')
+const aiMode = ref('auto')
+const aiImages = ref([])   // 附图（data URL），成功后清空
 const aiGenerating = ref(false)
+const summaryVisible = ref(false)
+const summaryText = ref('')
+
+const AI_PLACEHOLDERS = {
+  auto: '描述想做的事，例如：画一个举手的小人；再加一个审批节点；把开始节点改成圆形；总结一下画布',
+  replace: '描述想要的内容，例如：请假审批流程，主管审批通过后人事备案；或：画一个举手的小人',
+  append: '描述要追加的内容，例如：在右侧再加一个人事复核节点；旁边再画一只猫',
+  modify: '描述怎么改，例如：把主管审批改成部门经理审批；删除结束节点；把小人换成两个人',
+  summarize: '可选：说明想怎么汇总，例如：按阶段分组概括这张流程图',
+}
+const aiPlaceholder = computed(() => AI_PLACEHOLDERS[aiMode.value] || AI_PLACEHOLDERS.auto)
 
 async function generateAi() {
   const desc = aiDesc.value.trim()
   if (!desc) {
-    ElMessage.warning('先描述一下想要的图')
+    ElMessage.warning('先描述一下想做的事')
+    return
+  }
+  const ctx = editorRef.value?.getContext?.() || []
+  if (aiMode.value === 'summarize' && !ctx.length && !aiImages.value.length) {
+    ElMessage.warning('画布是空的，没有内容可汇总')
     return
   }
   aiGenerating.value = true
   try {
-    const d = await generateDiagram(desc)
-    if (!d.nodes?.length) {
+    const d = await generateBoardContent(desc, aiMode.value, ctx, aiImages.value)
+    if (d.mode === 'summarize') {
+      summaryText.value = d.summary || ''
+      summaryVisible.value = true
+      aiVisible.value = false
+      aiDesc.value = ''
+      aiImages.value = []
+      return
+    }
+    if (!d.nodes?.length && !d.elements?.length && !d.parts?.length && !d.headers?.length) {
       ElMessage.warning('没有生成有效内容，换个说法再试试')
       return
     }
-    // 画布已有内容时先确认（生成是替换语义）
-    let hasContent = false
-    try { hasContent = (JSON.parse(latestContent || '{}').elements || []).length > 0 } catch { /* 空画布 */ }
-    if (hasContent) {
+    // 替换/修改是覆盖语义，画布已有内容时先确认；追加不动现有内容，无需确认。
+    // 修改且有选中元素时是局部替换（excalidraw 支持），确认文案区分两种范围
+    const selCount = ctx.filter((c) => c.selected).length
+    if ((d.mode === 'replace' || d.mode === 'modify') && ctx.length) {
+      const scoped = d.mode === 'modify' && selCount > 0
       try {
-        await ElMessageBox.confirm('生成结果将替换当前画布内容，继续？', 'AI 生成', {
-          confirmButtonText: '替换', cancelButtonText: '取消', type: 'warning',
-        })
+        await ElMessageBox.confirm(
+          scoped ? `生成结果将替换选中的 ${selCount} 个元素，其余内容不变，继续？` : '生成结果将替换当前画布内容，继续？',
+          'AI 生成', { confirmButtonText: scoped ? '替换选中' : '替换', cancelButtonText: '取消', type: 'warning' },
+        )
       } catch { return }
     }
-    editorRef.value?.applyDiagram(d)
+    const applied = editorRef.value?.applyAiContent(d, { append: d.mode === 'append' })
+    if (applied === false) {
+      ElMessage.warning('画板还没加载好，稍候再试')
+      return
+    }
     aiVisible.value = false
     aiDesc.value = ''
+    aiImages.value = []
     ElMessage.success(`已生成「${d.title || '图'}」，可在画布上继续调整`)
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
     aiGenerating.value = false
+  }
+}
+
+async function copySummary() {
+  try {
+    await navigator.clipboard.writeText(summaryText.value)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.warning('复制失败，请手动选择文字复制')
   }
 }
 
@@ -432,5 +492,6 @@ onBeforeUnmount(async () => {
 .save-state { font-size: 12px; color: #909399; margin-right: 4px; }
 .save-state.err { color: #f56c6c; }
 .ai-hint { font-size: 12px; color: #909399; margin-top: 8px; }
+.ai-modes { margin-bottom: 10px; }
 .editor-wrap { flex: 1; min-height: 0; padding: 4px 16px 16px; }
 </style>

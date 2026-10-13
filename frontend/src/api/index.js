@@ -360,8 +360,9 @@ export const deleteNote = (id) => http.delete(`/notes/${id}`)
 export const noteAiAssist = (p) => http.post('/notes/ai-assist', p)
 
 // 画板（界面模式同记事本：左树右画布，内容存 excalidraw/tldraw 序列化 JSON）
-// AI 生成图结构（引擎无关 nodes/edges，画板/流程图共用）
-export const generateDiagram = (description) => http.post('/whiteboards/generate-diagram', { description })
+// AI 画板操作：mode=replace/append/modify/summarize/auto；context=画布元素概要；images=附图（视觉识别）
+export const generateBoardContent = (description, mode = 'auto', context = [], images = []) =>
+  http.post('/whiteboards/generate-content', { description, mode, context, images })
 export const whiteboardTree = () => http.get('/whiteboards/tree')
 export const searchWhiteboards = (keyword) => http.get('/whiteboards/search', { params: { keyword } })
 export const createWhiteboard = (p) => http.post('/whiteboards', p)

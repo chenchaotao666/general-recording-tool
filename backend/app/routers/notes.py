@@ -292,15 +292,16 @@ class NoteAiIn(BaseModel):
     note_title: str = ""
     context: list[str] = []   # 现有正文的纯文本（前端提取，最多取后 20 段）
     selection: str = ""       # 编辑器中选中的内容（有则作为本次操作的主要对象）
+    images: list[str] | None = None   # 附图（截图/照片）data URL，非空走视觉模型
 
 
 @router.post("/ai-assist")
 def note_ai_assist(payload: NoteAiIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """AI 写作：按指令生成 HTML 片段（前端预览确认后插入光标处）。"""
+    """AI 写作：按指令生成 HTML 片段（前端预览确认后插入光标处）；支持附图识别。"""
     from datetime import datetime
 
     from ..services.llm import LLMError
-    from ..services.llm.gateway import extract_json, get_default_provider
+    from ..services.llm.gateway import _decode_data_urls, extract_json, get_default_provider
     from ..services.llm.prompts import NOTE_AI_SYSTEM, build_note_ai_prompt
 
     instruction = (payload.instruction or "").strip()
@@ -308,19 +309,27 @@ def note_ai_assist(payload: NoteAiIn, db: Session = Depends(get_db), user: User 
         raise HTTPException(400, "请输入要生成的内容描述")
     try:
         provider = get_default_provider(db)
+        img_bytes = _decode_data_urls(payload.images)
     except LLMError as e:
         raise HTTPException(400, str(e))
     prompt = build_note_ai_prompt(instruction[:2000], (payload.note_title or "")[:200],
                                   [str(t)[:500] for t in (payload.context or [])[-20:]],
                                   datetime.now().strftime("%Y-%m-%d"),
                                   selection=(payload.selection or "")[:2000])
+    if img_bytes:
+        prompt += (f"\n\n注意：用户附上了 {len(img_bytes)} 张图片，请结合图片内容写作"
+                   "（例如：提取图片中的文字/表格整理成文、按图片描述的场景展开）。")
     last_err: Exception | None = None
     for attempt in range(2):
         current_prompt = prompt if attempt == 0 else (
             f"你上次的输出无法解析为合法 JSON，错误：{last_err}。请重新输出，只输出 JSON。\n\n原始任务：\n" + prompt
         )
         try:
-            data = extract_json(provider.complete(current_prompt, system=NOTE_AI_SYSTEM))
+            if img_bytes:
+                raw = provider.recognize(img_bytes, current_prompt, system=NOTE_AI_SYSTEM)
+            else:
+                raw = provider.complete(current_prompt, system=NOTE_AI_SYSTEM)
+            data = extract_json(raw)
             fragment = _clean_html(str(data.get("html") or ""))
             if not _plain_text(fragment).strip():
                 raise ValueError("输出没有可用的内容")

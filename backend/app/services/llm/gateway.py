@@ -1133,10 +1133,23 @@ def assist_chat(db: Session, user, message: str, history: list | None, context: 
     raise LLMError(f"模型输出解析失败：{last_err}")
 
 
-# ---------- 画板 AI 生成（引擎无关：返回节点/连线结构，excalidraw/drawio/X6 前端各自转换） ----------
+# ---------- 画板 AI 生成（意图路由：结构图返回 nodes/edges；绘画返回带坐标的元素，前端各自转换） ----------
 
 _DIAGRAM_SHAPES = {"rect", "ellipse", "diamond"}
 _DIAGRAM_MAX_NODES = 30
+
+_DRAWING_TYPES = {"rectangle", "ellipse", "diamond", "line", "arrow"}
+_DRAWING_MAX_ELEMENTS = 60
+_DRAWING_COORD_LIMIT = 2000   # 坐标/尺寸上限（像素），挡住模型偶发的离谱数值
+
+
+def _num(value, limit=_DRAWING_COORD_LIMIT) -> float | None:
+    """解析数值并限幅；非法值返回 None（调用方丢弃该元素）。"""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(-limit, min(limit, v))
 
 
 def _clean_diagram(data: dict) -> dict:
@@ -1175,21 +1188,161 @@ def _clean_diagram(data: dict) -> dict:
         edges.append(edge)
 
     return {
+        "type": "diagram",
         "title": str(data.get("title") or "")[:64],
         "nodes": nodes,
         "edges": edges,
     }
 
 
-def generate_diagram(db: Session, description: str) -> dict:
-    """LLM 把自然语言描述转成图结构（nodes/edges）；JSON 解析失败回喂重试一次。"""
-    from .prompts import DIAGRAM_SYSTEM, build_diagram_prompt
+def _clean_drawing(data: dict) -> dict:
+    """清洗 LLM 输出的绘画元素：类型合法化、坐标限幅，线元素必须有 ≥2 个折点，非法内容丢弃。"""
+    raw = [e for e in (data.get("elements") or []) if isinstance(e, dict)]
+    if not raw:
+        raise ValueError("输出缺少 elements 数组")
+
+    elements = []
+    for e in raw[:_DRAWING_MAX_ELEMENTS]:
+        etype = e.get("type")
+        if etype not in _DRAWING_TYPES:
+            continue
+        x, y = _num(e.get("x")), _num(e.get("y"))
+        if x is None or y is None:
+            continue
+        item = {"type": etype, "x": round(x, 1), "y": round(y, 1)}
+        if etype in ("line", "arrow"):
+            pts_in = e.get("points")
+            if not isinstance(pts_in, list) or len(pts_in) < 2:
+                continue
+            pts = []
+            for p in pts_in[:50]:
+                if not (isinstance(p, (list, tuple)) and len(p) == 2):
+                    pts = []
+                    break
+                px, py = _num(p[0]), _num(p[1])
+                if px is None or py is None:
+                    pts = []
+                    break
+                pts.append([round(px, 1), round(py, 1)])
+            if len(pts) < 2:
+                continue
+            item["points"] = pts
+        else:
+            w, h = _num(e.get("width"), 800), _num(e.get("height"), 800)
+            if w is None or h is None or w < 2 or h < 2:
+                continue
+            item["width"], item["height"] = round(w, 1), round(h, 1)
+        elements.append(item)
+    if not elements:
+        raise ValueError("没有有效元素")
+
+    return {
+        "type": "drawing",
+        "title": str(data.get("title") or "")[:64],
+        "elements": elements,
+    }
+
+
+def _clean_summary(data: dict) -> dict:
+    """清洗汇总输出：只要一段非空文字。"""
+    summary = str(data.get("summary") or "").strip()[:2000]
+    if not summary:
+        raise ValueError("输出缺少 summary")
+    return {"mode": "summarize", "summary": summary}
+
+
+_BOARD_MODES = {"replace", "append", "modify", "summarize"}
+_BOARD_MAX_PARTS = 4   # 复合需求的部分上限，防模型无限拆分
+
+
+_COMPONENT_TABLE_MAX_COLS = 8
+_COMPONENT_TABLE_MAX_ROWS = 20
+
+
+def _clean_component(data: dict) -> dict:
+    """清洗组件输出（目前只有 table）：表头/单元格截断，行数列数封顶，行宽不齐时按表头补齐/截断。"""
+    kind = str(data.get("kind") or "").lower() or ("table" if data.get("headers") else "")
+    if kind != "table":
+        raise ValueError(f"不支持的组件类型：{kind or '（未指定）'}")
+    headers = [str(h or "").strip()[:20] for h in (data.get("headers") or [])[:_COMPONENT_TABLE_MAX_COLS]]
+    headers = [h for h in headers if h]
+    if not headers:
+        raise ValueError("表格缺少 headers")
+    cols = len(headers)
+    rows = []
+    for r in (data.get("rows") or [])[:_COMPONENT_TABLE_MAX_ROWS]:
+        if not isinstance(r, list):
+            continue
+        row = [str(c if c is not None else "").strip()[:50] for c in r[:cols]]
+        row += [""] * (cols - len(row))
+        rows.append(row)
+    return {
+        "type": "component",
+        "kind": "table",
+        "title": str(data.get("title") or "")[:64],
+        "headers": headers,
+        "rows": rows,
+    }
+
+
+def _clean_one_part(part: dict) -> dict:
+    """单个内容部分：模型标了 type 就按 type 走；没标时按字段形态兜底
+    （有 headers 视为表格组件，有 elements 且无 nodes 视为绘画，其余按结构图）。"""
+    ptype = str(part.get("type") or "").lower()
+    if ptype == "component" or ("headers" in part and "nodes" not in part and "elements" not in part):
+        return _clean_component(part)
+    if ptype == "drawing" or ("elements" in part and "nodes" not in part):
+        return _clean_drawing(part)
+    return _clean_diagram(part)
+
+
+def _clean_content(data: dict) -> dict:
+    """清洗内容输出：单部分直接清洗；parts 数组逐部分清洗（无效部分丢弃，全无效则报错触发重试）。"""
+    parts_in = data.get("parts")
+    if isinstance(parts_in, list) and parts_in:
+        parts = []
+        for p in parts_in[:_BOARD_MAX_PARTS]:
+            if not isinstance(p, dict):
+                continue
+            try:
+                parts.append(_clean_one_part(p))
+            except ValueError:
+                continue
+        if not parts:
+            raise ValueError("parts 中没有有效内容")
+        return {"title": str(data.get("title") or "")[:64], "parts": parts}
+    return _clean_one_part(data)
+
+
+def generate_board_content(db: Session, description: str, mode: str = "auto",
+                           context: list | None = None, images: list[str] | None = None) -> dict:
+    """LLM 画板操作：replace/append/modify 产出内容（结构图 nodes/edges 或绘画 elements；
+    复合需求返回 parts 数组，每部分各自是一种内容），summarize 产出文字汇总。
+    mode=auto 时由模型判断（以其输出的 mode 为准，非法值回退 replace）。
+    images 为附图 data URL（截图/照片），非空时走视觉模型结合图片内容生成。
+    JSON 解析失败回喂重试一次。"""
+    from .prompts import BOARD_SYSTEM, build_board_prompt
 
     desc = (description or "").strip()
     if not desc:
-        raise LLMError("请输入图的描述")
+        raise LLMError("请输入操作描述")
+    if mode not in _BOARD_MODES and mode != "auto":
+        mode = "auto"
+    ctx = [c for c in (context or []) if isinstance(c, dict)][:200]
+    # 空画布降级：追加/修改等同替换；汇总无意义直接报错（有附图除外——可以汇总图片内容）
+    img_bytes = _decode_data_urls(images)
+    if not ctx:
+        if mode == "summarize" and not img_bytes:
+            raise LLMError("画布是空的，没有内容可汇总")
+        if mode in ("append", "modify"):
+            mode = "replace"
+
     provider = get_default_provider(db)
-    prompt = build_diagram_prompt(desc[:500])
+    prompt = build_board_prompt(desc[:500], mode, ctx)
+    if img_bytes:
+        prompt += (f"\n\n注意：用户附上了 {len(img_bytes)} 张图片，请结合图片内容完成操作"
+                   "（例如：识别图片中的流程图/表格结构并在画布上重现、参照手绘草图绘画、"
+                   "把图片中的清单整理成表格组件）。")
     last_err: Exception | None = None
     for attempt in range(2):
         current = prompt if attempt == 0 else (
@@ -1197,8 +1350,24 @@ def generate_diagram(db: Session, description: str) -> dict:
             "请重新输出，只输出 JSON。\n\n原始任务：\n" + prompt
         )
         try:
-            raw = provider.complete(current, system=DIAGRAM_SYSTEM)
-            return _clean_diagram(extract_json(raw))
+            if img_bytes:
+                raw = provider.recognize(img_bytes, current, system=BOARD_SYSTEM)
+            else:
+                raw = provider.complete(current, system=BOARD_SYSTEM)
+            data = extract_json(raw)
+            if mode == "auto":
+                out_mode = str(data.get("mode") or "").lower()
+                if out_mode not in _BOARD_MODES:
+                    out_mode = "replace"   # 模型没给/给错：按替换处理（前端替换前会确认）
+                if not ctx and out_mode in ("append", "modify"):
+                    out_mode = "replace"
+            else:
+                out_mode = mode
+            if out_mode == "summarize":
+                return _clean_summary(data)
+            result = _clean_content(data)
+            result["mode"] = out_mode
+            return result
         except LLMError:
             raise
         except Exception as e:
