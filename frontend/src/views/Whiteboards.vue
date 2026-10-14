@@ -54,13 +54,10 @@
       <template v-if="current">
         <div class="main-top">
           <input v-model="current.title" class="title-input" placeholder="无标题画板" maxlength="200" @input="onTitleInput" />
+          <!-- AI 生成：两种引擎都支持（excalidraw/drawio 各自实现转换层）；大按钮，与其它编辑器一致 -->
+          <el-button ref="aiBtnRef" class="ai-btn" :icon="MagicStick" @click="aiVisible = true">AI 生成</el-button>
           <div class="main-ops">
             <span class="save-state" :class="{ err: saveState === '保存失败' }">{{ saveState }}</span>
-            <!-- AI 生成：两种引擎都支持（excalidraw/drawio 各自实现转换层） -->
-            <el-button
-              ref="aiBtnRef" size="small" type="primary" plain
-              :icon="MagicStick" @click="aiVisible = true"
-            >AI 生成</el-button>
           </div>
         </div>
         <div class="editor-wrap">
@@ -490,11 +487,12 @@ onBeforeUnmount(async () => {
   padding: 14px 24px 8px;
 }
 .title-input {
-  flex: 1; border: none; outline: none; font-size: 24px; font-weight: 700; color: #303133;
+  flex: 1; max-width: 420px; border: none; outline: none; font-size: 24px; font-weight: 700; color: #303133;
   background: transparent; min-width: 0;
 }
 .title-input::placeholder { color: #c0c4cc; }
-.main-ops { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+/* AI 生成按钮贴标题左侧区域，保存状态靠右 */
+.main-ops { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
 .save-state { font-size: 12px; color: #909399; margin-right: 4px; }
 .save-state.err { color: #f56c6c; }
 .ai-hint { font-size: 12px; color: #909399; margin-top: 8px; }

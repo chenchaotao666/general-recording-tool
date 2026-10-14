@@ -4,7 +4,7 @@
       <el-button :icon="Back" @click="back">返回</el-button>
       <el-input v-model="title" class="title-input" maxlength="200" placeholder="导图标题" @input="scheduleSave" />
       <!-- AI：浮动指令面板（统一 AiPromptPanel），贴按钮弹出；改写/总结入口在面板内 -->
-      <el-button ref="aiBtnRef" class="ai-btn" :loading="ai.loading" @click="openAi">✨ AI 生成</el-button>
+      <el-button ref="aiBtnRef" class="ai-btn" :icon="MagicStick" :loading="ai.loading" @click="openAi()">AI 生成</el-button>
 
       <!-- 前进/后退（库内置历史栈） -->
       <!-- 可用状态视觉区分：可用=蓝色实心，不可用=灰化 -->
@@ -55,17 +55,54 @@
         </template>
       </el-dropdown>
 
-      <!-- 主题：分组下拉 + 预览色块 -->
-      <el-select v-model="theme" style="width: 108px" @change="(v) => eng?.setTheme(v)">
-        <el-option-group v-for="g in THEME_GROUPS" :key="g.label" :label="g.label">
-          <el-option v-for="t in g.items" :key="t.value" :label="t.label" :value="t.value">
-            <span class="theme-opt">
-              <span class="theme-swatch" :style="{ background: themeSwatch(t.value) }" />
-              {{ t.label }}
-            </span>
-          </el-option>
-        </el-option-group>
-      </el-select>
+      <!-- 主题：与配色同款下拉按钮（按钮显示当前主题色块+名称；列表分组 + 勾选当前项） -->
+      <el-dropdown trigger="click" popper-class="mm-theme-popper" @command="(v) => { theme = v; eng?.setTheme(v) }">
+        <el-button title="主题皮肤">
+          <span class="palette-item">
+            <span class="palette-dot" :style="{ background: themeSwatch(theme) }" />
+            {{ themeLabel }}
+          </span>
+          <el-icon><ArrowDown /></el-icon>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <template v-for="g in THEME_GROUPS" :key="g.label">
+              <div class="theme-group-label">{{ g.label }}</div>
+              <el-dropdown-item v-for="t in g.items" :key="t.value" :command="t.value">
+                <span class="palette-item">
+                  <span class="palette-dot" :style="{ background: themeSwatch(t.value) }" />
+                  {{ t.label }}
+                  <el-icon v-if="theme === t.value" class="dd-check"><Check /></el-icon>
+                </span>
+              </el-dropdown-item>
+            </template>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+
+      <!-- 智能配色：成套预设一键应用（作用于各一级分支）；按钮上显示当前选中的配色 -->
+      <el-dropdown trigger="click" @command="applyPaletteCmd">
+        <el-button title="智能配色">
+          <span v-if="activePalette" class="palette-item">
+            <span v-for="c in activePaletteColors" :key="c" class="palette-dot" :style="{ background: c }" />
+            {{ activePalette }}
+          </span>
+          <span v-else>配色</span>
+          <el-icon><ArrowDown /></el-icon>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item v-for="p in PALETTES" :key="p.name" :command="p.name">
+              <span class="palette-item">
+                <span v-for="c in p.colors.slice(0, 4)" :key="c.fill" class="palette-dot" :style="{ background: c.fill }" />
+                {{ p.name }}
+                <el-icon v-if="activePalette === p.name" class="dd-check"><Check /></el-icon>
+              </span>
+            </el-dropdown-item>
+            <el-dropdown-item divided command="__clear">清除配色（跟随主题）</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
 
       <!-- 字体色/背景色：色块网格面板（点一下直接应用），作用于选中节点（右键拖框多选可批量）。
            第一格 ∅ = 清除自定义色，跟随主题 -->
@@ -94,23 +131,6 @@
       </el-popover>
 
       <el-button @click="openOutline">大纲</el-button>
-      <el-button title="演示播放（Esc 退出，←/→ 翻页）" @click="eng?.playDemo()">演示</el-button>
-
-      <!-- 智能配色：成套预设一键应用（作用于各一级分支） -->
-      <el-dropdown trigger="click" @command="applyPaletteCmd">
-        <el-button title="智能配色">配色<el-icon><ArrowDown /></el-icon></el-button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item v-for="p in PALETTES" :key="p.name" :command="p.name">
-              <span class="palette-item">
-                <span v-for="c in p.colors.slice(0, 4)" :key="c.fill" class="palette-dot" :style="{ background: c.fill }" />
-                {{ p.name }}
-              </span>
-            </el-dropdown-item>
-            <el-dropdown-item divided command="__clear">清除配色（跟随主题）</el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
 
       <!-- 导出：PNG / PDF / XMind -->
       <el-dropdown trigger="click" @command="(t) => eng?.exportFile(t, title)">
@@ -130,7 +150,7 @@
 
     <!-- AI 生成：选中节点时顶部显示上下文条 + 建议操作 chips（记事本同款）；渐进渲染 -->
     <AiPromptPanel
-      v-model="ai.visible" title="✨ AI 生成思维导图" :anchor="aiBtnRef"
+      v-model="ai.visible" title="✨ AI 生成思维导图" :anchor="aiAnchor"
       :context-note="aiContextNote"
       :chips="mmAiChips"
       :placeholder="ai.canExpand
@@ -165,7 +185,7 @@
     </el-drawer>
 
     <div class="editor-body" v-loading="loading">
-      <MindmapSimple v-if="ready" ref="eng" :data="currentData" @change="onEngChange" />
+      <MindmapSimple v-if="ready" ref="eng" :data="currentData" @change="onEngChange" @ai="openAi" />
     </div>
   </div>
 </template>
@@ -175,7 +195,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, Back, Check, Delete, RefreshLeft, RefreshRight } from '@element-plus/icons-vue'
+import { ArrowDown, Back, Check, Delete, MagicStick, RefreshLeft, RefreshRight } from '@element-plus/icons-vue'
 import { getMindmap, mindmapAiAssist, updateMindmap } from '../api'
 import MindmapSimple from '../components/MindmapSimple.vue'
 import AiPromptPanel from '../components/AiPromptPanel.vue'
@@ -216,6 +236,10 @@ const THEME_SWATCH = {
   cactus: '#388e3c', dark: '#263238', neonLamp: '#7c4dff', blackGold: '#bfa45f',
 }
 const themeSwatch = (v) => THEME_SWATCH[v] || '#909399'
+// 当前主题的中文名（皮肤按钮上显示）
+const themeLabel = computed(() =>
+  THEME_GROUPS.flatMap((g) => g.items).find((t) => t.value === theme.value)?.label || '主题'
+)
 
 const LAYOUTS = [
   { value: 'logicalStructure', label: '逻辑结构图' },
@@ -318,8 +342,15 @@ const ai = reactive({
   visible: false, loading: false, instruction: '', mode: 'rebuild',
   canExpand: false, nodeText: '', activeTexts: [], activeNodes: [], images: [],
   result: '', resultTitle: '导图总结',
+  anchorPoint: null,   // 右键菜单唤起时的面板锚点（{x, y} 屏幕坐标）；null = 贴工具栏按钮
 })
 const aiBtnRef = ref(null)
+// 面板锚点：右键唤起 → 右键点的虚拟矩形；按钮唤起 → 按钮元素
+const aiAnchor = computed(() =>
+  ai.anchorPoint
+    ? { left: ai.anchorPoint.x, top: ai.anchorPoint.y, bottom: ai.anchorPoint.y }
+    : aiBtnRef.value
+)
 
 // 上下文条：单选=基于该节点；多选=列出全部选中（扩写/改写只对单选开放）
 const aiContextNote = computed(() => {
@@ -459,15 +490,73 @@ const PALETTES = [
     { fill: '#7dbed6', light: '#e8f4f8', text: '#4a90a4' },
     { fill: '#cf6a87', light: '#f9e8ec', text: '#a54863' },
   ] },
+  { name: '海洋', colors: [
+    { fill: '#1e88e5', light: '#e3f2fd', text: '#1565c0' },
+    { fill: '#00acc1', light: '#e0f7fa', text: '#00838f' },
+    { fill: '#26a69a', light: '#e0f2f1', text: '#00796b' },
+    { fill: '#5c6bc0', light: '#e8eaf6', text: '#3949ab' },
+    { fill: '#4fc3f7', light: '#e1f5fe', text: '#0288d1' },
+  ] },
+  { name: '森林', colors: [
+    { fill: '#43a047', light: '#e8f5e9', text: '#2e7d32' },
+    { fill: '#7cb342', light: '#f1f8e9', text: '#558b2f' },
+    { fill: '#00897b', light: '#e0f2f1', text: '#00695c' },
+    { fill: '#c0ca33', light: '#f9fbe7', text: '#9e9d24' },
+    { fill: '#6d4c41', light: '#efebe9', text: '#4e342e' },
+  ] },
+  { name: '日落', colors: [
+    { fill: '#fb8c00', light: '#fff3e0', text: '#e65100' },
+    { fill: '#f4511e', light: '#fbe9e7', text: '#d84315' },
+    { fill: '#ec407a', light: '#fce4ec', text: '#c2185b' },
+    { fill: '#ab47bc', light: '#f3e5f5', text: '#7b1fa2' },
+    { fill: '#ffb300', light: '#fff8e1', text: '#ff8f00' },
+  ] },
+  { name: '商务', colors: [
+    { fill: '#37474f', light: '#eceff1', text: '#263238' },
+    { fill: '#1976d2', light: '#e3f2fd', text: '#0d47a1' },
+    { fill: '#00796b', light: '#e0f2f1', text: '#004d40' },
+    { fill: '#5d4037', light: '#efebe9', text: '#3e2723' },
+    { fill: '#455a64', light: '#eceff1', text: '#263238' },
+  ] },
+  { name: '糖果', colors: [
+    { fill: '#ff5c8a', light: '#ffebf1', text: '#d81b60' },
+    { fill: '#ffa726', light: '#fff3e0', text: '#ef6c00' },
+    { fill: '#66bb6a', light: '#e8f5e9', text: '#388e3c' },
+    { fill: '#42a5f5', light: '#e3f2fd', text: '#1565c0' },
+    { fill: '#ba68c8', light: '#f3e5f5', text: '#8e24aa' },
+  ] },
+  { name: '极光', colors: [
+    { fill: '#7c4dff', light: '#ede7f6', text: '#651fff' },
+    { fill: '#00bcd4', light: '#e0f7fa', text: '#0097a7' },
+    { fill: '#69f0ae', light: '#e8f5e9', text: '#00a152' },
+    { fill: '#ff4081', light: '#fce4ec', text: '#c2185b' },
+    { fill: '#448aff', light: '#e3f2fd', text: '#2962ff' },
+  ] },
+  { name: '咖啡', colors: [
+    { fill: '#8d6e63', light: '#efebe9', text: '#5d4037' },
+    { fill: '#a1887f', light: '#f5f0ee', text: '#6d4c41' },
+    { fill: '#bcaaa4', light: '#f7f4f2', text: '#795548' },
+    { fill: '#795548', light: '#efebe9', text: '#4e342e' },
+    { fill: '#d7ccc8', light: '#faf8f7', text: '#6d4c41' },
+  ] },
 ]
+
+// 当前应用的配色名（用于下拉列表勾选态 + 按钮显示）；__clear 时置空
+const activePalette = ref('')
+const activePaletteColors = computed(() =>
+  (PALETTES.find((x) => x.name === activePalette.value)?.colors || []).slice(0, 4).map((c) => c.fill)
+)
 
 function applyPaletteCmd(name) {
   const p = PALETTES.find((x) => x.name === name)
   eng.value?.applyPalette?.(p ? p.colors : null)   // __clear → null → 清除自定义色
+  activePalette.value = p ? p.name : ''
   ElMessage.success(p ? `已应用「${p.name}」配色` : '已清除配色')
 }
 
-function openAi() {
+function openAi(pos) {
+  // 右键菜单唤起时带右键点屏幕坐标，面板贴右键点弹出；工具栏按钮唤起走按钮锚点
+  ai.anchorPoint = (pos && typeof pos.x === 'number') ? pos : null
   // 全部选中节点（不含根，带 uid 供批量定向改写）：单选开放扩写/优化/改写；多选开放批量优化/选中分支总结
   const nodes = (eng.value?.getActiveNodes?.() || []).filter((n) => !n.isRoot)
   ai.activeNodes = nodes
@@ -670,17 +759,21 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .editor-page { display: flex; flex-direction: column; height: calc(100vh - 120px); }
-.save-state { font-size: 12px; color: #909399; flex-shrink: 0; }
+.save-state { font-size: 12px; color: #909399; flex-shrink: 0; margin-left: auto; }
 .save-state.err { color: #f56c6c; }
-.theme-opt { display: inline-flex; align-items: center; gap: 8px; }
-.theme-swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, .08); flex-shrink: 0; }
+/* 主题下拉的分组小标题（滚动时吸附顶部，白底防止列表文字透过来） */
+.theme-group-label {
+  padding: 6px 16px 2px; font-size: 12px; color: #909399; line-height: 1.4;
+  cursor: default; user-select: none;
+  position: sticky; top: -6px; background: #fff; z-index: 1;
+}
 .editor-toolbar {
   display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
 }
 /* 间距统一交给 flex gap：清掉相邻 el-button 默认的 12px 左外边距（否则两按钮相邻时间距翻倍） */
 .editor-toolbar :deep(.el-button + .el-button) { margin-left: 0; }
 .title-input { width: 240px; }
-.shortcut-hint { font-size: 12px; color: #c0c4cc; margin-left: auto; }
+.shortcut-hint { font-size: 12px; color: #c0c4cc; }
 .editor-body {
   flex: 1; background: #fff; border: 1px solid #e4e7ed; border-radius: 8px; overflow: hidden;
 }
@@ -726,4 +819,10 @@ onBeforeUnmount(() => {
 .outline-hint { margin-top: 12px; font-size: 12px; color: #c0c4cc; }
 .palette-item { display: flex; align-items: center; gap: 6px; }
 .palette-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+</style>
+
+<!-- 主题下拉 popper 挂在 body 上，scoped 够不到，单独非 scoped 块 -->
+<style>
+/* 主题列表限高滚动：24 个主题全展开太高 */
+.mm-theme-popper .el-dropdown-menu { max-height: 420px; overflow-y: auto; }
 </style>

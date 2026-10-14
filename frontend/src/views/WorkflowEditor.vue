@@ -10,9 +10,7 @@
       <div class="spacer" />
       <el-button :icon="RefreshLeft" :disabled="!canUndo" title="撤销（Ctrl+Z）" @click="undo">撤销</el-button>
       <el-button :icon="RefreshRight" :disabled="!canRedo" title="重做（Ctrl+Y）" @click="redo">重做</el-button>
-      <el-button class="ai-btn" title="用一句话描述流程，AI 生成节点草稿到画布" @click="aiGenVisible = true">
-        <el-icon><MagicStick /></el-icon>AI 生成
-      </el-button>
+      <el-button class="ai-btn" :icon="MagicStick" title="用一句话描述流程，AI 生成节点草稿到画布" @click="aiGenVisible = true">AI 生成</el-button>
       <el-button v-if="wfId" :icon="Reading" :loading="explaining" @click="explain">流程解读</el-button>
       <el-button :icon="Grid" @click="tidyUp">整理画布</el-button>
       <el-button :icon="CircleCheck" :loading="checking" @click="runCheck(true)">检查问题</el-button>
@@ -83,7 +81,7 @@
             <span class="config-title">{{ selectedNode.data.typeName }} · {{ selectedNode.id }}</span>
             <div>
               <el-button link type="info" size="small" @click="nodeDocVisible = true">节点说明</el-button>
-              <el-button link type="primary" size="small" @click="openAiNodeConfig">AI 帮我配置</el-button>
+              <el-button link type="primary" size="small" :icon="MagicStick" @click="openAiNodeConfig">AI 帮我配置</el-button>
               <el-button link type="danger" size="small" @click="removeNode(selectedNode.id)">删除节点</el-button>
             </div>
           </div>

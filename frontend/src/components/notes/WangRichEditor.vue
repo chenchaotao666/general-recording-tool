@@ -65,10 +65,14 @@ class FindReplaceMenu {
   exec() { G.frHandler?.() }
 }
 
-// 「AI 写作」选中悬浮栏菜单（纯文字按钮；主工具栏的 AI 按钮是注入 DOM 的，见 injectAiButton）
+// MagicStick 内联 SVG：与全局「AI 生成」按钮图标统一（选中悬浮栏菜单 / 注入的工具栏按钮共用）
+const MAGIC_STICK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="14" height="14"><path fill="currentColor" d="M512 64h64v192h-64zm0 576h64v192h-64zM160 480v-64h192v64zm576 0v-64h192v64zM249.856 199.04l45.248-45.184L430.848 289.6 385.6 334.848 249.856 199.104zM657.152 606.4l45.248-45.248 135.744 135.744-45.248 45.248zM114.048 923.2 68.8 877.952l316.8-316.8 45.248 45.248zM702.4 334.848 657.152 289.6l135.744-135.744 45.248 45.248z"/></svg>'
+
+// 「AI 写作」选中悬浮栏菜单（wangEditor 菜单图标/纯文字只能二选一：选纯文字，
+// 图标由 observeHoverbar 在悬浮栏每次渲染后注入，图标+文字兼得）
 class AiWriteMenu {
   constructor() {
-    this.title = '✨ AI 写作'
+    this.title = 'AI 写作'
     this.tag = 'button'
   }
 
@@ -389,7 +393,7 @@ const toolbarConfig = {
   ],
 }
 const editorConfig = {
-  placeholder: '写点什么… 顶部工具栏可排版，点「✨ AI 写作」让 AI 帮你写',
+  placeholder: '写点什么… 顶部工具栏可排版，点「AI 写作」让 AI 帮你写',
   // 选中内容弹出的悬浮栏：「AI 写作」「格式刷」在前，其余为 wangEditor 默认项
   hoverbarKeys: {
     text: {
@@ -572,7 +576,8 @@ function replaceAll() {
 
 // ---------- 生命周期 ----------
 
-// 「✨ AI 写作」按钮：wangEditor 注册菜单只显示图标不支持文字，直接注入 DOM 到工具栏最左侧
+// 「AI 写作」按钮：wangEditor 注册菜单只显示图标不支持文字，直接注入 DOM 到工具栏最左侧
+// 图标与全局「AI 生成」按钮统一为 Element Plus MagicStick（MAGIC_STICK_SVG 见文件上方）
 function injectAiButton() {
   const bar = wrapRef.value?.querySelector('.w-e-toolbar')
   if (!bar || bar.querySelector('.ai-write-item')) return
@@ -581,7 +586,7 @@ function injectAiButton() {
   const btn = document.createElement('button')
   btn.type = 'button'
   btn.className = 'ai-write-btn'
-  btn.textContent = '✨ AI 写作'
+  btn.innerHTML = `${MAGIC_STICK_SVG}<span>AI 写作</span>`
   btn.title = 'AI 写作'
   btn.addEventListener('mousedown', (e) => e.preventDefault())
   btn.addEventListener('click', (e) => {
@@ -595,16 +600,36 @@ function injectAiButton() {
   bar.insertBefore(divider, item.nextSibling)
 }
 
+// 选中悬浮栏的「AI 写作」按钮：悬浮栏每次显示都重渲染（empty 后重建），
+// 用 MutationObserver 盯住容器，按钮一出现就把 MagicStick 图标补到文字前（图标+文字兼得）
+let hoverObserver = null
+function patchHoverbarAiButton() {
+  const btn = wrapRef.value?.querySelector('.w-e-hover-bar button[data-menu-key="aiWrite"]')
+  if (btn && !btn.dataset.aiPatched) {
+    btn.dataset.aiPatched = '1'
+    btn.innerHTML = `${MAGIC_STICK_SVG}<span>AI 写作</span>`
+    btn.classList.add('ai-hover-btn')
+  }
+}
+function observeHoverbar() {
+  const bar = wrapRef.value?.querySelector('.w-e-hover-bar')
+  if (!bar || hoverObserver) return
+  patchHoverbarAiButton()
+  hoverObserver = new MutationObserver(patchHoverbarAiButton)
+  hoverObserver.observe(bar, { childList: true })
+}
+
 function onCreated(editor) {
   editorRef.value = editor
   G.editor = editor   // 调试/自动化测试入口（卸载时清理）
   G.frHandler = openFr
   G.aiHandler = aiHandler
   G.brushListeners.add(syncBrushCursor)
-  // Toolbar 组件在 editor 就绪后才渲染，等下一拍再注入；拿不到就再等等
+  // Toolbar/hoverbar 组件在 editor 就绪后才渲染，等下一拍再注入；拿不到就再等等
   nextTick(() => {
     injectAiButton()
-    setTimeout(injectAiButton, 200)
+    observeHoverbar()
+    setTimeout(() => { injectAiButton(); observeHoverbar() }, 200)
   })
   // Ctrl+F 唤起查找替换（拦掉浏览器默认的页面查找）
   editor.getEditableContainer()?.addEventListener('keydown', onCtrlF)
@@ -650,6 +675,8 @@ onBeforeUnmount(() => {
   notifyBrush()
   clearTimeout(G.brushTimer)
   G.brushListeners.delete(syncBrushCursor)
+  hoverObserver?.disconnect()
+  hoverObserver = null
   wrapRef.value?.removeEventListener('contextmenu', onContextMenu)
   editorRef.value?.getEditableContainer()?.removeEventListener('keydown', onCtrlF)
   document.removeEventListener('selectionchange', brushSelectionHandler)
@@ -747,8 +774,16 @@ defineExpose({
 .re-toolbar :deep(.ai-write-btn) {
   height: 36px; padding: 0 10px; border: none; border-radius: 4px; background: transparent;
   color: var(--grt-ai); font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  display: flex; align-items: center; gap: 4px;
 }
 .re-toolbar :deep(.ai-write-btn:hover) { background-color: var(--w-e-toolbar-active-bg-color); }
+
+/* 选中悬浮栏的 AI 写作按钮（图标由 observeHoverbar 注入）：图标+文字横向排列，紫色呼应 AI 身份。
+   祖先用模板里的 .rich-editor（scoped 需要模板渲染的祖先），悬浮栏本身是 wangEditor 动态创建的 */
+.rich-editor :deep(.ai-hover-btn) {
+  display: flex; align-items: center; gap: 3px;
+  color: var(--grt-ai); font-weight: 600; white-space: nowrap;
+}
 
 /* 查找替换面板 */
 .fr-panel {

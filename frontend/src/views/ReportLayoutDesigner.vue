@@ -156,7 +156,7 @@
         <div class="config-head">
           <span class="config-title">{{ BLOCK_TYPE_LABELS[selectedBlock.type] }}配置</span>
           <div>
-            <el-button link class="ai-link" size="small" @click="openBlockAi">✨ AI 帮我设置</el-button>
+            <el-button link class="ai-link" size="small" :icon="MagicStick" @click="openBlockAi">AI 帮我设置</el-button>
             <el-button link type="danger" size="small" @click="removeBlock(selectedBlock.id)">删除区块</el-button>
             <el-button link type="info" size="small" @click="selectedBlockId = null">收起</el-button>
           </div>

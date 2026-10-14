@@ -108,12 +108,18 @@ watch(() => props.modelValue, async (v) => {
 function place() {
   const W = panelEl.value?.offsetWidth || 640
   const H = panelEl.value?.offsetHeight || 220
-  // anchor 可以是 DOM 元素 / ref(DOM) / 组件实例（el-button 等，取 $el）
+  // anchor 支持三种：DOM 元素 / ref(DOM) / 组件实例（el-button 等，取 $el）/
+  // 虚拟锚点 {left, top, bottom}（屏幕坐标，右键菜单等无 DOM 锚点的场景）
   const raw = props.anchor
-  const anchorEl = raw instanceof Element ? raw : (raw?.$el || raw?.value?.$el || raw?.value)
-  const r = anchorEl?.getBoundingClientRect?.()
+  let r = null
+  if (raw instanceof Element) r = raw.getBoundingClientRect()
+  else if (raw && typeof raw.left === 'number' && typeof raw.top === 'number') r = raw
+  else {
+    const el = raw?.$el || raw?.value?.$el || raw?.value
+    r = el?.getBoundingClientRect?.()
+  }
   let x = r ? r.left : (window.innerWidth - W) / 2
-  let y = r ? r.bottom + 6 : Math.max(72, window.innerHeight * 0.18)
+  let y = r ? (r.bottom ?? r.top) + 6 : Math.max(72, window.innerHeight * 0.18)
   x = Math.max(8, Math.min(x, window.innerWidth - W - 8))
   if (y + H > window.innerHeight - 8) y = Math.max(8, (r?.top || 200) - H - 6)
   pos.value = { x, y }
