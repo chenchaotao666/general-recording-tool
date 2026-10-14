@@ -5,6 +5,8 @@
     <template v-if="ft === 'singleSelect' || ft === 'multiSelect'">
       <span v-for="o in selectedOptions" :key="o.id" class="opt-tag"
             :style="{ background: optionColor(o.color).value, color: optionColor(o.color).text }">{{ o.label }}</span>
+      <!-- 未匹配到选项的原始值（如改类型前录入的文本）原样兜底显示，不消失 -->
+      <span v-for="(v, i) in unmatchedValues" :key="`raw-${i}`" class="opt-tag raw">{{ v }}</span>
     </template>
     <!-- 进度条 -->
     <span v-else-if="ft === 'progress'" class="progress-wrap">
@@ -85,6 +87,17 @@ const selectedOptions = computed(() => {
   return ids.map(id => opts.find(o => o.id === id)).filter(Boolean)
 })
 
+// 未匹配到选项的原始值（改类型/导入场景）兜底原样展示
+const unmatchedValues = computed(() => {
+  if (!['singleSelect', 'multiSelect'].includes(ft.value)) return []
+  const opts = cfg.value.options || []
+  const v = value.value
+  if (v == null) return []
+  const ids = Array.isArray(v) ? v : [v]
+  return ids.filter(id => id != null && id !== '' && !opts.some(o => o.id === id))
+    .map((x) => (typeof x === 'object' ? JSON.stringify(x) : String(x)))
+})
+
 const progressStyle = computed(() => {
   const range = cfg.value.range || { min: 0, max: 100 }
   const pct = Math.min(1, Math.max(0, ((Number(value.value) || 0) - range.min) / (range.max - range.min)))
@@ -126,6 +139,7 @@ const lookupText = computed(() => {
 <style scoped>
 .smart-cell { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; overflow: hidden; font-size: 13px; min-height: 20px; }
 .opt-tag { padding: 1px 8px; border-radius: 10px; font-size: 12px; white-space: nowrap; }
+.opt-tag.raw { background: var(--el-fill-color-light); color: var(--el-text-color-regular); border: 1px dashed var(--el-border-color); }
 .progress-wrap { display: flex; align-items: center; gap: 6px; width: 100%; }
 .progress-bar { flex: 1; height: 8px; background: var(--el-fill-color); border-radius: 4px; overflow: hidden; }
 .progress-fill { display: block; height: 100%; border-radius: 4px; }

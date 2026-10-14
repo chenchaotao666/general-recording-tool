@@ -19,6 +19,7 @@
       :cell-class-name="cellClass"
       :menu-config="menuConfig"
       @cell-click="onCellClick"
+      @cell-dblclick="onCellDblClick"
       @menu-click="onMenuClick"
       @checkbox-all="onCheckAll"
       @checkbox-change="onCheckChange"
@@ -62,7 +63,7 @@
 </template>
 
 <script setup>
-import { computed, h, ref } from 'vue'
+import { computed, h, onBeforeUnmount, ref } from 'vue'
 import SmartCell from './SmartCell.vue'
 import SmartCellEditor from './SmartCellEditor.vue'
 import FieldHeader from './FieldHeader.vue'
@@ -164,10 +165,19 @@ const rowClass = ({ row }) => {
 }
 
 function cellClass({ row, column }) {
+  const cls = []
   if (row.__rowType !== 'add' && row.__rowType !== 'group' && row.__indent > 0 && column.field === visibleFields.value[0]?.field_name) {
-    return 'cell-indent'
+    cls.push('cell-indent')
   }
-  return ''
+  // 单击选中态（企微式：边框与单元格同大，与编辑态边框同款）
+  if (selectedCell.value && row.__key === selectedCell.value.key && column.field === selectedCell.value.fieldName) {
+    cls.push('cell-selected')
+  }
+  // 编辑态：去单元格内边距，编辑器与单元格严格同边界
+  if (editingCell.value && row.__key === editingCell.value.key && column.field === editingCell.value.fieldName) {
+    cls.push('cell-editing')
+  }
+  return cls.join(' ')
 }
 
 // 单元格渲染（含填色命中 + 编辑态分发）
@@ -216,6 +226,8 @@ function fmtAgg(v) {
 }
 
 const IMMEDIATE = ['checkbox']
+const selectedCell = ref(null)   // 单击选中态 {key, fieldName}（企微式：单击选中、双击编辑）
+let selectTimer = null           // 选中态延迟落地：双击时取消，避免"选中框闪现→编辑器"的中间态
 
 function onCellClick({ row, column }) {
   if (props.readonly) return
@@ -227,7 +239,41 @@ function onCellClick({ row, column }) {
     emit('cell-commit', { row, field: f, value: !row[f.field_name] })
     return
   }
+  // 已选中的单元格再点一次 = 进入编辑（企微一致）
+  if (selectedCell.value?.key === row.__key && selectedCell.value?.fieldName === f.field_name) {
+    clearTimeout(selectTimer)
+    selectTimer = null
+    selectedCell.value = null
+    editingCell.value = { key: row.__key, fieldName: f.field_name }
+  } else {
+    // 延迟 ~200ms 落选中框：若紧随其后的第二击（双击）到来，则跳过选中直接进编辑
+    const target = { key: row.__key, fieldName: f.field_name }
+    clearTimeout(selectTimer)
+    selectTimer = setTimeout(() => {
+      selectedCell.value = target
+      selectTimer = null
+    }, 200)
+  }
+}
+
+function onCellDblClick({ row, column }) {
+  if (props.readonly) return
+  if (!row || row.__rowType === 'add' || row.__rowType === 'group') return
+  const f = props.fields.find(x => x.field_name === column.field)
+  if (!f || IMMEDIATE.includes(f.field_type)) return   // checkbox 单击已切换，无需编辑态
+  clearTimeout(selectTimer)   // 双击路径不出现选中态
+  selectTimer = null
+  selectedCell.value = null   // 编辑态即脱离选中态
   editingCell.value = { key: row.__key, fieldName: f.field_name }
+}
+
+// Esc 取消选中（编辑态的 Esc 由编辑器自身处理）
+function onDocKeydown(e) {
+  if (e.key === 'Escape' && selectedCell.value && !editingCell.value) {
+    selectedCell.value = null
+    // vxe 的 cell-class-name 只在渲染周期重算：Esc 清选中不走数据流，手动触发列重渲染
+    gridRef.value?.refreshColumn?.()
+  }
 }
 
 // vxe 原生右键菜单（menu-config；cell-contextmenu 事件在 v4 不对外暴露）
@@ -271,7 +317,19 @@ function footerMethod({ columns }) {
   ]
 }
 
-defineExpose({ clearEditing: () => { editingCell.value = null } })
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onDocKeydown)
+  clearTimeout(selectTimer)
+})
+
+document.addEventListener('keydown', onDocKeydown)
+
+defineExpose({ clearEditing: () => {
+  clearTimeout(selectTimer)
+  selectTimer = null
+  editingCell.value = null
+  selectedCell.value = null
+} })
 </script>
 
 <style scoped>
@@ -287,6 +345,24 @@ defineExpose({ clearEditing: () => { editingCell.value = null } })
 .smart-vxe :deep(.row-group.depth-2) { background: #fffef7; }
 .smart-vxe :deep(.row-add) { background: var(--el-fill-color-lighter); }
 .smart-vxe :deep(.vxe-body--column.col-no) { color: var(--el-text-color-placeholder); font-size: 12px; }
+/* 单击选中态：2px 主色边框（inset 阴影实现，与单元格同大、不占布局），与编辑态边框同款 */
+.smart-vxe :deep(.vxe-body--column.cell-selected) { box-shadow: 0 0 0 2px var(--el-color-primary) inset; position: relative; z-index: 1; }
+/* 编辑态：去内边距，编辑器严格填满单元格。编辑边框画在 .vxe-cell 上（它与 td 严格同盒），
+   不能画在 el-input__wrapper 上——EP wrapper 是 content-box，height:100%+padding 会高出 2px
+   被 .vxe-cell 的 overflow:hidden 各裁 1px（上下边框变细的原因） */
+.smart-vxe :deep(.vxe-body--column.cell-editing .vxe-cell) {
+  padding: 0; height: 100%; box-shadow: 0 0 0 2px var(--el-color-primary) inset;
+}
+.smart-vxe :deep(.vxe-body--column.cell-editing .vxe-cell--wrapper) { height: 100%; }
+.smart-vxe :deep(.vxe-body--column.cell-editing .el-input),
+.smart-vxe :deep(.vxe-body--column.cell-editing .el-select),
+.smart-vxe :deep(.vxe-body--column.cell-editing .el-date-editor.el-input) { width: 100%; height: 100%; }
+.smart-vxe :deep(.vxe-body--column.cell-editing .el-input__wrapper),
+.smart-vxe :deep(.vxe-body--column.cell-editing .el-select__wrapper) {
+  height: 100%; min-height: 0; border-radius: 0; box-sizing: border-box;
+  box-shadow: none; background: transparent;   /* 透出 .vxe-cell 上的编辑态边框 */
+}
+.smart-vxe :deep(.vxe-body--column.cell-editing .el-input__inner) { height: 100%; }
 .smart-vxe :deep(.cell-indent) { padding-left: 18px; }
 :deep(.field-head) { display: inline-flex; align-items: center; gap: 4px; width: 100%; cursor: default; }
 :deep(.field-icon) { color: var(--el-color-primary); font-size: 12px; min-width: 16px; text-align: center; }

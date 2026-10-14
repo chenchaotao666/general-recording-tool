@@ -83,7 +83,7 @@
             <span class="config-title">{{ selectedNode.data.typeName }} · {{ selectedNode.id }}</span>
             <div>
               <el-button link type="info" size="small" @click="nodeDocVisible = true">节点说明</el-button>
-              <el-button link type="primary" size="small" @click="aiNodeVisible = true">AI 帮我配置</el-button>
+              <el-button link type="primary" size="small" @click="openAiNodeConfig">AI 帮我配置</el-button>
               <el-button link type="danger" size="small" @click="removeNode(selectedNode.id)">删除节点</el-button>
             </div>
           </div>
@@ -179,15 +179,15 @@
       </template>
     </el-dialog>
 
-    <!-- AI 帮我配这个节点 -->
-    <el-dialog v-model="aiNodeVisible" :title="`AI 配置 · ${selectedNode?.data.typeName || ''}`" width="480px">
-      <el-input v-model="aiNodeDesc" type="textarea" :rows="4"
-        placeholder="用一句话描述你想要的效果，例如：筛选过去 7 天金额大于 1000 的记录" />
-      <template #footer>
-        <el-button @click="aiNodeVisible = false">取消</el-button>
-        <el-button type="primary" :loading="aiNodeLoading" @click="applyAiNodeConfig">生成并填入</el-button>
-      </template>
-    </el-dialog>
+    <!-- AI 帮我配这个节点（统一 AiPromptPanel 浮动面板，贴入口链接弹出） -->
+    <AiPromptPanel
+      v-model="aiNodeVisible" :title="`✨ AI 配置 · ${selectedNode?.data.typeName || ''}`"
+      :anchor="aiNodeAnchor"
+      placeholder="用一句话描述你想要的效果，例如：筛选过去 7 天金额大于 1000 的记录"
+      :loading="aiNodeLoading" :image="false" submit-text="生成并填入"
+      hint="生成结果会填入当前节点配置（请先检查再保存）"
+      @submit="onAiNodeSubmit"
+    />
 
     <!-- AI 流程解读 -->
     <el-dialog v-model="explainVisible" title="这个流程在干什么（AI 解读）" width="520px">
@@ -235,6 +235,7 @@ import FlowNode from '../components/workflow/FlowNode.vue'
 import SchemaForm from '../components/workflow/SchemaForm.vue'
 import TriggerForm from '../components/workflow/TriggerForm.vue'
 import JsonTree from '../components/workflow/JsonTree.vue'
+import AiPromptPanel from '../components/AiPromptPanel.vue'
 import { buildRecordOptions } from '../components/workflow/judgeObject'
 import NodeDoc from '../components/workflow/NodeDoc.vue'
 import { useDirtyGuard } from '../utils/useDirtyGuard'
@@ -440,6 +441,18 @@ const aiNodeVisible = ref(false)
 const nodeDocVisible = ref(false)
 const aiNodeDesc = ref('')
 const aiNodeLoading = ref(false)
+const aiNodeAnchor = ref(null)   // 「AI 帮我配置」链接的 DOM（面板贴它弹出）
+
+function openAiNodeConfig(e) {
+  aiNodeAnchor.value = e?.currentTarget || null
+  aiNodeVisible.value = true
+}
+
+// 面板提交：回填描述后走既有流程
+function onAiNodeSubmit({ instruction }) {
+  aiNodeDesc.value = instruction
+  applyAiNodeConfig()
+}
 
 async function applyAiNodeConfig() {
   const n = selectedNode.value

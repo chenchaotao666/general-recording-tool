@@ -14,7 +14,12 @@
     <!-- 图片 -->
     <el-dialog v-model="dlg.image" title="插入图片" width="420px" append-to-body destroy-on-close>
       <el-form label-width="70px" size="small">
-        <el-form-item label="图片URL" required><el-input v-model="imageForm.url" placeholder="https://..." /></el-form-item>
+        <el-form-item label="本地图片">
+          <el-button size="small" @click="pickLocalImage">选择文件…</el-button>
+          <span class="mm-dlg-hint" style="margin-left: 8px">自动压缩到 900px 内</span>
+          <input ref="imageFileInput" type="file" accept="image/*" style="display: none" @change="onImageFileChange" />
+        </el-form-item>
+        <el-form-item label="图片URL"><el-input v-model="imageForm.url" placeholder="https://...（或上方选本地图片）" /></el-form-item>
         <el-form-item label="标题"><el-input v-model="imageForm.title" /></el-form-item>
         <el-form-item label="宽高">
           <el-input-number v-model="imageForm.width" :min="10" :max="500" size="small" /> ×
@@ -45,6 +50,16 @@
       <template #footer>
         <el-button @click="dlg.note = false">取消</el-button>
         <el-button type="primary" @click="applyNote">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 标签 -->
+    <el-dialog v-model="dlg.tag" title="节点标签" width="420px" append-to-body destroy-on-close>
+      <el-input v-model="tagText" placeholder="多个标签用逗号分隔，如：重点，本周，跟进中" />
+      <div class="mm-dlg-hint">标签显示在节点文字下方；清空提交 = 移除全部标签</div>
+      <template #footer>
+        <el-button @click="dlg.tag = false">取消</el-button>
+        <el-button type="primary" @click="applyTag">确定</el-button>
       </template>
     </el-dialog>
 
@@ -146,10 +161,12 @@ const menu = reactive({ show: false, x: 0, y: 0, node: null })
 let cutClipboard = null   // 剪切/复制的节点数据（CUT/COPY 作用于激活节点，回调取数）
 let preContextSelection = []   // 右键前的激活选区快照（capture 阶段采集，恢复多选用）
 const menuItems = reactive([])
-const dlg = reactive({ image: false, link: false, note: false, icon: false })
+const dlg = reactive({ image: false, link: false, note: false, icon: false, tag: false })
 const imageForm = reactive({ url: '', title: '', width: 100, height: 100 })
 const linkForm = reactive({ url: '', title: '' })
 const noteText = ref('')
+const tagText = ref('')
+const imageFileInput = ref(null)
 
 const MENU = [
   { label: '插入子节点', cmd: 'INSERT_CHILD_NODE' },
@@ -161,6 +178,7 @@ const MENU = [
   { label: '插入图标', dialog: 'icon' },
   { label: '插入图片', dialog: 'image' },
   { label: '插入超链接', dialog: 'link' },
+  { label: '节点标签', dialog: 'tag' },
   { label: '节点备注', dialog: 'note' },
   { label: '上移', cmd: 'UP_NODE', noRoot: true },
   { label: '下移', cmd: 'DOWN_NODE', noRoot: true },
@@ -237,6 +255,11 @@ function runItem(item) {
       })
     }
     if (item.dialog === 'note') noteText.value = node?.getData('note') || ''
+    // 标签回填：tag 是数组（字符串或 {text} 对象）
+    if (item.dialog === 'tag') {
+      const tags = node?.getData('tag') || []
+      tagText.value = tags.map((t) => (typeof t === 'string' ? t : t.text)).filter(Boolean).join('，')
+    }
     dlg[item.dialog] = true
     return
   }
@@ -348,6 +371,44 @@ function applyLink() {
 function applyNote() {
   mind.execCommand('SET_NODE_NOTE', menu.node, noteText.value)
   dlg.note = false
+}
+
+// 标签：逗号分隔的字符串数组（库原生渲染节点下方色块；空数组=移除）
+function applyTag() {
+  const tags = tagText.value.split(/[,，、\s]+/).map((s) => s.trim()).filter(Boolean).slice(0, 5)
+  mind.execCommand('SET_NODE_TAG', menu.node, tags)
+  dlg.tag = false
+}
+
+// 图片本地上传：读文件 → 超长边压缩到 900px → data URL 进节点（NodeBase64ImageStorage 随文档持久化）
+function pickLocalImage() {
+  imageFileInput.value?.click()
+}
+
+function onImageFileChange(e) {
+  const file = e.target.files?.[0]
+  e.target.value = ''   // 允许重复选同一文件
+  if (!file) return
+  if (!file.type.startsWith('image/')) return ElMessage.warning('请选择图片文件')
+  const reader = new FileReader()
+  reader.onload = () => {
+    const img = new Image()
+    img.onload = () => {
+      const MAX = 900
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * scale)
+      canvas.height = Math.round(img.height * scale)
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+      imageForm.url = canvas.toDataURL('image/png')
+      imageForm.width = canvas.width
+      imageForm.height = canvas.height
+      ElMessage.success('图片已载入，点确定插入')
+    }
+    img.onerror = () => ElMessage.error('图片读取失败')
+    img.src = reader.result
+  }
+  reader.readAsDataURL(file)
 }
 
 // ---------- 备注浮层（悬停备注图标显示，可编辑/删除） ----------
@@ -493,6 +554,11 @@ function getActiveNode() {
   return mind?.renderer?.activeNodeList?.[0] || null
 }
 
+// 全部激活节点（左键拖框/Ctrl 点多选时 >1；AI 面板上下文条用）
+function getActiveNodes() {
+  return mind?.renderer?.activeNodeList || []
+}
+
 function applyIcon(name) {
   // 图标数据的 key 格式是「分组_名称」（如 priority_1），库按此格式查表渲染
   mind.execCommand('SET_NODE_ICON', menu.node, [name])
@@ -518,6 +584,8 @@ onMounted(() => {
     customNoteContentShow: { show: showNoteTip, hide: scheduleHideNoteTip },
     // 超链接点击不直接跳转：弹操作浮层（打开/编辑/删除）
     customHyperlinkJump: onHyperlinkJump,
+    // 左键框选多选节点、右键拖动视图（库原生开关，默认是反的）
+    useLeftKeySelectionRightKeyDrag: true,
   })
   const d = props.data
   if (d && d.root) {
@@ -578,6 +646,16 @@ async function exportPng(name) {
   }
 }
 
+// 导出多格式：pdf/xmind/svg 等（Export 插件内置同名方法）
+async function exportFile(type, name) {
+  if (!mind) return
+  try {
+    await mind.doExport.export(type, true, name || '思维导图')
+  } catch (e) {
+    ElMessage.error('导出失败：' + (e?.message || e))
+  }
+}
+
 function setLayout(name) {
   mind?.setLayout(name)
   localStorage.setItem('grt_mm_simple_layout', name)
@@ -608,7 +686,122 @@ function redo() {
   mind?.execCommand('FORWARD')
 }
 
-defineExpose({ getDoc, getCanonical, setTheme, setLayout, setLineStyle, exportPng, undo, redo, canUndo, canRedo, setActiveStyle, getActiveStyle, getActiveNode, addGeneralization, aiRebuild, aiExpand })
+// ---------- 演示播放（Demonstrate 插件：全屏 + 逐步高亮节点，Esc 退出，←/→ 翻页） ----------
+function playDemo() {
+  if (!mind) return
+  mind.demonstrate?.enter()
+}
+
+// ---------- 智能配色：给一级分支成套上色；palette 为 null 时清除（回退主题色） ----------
+// palette: [{fill, light, text}]，一级分支节点 fill+白字，子树文字 text 色 + 浅底 light
+function applyPalette(palette) {
+  if (!mind) return
+  const root = mind.renderer.root
+  if (!root) return
+  root.children.forEach((branch, i) => {
+    const c = palette ? palette[i % palette.length] : null
+    mind.execCommand('SET_NODE_STYLE', branch, 'fillColor', c?.fill || undefined)
+    mind.execCommand('SET_NODE_STYLE', branch, 'color', c ? '#fff' : undefined)
+    const walk = (n) => {
+      mind.execCommand('SET_NODE_STYLE', n, 'color', c?.text || undefined)
+      mind.execCommand('SET_NODE_STYLE', n, 'fillColor', c?.light || undefined)
+      ;(n.children || []).forEach(walk)
+    }
+    branch.children.forEach(walk)
+  })
+}
+
+// ---------- AI 改写选中分支：清空其子树 + 渐进插入新分支 ----------
+async function aiRewrite(children, overlays = {}) {
+  if (!mind || aiBusy) return false
+  const target = mind.renderer.activeNodeList[0] || mind.renderer.root
+  aiBusy = true
+  try {
+    for (const c of [...target.children]) mind.execCommand('REMOVE_NODE', c)
+    await _sleep(250)
+    await _progressiveAdd(target, children)
+    await _applyAiOverlays(overlays)
+    mind.renderer.clearActiveNodeList()
+    mind.view?.fit?.()
+    return true
+  } finally { aiBusy = false }
+}
+
+// ---------- AI 多选批量优化：按 uid 定向改写（不清选区不 fit，调用方循环后统一收尾） ----------
+async function aiRewriteNode(uid, children) {
+  if (!mind || aiBusy) return false
+  const target = mind.renderer.findNodeByUid(uid)
+  if (!target) return false
+  aiBusy = true
+  try {
+    for (const c of [...target.children]) mind.execCommand('REMOVE_NODE', c)
+    await _sleep(250)
+    await _progressiveAdd(target, children)
+    return true
+  } finally { aiBusy = false }
+}
+
+// 指定 uid 节点的子树纯文本（AI 逐节点改写/选中分支总结的上下文）
+function getSubtreeTexts(uid) {
+  const n = mind?.renderer?.findNodeByUid(uid)
+  if (!n) return []
+  const out = []
+  const walk = (node) => {
+    const t = (node.getData('text') || '').replace(/<[^>]+>/g, '').trim()
+    if (t) out.push(t)
+    ;(node.children || []).forEach(walk)
+  }
+  walk(n)
+  return out
+}
+
+function fitView() {
+  mind?.view?.fit?.()
+}
+
+// ---------- 大纲双向编辑：活节点扁平列表 + 按 uid 的结构操作 ----------
+function getOutlineLive() {
+  // 渲染顺序扁平化（富文本剥标签取纯文字；uid 定位节点实例）
+  const out = []
+  const walk = (node, depth) => {
+    if (!node) return
+    out.push({
+      uid: node.getData('uid'),
+      text: (node.getData('text') || '').replace(/<[^>]+>/g, '').trim(),
+      depth,
+      isRoot: !!node.isRoot,
+    })
+    ;(node.children || []).forEach((c) => walk(c, depth + 1))
+  }
+  walk(mind?.renderer?.root, 0)
+  return out.filter((x) => x.uid)
+}
+
+function outlineSetText(uid, text) {
+  const n = mind?.renderer?.findNodeByUid(uid)
+  if (n) mind.execCommand('SET_NODE_TEXT', n, text)
+}
+
+// 插入同级（asChild=false）/子级（true）节点，返回新节点 uid 供大纲聚焦
+// 注意：库的命令渲染是异步的，插完要等一拍再取 children（与 _progressiveAdd 的 sleep 同理）
+async function outlineInsert(uid, asChild) {
+  const n = mind?.renderer?.findNodeByUid(uid)
+  if (!n) return null
+  const parent = asChild ? n : n.parent
+  if (!parent) return null
+  const before = new Set(parent.children.map((c) => c.getData('uid')))
+  mind.execCommand(asChild ? 'INSERT_CHILD_NODE' : 'INSERT_NODE', false, n, { text: '' })
+  await _sleep(50)
+  const created = parent.children.find((c) => !before.has(c.getData('uid')))
+  return created?.getData('uid') || null
+}
+
+function outlineRemove(uid) {
+  const n = mind?.renderer?.findNodeByUid(uid)
+  if (n && !n.isRoot) mind.execCommand('REMOVE_NODE', n)
+}
+
+defineExpose({ getDoc, getCanonical, setTheme, setLayout, setLineStyle, exportPng, exportFile, undo, redo, canUndo, canRedo, setActiveStyle, getActiveStyle, getActiveNode, getActiveNodes, addGeneralization, aiRebuild, aiExpand, aiRewrite, aiRewriteNode, getSubtreeTexts, fitView, playDemo, applyPalette, getOutlineLive, outlineSetText, outlineInsert, outlineRemove })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', hideMenu)
@@ -640,6 +833,8 @@ onBeforeUnmount(() => {
 .mm-menu-item.disabled { color: #c0c4cc; cursor: not-allowed; }
 .mm-menu-item.disabled:hover { background: none; color: #c0c4cc; }
 
+.mm-dlg-hint { font-size: 12px; color: #909399; margin-top: 8px; line-height: 1.5; }
+
 .icon-toolbar { margin-bottom: 10px; }
 .icon-group { margin-bottom: 10px; }
 .icon-group-name { font-size: 12px; color: #909399; margin-bottom: 6px; }
@@ -666,8 +861,7 @@ onBeforeUnmount(() => {
 }
 .mm-note-tip-ops button:hover { background: #ecf5ff; color: #409eff; }
 
-/* 图片/图标/超链接标记的操作浮层 */
-.mm-op-tip {
+/* 图片/图标/超链接标记的操作浮层 */.mm-op-tip {
   position: absolute; z-index: 3000; display: flex; gap: 2px; padding: 4px;
   background: #fff; border: 1px solid #e4e7ed; border-radius: 6px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, .12);

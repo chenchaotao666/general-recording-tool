@@ -348,9 +348,10 @@ function aiQuick(q) {
 }
 
 async function aiGenerate() {
-  // 选中内容时 Enter 空提交 = 默认「润色」，不用先打字
-  const instruction = ai.value.instruction.trim() || (ai.value.selected ? '润色' : '')
-  if (!instruction || ai.value.loading) return
+  // 选中内容时 Enter 空提交 = 默认「润色」；只传图不写字 = 按图片内容整理成文（后端默认指令）
+  const instruction = ai.value.instruction.trim()
+    || (ai.value.selected ? '润色' : '')
+  if ((!instruction && !(ai.value.images || []).length) || ai.value.loading) return
   ai.value.loading = true
   ai.value.error = ''
   try {

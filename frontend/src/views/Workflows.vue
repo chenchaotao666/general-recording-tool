@@ -4,7 +4,7 @@
       <h2>工作流</h2>
       <div>
         <el-button @click="openTemplates">模板市场</el-button>
-        <el-button class="ai-btn" :icon="MagicStick" @click="aiVisible = true">AI 生成</el-button>
+        <el-button ref="aiBtnRef" class="ai-btn" :icon="MagicStick" @click="aiVisible = true">AI 生成</el-button>
         <el-button type="primary" :icon="Plus" @click="$router.push('/workflows/new')">新建工作流</el-button>
       </div>
     </div>
@@ -59,20 +59,17 @@
       </template>
     </el-dialog>
 
-    <!-- AI 生成对话框 -->
-    <el-dialog v-model="aiVisible" title="AI 生成工作流" width="560px">
-      <el-input v-model="aiDesc" type="textarea" :rows="6"
-        placeholder="用一句话描述你想要的自动化流程，例如：&#10;每天早上 9 点查询库存表里数量低于 10 的记录，AI 生成补货建议，发站内通知给我" />
-      <div class="ai-examples">
-        <span class="hint">试试：</span>
-        <el-link v-for="ex in AI_EXAMPLES" :key="ex" type="primary" size="small" class="ex" @click="aiDesc = ex">{{ ex }}</el-link>
-      </div>
-      <el-alert v-if="aiNotes" :title="`生成说明：${aiNotes}`" type="warning" :closable="false" class="mt" />
-      <template #footer>
-        <el-button @click="aiVisible = false">取消</el-button>
-        <el-button type="primary" :loading="aiLoading" @click="onAiGenerate">生成并进入画布</el-button>
-      </template>
-    </el-dialog>
+    <!-- AI 生成（统一 AiPromptPanel；示例走 chips） -->
+    <AiPromptPanel
+      v-model="aiVisible" title="✨ AI 生成工作流" :anchor="aiBtnRef"
+      placeholder="用一句话描述你想要的自动化流程，例如：每天早上 9 点查询库存表里数量低于 10 的记录，AI 生成补货建议，发站内通知给我"
+      :chips="WF_AI_CHIPS" :loading="aiLoading" :image="false" :rows="4"
+      submit-text="生成并进入画布"
+      hint="点示例可直接填入；生成后自动进入画布继续编辑"
+      @submit="onAiSubmit"
+    >
+      <el-alert v-if="aiNotes" :title="`生成说明：${aiNotes}`" type="warning" :closable="false" style="margin-top: 8px" />
+    </AiPromptPanel>
 
     <!-- 列表工具栏：搜索 + 状态筛选 -->
     <div class="list-filter">
@@ -171,12 +168,15 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Plus } from '@element-plus/icons-vue'
 import { aiAssistWorkflow, deleteWorkflow, installWorkflowTemplate, listWorkflows, listWorkflowTemplates, runWorkflow, toggleWorkflow, workflowRuns } from '../api'
+import AiPromptPanel from '../components/AiPromptPanel.vue'
 
 const AI_EXAMPLES = [
   '每天早上把超期未跟进的客户记录整理成清单发邮件给我',
   '新增客户反馈时，AI 判断紧急程度，紧急的立刻发站内通知',
   '每周一生成上周数据汇总，AI 写一段分析结论发通知',
 ]
+// 面板的快捷 chips（点一下填入输入框）
+const WF_AI_CHIPS = AI_EXAMPLES.map((ex) => ({ label: ex }))
 
 const TRIGGER_LABELS = {
   manual: '手动', schedule: '定时', record: '数据变更', webhook: 'Webhook', test: '试运行',
@@ -220,6 +220,7 @@ const aiVisible = ref(false)
 const aiDesc = ref('')
 const aiLoading = ref(false)
 const aiNotes = ref('')
+const aiBtnRef = ref(null)
 
 // 模板市场
 const tplVisible = ref(false)
@@ -275,6 +276,12 @@ async function doInstall() {
   } finally {
     installingKey.value = ''
   }
+}
+
+// 面板提交：回填描述后走既有生成流程
+function onAiSubmit({ instruction }) {
+  aiDesc.value = instruction
+  onAiGenerate()
 }
 
 async function onAiGenerate() {

@@ -4,36 +4,33 @@
       <h2>报表</h2>
       <div>
         <el-button @click="openTemplates">模板市场</el-button>
-        <el-button class="ai-btn" :icon="MagicStick" @click="openAi">AI 生成</el-button>
+        <el-button ref="aiBtnRef" class="ai-btn" :icon="MagicStick" @click="openAi">AI 生成</el-button>
         <el-button type="primary" :icon="Plus" @click="createVisible = true">新建报表</el-button>
       </div>
     </div>
 
-    <!-- AI 生成：选表 + 一句话需求 → 生成配置 → 创建并进设计器 -->
-    <el-dialog v-model="aiVisible" title="AI 生成报表" width="640px" destroy-on-close>
-      <el-select v-model="aiTableId" placeholder="基于哪张表生成" style="width: 100%; margin-bottom: 10px" filterable>
+    <!-- AI 生成（统一 AiPromptPanel）：选表 + 一句话需求 → 生成配置 → 创建并进设计器 -->
+    <AiPromptPanel
+      v-model="aiVisible" title="✨ AI 生成报表" :anchor="aiBtnRef"
+      placeholder="用自然语言描述你想要的报表，如：做一个上周的客户跟进周报，包含新增客户数、客户分级占比、每日新增趋势、客户明细和一段小结"
+      :loading="aiGenerating" :rows="4"
+      :submit-text="aiResult ? '重新生成' : '生成'"
+      hint="生成后先出配置预览，确认再建"
+      @submit="onReportAiSubmit"
+    >
+      <!-- 业务差异内容：表选择器 + 结果预览/创建 -->
+      <el-select v-model="aiTableId" placeholder="基于哪张表生成" style="width: 100%; margin-top: 8px" filterable>
         <el-option v-for="t in tables" :key="t.id" :label="t.label" :value="t.id" />
       </el-select>
-      <el-input
-        v-model="aiDescription" type="textarea" :rows="4"
-        placeholder="用自然语言描述你想要的报表，如：做一个上周的客户跟进周报，包含新增客户数、客户分级占比、每日新增趋势、客户明细和一段小结"
-      />
-      <div style="margin: 10px 0">
-        <el-button class="ai-btn" :loading="aiGenerating" :disabled="!aiTableId || !aiDescription.trim()" @click="aiGenerate">
-          {{ aiResult ? '重新生成' : '生成' }}
-        </el-button>
-        <span v-if="aiGenerating" style="margin-left: 10px; font-size: 12px; color: #909399">AI 设计中，可能需要十几秒…</span>
-      </div>
       <template v-if="aiResult">
-        <el-alert type="success" :closable="false" style="margin-bottom: 10px"
+        <el-alert type="success" :closable="false" style="margin-top: 10px"
           :title="`已生成「${aiResult.name}」：${aiResult.blocks.length} 个区块`" />
-        <el-alert v-if="aiResult.notes" type="warning" :closable="false" :title="aiResult.notes" style="margin-bottom: 10px" />
+        <el-alert v-if="aiResult.notes" type="warning" :closable="false" :title="aiResult.notes" style="margin-top: 10px" />
+        <div style="margin-top: 10px; text-align: right">
+          <el-button type="primary" :loading="aiCreating" @click="aiCreate">创建并进入设计器</el-button>
+        </div>
       </template>
-      <template #footer>
-        <el-button @click="aiVisible = false">取消</el-button>
-        <el-button v-if="aiResult" class="ai-btn" :loading="aiCreating" @click="aiCreate">创建并进入设计器</el-button>
-      </template>
-    </el-dialog>
+    </AiPromptPanel>
 
     <!-- 模板市场对话框（与工作流模板市场同一交互：搜索/分类/一键安装） -->
     <el-dialog v-model="tplVisible" title="模板市场 · 一键安装场景报表" width="720px">
@@ -245,6 +242,7 @@ import {
   installReportTemplate, listReportShareLinks, listReportTemplates,
   listReports, listTables, reportExportUrl, reportRuns, testPushReport, toggleReport,
 } from '../api'
+import AiPromptPanel from '../components/AiPromptPanel.vue'
 
 const router = useRouter()
 const reports = ref([])
@@ -333,11 +331,22 @@ const aiDescription = ref('')
 const aiGenerating = ref(false)
 const aiCreating = ref(false)
 const aiResult = ref(null)
+const aiBtnRef = ref(null)
 
 function openAi() {
   aiResult.value = null
   aiTableId.value = tables.value[0]?.id || null
   aiVisible.value = true
+}
+
+// 面板提交：回填描述后走既有生成流程（保留原来的校验：没选表/没写需求不生成）
+function onReportAiSubmit({ instruction }) {
+  aiDescription.value = instruction
+  if (!aiTableId.value || !aiDescription.value.trim()) {
+    ElMessage.warning('先选表，再描述你想要的报表')
+    return
+  }
+  aiGenerate()
 }
 
 async function aiGenerate() {

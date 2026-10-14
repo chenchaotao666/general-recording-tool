@@ -559,15 +559,15 @@
       </template>
     </el-dialog>
 
-    <!-- AI 帮我设置这个区块（与工作流节点的「AI 帮我配置」同款） -->
-    <el-dialog v-model="aiBlockVisible" :title="`AI 设置 · ${BLOCK_TYPE_LABELS[selectedBlock?.type] || ''}`" width="480px">
-      <el-input v-model="aiBlockDesc" type="textarea" :rows="4"
-        placeholder="用一句话描述你想要的效果，例如：按产品分组看金额合计，只要本月已完成的" />
-      <template #footer>
-        <el-button @click="aiBlockVisible = false">取消</el-button>
-        <el-button class="ai-btn" :loading="aiBlockLoading" @click="applyBlockAi">生成并填入</el-button>
-      </template>
-    </el-dialog>
+    <!-- AI 帮我设置这个区块（统一 AiPromptPanel 浮动面板，贴「AI 帮我设置」链接弹出） -->
+    <AiPromptPanel
+      v-model="aiBlockVisible" :title="`✨ AI 设置 · ${BLOCK_TYPE_LABELS[selectedBlock?.type] || ''}`"
+      :anchor="aiBlockAnchor"
+      placeholder="用一句话描述你想要的效果，例如：按产品分组看金额合计，只要本月已完成的"
+      :loading="aiBlockLoading" :image="false" submit-text="生成并填入"
+      hint="生成结果会合并进当前区块配置（不动数据集/类型）"
+      @submit="onBlockAiSubmit"
+    />
 
     <!-- 试运行预览（draft 不落库） -->
     <el-dialog v-model="previewVisible" title="试运行预览（未保存的配置，不影响线上报表）" width="88%" top="4vh">
@@ -589,6 +589,7 @@ import {
 import { GridLayout, GridItem } from 'grid-layout-plus'
 import { aiAssistBlock, aiAssistReport, checkExpr, getReport, getTable, listTables, previewPushReport, runReport, updateReport } from '../api'
 import ReportDashboard from '../components/ReportDashboard.vue'
+import AiPromptPanel from '../components/AiPromptPanel.vue'
 import VariablePicker from '../components/workflow/VariablePicker.vue'
 import ReportBlock from '../components/ReportBlock.vue'
 import BlockConfigForm from '../components/BlockConfigForm.vue'
@@ -1715,10 +1716,18 @@ async function aiApply() {
 const aiBlockVisible = ref(false)
 const aiBlockDesc = ref('')
 const aiBlockLoading = ref(false)
+const aiBlockAnchor = ref(null)   // 「AI 帮我设置」链接的 DOM（面板贴它弹出）
 
-function openBlockAi() {
+function openBlockAi(e) {
   aiBlockDesc.value = ''
+  aiBlockAnchor.value = e?.currentTarget || null
   aiBlockVisible.value = true
+}
+
+// 面板提交：回填描述后走既有流程
+function onBlockAiSubmit({ instruction }) {
+  aiBlockDesc.value = instruction
+  applyBlockAi()
 }
 
 async function applyBlockAi() {

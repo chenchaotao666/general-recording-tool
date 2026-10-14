@@ -3,7 +3,8 @@
     <div class="editor-toolbar">
       <el-button :icon="Back" @click="back">返回</el-button>
       <el-input v-model="title" class="title-input" maxlength="200" placeholder="导图标题" @input="scheduleSave" />
-      <el-button class="ai-btn" :loading="ai.loading" @click="openAi">✨ AI 生成</el-button>
+      <!-- AI：浮动指令面板（统一 AiPromptPanel），贴按钮弹出；改写/总结入口在面板内 -->
+      <el-button ref="aiBtnRef" class="ai-btn" :loading="ai.loading" @click="openAi">✨ AI 生成</el-button>
 
       <!-- 前进/后退（库内置历史栈） -->
       <!-- 可用状态视觉区分：可用=蓝色实心，不可用=灰化 -->
@@ -93,38 +94,74 @@
       </el-popover>
 
       <el-button @click="openOutline">大纲</el-button>
-      <el-button @click="eng?.exportPng(title)">导出 PNG</el-button>
-      <span class="shortcut-hint">双击编辑 · Tab 子节点 · Enter 同级 · Ctrl+点击 / 右键拖框多选 · 右键归纳/概要</span>
+      <el-button title="演示播放（Esc 退出，←/→ 翻页）" @click="eng?.playDemo()">演示</el-button>
+
+      <!-- 智能配色：成套预设一键应用（作用于各一级分支） -->
+      <el-dropdown trigger="click" @command="applyPaletteCmd">
+        <el-button title="智能配色">配色<el-icon><ArrowDown /></el-icon></el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item v-for="p in PALETTES" :key="p.name" :command="p.name">
+              <span class="palette-item">
+                <span v-for="c in p.colors.slice(0, 4)" :key="c.fill" class="palette-dot" :style="{ background: c.fill }" />
+                {{ p.name }}
+              </span>
+            </el-dropdown-item>
+            <el-dropdown-item divided command="__clear">清除配色（跟随主题）</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+
+      <!-- 导出：PNG / PDF / XMind -->
+      <el-dropdown trigger="click" @command="(t) => eng?.exportFile(t, title)">
+        <el-button>导出<el-icon><ArrowDown /></el-icon></el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="png">PNG 图片</el-dropdown-item>
+            <el-dropdown-item command="pdf">PDF 文档</el-dropdown-item>
+            <el-dropdown-item command="xmind">XMind 文件</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+      <span class="shortcut-hint">双击编辑 · Tab 子节点 · Enter 同级 · 左键拖框多选 · 右键拖动视图 · 右键菜单更多</span>
       
       <span class="save-state" :class="{ err: saveState === '保存失败' }">{{ saveState }}</span>
     </div>
 
-    <!-- AI 生成：整图重建 / 在选中节点下扩写；生成后节点逐个出现（渐进渲染） -->
-    <el-dialog v-model="ai.visible" title="AI 生成思维导图" width="520px" append-to-body destroy-on-close>
-      <el-input
-        v-model="ai.instruction" type="textarea" :rows="3"
-        placeholder="描述导图主题，如：帮我整理一份 Vue3 学习路线 / 制定一次北京三日游计划；也可附图，从图片中提取结构"
-      />
-      <AiImagePicker v-model="ai.images" />
-      <el-radio-group v-if="ai.canExpand" v-model="ai.mode" style="margin-top: 10px">
-        <el-radio value="rebuild">重建整图（清空现有内容）</el-radio>
-        <el-radio value="expand">在选中节点「{{ ai.nodeText }}」下扩写</el-radio>
-      </el-radio-group>
-      <div class="ai-hint">生成后节点会逐个出现在画布上，全程约几秒到十几秒</div>
-      <template #footer>
-        <el-button @click="ai.visible = false">取消</el-button>
-        <el-button type="primary" :loading="ai.loading" @click="aiGenerate">生成</el-button>
-      </template>
-    </el-dialog>
+    <!-- AI 生成：选中节点时顶部显示上下文条 + 建议操作 chips（记事本同款）；渐进渲染 -->
+    <AiPromptPanel
+      v-model="ai.visible" title="✨ AI 生成思维导图" :anchor="aiBtnRef"
+      :context-note="aiContextNote"
+      :chips="mmAiChips"
+      :placeholder="ai.canExpand
+        ? '对选中节点做什么？如：扩写 / 优化 / 改写（直接回车 = 扩写）；也可重建整图'
+        : ai.activeTexts.length
+          ? '对选中的几个分支做什么？如：优化表达 / 补充细节（也可总结选中分支）'
+          : '描述导图主题，如：帮我整理一份 Vue3 学习路线 / 制定一次北京三日游计划；也可附图，从图片中提取结构'"
+      :rows="2"
+      :loading="ai.loading"
+      :result="ai.result" :result-title="ai.resultTitle"
+      @submit="onAiSubmit"
+    />
 
-    <el-drawer v-model="outlineVisible" title="大纲" size="360px">
+    <!-- 大纲（双向编辑）：改文字同步到画布；Enter 加同级、Tab 加子级、空行再按退格删除 -->
+    <el-drawer v-model="outlineVisible" title="大纲（可直接编辑）" size="400px">
       <div class="outline-tree">
         <div
-          v-for="(item, i) in outlineItems" :key="i"
-          class="outline-item" :style="{ paddingLeft: item.depth * 18 + 6 + 'px' }"
-        >{{ item.text || '（空）' }}</div>
+          v-for="item in outlineItems" :key="item.uid"
+          class="outline-row" :style="{ paddingLeft: item.depth * 18 + 2 + 'px' }"
+        >
+          <el-input
+            :ref="(el) => setOutlineInputRef(item.uid, el)"
+            v-model="item.text" size="small" class="outline-input" placeholder="（空）"
+            @change="(v) => outlineChange(item, v)"
+            @keydown="(e) => outlineKeydown(e, item)"
+          />
+          <el-icon v-if="!item.isRoot" class="outline-del" title="删除节点" @click="outlineDel(item)"><Delete /></el-icon>
+        </div>
         <el-empty v-if="!outlineItems.length" description="暂无内容" :image-size="60" />
       </div>
+      <div class="outline-hint">编辑会同步到画布 · Enter 同级 · Tab 子级 · 清空后按退格删除</div>
     </el-drawer>
 
     <div class="editor-body" v-loading="loading">
@@ -135,13 +172,13 @@
 
 <script setup>
 // 思维导图编辑器：引擎定型 simple-mind-map；数据存引擎无关中间格式（{text, children[]}）
-import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, Back, Check, RefreshLeft, RefreshRight } from '@element-plus/icons-vue'
+import { ArrowDown, Back, Check, Delete, RefreshLeft, RefreshRight } from '@element-plus/icons-vue'
 import { getMindmap, mindmapAiAssist, updateMindmap } from '../api'
 import MindmapSimple from '../components/MindmapSimple.vue'
-import AiImagePicker from '../components/AiImagePicker.vue'
+import AiPromptPanel from '../components/AiPromptPanel.vue'
 
 // simple-mind-map 主题（simple-mind-map-plugin-themes 注册；中文标签为本项目翻译）
 // 分组展示 + 预览色块（swatch 为各主题主色，近似即可）
@@ -276,38 +313,206 @@ function applyStyle(prop, v) {
   cpVisible[prop] = false                // 点色块即应用并收起面板
 }
 
-// ---------- AI 生成（渐进渲染：节点逐个出现在画布上） ----------
-const ai = reactive({ visible: false, loading: false, instruction: '', mode: 'rebuild', canExpand: false, nodeText: '', images: [] })
+// ---------- AI（生成/扩写/改写分支、总结全文、改进建议；文本类结果在面板内展示） ----------
+const ai = reactive({
+  visible: false, loading: false, instruction: '', mode: 'rebuild',
+  canExpand: false, nodeText: '', activeTexts: [], activeNodes: [], images: [],
+  result: '', resultTitle: '导图总结',
+})
+const aiBtnRef = ref(null)
+
+// 上下文条：单选=基于该节点；多选=列出全部选中（扩写/改写只对单选开放）
+const aiContextNote = computed(() => {
+  const n = ai.activeTexts.length
+  if (!n) return ''
+  if (n === 1) return `基于选中节点：「${ai.nodeText}」`
+  const list = ai.activeTexts.slice(0, 3).map((t) => `「${t.slice(0, 12)}」`).join(' ')
+  return `已选中 ${n} 个节点：${list}${n > 3 ? ' …' : ''}`
+})
+
+// 建议操作 chips：全部只填入输入框，由用户回车/点生成触发。
+// 选中单个节点 → 针对选中内容的操作（扩写/优化/改写）；未选中 → XMind 同款整图示例
+const mmAiChips = computed(() => {
+  const chips = []
+  if (ai.canExpand) {
+    chips.push(
+      { label: `扩写「${ai.nodeText}」`, value: `扩写「${ai.nodeText}」这个分支`, mode: 'expand' },
+      { label: `优化「${ai.nodeText}」的表达`, value: '优化这个分支的表达与结构：节点文字更精炼、层次更清晰，不增减信息量', mode: 'rewrite' },
+      { label: `改写「${ai.nodeText}」子树`, mode: 'rewrite' },
+    )
+  } else if (!ai.activeTexts.length) {
+    chips.push(
+      { label: '调研一个主题并总结要点', value: '调研 [过去一年的金价走势] 及其背后的原因', mode: 'rebuild' },
+      { label: '把一个项目拆解成执行计划', value: '在 [2 个月] 内推出一款 [任务管理] App 的首个版本——涵盖用户调研、原型设计、开发、测试与上线，做成带工期和依赖的执行计划', mode: 'rebuild' },
+      { label: '探索某个领域的最新趋势', value: '梳理 [AI] 领域的最新趋势和方向', mode: 'rebuild' },
+      { label: '分析我的思维导图，给出改进建议', value: '从[结构、完整性、表达]几方面为这张思维导图提出改进建议，编号列出。暂不修改导图，请我确认要采纳哪几条。', mode: 'advise' },
+    )
+  } else {
+    // 多选：逐节点批量优化（rewrite 循环）/ 只总结选中的分支
+    const n = ai.activeTexts.length
+    chips.push(
+      { label: `优化这 ${n} 个节点的表达`, value: '优化这些分支的表达与结构：节点文字更精炼、层次更清晰，不增减信息量', mode: 'multi-rewrite' },
+      { label: `总结这 ${n} 个分支`, value: '总结这几个分支的核心内容', mode: 'multi-summarize' },
+    )
+  }
+  chips.push({ label: '总结当前导图全文', value: '总结当前导图全文', mode: 'summarize' })
+  return chips
+})
+
+// 面板提交：回填状态后按模式路由；文本类结果（总结/建议）留在面板内展示，生成类才关面板
+async function onAiSubmit({ instruction, images, mode }) {
+  ai.instruction = instruction
+  ai.images = images
+  if (mode) ai.mode = mode
+  ai.result = ''
+  if (ai.mode === 'advise') return aiAdvise()
+  if (ai.mode === 'summarize') return aiSummarize()
+  if (ai.mode === 'multi-summarize') {
+    // 只取选中分支的子树作为上下文
+    return aiSummarize(ai.activeNodes.flatMap((n) => eng.value?.getSubtreeTexts?.(n.uid) || []), '分支总结')
+  }
+  if (ai.mode === 'multi-rewrite') return aiMultiRewrite()
+  await aiGenerate()
+}
+
+// 多选批量优化：对每个选中节点分别调用 rewrite，逐节点替换其子树（不改动未选中部分）
+async function aiMultiRewrite() {
+  if (!ai.instruction.trim()) {
+    ElMessage.warning('先描述一下要怎么做')
+    return
+  }
+  const nodes = [...ai.activeNodes]
+  if (nodes.length < 2) return aiGenerate()   // 兜底：单选走普通流程
+  ai.loading = true
+  try {
+    let done = 0
+    for (const nd of nodes) {
+      const context = eng.value?.getSubtreeTexts?.(nd.uid) || []
+      const res = await mindmapAiAssist({
+        instruction: ai.instruction, mode: 'rewrite', node_text: nd.text.slice(0, 100), context: context.slice(-30),
+      })
+      if (await eng.value?.aiRewriteNode?.(nd.uid, res.children)) done++
+    }
+    eng.value?.fitView?.()
+    ai.visible = false
+    ElMessage.success(`已优化 ${done}/${nodes.length} 个节点`)
+  } catch (e) {
+    ElMessage.error(e.message || e)
+  } finally {
+    ai.loading = false
+  }
+}
+
+// 改进建议：分析整图但不改图，结果在面板内展示（用户确认后再手动采纳）
+async function aiAdvise() {
+  const context = eng.value ? flattenOutline(eng.value.getCanonical()).map((i) => i.text).filter(Boolean) : []
+  if (context.length <= 1) return ElMessage.warning('导图还没有内容')
+  ai.loading = true
+  try {
+    const res = await mindmapAiAssist({ instruction: ai.instruction, mode: 'summarize', context })
+    ai.resultTitle = '改进建议'
+    ai.result = res.summary || ''
+  } catch (e) {
+    ElMessage.error(e.message || e)
+  } finally {
+    ai.loading = false
+  }
+}
+
+// 总结：结果在面板内展示，可继续追问/复制
+async function aiSummarize(contextOverride = null, title = '导图总结') {
+  const context = contextOverride
+    || (eng.value ? flattenOutline(eng.value.getCanonical()).map((i) => i.text).filter(Boolean) : [])
+  if (context.length <= 1) return ElMessage.warning('导图还没有内容')
+  ai.loading = true
+  try {
+    const res = await mindmapAiAssist({ instruction: '', mode: 'summarize', context })
+    ai.resultTitle = title
+    ai.result = res.summary || ''
+  } catch (e) {
+    ElMessage.error(e.message || e)
+  } finally {
+    ai.loading = false
+  }
+}
+
+// ---------- 智能配色（成套预设；分支循环取色） ----------
+const PALETTES = [
+  { name: '活力', colors: [
+    { fill: '#409eff', light: '#ecf5ff', text: '#3375b9' },
+    { fill: '#67c23a', light: '#f0f9eb', text: '#529b2e' },
+    { fill: '#e6a23c', light: '#fdf6ec', text: '#b88230' },
+    { fill: '#f56c6c', light: '#fef0f0', text: '#c45656' },
+    { fill: '#9b59b6', light: '#f4f0ff', text: '#7d3c98' },
+  ] },
+  { name: '莫兰迪', colors: [
+    { fill: '#90a4ae', light: '#eceff1', text: '#607d8b' },
+    { fill: '#a1887f', light: '#efebe9', text: '#795548' },
+    { fill: '#81c784', light: '#e8f5e9', text: '#558b2f' },
+    { fill: '#7986cb', light: '#e8eaf6', text: '#5c6bc0' },
+    { fill: '#e08283', light: '#fbe9e7', text: '#c05b4d' },
+  ] },
+  { name: '马卡龙', colors: [
+    { fill: '#f78fb3', light: '#fdeef5', text: '#d6306f' },
+    { fill: '#63cdda', light: '#e3f7fa', text: '#3b9aa8' },
+    { fill: '#f5cd79', light: '#fef6e0', text: '#b8860b' },
+    { fill: '#7dbed6', light: '#e8f4f8', text: '#4a90a4' },
+    { fill: '#cf6a87', light: '#f9e8ec', text: '#a54863' },
+  ] },
+]
+
+function applyPaletteCmd(name) {
+  const p = PALETTES.find((x) => x.name === name)
+  eng.value?.applyPalette?.(p ? p.colors : null)   // __clear → null → 清除自定义色
+  ElMessage.success(p ? `已应用「${p.name}」配色` : '已清除配色')
+}
 
 function openAi() {
-  // 选中非根节点时提供「在该节点下扩写」选项
-  const target = eng.value?.getActiveNode?.()
-  ai.canExpand = !!target && !target.isRoot
-  ai.nodeText = target?.getData('text')?.replace(/<[^>]+>/g, '').slice(0, 20) || ''
-  ai.mode = ai.canExpand ? 'expand' : 'rebuild'
+  // 全部选中节点（不含根，带 uid 供批量定向改写）：单选开放扩写/优化/改写；多选开放批量优化/选中分支总结
+  const nodes = (eng.value?.getActiveNodes?.() || []).filter((n) => !n.isRoot)
+  ai.activeNodes = nodes
+    .map((n) => ({ uid: n.getData('uid'), text: (n.getData('text') || '').replace(/<[^>]+>/g, '').trim() }))
+    .filter((n) => n.uid && n.text)
+  ai.activeTexts = ai.activeNodes.map((n) => n.text)
+  ai.canExpand = ai.activeTexts.length === 1
+  ai.nodeText = ai.activeTexts[0]?.slice(0, 20) || ''
+  // 单选默认扩写；多选默认逐节点改写（空指令时会提示先描述）；未选中默认整图重建
+  ai.mode = ai.canExpand ? 'expand' : (ai.activeTexts.length ? 'multi-rewrite' : 'rebuild')
   ai.images = []
+  ai.result = ''
   ai.visible = true
 }
 
 async function aiGenerate() {
-  const instruction = ai.instruction.trim()
-  if (!instruction || ai.loading) return
+  let instruction = ai.instruction.trim()
+  // 选中节点时空回车 = 默认「扩写」（记事本空提交=润色同款）；改写必须描述怎么改
+  if (!instruction && ai.canExpand && ai.mode === 'expand') instruction = `扩写「${ai.nodeText}」这个分支`
+  if (!instruction && ai.canExpand && ai.mode === 'rewrite') {
+    ElMessage.warning('先描述一下怎么改写')
+    return
+  }
+  // 只传图不写字也允许：后端按图片内容生成导图
+  if ((!instruction && !(ai.images || []).length) || ai.loading) return
   ai.loading = true
   try {
     const expand = ai.canExpand && ai.mode === 'expand'
+    const rewrite = ai.canExpand && ai.mode === 'rewrite'
     const context = eng.value ? flattenOutline(eng.value.getCanonical()).map((i) => i.text).filter(Boolean) : []
     const res = await mindmapAiAssist({
       instruction,
-      mode: expand ? 'expand' : 'rebuild',
+      // rebuild 模式优先：选中节点时点了整图类建议项（调研/拆解/趋势）不应误扩写
+      mode: expand || rewrite ? ai.mode : 'rebuild',
       node_text: ai.nodeText,
       context: context.slice(-30),
       images: ai.images,
     })
     ai.visible = false
     // 渐进渲染：节点逐个出现（每节点 ~150ms），期间 loading 保持，结束后自动保存由防抖兜底
-    const ok = expand
-      ? await eng.value?.aiExpand?.(res.children)
-      : await eng.value?.aiRebuild?.(res)
+    const ok = rewrite
+      ? await eng.value?.aiRewrite?.(res.children, res)
+      : expand
+        ? await eng.value?.aiExpand?.(res.children)
+        : await eng.value?.aiRebuild?.(res)
     if (ok) ElMessage.success('已生成')
   } catch (e) {
     ElMessage.error(e.message || e)
@@ -350,10 +555,64 @@ async function flushSave() {
   }
 }
 
-// 大纲：打开时从当前画布取一次中间格式快照
+// ---------- 大纲（双向编辑）：行内改文字 / Enter 同级 / Tab 子级 / 空行退格删除 ----------
+const outlineInputRefs = new Map()
+let outlineBusy = false
+
+function setOutlineInputRef(uid, el) {
+  if (el) outlineInputRefs.set(uid, el)
+  else outlineInputRefs.delete(uid)
+}
+
+function refreshOutline() {
+  outlineItems.value = eng.value?.getOutlineLive?.() || []
+}
+
 function openOutline() {
-  outlineItems.value = eng.value ? flattenOutline(eng.value.getCanonical()) : []
+  refreshOutline()
   outlineVisible.value = true
+}
+
+function outlineChange(item, v) {
+  const text = (v || '').trim()
+  if (!text) return refreshOutline()   // 空文本不改名，刷新还原
+  eng.value?.outlineSetText(item.uid, text)
+}
+
+async function outlineKeydown(e, item) {
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    await outlineAdd(item, item.isRoot)   // 根节点无同级，Enter=加子级
+  } else if (e.key === 'Tab') {
+    e.preventDefault()
+    await outlineAdd(item, true)
+  } else if (e.key === 'Backspace' && !item.text.trim() && !item.isRoot) {
+    e.preventDefault()
+    outlineDel(item)
+  }
+}
+
+async function outlineAdd(item, asChild) {
+  if (outlineBusy) return
+  outlineBusy = true
+  try {
+    // Enter/Tab 先于 input 的 change 事件：先把本行未提交的编辑写回画布，再插入新行
+    const text = (item.text || '').trim()
+    if (text) eng.value?.outlineSetText(item.uid, text)
+    const newUid = await eng.value?.outlineInsert(item.uid, asChild)
+    refreshOutline()
+    if (newUid) {
+      await nextTick()
+      outlineInputRefs.get(newUid)?.focus?.()
+    }
+  } finally {
+    outlineBusy = false
+  }
+}
+
+function outlineDel(item) {
+  eng.value?.outlineRemove(item.uid)
+  refreshOutline()
 }
 
 // 主题/布局/分支样式偏好写回 localStorage（下次新建导图沿用）+ 触发自动保存
@@ -455,9 +714,16 @@ onBeforeUnmount(() => {
 /* AI 生成对话框提示 */
 .ai-hint { font-size: 12px; color: #c0c4cc; margin-top: 8px; }
 .outline-tree { font-size: 13px; color: #303133; line-height: 1.5; }
-.outline-item {
-  padding: 4px 6px; border-radius: 4px; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis;
+.outline-row { display: flex; align-items: center; gap: 4px; padding: 2px 0; }
+.outline-input :deep(.el-input__wrapper) {
+  box-shadow: none; border-radius: 4px; padding: 0 6px; background: transparent;
 }
-.outline-item:hover { background: #f5f7fa; }
+.outline-input :deep(.el-input__wrapper:hover),
+.outline-input :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 1px #dcdfe6 inset; background: #fff; }
+.outline-del { color: #c0c4cc; cursor: pointer; flex-shrink: 0; display: none; }
+.outline-row:hover .outline-del { display: inline-flex; }
+.outline-del:hover { color: #f56c6c; }
+.outline-hint { margin-top: 12px; font-size: 12px; color: #c0c4cc; }
+.palette-item { display: flex; align-items: center; gap: 6px; }
+.palette-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
 </style>

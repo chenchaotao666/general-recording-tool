@@ -1,6 +1,6 @@
 <template>
   <!-- 排序面板（§5.3）：多级排序规则 + 方向按钮组（类型自适应文案）+ 自动排序开关 -->
-  <el-popover v-model:visible="visibleModel" placement="bottom-start" :width="380">
+  <el-popover trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="380">
     <template #reference><slot /></template>
     <div class="panel">
       <div class="panel-head">

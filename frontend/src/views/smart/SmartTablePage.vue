@@ -13,20 +13,20 @@
                    :conditions="panelConditions" :scope="filterScope"
                    @change="onFiltersChange" @scope-change="onScopeChange">
         <el-button size="small" text :type="filterCount ? 'primary' : ''"
-                   @click.stop="togglePanel('filter')">⧩ 筛选{{ filterCount ? ` ${filterCount}` : '' }}</el-button>
+                   >⧩ 筛选{{ filterCount ? ` ${filterCount}` : '' }}</el-button>
       </FilterPanel>
 
       <GroupPanel :visible="activePanel === 'group'" @update:visible="(v) => (activePanel = v ? 'group' : (activePanel === 'group' ? null : activePanel))" :fields="fields" :groups="cfg.groups || []"
                   @change="(v) => patchConfig({ groups: v })">
         <el-button size="small" text :type="(cfg.groups || []).length ? 'primary' : ''"
-                   @click.stop="togglePanel('group')">≡ 分组{{ (cfg.groups || []).length ? ` ${cfg.groups.length}` : '' }}</el-button>
+                   >≡ 分组{{ (cfg.groups || []).length ? ` ${cfg.groups.length}` : '' }}</el-button>
       </GroupPanel>
 
       <SortPanel :visible="activePanel === 'sort'" @update:visible="(v) => (activePanel = v ? 'sort' : (activePanel === 'sort' ? null : activePanel))" :fields="fields" :sorts="cfg.sorts || []"
                  :auto-sort="cfg.autoSort !== false"
                  @change="(v) => patchConfig({ sorts: v })" @auto-sort="(v) => patchConfig({ autoSort: v })">
         <el-button size="small" text :type="(cfg.sorts || []).length ? 'primary' : ''"
-                   @click.stop="togglePanel('sort')">⇅ 排序{{ (cfg.sorts || []).length ? ` ${cfg.sorts.length}` : '' }}</el-button>
+                   >⇅ 排序{{ (cfg.sorts || []).length ? ` ${cfg.sorts.length}` : '' }}</el-button>
       </SortPanel>
 
       <el-dropdown trigger="click" @command="(v) => patchConfig({ rowHeight: v })">
@@ -45,7 +45,7 @@
       <FillPanel :visible="activePanel === 'fill'" @update:visible="(v) => (activePanel = v ? 'fill' : (activePanel === 'fill' ? null : activePanel))" :fields="fields" :rules="cfg.fillRules || []"
                  @change="(v) => patchConfig({ fillRules: v })">
         <el-button size="small" text :type="fillCount ? 'primary' : ''"
-                   @click.stop="togglePanel('fill')">🖌 填色{{ fillCount ? ` ${fillCount}` : '' }}</el-button>
+                   >🖌 填色{{ fillCount ? ` ${fillCount}` : '' }}</el-button>
       </FillPanel>
 
       <div class="tb-right">

@@ -304,14 +304,17 @@ def note_ai_assist(payload: NoteAiIn, db: Session = Depends(get_db), user: User 
     from ..services.llm.gateway import _decode_data_urls, extract_json, get_default_provider
     from ..services.llm.prompts import NOTE_AI_SYSTEM, build_note_ai_prompt
 
-    instruction = (payload.instruction or "").strip()
-    if not instruction:
-        raise HTTPException(400, "请输入要生成的内容描述")
     try:
         provider = get_default_provider(db)
         img_bytes = _decode_data_urls(payload.images)
     except LLMError as e:
         raise HTTPException(400, str(e))
+    instruction = (payload.instruction or "").strip()
+    if not instruction:
+        # 只传图不写字：按图片内容整理成文（视觉模型路径）
+        if not img_bytes:
+            raise HTTPException(400, "请输入要生成的内容描述，或上传图片")
+        instruction = "分析图片内容，提取其中的文字、表格或要点，整理成文档内容"
     prompt = build_note_ai_prompt(instruction[:2000], (payload.note_title or "")[:200],
                                   [str(t)[:500] for t in (payload.context or [])[-20:]],
                                   datetime.now().strftime("%Y-%m-%d"),

@@ -39,12 +39,12 @@ const rows5 = await page.locator('.smart-vxe .vxe-body--row').count()
 if (rows5 < 5) throw new Error(`默认行数不对：${rows5}`)
 console.log('2. 默认字段列头:', headerText.join(' ').replace(/\n/g, ' ').slice(0, 80), '| 行数:', rows5)
 
-// 3. 单元格编辑：第一行文本列
+// 3. 单元格编辑：第一行文本列（双击进入浮层编辑，Ctrl+Enter 提交）
 const textCell = page.locator('.smart-vxe .vxe-body--row:visible').first().locator('td:visible').nth(2)
-await textCell.click()
-await page.waitForSelector('.cell-editor input', { timeout: 5000 })
-await page.fill('.cell-editor input', 'E2E-P001')
-await page.keyboard.press('Enter')
+await textCell.dblclick()
+await page.waitForSelector('.cell-overlay textarea', { timeout: 5000 })
+await page.fill('.cell-overlay textarea', 'E2E-P001')
+await page.keyboard.press('Control+Enter')
 await page.waitForTimeout(600)
 if (!(await textCell.innerText()).includes('E2E-P001')) throw new Error('文本编辑未保存')
 console.log('3. 单元格文本编辑保存通过')
@@ -52,7 +52,7 @@ console.log('3. 单元格文本编辑保存通过')
 // 4. 单选编辑（弹层选择）
 const row2 = page.locator('.smart-vxe .vxe-table--main-wrapper .vxe-body--row, .smart-vxe .vxe-table--body-wrapper .vxe-body--row').nth(1)
 const selCell = page.locator('.smart-vxe .vxe-body--row:visible').nth(1).locator('td:visible').nth(3)
-await selCell.click()
+await selCell.dblclick()
 await page.waitForSelector('.cell-editor .el-select__wrapper, .cell-editor input', { timeout: 5000 })
 await page.waitForTimeout(400)
 const opt = page.locator('.el-select-dropdown__item').first()
@@ -78,7 +78,8 @@ await condRow.locator('.el-select').first().click()
 await page.waitForTimeout(300)
 await page.locator('.el-select-dropdown__item:visible').first().click()
 await condRow.locator('.el-input__inner').last().fill('E2E')
-await page.waitForTimeout(800)
+await page.locator('.filter-popover button:has-text("确定")').click()   // 草稿模式：确定才生效
+await page.waitForTimeout(1200)
 const filteredTotal = await page.locator('.smart-vxe .vxe-footer--row').allInnerTexts()
 console.log('6. 筛选后汇总:', filteredTotal.join(' ').match(/记录数\s*\d+/)?.[0] || filteredTotal.join(' ').slice(0, 60))
 
@@ -117,6 +118,10 @@ await page.waitForTimeout(400)
 console.log('10. 撤销快捷键执行通过')
 
 // 11. 右键菜单：展开记录（分组模式下跳过组标题行）
+// 先收掉前面步骤可能残留的 el-select 下拉浮层（会拦截右键点击）
+await page.keyboard.press('Escape')
+await page.locator('.smart-vxe .vxe-footer--row').first().click({ position: { x: 4, y: 4 } }).catch(() => {})
+await page.waitForTimeout(300)
 const dataRow = page.locator('.smart-vxe .vxe-body--row:visible:not(.row-group)').first()
 await dataRow.click({ button: 'right' })
 await page.waitForSelector('.vxe-table--context-menu-wrapper.is--visible', { timeout: 3000 })

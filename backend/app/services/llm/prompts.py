@@ -407,7 +407,8 @@ def build_mindmap_ai_prompt(instruction: str, mode: str, node_text: str,
         "每个<节点>对象：",
         '- text（必填）：节点文字，精炼（不超过 20 字），不要编号前缀',
         "- children：子节点数组（可空）",
-        "- note（可选）：需要解释/补充/举例时的备注（一两句话）",
+        "- note（可选，默认不用）：仅当节点确实需要长篇补充说明（定义/公式/注意事项）时才写一两句；"
+        "能展开成子节点的内容一律展开为子节点，不要把列表/条目塞进 note",
         "- hyperlink（可选）：相关资料网址（完整 http(s) 链接；需求中出现网址、文档、官网、资料来源时必须用上）",
         "- color（可选）：重点节点文字色，如 #f56c6c（红）#e6a23c（橙）#409eff（蓝）",
         "- fillColor（可选）：重点节点背景色，浅色系如 #fdf6ec #fef0f0 #ecf5ff",
@@ -421,7 +422,43 @@ def build_mindmap_ai_prompt(instruction: str, mode: str, node_text: str,
         "",
         "规则：2~4 层；总节点数不超过 40；一级分支 3~7 个；"
         "装饰宁缺毋滥——color/fillColor 只给真正重要的 1~3 个节点，大多数节点保持纯文本；"
+        "note 同理，一张图里最多 1~2 个节点带备注，其余内容应展开为子节点；"
         "associativeLines/generalizations 引用不存在的节点文字会被丢弃，请确保与节点 text 完全一致。",
+    ]
+    return "\n".join(lines)
+
+
+def build_mindmap_summary_prompt(context_texts: list[str], instruction: str = "") -> str:
+    """导图分析：默认 3~6 句中文概括；带 instruction 时按用户要求分析（如改进建议）。
+    纯文本内容包在 JSON 里，与其他 AI 入口的解析协议一致。"""
+    task = instruction.strip() or "请用 3~6 句话概括这张图的核心内容与结构（先总述主题，再分述各分支要点）。"
+    return (
+        "这是一张思维导图的大纲（按层级排列）：\n"
+        + "\n".join(f"- {t}" for t in context_texts if t.strip())
+        + f"\n\n用户的分析要求：{task}\n"
+        + '只输出 JSON：{"summary": "…"}（summary 为纯文本分析结果）'
+    )
+
+
+def build_mindmap_rewrite_prompt(instruction: str, node_text: str, context_texts: list[str]) -> str:
+    """分支改写：按用户要求重组选中分支的子树（输出替换后的 children）。"""
+    lines = [f"要改写的分支节点：{node_text or '（未提供）'}", ""]
+    if context_texts:
+        lines.append("该分支当前内容（将被替换）：")
+        lines += [f"- {t}" for t in context_texts if t.strip()]
+        lines.append("")
+    lines += [
+        f"用户的改写要求：{instruction}",
+        "",
+        '按改写要求重新组织这个分支，输出 JSON：{"children": [<节点>, ...]}，children 是该节点下替换后的全部子分支。',
+        "",
+        "每个<节点>对象：",
+        "- text（必填）：节点文字，精炼（不超过 20 字），不要编号前缀",
+        "- children：子节点数组（可空）",
+        "- note（可选，默认不用）：仅当确实需要长篇补充说明时才写一两句；能展开成子节点的一律展开",
+        "- icon（可选）：priority_1~3、sign_1、progress_1~4，最多 2 个",
+        "",
+        "规则：1~3 层；节点数不超过 20；不要保留用户没要求保留的旧内容。",
     ]
     return "\n".join(lines)
 

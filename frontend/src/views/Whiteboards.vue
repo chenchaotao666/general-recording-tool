@@ -58,7 +58,7 @@
             <span class="save-state" :class="{ err: saveState === '保存失败' }">{{ saveState }}</span>
             <!-- AI 生成：两种引擎都支持（excalidraw/drawio 各自实现转换层） -->
             <el-button
-              size="small" type="primary" plain
+              ref="aiBtnRef" size="small" type="primary" plain
               :icon="MagicStick" @click="aiVisible = true"
             >AI 生成</el-button>
           </div>
@@ -75,26 +75,14 @@
       <el-empty v-else description="选择左侧画板，或新建一个开始涂画" />
     </div>
 
-    <!-- AI 对话框：描述 + 模式（自动/替换/追加/修改/汇总）→ 后端 LLM → 编辑器转换渲染 -->
-    <el-dialog v-model="aiVisible" title="AI 生成" width="520px" destroy-on-close>
-      <el-radio-group v-model="aiMode" size="small" class="ai-modes">
-        <el-radio-button value="auto">自动判断</el-radio-button>
-        <el-radio-button value="replace">替换画布</el-radio-button>
-        <el-radio-button value="append">追加内容</el-radio-button>
-        <el-radio-button value="modify">修改内容</el-radio-button>
-        <el-radio-button value="summarize">汇总画布</el-radio-button>
-      </el-radio-group>
-      <el-input
-        v-model="aiDesc" type="textarea" :rows="4" maxlength="500" show-word-limit
-        :placeholder="aiPlaceholder"
-      />
-      <AiImagePicker v-model="aiImages" />
-      <div class="ai-hint">替换/修改会覆盖当前画布（执行前确认）；追加保留现有内容；汇总不动画布。可附图（截图/照片）让 AI 按图生成</div>
-      <template #footer>
-        <el-button @click="aiVisible = false">取消</el-button>
-        <el-button type="primary" :loading="aiGenerating" @click="generateAi">生成</el-button>
-      </template>
-    </el-dialog>
+    <!-- AI 面板（统一 AiPromptPanel）：描述 + 模式（自动/替换/追加/修改/汇总）→ 后端 LLM → 编辑器转换渲染 -->
+    <AiPromptPanel
+      v-model="aiVisible" title="✨ AI 生成" :anchor="aiBtnRef"
+      :modes="WB_AI_MODES" v-model:mode="aiMode"
+      :placeholder="aiPlaceholder" :loading="aiGenerating"
+      hint="替换/修改覆盖当前画布（执行前确认）；追加保留现有内容；汇总不动画布。可附图按图生成"
+      @submit="onBoardAiSubmit"
+    />
 
     <!-- 汇总结果：只读展示 + 一键复制 -->
     <el-dialog v-model="summaryVisible" title="画布汇总" width="520px">
@@ -120,7 +108,7 @@ import {
 } from '../api'
 import ExcalidrawBoard from './whiteboard/ExcalidrawBoard.vue'
 import DrawioBoard from './whiteboard/DrawioBoard.vue'
-import AiImagePicker from '../components/AiImagePicker.vue'
+import AiPromptPanel from '../components/AiPromptPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -145,8 +133,25 @@ const aiDesc = ref('')
 const aiMode = ref('auto')
 const aiImages = ref([])   // 附图（data URL），成功后清空
 const aiGenerating = ref(false)
+const aiBtnRef = ref(null)
 const summaryVisible = ref(false)
 const summaryText = ref('')
+
+const WB_AI_MODES = [
+  { value: 'auto', label: '自动判断' },
+  { value: 'replace', label: '替换画布' },
+  { value: 'append', label: '追加内容' },
+  { value: 'modify', label: '修改内容' },
+  { value: 'summarize', label: '汇总画布' },
+]
+
+// 面板提交：回填状态后走既有生成流程
+function onBoardAiSubmit({ instruction, images, mode }) {
+  aiDesc.value = instruction
+  aiImages.value = images
+  if (mode) aiMode.value = mode
+  generateAi()
+}
 
 const AI_PLACEHOLDERS = {
   auto: '描述想做的事，例如：画一个举手的小人；再加一个审批节点；把开始节点改成圆形；总结一下画布',
@@ -159,8 +164,9 @@ const aiPlaceholder = computed(() => AI_PLACEHOLDERS[aiMode.value] || AI_PLACEHO
 
 async function generateAi() {
   const desc = aiDesc.value.trim()
-  if (!desc) {
-    ElMessage.warning('先描述一下想做的事')
+  // 只传图不写字也允许：后端会按图片内容生成（视觉模型路径）
+  if (!desc && !aiImages.value.length) {
+    ElMessage.warning('先描述一下想做的事，或上传图片')
     return
   }
   const ctx = editorRef.value?.getContext?.() || []

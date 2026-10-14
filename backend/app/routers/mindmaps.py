@@ -168,22 +168,37 @@ def mindmap_ai_assist(payload: MindmapAiIn, db: Session = Depends(get_db),
     """AI 生成导图结构：rebuild 返回 {text, children}；expand 返回 {children}；支持附图识别。"""
     from ..services.llm import LLMError
     from ..services.llm.gateway import _decode_data_urls, extract_json, get_default_provider
-    from ..services.llm.prompts import MINDMAP_AI_SYSTEM, build_mindmap_ai_prompt
+    from ..services.llm.prompts import (
+        MINDMAP_AI_SYSTEM, build_mindmap_ai_prompt,
+        build_mindmap_rewrite_prompt, build_mindmap_summary_prompt,
+    )
 
-    instruction = (payload.instruction or "").strip()
-    if not instruction:
-        raise HTTPException(400, "请输入要生成的内容描述")
     try:
         provider = get_default_provider(db)
         img_bytes = _decode_data_urls(payload.images)
     except LLMError as e:
         raise HTTPException(400, str(e))
-    mode = "expand" if payload.mode == "expand" else "rebuild"
-    prompt = build_mindmap_ai_prompt(instruction[:2000], mode, (payload.node_text or "")[:100],
-                                     [str(t)[:60] for t in (payload.context or [])[-30:]])
+    mode = payload.mode if payload.mode in ("expand", "rewrite", "summarize") else "rebuild"
+    instruction = (payload.instruction or "").strip()
+    if mode != "summarize" and not instruction:
+        # 只传图不写字：按图片内容生成导图（视觉模型路径）
+        if not img_bytes:
+            raise HTTPException(400, "请输入要生成的内容描述，或上传图片")
+        instruction = "分析图片内容，提取主题与层次结构，生成思维导图"
+    context_texts = [str(t)[:60] for t in (payload.context or [])[-30:]]
+    if mode == "summarize":
+        # instruction 可空（默认概括）；有值时是自定义分析任务（如改进建议），不改导图
+        prompt = build_mindmap_summary_prompt(context_texts, instruction[:2000])
+    elif mode == "rewrite":
+        prompt = build_mindmap_rewrite_prompt(instruction[:2000], (payload.node_text or "")[:100],
+                                              context_texts)
+    else:
+        prompt = build_mindmap_ai_prompt(instruction[:2000], mode, (payload.node_text or "")[:100],
+                                         context_texts)
     if img_bytes:
         prompt += (f"\n\n注意：用户附上了 {len(img_bytes)} 张图片，请从图片中提取主题和层次结构生成导图"
-                   "（例如：大纲文档、板书/白板照片、流程图、表格）。")
+                   "（例如：大纲文档、板书/白板照片、流程图、表格）。"
+                   "图片中的条目/步骤/栏目都要展开为导图节点（必要时再细分出子节点），不要把它们塞进备注。")
     last_err: Exception | None = None
     for attempt in range(2):
         current_prompt = prompt if attempt == 0 else (
@@ -197,7 +212,12 @@ def mindmap_ai_assist(payload: MindmapAiIn, db: Session = Depends(get_db),
             data = extract_json(raw)
             if not isinstance(data, dict):
                 raise ValueError("输出不是 JSON 对象")
-            if mode == "expand":
+            if mode == "summarize":
+                summary = str(data.get("summary") or "").strip()[:4000]
+                if not summary:
+                    raise ValueError("输出没有可用的总结")
+                return {"summary": summary}
+            if mode in ("expand", "rewrite"):
                 # 宽容解析：模型可能返回整棵树，取其 children
                 kids = data.get("children") or (data.get("root") or {}).get("children") or []
                 budget = [50]

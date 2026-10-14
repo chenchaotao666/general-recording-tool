@@ -1323,14 +1323,17 @@ def generate_board_content(db: Session, description: str, mode: str = "auto",
     JSON 解析失败回喂重试一次。"""
     from .prompts import BOARD_SYSTEM, build_board_prompt
 
+    img_bytes = _decode_data_urls(images)
     desc = (description or "").strip()
     if not desc:
-        raise LLMError("请输入操作描述")
+        # 只传图不写字：按图片内容生成/汇总（视觉模型路径）
+        if not img_bytes:
+            raise LLMError("请输入操作描述，或上传图片")
+        desc = "汇总这些图片的内容要点" if mode == "summarize" else "分析图片内容，按图片生成画布内容"
     if mode not in _BOARD_MODES and mode != "auto":
         mode = "auto"
     ctx = [c for c in (context or []) if isinstance(c, dict)][:200]
     # 空画布降级：追加/修改等同替换；汇总无意义直接报错（有附图除外——可以汇总图片内容）
-    img_bytes = _decode_data_urls(images)
     if not ctx:
         if mode == "summarize" and not img_bytes:
             raise LLMError("画布是空的，没有内容可汇总")

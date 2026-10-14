@@ -342,6 +342,7 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
             continue
 
         # update_field：只改出现的键
+        old_field_type = f.field_type
         new_widget = op.get("widget") or f.widget
         new_options = op.get("options") if op.get("options") is not None else (f.options or {})
         new_field_type = op.get("field_type") or f.field_type
@@ -375,6 +376,13 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
         for attr in ("label", "nullable", "widget", "options", "default_value", "sort_order", "field_type"):
             if op.get(attr) is not None:
                 setattr(f, attr, op[attr])
+        # 智能表：字段改成单选/多选时，收编存量文本值为选项并重映射单元格
+        if is_json and new_field_type in ("singleSelect", "multiSelect") \
+                and (old_field_type or "") != new_field_type:
+            converted = _convert_to_select_options(db, mt.id, name, new_options, new_field_type)
+            f.options = dict(new_options)   # options 可能被原地补充过，重赋值确保 JSON 列落库
+            if converted:
+                changes.append(f"字段「{f.label}」的 {converted} 条存量值已自动收编为选项")
         if op.get("label"):
             changes.append(f"字段 {name} 显示名改为「{op['label']}」")
         db.flush()
@@ -384,9 +392,57 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
     return {"changes": changes, "warnings": warnings}
 
 
+# ---------- 智能表：字段改类型为单选/多选时的存量收编 ----------
+
+_OPTION_COLORS = ["blue", "green", "orange", "red", "purple", "cyan"]
+
+
+def _convert_to_select_options(db: Session, table_id: int, field_name: str,
+                               options_cfg: dict, field_type: str) -> int:
+    """把存量文本值收编为选项并重映射单元格（防止"改成单选后内容消失"）。
+    单选存选项 id 标量；多选存 id 列表。已是选项 id 的值不动。返回重映射条数。"""
+    import secrets
+
+    from ..models import Record
+
+    opts = options_cfg.setdefault("options", [])
+    by_label = {str(o.get("label")): o for o in opts}
+    by_id = {o.get("id") for o in opts}
+    converted = 0
+
+    def to_id(v):
+        label = str(v)
+        o = by_label.get(label)
+        if o is None:
+            o = {"id": f"opt_{secrets.token_hex(4)}", "label": label,
+                 "color": _OPTION_COLORS[len(by_label) % len(_OPTION_COLORS)], "order": len(by_label)}
+            by_label[label] = o
+            opts.append(o)
+        return o["id"]
+
+    def _rewrite(d):
+        nonlocal converted
+        if field_name not in d or d[field_name] in (None, ""):
+            return None
+        v = d[field_name]
+        if field_type == "multiSelect":
+            items = v if isinstance(v, list) else [v]
+            if all(x in by_id for x in items):
+                return None   # 已经是 id 列表
+            d[field_name] = [x if x in by_id else to_id(x) for x in items]
+        else:
+            if v in by_id:
+                return None   # 已经是选项 id
+            d[field_name] = to_id(v)
+        converted += 1
+        return d
+
+    _json_records_rewrite(db, table_id, _rewrite)
+    return converted
+
+
 def reflect_table(name: str) -> Table:
     return Table(name, MetaData(), autoload_with=engine)
-
 
 def record_count(db: Session, mt: MetaTable) -> int:
     """physical 模式反射物理表计数；json 模式走 records 单表。"""
