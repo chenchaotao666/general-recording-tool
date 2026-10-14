@@ -63,9 +63,10 @@
 </template>
 
 <script setup>
-import { computed, h, onBeforeUnmount, ref } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, ref } from 'vue'
 import SmartCell from './SmartCell.vue'
 import SmartCellEditor from './SmartCellEditor.vue'
+import SelectCellPanel from './SelectCellPanel.vue'
 import FieldHeader from './FieldHeader.vue'
 import { regOf, sortDirectionLabels } from '../../../smart/registry/fieldRegistry.js'
 import { evalFillRules } from '../../../smart/utils/format.js'
@@ -83,7 +84,7 @@ const props = defineProps({
   readonly: { type: Boolean, default: false },
 })
 const emit = defineEmits(['cell-commit', 'add-row', 'cell-menu', 'field-menu', 'toggle-group',
-                          'selection-change', 'open-config', 'agg-change'])
+                          'selection-change', 'open-config', 'agg-change', 'add-option'])
 
 const gridRef = ref(null)
 const editingCell = ref(null)   // {key, fieldName}
@@ -200,9 +201,42 @@ function CellSlot(props2) {
   if (isEdit && !props.readonly) {
     return h(SmartCellEditor, {
       field, record: row,
+      frozen: isFrozen(field.field_name),   // 编辑器按 wrapper 判断自己是不是显示副本用
       onCommit: (v) => { editingCell.value = null; emit('cell-commit', { row, field, value: v }) },
       onCancel: () => { editingCell.value = null },
       'onOpen-config': (f) => emit('open-config', f),
+      // 单元格内新建选项：父级落库为真选项后提交新 optionId（编辑器即关闭）
+      'onAdd-option': (label) => { editingCell.value = null; emit('add-option', { row, field, label }) },
+    })
+  }
+  // 单选/多选单击选中：呈现编辑态锚点（标签+✕+下拉按钮），面板不展开；
+  // 点下拉按钮或双击锚点 → open 进编辑态（面板展开）
+  const isSelEnum = selectedCell.value && selectedCell.value.key === row.__key
+    && selectedCell.value.fieldName === field.field_name
+    && ['singleSelect', 'multiSelect'].includes(field.field_type)
+  if (isSelEnum) {
+    return h(SelectCellPanel, {
+      field, record: row, frozen: isFrozen(field.field_name), closed: true,
+      onCommit: (v) => emit('cell-commit', { row, field, value: v }),   // ✕ 清除直接生效
+      onOpen: () => {
+        if (props.readonly) return
+        selectedCell.value = null
+        editingCell.value = { key: row.__key, fieldName: field.field_name }
+      },
+    })
+  }
+  // 文本单元格单击选中：用与编辑相同的浮层只读展示全文；双击浮层（enter-edit）再进编辑
+  const isSelText = selectedCell.value && selectedCell.value.key === row.__key
+    && selectedCell.value.fieldName === field.field_name && field.field_type === 'text'
+  if (isSelText) {
+    return h(SmartCellEditor, {
+      field, record: row, frozen: isFrozen(field.field_name), preview: true,
+      onCancel: () => { selectedCell.value = null },
+      'onEnter-edit': () => {
+        if (props.readonly) return
+        selectedCell.value = null
+        editingCell.value = { key: row.__key, fieldName: field.field_name }
+      },
     })
   }
   const fill = evalFillRules(fillRules.value, field, row[field.field_name])
@@ -238,13 +272,8 @@ function onCellClick({ row, column }) {
     emit('cell-commit', { row, field: f, value: !row[f.field_name] })
     return
   }
-  // 已选中的单元格再点一次 = 进入编辑（企微一致）
-  if (selectedCell.value?.key === row.__key && selectedCell.value?.fieldName === f.field_name) {
-    selectedCell.value = null
-    editingCell.value = { key: row.__key, fieldName: f.field_name }
-  } else {
-    selectedCell.value = { key: row.__key, fieldName: f.field_name }
-  }
+  // 单击只做选中（重复点同一格也保持选中态），进入编辑只能通过双击
+  selectedCell.value = { key: row.__key, fieldName: f.field_name }
 }
 
 function onCellDblClick({ row, column }) {
@@ -325,7 +354,7 @@ defineExpose({ clearEditing: () => { editingCell.value = null; selectedCell.valu
 .smart-vxe :deep(.row-group.depth-1) { background: #fffdf0; }
 .smart-vxe :deep(.row-group.depth-2) { background: #fffef7; }
 .smart-vxe :deep(.row-add) { background: var(--el-fill-color-lighter); }
-.smart-vxe :deep(.vxe-body--column.col-no) { color: var(--el-text-color-placeholder); font-size: 12px; }
+.smart-vxe :deep(.vxe-body--column.col-no) { color: var(--el-text-color-placeholder); font-size: 18px; }
 /* 单击选中态：2px 主色边框（inset 阴影实现，与单元格同大、不占布局），与编辑态边框同款 */
 .smart-vxe :deep(.vxe-body--column.cell-selected) { box-shadow: 0 0 0 2px var(--el-color-primary) inset; position: relative; z-index: 1; }
 /* 编辑态：去内边距，编辑器严格填满单元格。编辑边框画在 .vxe-cell 上（它与 td 严格同盒），
@@ -345,9 +374,39 @@ defineExpose({ clearEditing: () => { editingCell.value = null; selectedCell.valu
 }
 .smart-vxe :deep(.vxe-body--column.cell-editing .el-input__inner) { height: 100%; }
 .smart-vxe :deep(.cell-indent) { padding-left: 18px; }
+/* 显示态内容整体上移 1px：13px CJK 文字在 36px 行高内半行距分布偏下，光学居中补偿。
+   只作用非编辑态——编辑边框画在 .vxe-cell 上、编辑器严格填满单元格，不能跟着移 */
+.smart-vxe :deep(.vxe-body--column:not(.cell-editing) .vxe-cell--wrapper) { transform: translateY(-2px); }
+/* 查看/选中态禁止选中文字（企微式：单击只是选中单元格，双击才进编辑态，编辑器内不受影响） */
+.smart-vxe :deep(.vxe-body--column:not(.cell-editing) .vxe-cell) { user-select: none; }
+/* 行选 checkbox（设计稿 PixPin_2026-10-15_00-02-56 风格：细边圆角小方框；选中主色底+白勾） */
+.smart-vxe :deep(.vxe-checkbox--icon) {
+  font-size: 0;   /* 隐藏 vxe 图标字体的字形，自绘方框 */
+  display: inline-block;   /* inline 元素不吃 width/height，必须转 inline-block */
+  vertical-align: middle;
+  width: 15px; height: 15px; box-sizing: border-box; position: relative;
+  border: 1px solid var(--el-border-color-dark); border-radius: 3px; background: #fff;
+  transition: background-color .15s, border-color .15s;
+}
+.smart-vxe :deep(.vxe-cell--checkbox:hover .vxe-checkbox--icon) { border-color: var(--el-color-primary); }
+.smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-checked-fill),
+.smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-checked),
+.smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-indeterminate-fill),
+.smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-indeterminate) {
+  background: var(--el-color-primary); border-color: var(--el-color-primary);
+}
+.smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-checked-fill)::after,
+.smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-checked)::after {
+  content: ''; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px;
+  border: solid #fff; border-width: 0 1.6px 1.6px 0; transform: rotate(45deg);
+}
+.smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-indeterminate-fill)::after,
+.smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-indeterminate)::after {
+  content: ''; position: absolute; left: 3px; top: 6px; width: 7px; height: 1.6px; background: #fff;
+}
+/* 表头单元格统一灰色（含 # 列；字段名/图标的样式由 FieldHeader 自己管，这里不覆盖避免优先级打架） */
+.smart-vxe :deep(.vxe-header--column) { font-size: 13px; color: var(--el-text-color-secondary); }
 :deep(.field-head) { display: inline-flex; align-items: center; gap: 4px; width: 100%; cursor: default; }
-:deep(.field-icon) { color: var(--el-color-primary); font-size: 12px; min-width: 16px; text-align: center; }
-:deep(.field-name) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :deep(.filter-dot) { color: var(--el-color-primary); }
 :deep(.sort-mark) { color: var(--el-color-primary); }
 :deep(.head-menu) { margin-left: auto; color: var(--el-text-color-placeholder); padding: 0 2px; cursor: pointer; }

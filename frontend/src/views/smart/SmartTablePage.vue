@@ -9,7 +9,7 @@
       <el-divider direction="vertical" />
       <el-button size="small" text @click="settingsVisible = true">▦ 表格设置</el-button>
 
-      <FilterPanel :visible="activePanel === 'filter'" @update:visible="(v) => (activePanel = v ? 'filter' : (activePanel === 'filter' ? null : activePanel))" :fields="fields"
+      <FilterPanel :visible="activePanel === 'filter'" @update:visible="(v) => (activePanel = v ? 'filter' : (activePanel === 'filter' ? null : activePanel))" :fields="resolvedFields"
                    :conditions="panelConditions" :scope="filterScope"
                    @change="onFiltersChange" @scope-change="onScopeChange">
         <el-button size="small" text :type="filterCount ? 'primary' : ''"
@@ -42,7 +42,7 @@
         </template>
       </el-dropdown>
 
-      <FillPanel :visible="activePanel === 'fill'" @update:visible="(v) => (activePanel = v ? 'fill' : (activePanel === 'fill' ? null : activePanel))" :fields="fields" :rules="cfg.fillRules || []"
+      <FillPanel :visible="activePanel === 'fill'" @update:visible="(v) => (activePanel = v ? 'fill' : (activePanel === 'fill' ? null : activePanel))" :fields="resolvedFields" :rules="cfg.fillRules || []"
                  @change="(v) => patchConfig({ fillRules: v })">
         <el-button size="small" text :type="fillCount ? 'primary' : ''"
                    >🖌 填色{{ fillCount ? ` ${fillCount}` : '' }}</el-button>
@@ -79,12 +79,12 @@
     <SmartGrid
       ref="gridRef"
       v-loading="loading"
-      :fields="fields" :rows="rows" :grouped="grouped" :total="total" :aggregations="aggregations"
+      :fields="resolvedFields" :rows="rows" :grouped="grouped" :total="total" :aggregations="aggregations"
       :view="view" :column-groups="columnGroups" :collapsed-groups="collapsedGroups"
       :height="gridHeight" :readonly="!perms.can_edit"
       @cell-commit="onCellCommit" @add-row="addRow" @cell-menu="onCellMenu" @field-menu="onFieldMenu"
       @toggle-group="toggleGroup" @selection-change="(s) => (selection = s)" @open-config="openFieldConfig"
-      @add-field="openFieldConfig(null)"
+      @add-field="openFieldConfig(null)" @add-option="onAddOption"
     />
 
     <!-- 分页（未分组时） -->
@@ -101,7 +101,7 @@
     <FieldConfigDialog :visible="fieldDialog.visible" :field="fieldDialog.field" :fields="fields"
                        :tables="allTables" :source-fields-of="loadFieldsOf"
                        @close="fieldDialog.visible = false" @save="onFieldSave" />
-    <RecordDetailDrawer :visible="detail.visible" @update:visible="(v) => (detail.visible = v)" :record="detail.record" :fields="fields"
+    <RecordDetailDrawer :visible="detail.visible" @update:visible="(v) => (detail.visible = v)" :record="detail.record" :fields="resolvedFields"
                         :has-prev="detailIdx > 0" :has-next="detailIdx < dataRows.length - 1"
                         @close="detail.visible = false" @nav="navDetail" @cell-commit="onCellCommit" />
     <FindReplaceDialog :visible="findVisible" :table-id="tableId"
@@ -140,8 +140,9 @@ import TableSettingsPanel from '../../components/smart/panels/TableSettingsPanel
 import FieldConfigDialog from '../../components/smart/panels/FieldConfigDialog.vue'
 import RecordDetailDrawer from '../../components/smart/panels/RecordDetailDrawer.vue'
 import FindReplaceDialog from '../../components/smart/panels/FindReplaceDialog.vue'
-import { FIELD_REGISTRY, filterOpsOf, OP_LABELS, sortDirectionLabels } from '../../smart/registry/fieldRegistry.js'
+import { FIELD_REGISTRY, filterOpsOf, OP_LABELS, OPTION_COLORS, sortDirectionLabels } from '../../smart/registry/fieldRegistry.js'
 import { isRuleComplete, createUndoStack } from '../../smart/utils/format.js'
+import { resolveRefOptions } from '../../smart/utils/refOptions.js'
 import {
   alterTable, getTable, listMembers, listTables,
   smartGrid, smartListViews, smartCreateView, smartUpdateView, smartDeleteView,
@@ -191,6 +192,54 @@ const relationDir = computed(() => {
 })
 provide('smartRelationDir', relationDir)
 
+// ---------- 引用选项 / 选项联动（设计文档 §3.3） ----------
+// refFieldsCache: 引用表 id → 其字段元数据（解析选项集用）
+// refRowsCache:   引用表 id → 其记录行（联动条件比较用）
+const refFieldsCache = ref(new Map())
+const refRowsCache = ref(new Map())
+
+const isRefSelect = (f) => ['singleSelect', 'multiSelect'].includes(f.field_type)
+  && f.options?.optionSource === 'reference' && f.options?.reference?.tableId
+
+async function loadRefSources() {
+  for (const f of fields.value.filter(isRefSelect)) {
+    const tid = f.options.reference.tableId
+    try {
+      if (!refFieldsCache.value.has(tid)) {
+        const meta = await getTable(tid)
+        refFieldsCache.value = new Map(refFieldsCache.value).set(tid, meta.fields)
+      }
+      if (f.options.optionLinkage?.enabled && !refRowsCache.value.has(tid)) {
+        const g = await smartGrid(tid, { page_size: 200 })
+        refRowsCache.value = new Map(refRowsCache.value).set(tid, g.items.filter(r => !r.__rowType))
+      }
+    } catch { /* 引用表无权访问/已删除：兜底本地 options */ }
+  }
+}
+
+// 渲染用字段：reference 模式的选项集实时取自引用字段（源表变更自动同步）
+const resolvedFields = computed(() => fields.value.map(f => {
+  if (!isRefSelect(f)) return f
+  const ref = f.options.reference
+  const refField = (refFieldsCache.value.get(ref.tableId) || []).find(x => x.field_name === ref.fieldId)
+  return { ...f, options: { ...f.options, options: resolveRefOptions(f, refField) } }
+}))
+
+// 联动上下文：单元格编辑器按当前行过滤可选项
+const refContext = computed(() => {
+  const m = new Map()
+  for (const f of fields.value.filter(x => isRefSelect(x) && x.options.optionLinkage?.enabled)) {
+    const ref = f.options.reference
+    m.set(f.field_name, {
+      linkage: f.options.optionLinkage,
+      remoteRows: refRowsCache.value.get(ref.tableId) || [],
+      refFieldId: ref.fieldId,
+    })
+  }
+  return m
+})
+provide('smartRefContext', refContext)
+
 const cfg = computed(() => view.value?.config || {})
 const dataRows = computed(() => rows.value.filter(r => r.__rowType !== 'group' && r.__rowType !== 'add'))
 const gridHeight = computed(() => window.innerHeight - 220)
@@ -216,6 +265,7 @@ async function loadAll() {
     const qv = Number(route.query.view)
     await loadGrid(qv || undefined)
     loadRelationRows()
+    loadRefSources()
   } finally {
     loading.value = false
   }
@@ -350,6 +400,26 @@ async function onCellCommit({ row, field, value }) {
   } catch (e) {
     row[field.field_name] = old
     ElMessage.error(e.message || '保存失败')
+  }
+}
+
+// 单元格内新建选项：落库为真选项（修旧版 allow-create 只存原始标签的问题），再提交新 optionId
+async function onAddOption({ row, field, label }) {
+  const f = fields.value.find(x => x.field_name === field.field_name)
+  if (!f) return
+  const opts = [...(f.options?.options || [])]
+  const nid = `opt_${Date.now()}`
+  opts.push({ id: nid, label, color: OPTION_COLORS[opts.length % OPTION_COLORS.length].key, order: opts.length })
+  try {
+    await alterTable(tableId, [{ op: 'update_field', field_name: f.field_name, options: { ...f.options, options: opts } }])
+    f.options = { ...f.options, options: opts }
+    const value = f.field_type === 'multiSelect'
+      ? [...(Array.isArray(row[f.field_name]) ? row[f.field_name] : []), nid]
+      : nid
+    await onCellCommit({ row, field: f, value })
+    ElMessage.success(`已创建选项「${label}」`)
+  } catch (e) {
+    ElMessage.error(e.message || '创建选项失败')
   }
 }
 
@@ -496,6 +566,7 @@ async function onFieldSave({ label, field_type, config }) {
 async function reloadMeta() {
   const meta = await getTable(tableId)
   fields.value = meta.fields
+  loadRefSources()   // 字段增删改后引用选项/联动源可能变化
 }
 
 // 列头菜单

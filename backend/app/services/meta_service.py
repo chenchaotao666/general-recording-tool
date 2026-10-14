@@ -89,6 +89,14 @@ def validate_field_options(db: Session, data_type: str, widget: str | None,
             validate_field_type_config(field_type, opts, field_label)
         except ValueError as e:
             raise MetaError(str(e))
+        # 引用选项：目标表/目标字段须存在且为单选/多选（运行期目标被删由前端容错兜底）
+        ref = (opts.get("reference") or {}) if opts.get("optionSource") == "reference" else None
+        if ref:
+            rt = db.get(MetaTable, ref.get("tableId"))
+            rf = (db.query(MetaField)
+                  .filter_by(table_id=ref.get("tableId"), field_name=ref.get("fieldId")).first())
+            if not rt or not rf or rf.field_type not in ("singleSelect", "multiSelect"):
+                raise MetaError(f"字段「{field_label}」引用的选项源不存在或不是单选/多选字段")
     has_serial = data_type == "serial" or bool(opts.get("serial"))
     if opts.get("serial") and data_type not in ("serial", "varchar", "text"):
         raise MetaError(f"字段「{field_label}」的类型不支持自动编号（仅 单行文本/多行文本/自动编号）")
@@ -482,7 +490,8 @@ def table_out(db: Session, mt: MetaTable, with_fields: bool = True, access: dict
 
 def drop_business_table(db: Session, mt: MetaTable) -> None:
     """删表：物理表（如有）+ 元数据 + 全部关联数据（记录/分享/报表/识别留痕/导入批次）。"""
-    from ..models import (PrintTemplate, Record, ReportRunLog, ReportTemplate, SharedLink, TableShare, VisionLog)
+    from ..models import (PrintTemplate, Record, ReportRunLog, ReportTemplate, SharedLink, SmartDocEntry,
+                          TableShare, VisionLog)
 
     if mt.storage_mode == "physical" and _physical_exists(mt.name):
         reflect_table(mt.name).drop(engine)
@@ -499,6 +508,7 @@ def drop_business_table(db: Session, mt: MetaTable) -> None:
     db.query(SharedLink).filter(SharedLink.resource_type == "table", SharedLink.resource_id == mt.id).delete(synchronize_session=False)
     db.query(VisionLog).filter_by(table_id=mt.id).delete(synchronize_session=False)
     db.query(Record).filter_by(table_id=mt.id).delete(synchronize_session=False)
+    db.query(SmartDocEntry).filter_by(ref_table_id=mt.id).delete(synchronize_session=False)  # 智能表条目同步删除
     db.query(TableShare).filter_by(table_id=mt.id).delete(synchronize_session=False)
     db.query(MetaField).filter_by(table_id=mt.id).delete(synchronize_session=False)
     db.query(ImportBatch).filter_by(table_id=mt.id).delete(synchronize_session=False)

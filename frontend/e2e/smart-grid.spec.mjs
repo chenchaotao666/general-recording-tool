@@ -49,19 +49,17 @@ await page.waitForTimeout(600)
 if (!(await textCell.innerText()).includes('E2E-P001')) throw new Error('文本编辑未保存')
 console.log('3. 单元格文本编辑保存通过')
 
-// 4. 单选编辑（弹层选择）
-const row2 = page.locator('.smart-vxe .vxe-table--main-wrapper .vxe-body--row, .smart-vxe .vxe-table--body-wrapper .vxe-body--row').nth(1)
+// 4. 单选编辑（自定义下拉面板 SelectCellPanel：搜索框 + 标签列表点选）
 const selCell = page.locator('.smart-vxe .vxe-body--row:visible').nth(1).locator('td:visible').nth(3)
 await selCell.dblclick()
-await page.waitForSelector('.cell-editor .el-select__wrapper, .cell-editor input', { timeout: 5000 })
-await page.waitForTimeout(400)
-const opt = page.locator('.el-select-dropdown__item').first()
+await page.waitForSelector('.sel-panel .sel-search', { timeout: 5000 })
+const opt = page.locator('.sel-panel .sel-item').first()
 if (await opt.count()) {
   await opt.click()
   await page.waitForTimeout(500)
   console.log('4. 单选编辑通过:', (await selCell.innerText()).trim() || '(空)')
 } else {
-  console.log('4. 单选下拉未弹出选项（记为警告）')
+  console.log('4. 单选面板未弹出选项（记为警告）')
 }
 
 // 5. 添加一行

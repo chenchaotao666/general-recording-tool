@@ -7,7 +7,8 @@ from ..models import MetaTable, MetaView, SmartDoc, SmartDocEntry
 from ..schemas import FieldIn, TableCreate
 from ..services import entitlement, meta_service
 from ..services.dyn_engine import log_audit
-from ..services.field_registry import FIELD_TYPES, default_sheet_fields, gen_field_name, to_field_in
+from ..services.field_registry import (FIELD_TYPES, default_sheet_fields, gen_field_name,
+                                       infer_select_options, to_field_in)
 from ..services.meta_service import MetaError
 from ..utils.access import get_table_access
 from ..utils.context import Context, get_current_context
@@ -199,16 +200,22 @@ def delete_entry(entry_id: int, db: Session = Depends(get_db),
         return {"ok": True}
     # sheet：校验表的删除权限
     if e.ref_table_id:
-        access = get_table_access(db, e.ref_table_id, ctx.user, ctx)
+        table_id = e.ref_table_id
+        access = get_table_access(db, table_id, ctx.user, ctx)
         if not access.can_delete:
             raise HTTPException(404, "数据表不存在")
-        mt = db.get(MetaTable, e.ref_table_id)
+        mt = db.get(MetaTable, table_id)
         if mt:
+            # 先取审计所需字段：drop_business_table 内部 commit 后对象即过期不可再访问；
+            # 且其已级联删除引用该表的条目（含 e），此处无需也不能再 db.delete(e)
+            mt_name, mt_label, mt_pk = mt.name, mt.label, mt.id
             meta_service.drop_business_table(db, mt)
-            db.query(MetaView).filter_by(table_id=mt.id).delete()
+            db.query(MetaView).filter_by(table_id=mt_pk).delete()
             entitlement.bump_usage(db, ctx.tenant.id, "table_count", -1)
-            log_audit(db, "delete_table", mt.id, before={"name": mt.name, "label": mt.label},
+            log_audit(db, "delete_table", mt_pk, before={"name": mt_name, "label": mt_label},
                       user=ctx.user.username, tenant_id=ctx.tenant.id)
+            db.commit()
+            return {"ok": True}
     db.delete(e)
     db.commit()
     return {"ok": True}
@@ -268,11 +275,20 @@ def import_excel(doc_id: int, payload: dict, db: Session = Depends(get_db),
     for i, h in enumerate(headers):
         ov = overrides.get(i) or {}
         ft = ov.get("field_type")
+        cfg = None
         if ft not in FIELD_TYPES:
-            ft = _EXCEL_TYPE_MAP.get(infer_column_type([r[i] if i < len(r) else None for r in samples]), "text")
+            col_samples = [r[i] if i < len(r) else None for r in samples]
+            ft = _EXCEL_TYPE_MAP.get(infer_column_type(col_samples), "text")
+            if ft == "text":
+                # 低基数文本列 → 单选（选项从全量数据提取，避免 50 行样本外的取值漏配）
+                col_all = [r[i] if i < len(r) else None for r in rows[header_row:]]
+                sel_opts = infer_select_options(col_all)
+                if sel_opts:
+                    ft = "singleSelect"
+                    cfg = {"options": sel_opts, "allowAddOptionWhenEditing": True}
         fn = gen_field_name(names)
         names.add(fn)
-        fin = to_field_in(ft, str(ov.get("label") or h), fn)
+        fin = to_field_in(ft, str(ov.get("label") or h), fn, config=cfg)
         fin["source_header"] = h
         fields.append(FieldIn(**fin))
 

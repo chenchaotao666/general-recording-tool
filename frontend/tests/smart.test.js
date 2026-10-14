@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { formatCurrency, formatDate, formatNumber, evalFillRules, matchCondition, isRuleComplete, createUndoStack } from '../src/smart/utils/format.js'
 import { FIELD_REGISTRY, conditionToRule, sortDirectionLabels } from '../src/smart/registry/fieldRegistry.js'
+import { filterLinkageOptions, resolveRefOptions } from '../src/smart/utils/refOptions.js'
 
 describe('format', () => {
   it('数字千位符与精度', () => {
@@ -82,5 +83,49 @@ describe('字段注册表', () => {
       .toEqual({ field: 'f_1', op: 'not_contains', value: 'x' })
     expect(conditionToRule({ fieldId: 'f_1', operator: 'isEmpty' })).toEqual({ field: 'f_1', op: 'empty' })
     expect(conditionToRule({ fieldId: 'f_1', operator: 'bogus' })).toBe(null)
+  })
+})
+
+describe('引用选项与选项联动（refOptions）', () => {
+  const localField = { field_name: 'f_1', options: { options: [{ id: 'opt_1', label: '本地' }] } }
+  const refFieldMeta = { field_name: 'priority', field_type: 'singleSelect',
+    options: { options: [{ id: 'opt_h', label: '高' }, { id: 'opt_l', label: '低' }] } }
+
+  it('manual 模式取本地选项；reference 模式取引用字段选项', () => {
+    expect(resolveRefOptions(localField, null)).toEqual([{ id: 'opt_1', label: '本地' }])
+    const refMode = { field_name: 'f_2', options: { optionSource: 'reference', reference: { tableId: 1, fieldId: 'priority' } } }
+    expect(resolveRefOptions(refMode, refFieldMeta)).toEqual(refFieldMeta.options.options)
+    expect(resolveRefOptions(refMode, null)).toEqual([])   // 引用源缺失兜底空数组
+  })
+
+  const options = [{ id: 'opt_h' }, { id: 'opt_l' }, { id: 'opt_m' }]
+  const remoteRows = [
+    { id: 1, unit: '单位A', priority: 'opt_h' },
+    { id: 2, unit: '单位B', priority: 'opt_l' },
+    { id: 3, unit: '单位A', priority: 'opt_m' },
+  ]
+  const linkage = (match) => ({ enabled: true, match, conditions: [{ localFieldId: 'f_unit', operator: 'eq', remoteFieldId: 'unit' }] })
+
+  it('联动 all/any 过滤与空值空集', () => {
+    // 本表行 单位=单位A → 命中行 1/3 → opt_h/opt_m
+    expect(filterLinkageOptions(options, linkage('all'), { f_unit: '单位A' }, remoteRows, 'priority')
+      .map(o => o.id)).toEqual(['opt_h', 'opt_m'])
+    // 本表字段值为空 → 空集
+    expect(filterLinkageOptions(options, linkage('all'), { f_unit: null }, remoteRows, 'priority')).toEqual([])
+    // 未启用联动 → 原样返回
+    expect(filterLinkageOptions(options, { enabled: false }, {}, remoteRows, 'priority')).toEqual(options)
+  })
+
+  it('多条件 all 与 any 的区别', () => {
+    const lk = (match) => ({ enabled: true, match, conditions: [
+      { localFieldId: 'f_unit', operator: 'eq', remoteFieldId: 'unit' },
+      { localFieldId: 'f_pri', operator: 'eq', remoteFieldId: 'priority' },
+    ] })
+    const record = { f_unit: '单位A', f_pri: 'opt_l' }
+    // all：行需同时满足 单位A 且 priority=opt_l → 无命中 → 空
+    expect(filterLinkageOptions(options, lk('all'), record, remoteRows, 'priority')).toEqual([])
+    // any：单位A 命中行 1/3，priority=opt_l 命中行 2 → 三者并集
+    expect(filterLinkageOptions(options, lk('any'), record, remoteRows, 'priority')
+      .map(o => o.id)).toEqual(['opt_h', 'opt_l', 'opt_m'])
   })
 })

@@ -133,6 +133,50 @@ r = client.delete(f"/api/smart/entries/{f1}")
 assert r.status_code == 200
 print("文件夹嵌套/防环/非空拒绝通过")
 
+# ---------- 引用选项 + 选项联动 config 校验（设计文档 §3.3） ----------
+# 默认模板字段：f_1 text / f_2 singleSelect / f_3 member / f_4 number / f_5 date
+r = client.post(f"/api/smart/docs/{doc_id}/entries", json={"type": "sheet", "name": "需求池"})
+ref_table_id = r.json()["table_id"]
+
+
+def add_ref_field(ref_cfg):
+    return client.post(f"/api/tables/{table_id}/alter", json={"ops": [{
+        "op": "add_field",
+        "field": {"field_name": "f_ref", "label": "引用单选", "data_type": "varchar", "widget": "select",
+                  "nullable": True, "field_type": "singleSelect",
+                  "options": {"options": [], **ref_cfg}},
+    }]})
+
+
+# 反例：引用不存在的表 → 400
+r = add_ref_field({"optionSource": "reference", "reference": {"tableId": 99999, "fieldId": "f_2"}})
+assert r.status_code == 400, r.text
+# 反例：引用非单选/多选字段（f_1 是 text）→ 400
+r = add_ref_field({"optionSource": "reference", "reference": {"tableId": ref_table_id, "fieldId": "f_1"}})
+assert r.status_code == 400, r.text
+# 反例：联动条件 operator 一期仅支持「等于」→ 400
+r = add_ref_field({"optionSource": "reference", "reference": {"tableId": ref_table_id, "fieldId": "f_2"},
+                   "optionLinkage": {"enabled": True, "match": "all", "conditions": [
+                       {"localFieldId": "f_1", "operator": "ne", "remoteFieldId": "f_1"}]}})
+assert r.status_code == 400, r.text
+# 反例：非引用模式带联动 → 400
+r = add_ref_field({"optionSource": "manual", "optionLinkage": {"enabled": True, "match": "all", "conditions": []}})
+assert r.status_code == 400, r.text
+# 正例：合法引用 + 联动 → 200
+r = add_ref_field({"optionSource": "reference", "reference": {"tableId": ref_table_id, "fieldId": "f_2"},
+                   "optionLinkage": {"enabled": True, "match": "any", "conditions": [
+                       {"localFieldId": "f_1", "operator": "eq", "remoteFieldId": "f_1"}]}})
+assert r.status_code == 200, r.text
+print("引用选项/选项联动校验通过（4 反例 + 1 正例）")
+
+# 清理：删本表新增字段与引用表条目，避免影响后续用例
+r = client.post(f"/api/tables/{table_id}/alter", json={"ops": [{"op": "delete_field", "field_name": "f_ref"}]})
+assert r.status_code == 200, r.text
+r = client.get(f"/api/smart/docs/{doc_id}/tree")
+for e in r.json()["entries"]:
+    if e["name"] == "需求池":
+        client.delete(f"/api/smart/entries/{e['id']}")
+
 # ---------- sheet 条目删除级联删表 ----------
 r = client.delete(f"/api/smart/entries/{entry['id']}")
 assert r.status_code == 200, r.text

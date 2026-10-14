@@ -1,4 +1,5 @@
 """数据表管理：确认建表 + 导入、表/字段元数据查询与调整、删表、分享授权。"""
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -25,6 +26,40 @@ router = APIRouter(prefix="/api/tables", tags=["tables"])
 
 IMPORT_BATCH_SIZE = 500
 FAIL_DETAIL_CAP = 200
+
+
+def _map_enum_value(f: MetaField, raw) -> str | list | None:
+    """单选/多选导入：Excel 原始标签 → optionId；未见过的标签自动补选项（允许编辑时加选项的语义）。
+    选项变更写回 f.options（重新赋值触发 JSON 脏标记，随后续 commit 落库）。"""
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None
+    from ..services.field_registry import OPTION_COLOR_ORDER
+    opts = list((f.options or {}).get("options") or [])
+    by_label = {str(o.get("label")): o["id"] for o in opts if isinstance(o, dict) and o.get("id")}
+    used_ids = {o.get("id") for o in opts}
+
+    def resolve(label: str):
+        label = label.strip()
+        if not label:
+            return None
+        if label in by_label:
+            return by_label[label]
+        n = len(used_ids) + 1
+        while f"opt_{n}" in used_ids:
+            n += 1
+        nid = f"opt_{n}"
+        opts.append({"id": nid, "label": label,
+                     "color": OPTION_COLOR_ORDER[len(used_ids) % len(OPTION_COLOR_ORDER)], "order": len(opts)})
+        by_label[label] = nid
+        used_ids.add(nid)
+        f.options = {**(f.options or {}), "options": opts}
+        return nid
+
+    if f.field_type == "multiSelect":
+        parts = re.split(r"[,，、;；/]", str(raw))
+        ids = [resolve(p) for p in parts]
+        return [i for i in ids if i] or None
+    return resolve(str(raw))
 
 
 def _share_perms(db: Session, mt: MetaTable, user: User, ctx: Context | None = None) -> dict:
@@ -373,6 +408,12 @@ def _run_import(db: Session, mt, source) -> dict:
             if f is None:
                 continue
             raw = row[i] if i < len(row) else None
+            if f.field_type in ("singleSelect", "multiSelect"):
+                # 智能表枚举字段：Excel 标签 → optionId（未见过自动补选项），不走标量转换
+                cv = _map_enum_value(f, raw)
+                if cv is not None:
+                    item[f.field_name] = cv
+                continue
             ok, cv, err = coerce_value(raw, f.data_type, f.nullable)
             if ok:
                 item[f.field_name] = cv

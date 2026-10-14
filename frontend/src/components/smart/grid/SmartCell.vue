@@ -51,8 +51,8 @@
     <template v-else-if="ft === 'currency'">{{ formatCurrency(value, cfg) }}</template>
     <template v-else-if="ft === 'percent'">{{ value != null && value !== '' ? `${value}%` : '' }}</template>
     <template v-else-if="ft === 'number'">{{ formatNumber(value, cfg) }}</template>
-    <!-- 公式/自动编号/文本等 -->
-    <template v-else>{{ value ?? '' }}</template>
+    <!-- 公式/自动编号/文本等（.txt 单行省略） -->
+    <span v-else class="txt">{{ value ?? '' }}</span>
   </span>
 </template>
 
@@ -137,8 +137,10 @@ const lookupText = computed(() => {
 </script>
 
 <style scoped>
-.smart-cell { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; overflow: hidden; font-size: 13px; min-height: 20px; }
-.opt-tag { padding: 1px 8px; border-radius: 10px; font-size: 12px; white-space: nowrap; }
+.smart-cell { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow: hidden; white-space: nowrap; font-size: 13px; min-height: 20px; width: 100%; }
+/* 纯文本单行省略号（flex 容器里的文本节点吃不到 ellipsis，须包一层） */
+.txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opt-tag { padding: 1px 8px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
 .opt-tag.raw { background: var(--el-fill-color-light); color: var(--el-text-color-regular); border: 1px dashed var(--el-border-color); }
 .progress-wrap { display: flex; align-items: center; gap: 6px; width: 100%; }
 .progress-bar { flex: 1; height: 8px; background: var(--el-fill-color); border-radius: 4px; overflow: hidden; }

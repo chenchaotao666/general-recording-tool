@@ -15,6 +15,35 @@ OPTION_COLORS = {
     "blue", "cyan", "green", "orange", "red", "purple", "pink", "yellow", "gray",
     "lightBlue", "lightGreen", "lightOrange", "lightPurple",
 }
+# 自动分配选项颜色时的取用顺序（默认选项/导入推断共用）
+OPTION_COLOR_ORDER = ["blue", "green", "orange", "cyan", "red", "purple", "pink",
+                      "yellow", "lightBlue", "lightGreen", "lightOrange", "lightPurple", "gray"]
+
+# Excel 导入的单选启发式阈值：低基数短文本列 → 单选（对齐企业微信/飞书导入体验）
+SELECT_MAX_OPTIONS = 50      # 去重值种类上限
+SELECT_MAX_RATIO = 0.5       # 去重值数 / 非空行数 上限（全唯一的列不算枚举）
+SELECT_MAX_LABEL_LEN = 30    # 单个选项文案长度上限（长文本不算枚举）
+
+
+def infer_select_options(values: list) -> list[dict] | None:
+    """低基数文本列 → 单选选项列表（按出现频次降序）；不满足启发式返回 None（该列按文本处理）。
+    调用方应传入全量数据行（而非 50 行样本），保证样本外的取值也有选项可映射。"""
+    from collections import Counter
+    vals = [str(v).strip() for v in values if v is not None and str(v).strip()]
+    if len(vals) < 2:
+        return None
+    if max(len(v) for v in vals) > SELECT_MAX_LABEL_LEN:
+        return None
+    freq = Counter(vals)
+    if not (2 <= len(freq) <= SELECT_MAX_OPTIONS):
+        return None
+    if len(freq) / len(vals) > SELECT_MAX_RATIO:
+        return None
+    return [
+        {"id": f"opt_{i + 1}", "label": label,
+         "color": OPTION_COLOR_ORDER[i % len(OPTION_COLOR_ORDER)], "order": i}
+        for i, (label, _) in enumerate(freq.most_common(SELECT_MAX_OPTIONS))
+    ]
 
 CURRENCY_CODES = {"CNY": "￥", "USD": "$", "EUR": "€", "JPY": "¥", "HKD": "HK$", "GBP": "£"}
 
@@ -187,6 +216,28 @@ def validate_field_type_config(field_type: str, config: dict, label: str = "") -
                 seen.add(o["id"])
                 if o.get("color") and o["color"] not in OPTION_COLORS:
                     raise FieldTypeError(f"{prefix}的选项颜色不支持：{o['color']}")
+        # 引用选项（设计文档 §3.3）：optionSource=reference 时选项集来自他表 select 字段
+        source = cfg.get("optionSource", "manual")
+        if source not in ("manual", "reference"):
+            raise FieldTypeError(f"{prefix}的选项来源不支持：{source}")
+        if source == "reference":
+            ref = cfg.get("reference") or {}
+            if not ref.get("tableId") or not ref.get("fieldId"):
+                raise FieldTypeError(f"{prefix}引用选项必须选择引用的表和字段")
+        # 选项联动（级联下拉）：本表行字段值 vs 引用表行字段值，一期仅「等于」
+        linkage = cfg.get("optionLinkage")
+        if linkage is not None:
+            if source != "reference":
+                raise FieldTypeError(f"{prefix}的选项联动仅在引用选项模式下可用")
+            if not isinstance(linkage, dict):
+                raise FieldTypeError(f"{prefix}的选项联动配置必须是对象")
+            if linkage.get("match", "all") not in ("all", "any"):
+                raise FieldTypeError(f"{prefix}的联动满足方式仅支持 all/any")
+            for c in linkage.get("conditions") or []:
+                if not isinstance(c, dict) or not c.get("localFieldId") or not c.get("remoteFieldId"):
+                    raise FieldTypeError(f"{prefix}的联动条件必须包含本表字段和引用表字段")
+                if c.get("operator", "eq") != "eq":
+                    raise FieldTypeError(f"{prefix}的联动条件一期仅支持「等于」")
 
     if field_type in NUMBER_FAMILY:
         prec = cfg.get("precision", "default")

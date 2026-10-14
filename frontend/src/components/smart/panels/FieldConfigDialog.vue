@@ -11,18 +11,83 @@
         </el-option-group>
       </el-select>
 
-      <!-- 单选/多选：选项编辑 -->
+      <!-- 单选/多选：选项编辑（设计稿：列-单选-添加选项 / 列-单选-引用选项） -->
       <template v-if="['singleSelect', 'multiSelect'].includes(form.field_type)">
         <div class="cfg-sec">
-          <div class="sec-title">选项</div>
-          <div v-for="(o, i) in form.config.options" :key="o.id" class="opt-row">
-            <el-color-picker :model-value="optionColor(o.color).value" size="small"
-                             @change="(v) => { o.color = nearestColor(v) }" />
-            <el-input v-model="o.label" size="small" />
-            <span class="del" @click="form.config.options.splice(i, 1)">⊖</span>
+          <div class="sec-head">
+            <span class="sec-title">选项</span>
+            <span class="sec-head-right">
+              <el-checkbox :model-value="isRef" size="small" @change="toggleRef">引用选项</el-checkbox>
+              <el-tooltip content="选项集来自其他表的单选/多选字段，源表变更自动同步" placement="top">
+                <span class="info-icon">ⓘ</span>
+              </el-tooltip>
+            </span>
           </div>
-          <el-button link type="primary" size="small" @click="addOption">⊕ 添加选项</el-button>
-          <el-checkbox v-model="form.config.allowAddOptionWhenEditing" size="small">允许填写时新增选项</el-checkbox>
+
+          <!-- 手动选项：⊖删除 | 色块 | 名称 | ⠿拖拽排序 -->
+          <template v-if="!isRef">
+            <div class="opt-list">
+              <div v-for="(o, i) in form.config.options" :key="o.id" class="opt-row"
+                   :class="{ 'drag-over': dragOverIdx === i && dragIdx !== i }"
+                   draggable="true" @dragstart="onDragStart(i, $event)" @dragend="onDragEnd"
+                   @dragover.prevent="dragOverIdx = i" @dragleave="dragOverIdx === i && (dragOverIdx = -1)"
+                   @drop.prevent="onDrop(i)">
+                <span class="del" title="删除选项" @click="form.config.options.splice(i, 1)">⊖</span>
+                <el-color-picker :model-value="optionColor(o.color).value" size="small" class="opt-color"
+                                 @change="(v) => { o.color = nearestColor(v) }" />
+                <el-input v-model="o.label" size="small" />
+                <span class="drag-handle" title="拖拽调整顺序">⠿</span>
+              </div>
+            </div>
+            <el-button link type="primary" size="small" class="opt-add" @click="addOption">⊕ 添加选项</el-button>
+            <el-checkbox v-model="form.config.allowAddOptionWhenEditing" size="small">允许填写时新增选项</el-checkbox>
+          </template>
+
+          <!-- 引用选项：引用表 + 引用字段；联动条件（设计文档 §3.3） -->
+          <template v-else>
+            <div class="ref-row">
+              <el-select :teleported="false" v-model="form.config.reference.tableId" size="small"
+                         placeholder="选择表" filterable @change="form.config.reference.fieldId = null">
+                <el-option v-for="t in tables" :key="t.id" :value="t.id" :label="t.label" />
+              </el-select>
+              <el-select :teleported="false" v-model="form.config.reference.fieldId" size="small"
+                         placeholder="选择字段（单选/多选）">
+                <el-option v-for="f in refSelectFields" :key="f.field_name" :value="f.field_name" :label="f.label" />
+              </el-select>
+            </div>
+            <div class="linkage-toggle">
+              <el-checkbox :model-value="linkageEnabled" size="small" @change="toggleLinkage">启用选项联动</el-checkbox>
+              <el-tooltip content="本表当前行字段值与引用表行字段值比较，满足条件的引用行其值才作为可选项" placement="top">
+                <span class="info-icon">ⓘ</span>
+              </el-tooltip>
+            </div>
+            <div v-if="linkageEnabled" class="linkage-box">
+              <div class="linkage-head">
+                <span class="sec-title">联动条件</span>
+                <span class="linkage-match">满足以下
+                  <el-select :teleported="false" v-model="form.config.optionLinkage.match" size="small"
+                             class="match-select">
+                    <el-option value="all" label="全部条件" />
+                    <el-option value="any" label="任一条件" />
+                  </el-select>
+                </span>
+              </div>
+              <div v-for="(c, i) in form.config.optionLinkage.conditions" :key="i" class="seg-row">
+                <el-select :teleported="false" v-model="c.localFieldId" size="small" placeholder="本表字段">
+                  <el-option v-for="f in fields" :key="f.field_name" :value="f.field_name" :label="f.label" />
+                </el-select>
+                <el-select :teleported="false" v-model="c.operator" size="small" style="width: 76px">
+                  <el-option value="eq" label="等于" />
+                </el-select>
+                <el-select :teleported="false" v-model="c.remoteFieldId" size="small" placeholder="引用表字段">
+                  <el-option v-for="f in refFields" :key="f.field_name" :value="f.field_name" :label="f.label" />
+                </el-select>
+                <span class="del" @click="form.config.optionLinkage.conditions.splice(i, 1)">⊖</span>
+              </div>
+              <el-button link type="primary" size="small"
+                         @click="form.config.optionLinkage.conditions.push({ localFieldId: null, operator: 'eq', remoteFieldId: null })">＋ 添加条件</el-button>
+            </div>
+          </template>
         </div>
       </template>
 
@@ -160,14 +225,23 @@
       </template>
     </div>
     <template #footer>
-      <el-button @click="$emit('close')">取消</el-button>
-      <el-button type="primary" :disabled="!form.label" @click="save">确定</el-button>
+      <div class="dlg-footer">
+        <!-- AI 匹配标签：设计文档 §18 划在 V3，本轮占位 -->
+        <el-button v-if="['singleSelect', 'multiSelect'].includes(form.field_type)" text class="ai-btn"
+                   @click="ElMessage.info('AI 匹配标签将在 V3 版本提供，敬请期待')">✨ 使用 AI 匹配标签</el-button>
+        <span v-else />
+        <span>
+          <el-button @click="$emit('close')">取消</el-button>
+          <el-button type="primary" :disabled="!form.label" @click="save">确定</el-button>
+        </span>
+      </div>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { FIELD_REGISTRY, FIELD_TYPE_GROUPS, optionColor } from '../../../smart/registry/fieldRegistry.js'
 
 const props = defineProps({
@@ -206,13 +280,58 @@ function typesOf(group) {
 }
 function onTypeChange(ft) {
   form.config = FIELD_REGISTRY[ft].defaultConfig()
+  normalizeConfig()
   if (!form.label) form.label = FIELD_REGISTRY[ft].label
 }
 function normalizeConfig() {
-  if (['singleSelect', 'multiSelect'].includes(form.field_type) && !form.config.options) form.config.options = []
+  if (['singleSelect', 'multiSelect'].includes(form.field_type)) {
+    const c = form.config
+    if (!c.options) c.options = []
+    if (!c.optionSource) c.optionSource = 'manual'
+    if (!c.reference) c.reference = { tableId: null, fieldId: null }
+    if (!c.optionLinkage) c.optionLinkage = { enabled: false, match: 'all', conditions: [] }
+  }
   if (form.field_type === 'progress' && !form.config.range) form.config.range = { min: 0, max: 100 }
   if (form.field_type === 'autoNumber' && !form.config.segments) form.config.segments = [{ type: 'autoIncrement', digits: 3 }]
   if (form.field_type === 'lookup' && !form.config.conditions) form.config.conditions = []
+}
+
+// ---------- 单选/多选：引用选项 / 选项联动 / 拖拽排序 ----------
+const isRef = computed(() => form.config?.optionSource === 'reference')
+const linkageEnabled = computed(() => !!form.config?.optionLinkage?.enabled)
+
+function toggleRef(v) {
+  form.config.optionSource = v ? 'reference' : 'manual'
+}
+function toggleLinkage(v) {
+  form.config.optionLinkage.enabled = v
+}
+
+// 引用表的字段（选项源候选=单选/多选；联动条件右值=全部字段）
+const refFields = ref([])
+const refSelectFields = computed(() =>
+  refFields.value.filter(f => ['singleSelect', 'multiSelect'].includes(f.field_type)))
+watch(() => form.config?.reference?.tableId, async (tid) => {
+  refFields.value = tid ? await props.sourceFieldsOf(tid) : []
+})
+
+// HTML5 拖拽排序：dragstart 记源、drop 移动并重排 order
+const dragIdx = ref(-1)
+const dragOverIdx = ref(-1)
+function onDragStart(i, e) {
+  dragIdx.value = i
+  e.dataTransfer.effectAllowed = 'move'
+}
+function onDrop(i) {
+  const from = dragIdx.value
+  if (from < 0 || from === i) return
+  const opts = form.config.options
+  opts.splice(i, 0, opts.splice(from, 1)[0])
+  opts.forEach((o, idx) => { o.order = idx })
+}
+function onDragEnd() {
+  dragIdx.value = -1
+  dragOverIdx.value = -1
 }
 
 const sourceFields = computed(() => srcFields.value)
@@ -240,7 +359,27 @@ const segPreview = computed(() => {
 })
 
 function save() {
-  emit('save', { label: form.label, field_type: form.field_type, config: form.config })
+  const config = { ...form.config }
+  if (['singleSelect', 'multiSelect'].includes(form.field_type)) {
+    // 按 schema 组装（设计文档 §3.3）：manual 不带 reference/optionLinkage；联动未启用不带 optionLinkage
+    if (config.optionSource === 'reference') {
+      if (!config.reference?.tableId || !config.reference?.fieldId) {
+        ElMessage.warning('引用选项需要选择引用的表和字段')
+        return
+      }
+      delete config.allowAddOptionWhenEditing   // 引用模式下该配置不适用（前端整块隐藏）
+      if (!config.optionLinkage?.enabled) delete config.optionLinkage
+      else config.optionLinkage = {
+        enabled: true, match: config.optionLinkage.match === 'any' ? 'any' : 'all',
+        conditions: (config.optionLinkage.conditions || []).filter(c => c.localFieldId && c.remoteFieldId),
+      }
+    } else {
+      config.optionSource = 'manual'
+      delete config.reference
+      delete config.optionLinkage
+    }
+  }
+  emit('save', { label: form.label, field_type: form.field_type, config })
 }
 </script>
 
@@ -254,4 +393,25 @@ function save() {
 .opt-row, .seg-row { display: flex; align-items: center; gap: 6px; }
 .del { cursor: pointer; color: var(--el-color-danger); }
 .seg-preview { font-size: 12px; color: var(--el-text-color-secondary); background: var(--el-fill-color-light); padding: 4px 8px; border-radius: 4px; }
+/* 选项区（设计稿：列-单选-添加选项） */
+.sec-head { display: flex; align-items: center; justify-content: space-between; }
+.sec-head-right { display: flex; align-items: center; gap: 4px; }
+.info-icon { color: var(--el-text-color-secondary); cursor: help; font-size: 12px; }
+.opt-list { display: flex; flex-direction: column; gap: 4px; }
+.opt-row { padding: 2px 4px; border-radius: 4px; background: var(--el-fill-color-lighter); }
+.opt-row.drag-over { box-shadow: 0 -2px 0 var(--el-color-primary); }
+.opt-row .el-input { flex: 1; }
+.opt-color { flex: none; }
+.drag-handle { cursor: grab; color: var(--el-text-color-secondary); padding: 0 4px; user-select: none; }
+.opt-add { align-self: flex-start; }
+/* 引用选项（设计稿：列-单选-引用选项） */
+.ref-row { display: flex; gap: 8px; }
+.ref-row .el-select { flex: 1; }
+.linkage-toggle { display: flex; align-items: center; gap: 4px; }
+.linkage-box { background: var(--el-fill-color-lighter); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+.linkage-head { display: flex; align-items: center; justify-content: space-between; }
+.linkage-match { font-size: 12px; color: var(--el-text-color-secondary); display: flex; align-items: center; gap: 4px; }
+.match-select { width: 96px; }
+.dlg-footer { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.ai-btn { color: #9334e6; }
 </style>
