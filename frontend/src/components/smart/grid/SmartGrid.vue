@@ -227,7 +227,6 @@ function fmtAgg(v) {
 
 const IMMEDIATE = ['checkbox']
 const selectedCell = ref(null)   // 单击选中态 {key, fieldName}（企微式：单击选中、双击编辑）
-let selectTimer = null           // 选中态延迟落地：双击时取消，避免"选中框闪现→编辑器"的中间态
 
 function onCellClick({ row, column }) {
   if (props.readonly) return
@@ -241,18 +240,10 @@ function onCellClick({ row, column }) {
   }
   // 已选中的单元格再点一次 = 进入编辑（企微一致）
   if (selectedCell.value?.key === row.__key && selectedCell.value?.fieldName === f.field_name) {
-    clearTimeout(selectTimer)
-    selectTimer = null
     selectedCell.value = null
     editingCell.value = { key: row.__key, fieldName: f.field_name }
   } else {
-    // 延迟 ~200ms 落选中框：若紧随其后的第二击（双击）到来，则跳过选中直接进编辑
-    const target = { key: row.__key, fieldName: f.field_name }
-    clearTimeout(selectTimer)
-    selectTimer = setTimeout(() => {
-      selectedCell.value = target
-      selectTimer = null
-    }, 200)
+    selectedCell.value = { key: row.__key, fieldName: f.field_name }
   }
 }
 
@@ -261,8 +252,6 @@ function onCellDblClick({ row, column }) {
   if (!row || row.__rowType === 'add' || row.__rowType === 'group') return
   const f = props.fields.find(x => x.field_name === column.field)
   if (!f || IMMEDIATE.includes(f.field_type)) return   // checkbox 单击已切换，无需编辑态
-  clearTimeout(selectTimer)   // 双击路径不出现选中态
-  selectTimer = null
   selectedCell.value = null   // 编辑态即脱离选中态
   editingCell.value = { key: row.__key, fieldName: f.field_name }
 }
@@ -317,19 +306,11 @@ function footerMethod({ columns }) {
   ]
 }
 
-onBeforeUnmount(() => {
-  document.removeEventListener('keydown', onDocKeydown)
-  clearTimeout(selectTimer)
-})
+onBeforeUnmount(() => document.removeEventListener('keydown', onDocKeydown))
 
 document.addEventListener('keydown', onDocKeydown)
 
-defineExpose({ clearEditing: () => {
-  clearTimeout(selectTimer)
-  selectTimer = null
-  editingCell.value = null
-  selectedCell.value = null
-} })
+defineExpose({ clearEditing: () => { editingCell.value = null; selectedCell.value = null } })
 </script>
 
 <style scoped>
