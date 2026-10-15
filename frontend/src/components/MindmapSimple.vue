@@ -928,6 +928,7 @@ onMounted(() => {
     if (ls) mind.setThemeConfig({ lineStyle: ls })
   }
   patchGeneralizationBounds()   // 概要纵向跨度只跨选中节点自身（补丁定义见 setLayout 上方）
+  window.__mm = mind   // e2e/调试句柄：读选区、布局实例用（只读使用，勿在业务代码里依赖）
   if (!props.readonly) {
     mind.on('node_contextmenu', onNodeContextmenu)
     // 图标标记单击 → 操作浮层（编辑/删除）；图片不走这里：悬停图片右上角已有 ✎/× 操作条
