@@ -156,20 +156,21 @@ import { getNodeOuterFrameList } from 'simple-mind-map/src/plugins/outerFrame/ou
 // A/B 对照开关：URL 带 ?native=1 时跳过本组件对库的所有补丁（概要/归纳），用于排查补丁是否引入回归
 const __native = new URLSearchParams(location.search).has('native')
 
-// ── 概要（蓝色外框）位置补丁：库的边界计算 getNodeListBoundingRect 会递归整个子树，
-// 导致外框把未选中的子节点也框进去（子树越高/越宽，框偏得越远）。
-// 改为只包选中节点自身的形状盒子（不递归后代）；其余渲染逻辑与库原实现保持一致。
+// ── 概要（蓝色外框）位置补丁：库的边界计算 getNodeListBoundingRect 递归整个子树，
+// 会把未选中的子节点也框进去；且它用 rbox() 读屏幕坐标再除以缩放换算回画布坐标——
+// 依赖 elRect/变换的瞬时状态，增删概要等连续渲染时序下会量出陈旧几何（错位且不自愈）。
+// 改为：只用选中节点自身的布局坐标（left/top/width/height，即形状盒）直接并集——
+// 纯数据计算，与视图变换/屏幕状态无关；其余渲染逻辑与库原实现保持一致。
 // 在 new MindMap 之前替换原型方法（插件构造时 bind 的就是这里的方法）。
 const _ownShapeRect = (nodeList) => {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
   nodeList.forEach((n) => {
-    try {
-      const { x, y, width, height } = n.group.findOne('.smm-node-shape').rbox()
-      minX = Math.min(minX, x); maxX = Math.max(maxX, x + width)
-      minY = Math.min(minY, y); maxY = Math.max(maxY, y + height)
-    } catch { /* 节点未渲染时跳过 */ }
+    left = Math.min(left, n.left)
+    right = Math.max(right, n.left + n.width)
+    top = Math.min(top, n.top)
+    bottom = Math.max(bottom, n.top + n.height)
   })
-  return { left: minX, top: minY, width: maxX - minX, height: maxY - minY }
+  return { left, top, width: right - left, height: bottom - top }
 }
 if (!__native) OuterFrame.prototype.renderOuterFrames = function () {
   if (this.isNotRenderOuterFrames) {
@@ -181,21 +182,24 @@ if (!__native) OuterFrame.prototype.renderOuterFrames = function () {
   this.clearOuterFrameElList()
   const tree = this.mindMap.renderer.root
   if (!tree) return
+  // 内边距与库一致保持「屏幕固定 10px」（除以缩放）；节点位置本身是纯布局坐标，与缩放/平移无关
   const t = this.mindMap.draw.transform()
   const { outerFramePaddingX, outerFramePaddingY } = this.mindMap.opt
+  const padX = outerFramePaddingX / (t.scaleX || 1)
+  const padY = outerFramePaddingY / (t.scaleY || 1)
   smmWalk(tree, null, (cur) => {
     if (!cur) return
     const outerFrameList = getNodeOuterFrameList(cur)
     if (outerFrameList && outerFrameList.length > 0) {
       outerFrameList.forEach(({ nodeList, range }) => {
         if (range[0] === -1 || range[1] === -1) return
-        const { left, top, width, height } = _ownShapeRect(nodeList)   // ← 与库的唯一差异：不含子树
+        const { left, top, width, height } = _ownShapeRect(nodeList)   // 布局坐标，无需换算
         if (![left, top, width, height].every(Number.isFinite)) return
         const el = this.createOuterFrameEl(
-          (left - outerFramePaddingX - this.mindMap.elRect.left - t.translateX) / t.scaleX,
-          (top - outerFramePaddingY - this.mindMap.elRect.top - t.translateY) / t.scaleY,
-          (width + outerFramePaddingX * 2) / t.scaleX,
-          (height + outerFramePaddingY * 2) / t.scaleY,
+          left - padX,
+          top - padY,
+          width + padX * 2,
+          height + padY * 2,
           this.getStyle(nodeList[0])   // 使用第一个节点的外框样式
         )
         // 渲染文字，如果有的话
