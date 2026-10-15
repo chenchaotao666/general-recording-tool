@@ -153,6 +153,9 @@ import { canonicalToSimple, simpleToCanonical } from '../mindmap/convert'
 import { walk as smmWalk } from 'simple-mind-map/src/utils/index.js'
 import { getNodeOuterFrameList } from 'simple-mind-map/src/plugins/outerFrame/outerFrameUtils.js'
 
+// A/B 对照开关：URL 带 ?native=1 时跳过本组件对库的所有补丁（概要/归纳），用于排查补丁是否引入回归
+const __native = new URLSearchParams(location.search).has('native')
+
 // ── 概要（蓝色外框）位置补丁：库的边界计算 getNodeListBoundingRect 会递归整个子树，
 // 导致外框把未选中的子节点也框进去（子树越高/越宽，框偏得越远）。
 // 改为只包选中节点自身的形状盒子（不递归后代）；其余渲染逻辑与库原实现保持一致。
@@ -168,7 +171,7 @@ const _ownShapeRect = (nodeList) => {
   })
   return { left: minX, top: minY, width: maxX - minX, height: maxY - minY }
 }
-OuterFrame.prototype.renderOuterFrames = function () {
+if (!__native) OuterFrame.prototype.renderOuterFrames = function () {
   if (this.isNotRenderOuterFrames) {
     this.isNotRenderOuterFrames = false
     return
@@ -1010,6 +1013,7 @@ function setLayout(name) {
 // 另一轴保持子树边界不变，否则概要节点会和选中节点的子节点重叠。
 // 所有布局的 renderGeneralization 都走 getNodeGeneralizationRenderBoundaries，统一在此打补丁。
 function patchGeneralizationBounds() {
+  if (__native) return
   const l = mind?.renderer?.layout
   if (!l || l.__genBoundPatched) return
   l.__genBoundPatched = true
