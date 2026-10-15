@@ -150,6 +150,63 @@ import NodeBase64ImageStorage from 'simple-mind-map/src/plugins/NodeBase64ImageS
 import icons from 'simple-mind-map/src/svg/icons.js'
 import Themes from 'simple-mind-map-plugin-themes'
 import { canonicalToSimple, simpleToCanonical } from '../mindmap/convert'
+import { walk as smmWalk } from 'simple-mind-map/src/utils/index.js'
+import { getNodeOuterFrameList } from 'simple-mind-map/src/plugins/outerFrame/outerFrameUtils.js'
+
+// ── 概要（蓝色外框）位置补丁：库的边界计算 getNodeListBoundingRect 会递归整个子树，
+// 导致外框把未选中的子节点也框进去（子树越高/越宽，框偏得越远）。
+// 改为只包选中节点自身的形状盒子（不递归后代）；其余渲染逻辑与库原实现保持一致。
+// 在 new MindMap 之前替换原型方法（插件构造时 bind 的就是这里的方法）。
+const _ownShapeRect = (nodeList) => {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  nodeList.forEach((n) => {
+    try {
+      const { x, y, width, height } = n.group.findOne('.smm-node-shape').rbox()
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x + width)
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y + height)
+    } catch { /* 节点未渲染时跳过 */ }
+  })
+  return { left: minX, top: minY, width: maxX - minX, height: maxY - minY }
+}
+OuterFrame.prototype.renderOuterFrames = function () {
+  if (this.isNotRenderOuterFrames) {
+    this.isNotRenderOuterFrames = false
+    return
+  }
+  this.clearActiveOuterFrame()
+  this.clearTextNodes()
+  this.clearOuterFrameElList()
+  const tree = this.mindMap.renderer.root
+  if (!tree) return
+  const t = this.mindMap.draw.transform()
+  const { outerFramePaddingX, outerFramePaddingY } = this.mindMap.opt
+  smmWalk(tree, null, (cur) => {
+    if (!cur) return
+    const outerFrameList = getNodeOuterFrameList(cur)
+    if (outerFrameList && outerFrameList.length > 0) {
+      outerFrameList.forEach(({ nodeList, range }) => {
+        if (range[0] === -1 || range[1] === -1) return
+        const { left, top, width, height } = _ownShapeRect(nodeList)   // ← 与库的唯一差异：不含子树
+        if (![left, top, width, height].every(Number.isFinite)) return
+        const el = this.createOuterFrameEl(
+          (left - outerFramePaddingX - this.mindMap.elRect.left - t.translateX) / t.scaleX,
+          (top - outerFramePaddingY - this.mindMap.elRect.top - t.translateY) / t.scaleY,
+          (width + outerFramePaddingX * 2) / t.scaleX,
+          (height + outerFramePaddingY * 2) / t.scaleY,
+          this.getStyle(nodeList[0])   // 使用第一个节点的外框样式
+        )
+        // 渲染文字，如果有的话
+        const textNode = this.createText(el, cur, range)
+        this.textNodeList.push(textNode)
+        this.renderText(this.getText(nodeList[0]), el, textNode, cur, range)
+        el.on('click', (e) => {
+          e.stopPropagation()
+          this.setActiveOuterFrame(el, cur, range, textNode)
+        })
+      })
+    }
+  }, () => {}, true, 0)
+}
 
 MindMap
   .usePlugin(MiniMap).usePlugin(Watermark).usePlugin(Drag).usePlugin(KeyboardNavigation)
