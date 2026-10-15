@@ -1,0 +1,22 @@
+/* 树形目录拖拽排序通用样式（useTreeDnd + DndHandle 配套）。
+   整行可拖动（draggable 在行元素上），文字禁止选中避免拖出选区；
+   落点指示：上沿蓝线 = 排到这行上面；虚线框 = 移入文件夹。 */
+
+.tree-item { user-select: none; }
+
+/* 落点指示（加在树条目上，配合 useTreeDnd 的 indicatorClass）。
+   统一用"上沿蓝线"表示插入位置；dnd-after 仅用于整个列表末尾（没有下一行可借上沿） */
+.tree-item.dnd-before { box-shadow: inset 0 2px 0 var(--grt-primary, #409eff); }
+.tree-item.dnd-after { box-shadow: inset 0 -2px 0 var(--grt-primary, #409eff); }
+.tree-item.dnd-into { outline: 1px dashed var(--grt-primary, #409eff); outline-offset: -1px; background: #e8f1fd; }
+
+/* 六点拖拽把手：占位常驻但 hover 才可见，避免悬浮时条目内容左右跳动 */
+.dnd-handle {
+  display: inline-grid; grid-template-columns: repeat(2, 2px); gap: 3px 4px;
+  flex-shrink: 0; margin: 0 4px 0 -2px; padding: 2px 0;
+  cursor: grab; visibility: hidden;
+}
+.dnd-handle i { width: 2px; height: 2px; border-radius: 50%; background: #c0c4cc; }
+.tree-item:hover .dnd-handle { visibility: visible; }
+.dnd-handle:hover i { background: #909399; }
+.dnd-handle:active { cursor: grabbing; }

@@ -2,8 +2,8 @@
   <!-- 裸页（不带侧边菜单壳）：登录、登录后的选择公司、公开分享/表单/审批 -->
   <router-view v-if="$route.path === '/login' || $route.path === '/select-tenant'
     || $route.path.startsWith('/share/') || $route.path.startsWith('/form/') || $route.path.startsWith('/approve/')" />
-  <el-container v-else class="layout">
-    <el-aside :width="navCollapsed ? '64px' : '200px'" class="aside">
+  <el-container v-else class="layout" :class="{ focus: focusMode }">
+    <el-aside :width="navCollapsed ? '64px' : '180px'" class="aside">
       <div class="logo" :title="navCollapsed ? '通用记录工具' : ''">{{ navCollapsed ? '记' : '通用记录工具' }}</div>
       <el-menu :default-active="$route.path" router :collapse="navCollapsed" :collapse-transition="false">
         <el-menu-item index="/home">
@@ -23,11 +23,11 @@
           <el-menu-item v-if="hasMenu('menu_notes')" index="/notes">
             <el-icon><Notebook /></el-icon><span>记事本</span>
           </el-menu-item>
-          <el-menu-item v-if="hasMenu('menu_mindmaps')" index="/mindmaps">
-            <el-icon><Share /></el-icon><span>思维导图</span>
-          </el-menu-item>
           <el-menu-item v-if="hasMenu('menu_whiteboard')" index="/whiteboard">
             <el-icon><Brush /></el-icon><span>画板</span>
+          </el-menu-item>
+          <el-menu-item v-if="hasMenu('menu_mindmaps')" index="/mindmaps">
+            <el-icon><Share /></el-icon><span>思维导图</span>
           </el-menu-item>
           <el-menu-item v-if="hasMenu('menu_reports')" index="/reports">
             <el-icon><DataAnalysis /></el-icon><span>报表</span>
@@ -98,6 +98,7 @@
           <span id="topbarActions" class="topbar-actions" />
         </div>
         <div class="topbar-right">
+          <el-icon v-if="$route.meta.flush" class="focus-icon" title="专注模式：隐藏导航与顶栏，编辑区占满窗口（Esc 退出）" @click="focusMode = true"><FullScreen /></el-icon>
           <el-badge :value="unread || ''" :max="99" class="bell-badge">
             <el-icon class="bell-icon" title="通知" @click="router.push('/notifications')"><Bell /></el-icon>
           </el-badge>
@@ -156,11 +157,15 @@
           <el-button type="primary" :loading="pwdSaving" @click="changePassword">确定</el-button>
         </template>
       </el-dialog>
-      <el-main class="main">
+      <el-main class="main" :class="{ 'main-flush': $route.meta.flush }">
         <router-view />
       </el-main>
       <AssistantPanel />
     </el-container>
+    <!-- 专注模式下的浮动退出按钮（顶栏已隐藏，需独立出口） -->
+    <div v-if="focusMode" class="focus-exit" title="退出专注模式（Esc）" @click="focusMode = false">
+      <el-icon><ScaleToOriginal /></el-icon>
+    </div>
   </el-container>
 </template>
 
@@ -168,7 +173,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElLoading, ElMessage } from 'element-plus'
-import { Avatar, Bell, Brush, Collection, Connection, DataAnalysis, Document, Expand, Fold, Grid, HomeFilled, Notebook, OfficeBuilding, Postcard, PriceTag, Setting, Share, Tickets, Upload, User, UserFilled, Wallet } from '@element-plus/icons-vue'
+import { Avatar, Bell, Brush, Collection, Connection, DataAnalysis, Document, Expand, Fold, FullScreen, Grid, HomeFilled, Notebook, OfficeBuilding, Postcard, PriceTag, ScaleToOriginal, Setting, Share, Tickets, Upload, User, UserFilled, Wallet } from '@element-plus/icons-vue'
 import { changePassword as changePasswordApi, getCurrentTenant, switchTenant, unreadCount } from './api'
 import AssistantPanel from './components/AssistantPanel.vue'
 
@@ -189,8 +194,18 @@ function readUser() {
 }
 const user = ref(readUser())
 const tenantInfo = ref(null)   // /tenants/current：套餐/用量/订阅状态（横幅与菜单显隐用）
+// 专注模式：隐藏侧边导航与顶栏，编辑区占满窗口（仅 flush 页面可进入；Esc 或右上角悬浮按钮退出）
+const focusMode = ref(false)
+function onFocusEsc(e) { if (e.key === 'Escape') focusMode.value = false }
+watch(focusMode, (on) => {
+  if (on) window.addEventListener('keydown', onFocusEsc)
+  else window.removeEventListener('keydown', onFocusEsc)
+})
+
 watch(() => route.path, () => {
   user.value = readUser()
+  // 离开编辑器页面时自动退出专注模式（侧边导航被隐藏，避免用户卡在无边框状态）
+  if (focusMode.value && !route.meta.flush) focusMode.value = false
   // 登录/切换账号后路由首次变化时立即拉取未读数（否则要等下一个 30s 轮询周期）
   if (localStorage.getItem('grt_token')) {
     pollUnread()
@@ -342,7 +357,10 @@ onUnmounted(() => {
   --grt-ai-disabled: #b5a3f5;
 }
 body { margin: 0; font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; }
-.layout { height: 100vh; }
+.layout { height: 100vh; --chrome-h: 48px; }
+/* 专注模式：隐藏 chrome（侧边导航/顶栏/订阅横幅），页面高度变量归零 */
+.layout.focus { --chrome-h: 0px; }
+.layout.focus .aside, .layout.focus .topbar, .layout.focus .sub-banner { display: none; }
 .aside { border-right: 1px solid #e4e7ed; background: #fafafa; transition: width .15s ease; display: flex; flex-direction: column; }
 .logo { padding: 18px 20px; font-size: 17px; font-weight: 600; color: #303133; white-space: nowrap; overflow: hidden; flex-shrink: 0; }
 .aside .el-menu { border-right: none; background: transparent; flex: 1; overflow-y: auto; }
@@ -380,6 +398,17 @@ body { margin: 0; font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Micr
 .st-medium { color: #e6a23c; font-weight: 600; }
 .st-weak { color: #f56c6c; font-weight: 600; }
 .main { background: #f5f7fa; padding: 20px 24px; overflow-y: auto; }
+/* flush 页面（编辑器类）：去除内边距，内容贴边 */
+.main-flush { padding: 0; }
+.focus-icon { font-size: 17px; color: #606266; cursor: pointer; }
+.focus-icon:hover { color: var(--grt-primary); }
+.focus-exit {
+  position: fixed; top: 12px; right: 12px; z-index: 3000;
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  background: #fff; border: 1px solid #e4e7ed; border-radius: 50%; cursor: pointer;
+  color: #606266; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+}
+.focus-exit:hover { color: var(--grt-primary); border-color: var(--grt-primary); }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-header h2 { margin: 0; }
 /* AI 生成按钮：全局统一紫色（.el-button 前缀提权，覆盖 EP 默认色） */

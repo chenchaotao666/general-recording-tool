@@ -1,64 +1,55 @@
 <template>
   <div class="wb-page">
-    <!-- 左侧：搜索 + 画板树（可折叠，与记事本一致的界面模式） -->
-    <div class="wb-side">
+    <!-- 左侧：搜索 + 画板树（可折叠，与记事本一致的界面模式）；宽度可拖拽调节，可整体收起 -->
+    <div v-show="!sideCollapsed" class="wb-side" :style="{ width: sideWidth + 'px' }">
       <div class="side-top">
-        <el-input
-          v-model="keyword" placeholder="搜索画板" clearable :prefix-icon="Search"
-          @input="onSearchInput" @clear="searchResults = null"
-        />
-        <!-- 新建时选引擎；建好后引擎固定（数据格式不同不能互转）。文件夹仅作目录分组，无引擎 -->
-        <el-dropdown trigger="click" @command="(eng) => eng === '__folder' ? createFolder() : createPage(null, eng)">
-          <el-button type="primary" :icon="Plus">新建</el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="excalidraw">Excalidraw（手绘风）</el-dropdown-item>
-              <el-dropdown-item command="drawio">drawio（图形库全）</el-dropdown-item>
-              <el-dropdown-item command="__folder" divided>📂 新建文件夹</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <div class="side-top-row">
+          <el-icon class="side-fold" title="收起目录" @click="collapseSide"><Fold /></el-icon>
+          <el-input
+            v-model="keyword" placeholder="搜索画板" clearable :prefix-icon="Search"
+            @input="onSearchInput" @clear="searchResults = null"
+          />
+        </div>
+        <div class="side-top-row">
+          <!-- 两个引擎入口并列；建好后引擎固定（excalidraw/drawio 数据格式不同不能互转），文件夹仅作目录分组 -->
+          <el-button type="primary" :icon="Plus" class="side-new" @click="createPage(null, 'excalidraw')">手绘风</el-button>
+          <el-button class="side-new" @click="createPage(null, 'drawio')">图形全</el-button>
+          <el-button :icon="FolderAdd" title="新建文件夹" @click="createFolder()" />
+        </div>
       </div>
       <div v-loading="treeLoading" class="tree">
         <template v-if="displayTree.length">
           <div
             v-for="n in displayTree" :key="n.id"
-            class="tree-item" :class="{ active: current?.id === n.id }"
+            class="tree-item" :class="[{ active: current?.id === n.id }, dnd.indicatorClass(n)]"
             :style="{ paddingLeft: 6 + n.level * 16 + 'px' }"
+            :draggable="searchResults === null"
             @click="onItemClick(n)"
+            @dragstart="dnd.start(n, $event)"
+            @dragover="dnd.over(n, $event)"
+            @drop="dnd.drop(n, $event)"
+            @dragend="dnd.end"
           >
+            <DndHandle v-if="searchResults === null" />
             <span
               class="tree-chevron" :class="{ has: n.hasChildren, open: n.hasChildren && !collapsed.has(n.id) }"
               @click.stop="toggleCollapse(n)"
             >
               <el-icon v-if="n.hasChildren"><ArrowRight /></el-icon>
             </span>
-            <el-icon class="tree-doc"><Folder v-if="n.kind === 'folder'" /><Brush v-else /></el-icon>
+            <el-icon class="tree-doc">
+              <Folder v-if="n.kind === 'folder'" />
+              <Connection v-else-if="n.engine === 'drawio'" />
+              <Brush v-else />
+            </el-icon>
             <span class="tree-title">{{ n.title || (n.kind === 'folder' ? '未命名文件夹' : '无标题画板') }}</span>
-            <el-tag v-if="n.kind !== 'folder' && n.engine === 'drawio'" size="small" type="warning" effect="plain" class="engine-tag">drawio</el-tag>
             <span class="tree-ops" @click.stop>
-              <el-icon v-if="n.level < 2" title="新增子页" @click="createPage(n)"><Plus /></el-icon>
-              <el-icon title="上移" @click="moveUp(n)"><ArrowUp /></el-icon>
-              <el-icon title="置顶" @click="moveTop(n)"><Top /></el-icon>
+              <el-icon v-if="n.kind === 'folder' && n.level < 2" title="新增子页" @click="createPage(n)"><Plus /></el-icon>
               <el-dropdown trigger="click" placement="bottom-end" @command="(cmd) => onMenu(cmd, n)">
                 <el-icon title="更多" class="tree-more"><MoreFilled /></el-icon>
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="rename">重命名</el-dropdown-item>
-                    <el-dropdown-item class="move-host">
-                      <el-dropdown trigger="hover" placement="right-start" @command="(cmd) => onMovePick(cmd, n)">
-                        <span class="tree-move-label">移入文件夹<el-icon><ArrowRight /></el-icon></span>
-                        <template #dropdown>
-                          <el-dropdown-menu>
-                            <el-dropdown-item v-if="n.parent_id" command="__root">（移到根级）</el-dropdown-item>
-                            <el-dropdown-item v-for="f in moveTargets(n)" :key="f.id" :command="f.id">
-                              {{ f.title || '未命名文件夹' }}
-                            </el-dropdown-item>
-                            <el-dropdown-item command="__new" divided>＋ 新建文件夹</el-dropdown-item>
-                          </el-dropdown-menu>
-                        </template>
-                      </el-dropdown>
-                    </el-dropdown-item>
                     <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
@@ -71,14 +62,23 @@
         </div>
       </div>
     </div>
+    <!-- 分隔条：拖拽调节目录栏宽度 -->
+    <div v-show="!sideCollapsed" class="side-resizer" title="拖动调整目录宽度" @mousedown.prevent="startSideResize" />
+    <!-- 收起后的窄条：点击展开 -->
+    <div v-show="sideCollapsed" class="side-expand" title="展开目录" @click="expandSide">
+      <el-icon><Expand /></el-icon>
+    </div>
 
     <!-- 右侧：画布编辑器（Excalidraw / drawio，按画板 engine 分发） -->
     <div class="wb-main">
       <template v-if="current">
-        <div class="main-top">
+        <div class="main-top" :class="{ 'main-top-drawio': current.engine === 'drawio' }">
           <input v-model="current.title" class="title-input" placeholder="无标题画板" maxlength="200" @input="onTitleInput" />
           <!-- AI 生成：两种引擎都支持（excalidraw/drawio 各自实现转换层）；大按钮，与其它编辑器一致 -->
-          <el-button ref="aiBtnRef" class="ai-btn" :icon="MagicStick" @click="aiVisible = true">AI 生成</el-button>
+          <!-- drawio 是 iframe 无法注入其工具栏，AI 入口与标题一起悬浮在画布左上角（与记事本「AI 写作」同款紫色文字按钮） -->
+          <button v-if="current.engine === 'drawio'" ref="aiBtnRef" type="button" class="wb-ai-btn" @click="onHeaderAi">
+            <el-icon><MagicStick /></el-icon><span>AI 生成</span>
+          </button>
           <div class="main-ops">
             <span class="save-state" :class="{ err: saveState === '保存失败' }">{{ saveState }}</span>
           </div>
@@ -89,6 +89,7 @@
             :is="current.engine === 'drawio' ? DrawioBoard : ExcalidrawBoard"
             :key="current.id"
             ref="editorRef" :initial="current.content" @change="onEditorChange"
+            @ai="onToolbarAi"
           />
         </div>
       </template>
@@ -97,7 +98,7 @@
 
     <!-- AI 面板（统一 AiPromptPanel）：描述 + 模式（自动/替换/追加/修改/汇总）→ 后端 LLM → 编辑器转换渲染 -->
     <AiPromptPanel
-      v-model="aiVisible" title="✨ AI 生成" :anchor="aiBtnRef"
+      v-model="aiVisible" title="✨ AI 生成" :anchor="aiAnchor"
       :modes="WB_AI_MODES" v-model:mode="aiMode"
       :placeholder="aiPlaceholder" :loading="aiGenerating"
       hint="替换/修改覆盖当前画布（执行前确认）；追加保留现有内容；汇总不动画布。可附图按图生成"
@@ -121,7 +122,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowRight, ArrowUp, Brush, Folder, MagicStick, MoreFilled, Plus, Search, Top } from '@element-plus/icons-vue'
+import { ArrowRight, Brush, Connection, Expand, Fold, Folder, FolderAdd, MagicStick, MoreFilled, Plus, Search } from '@element-plus/icons-vue'
 import {
   createWhiteboard, deleteWhiteboard, generateBoardContent, getWhiteboard,
   searchWhiteboards, updateWhiteboard, whiteboardTree,
@@ -129,6 +130,8 @@ import {
 import ExcalidrawBoard from './whiteboard/ExcalidrawBoard.vue'
 import DrawioBoard from './whiteboard/DrawioBoard.vue'
 import AiPromptPanel from '../components/AiPromptPanel.vue'
+import DndHandle from '../components/DndHandle.vue'
+import { useTreeDnd } from '../composables/useTreeDnd.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -142,6 +145,26 @@ const saveState = ref('')
 const editorRef = ref(null)
 const collapsed = ref(new Set())
 
+// 目录栏：宽度可拖拽调节（200~480px，记住选择）；可整体收起为窄条
+// 存储键带版本（_v3）：默认值调整时换版本，忽略旧键里的历史值
+const sideWidth = ref(Number(localStorage.getItem('grt_wb_side_w_v3')) || 280)
+const sideCollapsed = ref(localStorage.getItem('grt_wb_side_collapsed') === '1')
+function collapseSide() { sideCollapsed.value = true; localStorage.setItem('grt_wb_side_collapsed', '1') }
+function expandSide() { sideCollapsed.value = false; localStorage.setItem('grt_wb_side_collapsed', '0') }
+function startSideResize(e) {
+  const startX = e.clientX
+  const startW = sideWidth.value
+  const onMove = (ev) => { sideWidth.value = Math.min(480, Math.max(200, startW + ev.clientX - startX)) }
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+    // 只有真的拖过才记住宽度，避免误点分隔条把当前默认值存成"用户选择"
+    if (sideWidth.value !== startW) localStorage.setItem('grt_wb_side_w_v3', String(sideWidth.value))
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
+
 let latestContent = ''   // 编辑器最近一次 change 的 JSON（flushSave 以它为准）
 let saveTimer = null
 let saving = false
@@ -154,6 +177,16 @@ const aiMode = ref('auto')
 const aiImages = ref([])   // 附图（data URL），成功后清空
 const aiGenerating = ref(false)
 const aiBtnRef = ref(null)
+// AI 面板锚点：drawio = 头部按钮；excalidraw = 画布工具栏最左侧注入的按钮（.wb-ai-tool）
+const aiAnchor = ref(null)
+function onToolbarAi() {
+  aiAnchor.value = document.querySelector('.wb-excalidraw .wb-ai-tool')
+  aiVisible.value = true
+}
+function onHeaderAi() {
+  aiAnchor.value = aiBtnRef.value
+  aiVisible.value = true
+}
 const summaryVisible = ref(false)
 const summaryText = ref('')
 
@@ -263,33 +296,7 @@ function onItemClick(n) {
   open(n)
 }
 
-// ---------- 文件夹（新建 / 重命名 / 移入，对齐智能表目录的 ⋯ 菜单） ----------
-
-const folders = computed(() => boards.value.filter((x) => x.kind === 'folder'))
-
-// n 的子孙 id 集合：移入文件夹时排除自身与子孙（前端预过滤，后端仍有防环兜底）
-function descendantIds(id) {
-  const out = new Set()
-  let grew = true
-  while (grew) {
-    grew = false
-    for (const x of boards.value) {
-      if (x.parent_id && (x.parent_id === id || out.has(x.parent_id)) && !out.has(x.id)) {
-        out.add(x.id)
-        grew = true
-      }
-    }
-  }
-  return out
-}
-
-// 可选目标文件夹：排除自身、子孙与当前所在文件夹
-function moveTargets(n) {
-  const excl = descendantIds(n.id)
-  excl.add(n.id)
-  if (n.parent_id) excl.add(n.parent_id)
-  return folders.value.filter((f) => !excl.has(f.id))
-}
+// ---------- 文件夹（新建 / 重命名，对齐智能表目录的 ⋯ 菜单） ----------
 
 function isCancel(e) {
   return e === 'cancel' || e === 'close'
@@ -319,25 +326,6 @@ async function onMenu(cmd, n) {
     }
   } else if (cmd === 'delete') {
     del(n)
-  }
-}
-
-// 移入文件夹二级菜单：__root=移到根级，__new=新建文件夹并移入，其余=目标文件夹 id
-async function onMovePick(cmd, n) {
-  try {
-    if (cmd === '__root') {
-      await updateWhiteboard(n.id, { parent_id: null })
-    } else if (cmd === '__new') {
-      const { value } = await ElMessageBox.prompt('文件夹名称', '新建文件夹', { inputValue: '未命名文件夹' })
-      if (value == null) return
-      const folder = await createWhiteboard({ kind: 'folder', title: value.trim() || '未命名文件夹' })
-      await updateWhiteboard(n.id, { parent_id: folder.id })
-    } else {
-      await updateWhiteboard(n.id, { parent_id: cmd })
-    }
-    await loadTree()
-  } catch (e) {
-    if (!isCancel(e)) ElMessage.error(e.message || e)
   }
 }
 
@@ -474,47 +462,21 @@ async function createPage(parent = null, engine = 'excalidraw') {
 
 // ---------- 页面排序（纯顺序操作：上移 / 置顶，无"置顶状态"概念） ----------
 
-// 同级兄弟按当前展示顺序（与后端一致：pinned > sort > updated_at）
-function siblingsOf(n) {
-  return boards.value
-    .filter((x) => (x.parent_id || null) === (n.parent_id || null))
-    .sort((a, b) => ((b.pinned - a.pinned) || (a.sort - b.sort)
-      || (b.updated_at > a.updated_at ? 1 : b.updated_at < a.updated_at ? -1 : 0)))
-}
-
-// 按新顺序重排同级 sort（0,10,20…），顺带清掉旧的 pinned 标记
-async function applyOrder(ordered) {
-  const jobs = []
-  ordered.forEach((n, i) => {
-    const sort = i * 10
-    if (n.sort !== sort || n.pinned) jobs.push(updateWhiteboard(n.id, { sort, pinned: false }))
-  })
-  await Promise.all(jobs)
-  await loadTree()
-}
-
-async function moveUp(n) {
-  const sibs = siblingsOf(n)
-  const i = sibs.findIndex((x) => x.id === n.id)
-  if (i <= 0) {
-    ElMessage.info('已经在最前面了')
-    return
-  }
-  ;[sibs[i - 1], sibs[i]] = [sibs[i], sibs[i - 1]]
-  await applyOrder(sibs)
-}
-
-async function moveTop(n) {
-  const sibs = siblingsOf(n)
-  const i = sibs.findIndex((x) => x.id === n.id)
-  if (i <= 0) {
-    ElMessage.info('已经在最前面了')
-    return
-  }
-  sibs.unshift(...sibs.splice(i, 1))
-  await applyOrder(sibs)
-  ElMessage.success('已置顶')
-}
+// 目录拖拽排序（通用逻辑与样式：composables/useTreeDnd.js + styles/tree-dnd.css + components/DndHandle.vue）
+const dnd = useTreeDnd({
+  items: boards,
+  visible: displayTree,
+  persist: updateWhiteboard,
+  reload: loadTree,
+  onMoved: (zone, target) => {
+    // 移入收起的文件夹时自动展开，让用户看到落点
+    if (zone === 'into' && collapsed.value.has(target.id)) {
+      const s = new Set(collapsed.value)
+      s.delete(target.id)
+      collapsed.value = s
+    }
+  },
+})
 
 async function del(n) {
   try {
@@ -555,22 +517,40 @@ onBeforeUnmount(async () => {
 </script>
 
 <style scoped>
-.wb-page { display: flex; gap: 16px; height: calc(100vh - 110px); }
+.wb-page { display: flex; height: calc(100vh - var(--chrome-h, 48px)); }
 
-/* 左侧画板树：与记事本一致的交互（折叠箭头 + 图标 + 悬浮操作） */
+/* 左侧画板树：与记事本一致的交互（折叠箭头 + 图标芯片 + 悬浮操作） */
 .wb-side {
-  width: 280px; flex-shrink: 0; background: #fff; border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, .06); display: flex; flex-direction: column; overflow: hidden;
+  width: 280px; flex-shrink: 0; background: #fff;
+  box-shadow: 0 2px 12px rgba(31, 45, 61, .08); display: flex; flex-direction: column; overflow: hidden;
 }
-.side-top { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid #ebeef5; }
-.tree { flex: 1; overflow-y: auto; padding: 8px 6px; }
+.side-top { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f0f2f5; }
+.side-top-row { display: flex; align-items: center; gap: 8px; }
+.side-new { flex: 1; padding: 8px 4px; }
+/* flex 布局下用 gap 控制间距，去掉 EP 相邻按钮的默认左外边距 */
+.side-top-row .el-button + .el-button { margin-left: 0; }
+.side-fold { font-size: 16px; color: #909399; cursor: pointer; padding: 4px; border-radius: 6px; flex-shrink: 0; }
+.side-fold:hover { background: #f5f7fa; color: #303133; }
+/* 分隔条：悬浮显示把手，按住横向拖动调宽 */
+.side-resizer { width: 10px; flex-shrink: 0; cursor: col-resize; display: flex; align-items: center; justify-content: center; }
+.side-resizer::after { content: ''; width: 3px; height: 36px; border-radius: 2px; background: transparent; transition: background-color .15s ease; }
+.side-resizer:hover::after { background: #c0c4cc; }
+/* 目录栏收起后的窄条：图标位置与收起前的收起图标对齐（距顶 18px、距左 16px） */
+.side-expand {
+  width: 36px; flex-shrink: 0; margin-right: 10px; padding: 14px 0 0 12px;
+  background: #fff; box-shadow: 0 2px 12px rgba(31, 45, 61, .08);
+  display: flex; justify-content: flex-start; cursor: pointer; color: #909399;
+}
+.side-expand .el-icon { padding: 4px; font-size: 16px; border-radius: 6px; }
+.side-expand:hover { color: var(--grt-primary, #409eff); }
+.tree { flex: 1; overflow-y: auto; padding: 8px; }
 .tree-item {
-  display: flex; align-items: center; gap: 2px; height: 32px; padding: 0 6px;
+  display: flex; align-items: center; gap: 2px; height: 34px; padding: 0 8px;
   border-radius: 6px; cursor: pointer; font-size: 14px; color: #303133;
   transition: background-color .12s ease;
 }
 .tree-item:hover { background: #f5f7fa; }
-.tree-item.active { background: #ecf5ff; color: #409eff; font-weight: 500; }
+.tree-item.active { background: #e8f1fd; color: var(--grt-primary, #409eff); font-weight: 500; }
 .tree-chevron {
   width: 20px; height: 20px; flex-shrink: 0; display: inline-flex;
   align-items: center; justify-content: center; border-radius: 4px; color: #909399;
@@ -578,10 +558,10 @@ onBeforeUnmount(async () => {
 .tree-chevron.has:hover { background: #e4e7ed; color: #303133; }
 .tree-chevron .el-icon { font-size: 12px; transition: transform .15s ease; }
 .tree-chevron.open .el-icon { transform: rotate(90deg); }
-.tree-doc { color: #a8abb2; font-size: 15px; flex-shrink: 0; margin: 0 3px; }
-.tree-item.active .tree-doc { color: #409eff; }
+/* 条目图标：纯图标，不加底块 */
+.tree-doc { color: #a8abb2; font-size: 15px; flex-shrink: 0; margin: 0 4px 0 2px; }
+.tree-item.active .tree-doc { color: var(--grt-primary, #409eff); }
 .tree-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.engine-tag { flex-shrink: 0; transform: scale(.85); transform-origin: left center; margin-right: 2px; }
 .tree-ops { display: none; gap: 2px; flex-shrink: 0; color: #909399; align-items: center; }
 .tree-item:hover .tree-ops { display: inline-flex; }
 .tree-ops .el-icon { padding: 3px; border-radius: 4px; font-size: 14px; }
@@ -590,29 +570,36 @@ onBeforeUnmount(async () => {
 
 /* 右侧编辑区 */
 .wb-main {
-  flex: 1; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+  flex: 1; background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(31, 45, 61, .08);
   display: flex; flex-direction: column; overflow: hidden; position: relative;
 }
+/* 标题悬浮在画布左上角（不占独立行），画布占满整个右侧面板；高度固定 36px，两个引擎一致 */
 .main-top {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 14px 24px 8px;
+  position: absolute; top: 18px; left: 12px; z-index: 20; max-width: 60%;
+  display: flex; align-items: center; gap: 10px;
+  height: 36px; box-sizing: border-box; padding: 0 12px; background: rgba(255, 255, 255, .92);
+  border: 1px solid #ebeef5; border-radius: 8px; box-shadow: 0 2px 8px rgba(31, 45, 61, .08);
 }
+/* drawio 的 iframe 顶部自带菜单栏+工具栏（约 70px），左侧是图形库面板；
+   悬浮条放到画布区右上角（drawio 在那里没有控件，也不受图形库面板宽度变化影响） */
+.main-top-drawio { top: 31px; left: 800px; }
 .title-input {
-  flex: 1; max-width: 420px; border: none; outline: none; font-size: 24px; font-weight: 700; color: #303133;
+  flex: 1; max-width: 300px; border: none; outline: none; font-size: 15px; font-weight: 600; color: #303133;
   background: transparent; min-width: 0;
 }
 .title-input::placeholder { color: #c0c4cc; }
+/* drawio 的 AI 入口：悬浮标题条内的紫色文字按钮（与记事本「AI 写作」/excalidraw 工具栏按钮同款） */
+.wb-ai-btn {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  border: none; background: transparent; padding: 4px 6px; border-radius: 6px;
+  color: var(--grt-ai, #7c5cff); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.wb-ai-btn:hover { background: #f4f0ff; }
 /* AI 生成按钮贴标题左侧区域，保存状态靠右 */
 .main-ops { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
 .save-state { font-size: 12px; color: #909399; margin-right: 4px; }
 .save-state.err { color: #f56c6c; }
 .ai-hint { font-size: 12px; color: #909399; margin-top: 8px; }
 .ai-modes { margin-bottom: 10px; }
-.editor-wrap { flex: 1; min-height: 0; padding: 4px 16px 16px; }
-</style>
-
-<!-- ⋯ 菜单的弹出层被 el-dropdown 传送到 body，scoped 样式够不到，这里用全局类（与 Notes.vue 保持一致） -->
-<style>
-.tree-move-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; }
-.tree-move-label .el-icon { font-size: 12px; color: #909399; }
+.editor-wrap { flex: 1; min-height: 0; padding: 0; }
 </style>

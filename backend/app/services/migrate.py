@@ -60,6 +60,11 @@ _NEW_COLUMNS = [
     # 记事本/画板：文件夹节点（kind=folder 仅作目录分组，无内容）
     ("notes", "kind", "VARCHAR(16) DEFAULT 'page'"),
     ("whiteboards", "kind", "VARCHAR(16) DEFAULT 'page'"),
+    # 思维导图：目录化（对齐记事本/画板——文件夹 + 同级排序 + 置顶）
+    ("mindmaps", "kind", "VARCHAR(16) DEFAULT 'page'"),
+    ("mindmaps", "parent_id", "INTEGER"),
+    ("mindmaps", "sort", "INTEGER DEFAULT 0"),
+    ("mindmaps", "pinned", "BOOLEAN DEFAULT 0"),
 ]
 
 

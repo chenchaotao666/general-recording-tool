@@ -1,23 +1,34 @@
 <template>
   <div class="notes-page">
-    <!-- 左侧：搜索 + 页面树（可折叠，业内笔记本风格） -->
-    <div class="notes-side">
+    <!-- 左侧：搜索 + 页面树（可折叠，业内笔记本风格）；宽度可拖拽调节，可整体收起 -->
+    <div v-show="!sideCollapsed" class="notes-side" :style="{ width: sideWidth + 'px' }">
       <div class="side-top">
-        <el-input
-          v-model="keyword" placeholder="搜索笔记" clearable :prefix-icon="Search"
-          @input="onSearchInput" @clear="searchResults = null"
-        />
-        <el-button type="primary" :icon="Plus" @click="createPage()">新建</el-button>
-        <el-button :icon="FolderAdd" title="新建文件夹" @click="createFolder()" />
+        <div class="side-top-row">
+          <el-icon class="side-fold" title="收起目录" @click="collapseSide"><Fold /></el-icon>
+          <el-input
+            v-model="keyword" placeholder="搜索笔记" clearable :prefix-icon="Search"
+            @input="onSearchInput" @clear="searchResults = null"
+          />
+        </div>
+        <div class="side-top-row">
+          <el-button type="primary" :icon="Plus" class="side-new" @click="createPage()">新建</el-button>
+          <el-button :icon="FolderAdd" title="新建文件夹" @click="createFolder()" />
+        </div>
       </div>
       <div v-loading="treeLoading" class="tree">
         <template v-if="displayTree.length">
           <div
             v-for="n in displayTree" :key="n.id"
-            class="tree-item" :class="{ active: current?.id === n.id }"
+            class="tree-item" :class="[{ active: current?.id === n.id }, dnd.indicatorClass(n)]"
             :style="{ paddingLeft: 6 + n.level * 16 + 'px' }"
+            :draggable="searchResults === null"
             @click="onItemClick(n)"
+            @dragstart="dnd.start(n, $event)"
+            @dragover="dnd.over(n, $event)"
+            @drop="dnd.drop(n, $event)"
+            @dragend="dnd.end"
           >
+            <DndHandle v-if="searchResults === null" />
             <span
               class="tree-chevron" :class="{ has: n.hasChildren, open: n.hasChildren && !collapsed.has(n.id) }"
               @click.stop="toggleCollapse(n)"
@@ -27,28 +38,12 @@
             <el-icon class="tree-doc"><Folder v-if="n.kind === 'folder'" /><Document v-else /></el-icon>
             <span class="tree-title">{{ n.title || (n.kind === 'folder' ? '未命名文件夹' : '无标题页面') }}</span>
             <span class="tree-ops" @click.stop>
-              <el-icon v-if="n.level < 2" title="新增子页" @click="createPage(n)"><Plus /></el-icon>
-              <el-icon title="上移" @click="moveUp(n)"><ArrowUp /></el-icon>
-              <el-icon title="置顶" @click="moveTop(n)"><Top /></el-icon>
+              <el-icon v-if="n.kind === 'folder' && n.level < 2" title="新增子页" @click="createPage(n)"><Plus /></el-icon>
               <el-dropdown trigger="click" placement="bottom-end" @command="(cmd) => onMenu(cmd, n)">
                 <el-icon title="更多" class="tree-more"><MoreFilled /></el-icon>
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="rename">重命名</el-dropdown-item>
-                    <el-dropdown-item class="move-host">
-                      <el-dropdown trigger="hover" placement="right-start" @command="(cmd) => onMovePick(cmd, n)">
-                        <span class="tree-move-label">移入文件夹<el-icon><ArrowRight /></el-icon></span>
-                        <template #dropdown>
-                          <el-dropdown-menu>
-                            <el-dropdown-item v-if="n.parent_id" command="__root">（移到根级）</el-dropdown-item>
-                            <el-dropdown-item v-for="f in moveTargets(n)" :key="f.id" :command="f.id">
-                              {{ f.title || '未命名文件夹' }}
-                            </el-dropdown-item>
-                            <el-dropdown-item command="__new" divided>＋ 新建文件夹</el-dropdown-item>
-                          </el-dropdown-menu>
-                        </template>
-                      </el-dropdown>
-                    </el-dropdown-item>
                     <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
@@ -60,6 +55,12 @@
           {{ keyword ? '没有匹配的笔记' : '还没有笔记，点上方「新建」开始' }}
         </div>
       </div>
+    </div>
+    <!-- 分隔条：拖拽调节目录栏宽度 -->
+    <div v-show="!sideCollapsed" class="side-resizer" title="拖动调整目录宽度" @mousedown.prevent="startSideResize" />
+    <!-- 收起后的窄条：点击展开 -->
+    <div v-show="sideCollapsed" class="side-expand" title="展开目录" @click="expandSide">
+      <el-icon><Expand /></el-icon>
     </div>
 
     <!-- 右侧：富文本编辑器（wangEditor） -->
@@ -124,10 +125,12 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowRight, ArrowUp, Document, Folder, FolderAdd, MoreFilled, Plus, Search, Top } from '@element-plus/icons-vue'
+import { ArrowRight, Document, Expand, Fold, Folder, FolderAdd, MoreFilled, Plus, Search } from '@element-plus/icons-vue'
 import { createNote, deleteNote, getNote, noteAiAssist, noteTree, searchNotes, updateNote } from '../api'
 import WangRichEditor from '../components/notes/WangRichEditor.vue'
 import AiImagePicker from '../components/AiImagePicker.vue'
+import DndHandle from '../components/DndHandle.vue'
+import { useTreeDnd } from '../composables/useTreeDnd.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -140,6 +143,26 @@ const searchResults = ref(null) // 非 null 时展示搜索结果（平铺）
 const saveState = ref('')
 const editorRef = ref(null)
 const collapsed = ref(new Set())  // 目录树中收起的页面 id
+
+// 目录栏：宽度可拖拽调节（200~480px，记住选择）；可整体收起为窄条
+// 存储键带版本（_v3）：默认值调整时换版本，忽略旧键里的历史值
+const sideWidth = ref(Number(localStorage.getItem('grt_notes_side_w_v3')) || 280)
+const sideCollapsed = ref(localStorage.getItem('grt_notes_side_collapsed') === '1')
+function collapseSide() { sideCollapsed.value = true; localStorage.setItem('grt_notes_side_collapsed', '1') }
+function expandSide() { sideCollapsed.value = false; localStorage.setItem('grt_notes_side_collapsed', '0') }
+function startSideResize(e) {
+  const startX = e.clientX
+  const startW = sideWidth.value
+  const onMove = (ev) => { sideWidth.value = Math.min(480, Math.max(200, startW + ev.clientX - startX)) }
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+    // 只有真的拖过才记住宽度，避免误点分隔条把当前默认值存成"用户选择"
+    if (sideWidth.value !== startW) localStorage.setItem('grt_notes_side_w_v3', String(sideWidth.value))
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
 
 // AI 写作面板（可拖动；点击外部 / Esc 关闭）
 const ai = ref({ visible: false, loading: false, instruction: '', error: '', preview: null, x: null, y: null, images: [] })
@@ -170,32 +193,6 @@ function onItemClick(n) {
 
 // ---------- 文件夹（新建 / 重命名 / 移入，对齐智能表目录的 ⋯ 菜单） ----------
 
-const folders = computed(() => notes.value.filter((x) => x.kind === 'folder'))
-
-// n 的子孙 id 集合：移入文件夹时排除自身与子孙（前端预过滤，后端仍有防环兜底）
-function descendantIds(id) {
-  const out = new Set()
-  let grew = true
-  while (grew) {
-    grew = false
-    for (const x of notes.value) {
-      if (x.parent_id && (x.parent_id === id || out.has(x.parent_id)) && !out.has(x.id)) {
-        out.add(x.id)
-        grew = true
-      }
-    }
-  }
-  return out
-}
-
-// 可选目标文件夹：排除自身、子孙与当前所在文件夹
-function moveTargets(n) {
-  const excl = descendantIds(n.id)
-  excl.add(n.id)
-  if (n.parent_id) excl.add(n.parent_id)
-  return folders.value.filter((f) => !excl.has(f.id))
-}
-
 function isCancel(e) {
   return e === 'cancel' || e === 'close'
 }
@@ -224,25 +221,6 @@ async function onMenu(cmd, n) {
     }
   } else if (cmd === 'delete') {
     del(n)
-  }
-}
-
-// 移入文件夹二级菜单：__root=移到根级，__new=新建文件夹并移入，其余=目标文件夹 id
-async function onMovePick(cmd, n) {
-  try {
-    if (cmd === '__root') {
-      await updateNote(n.id, { parent_id: null })
-    } else if (cmd === '__new') {
-      const { value } = await ElMessageBox.prompt('文件夹名称', '新建文件夹', { inputValue: '未命名文件夹' })
-      if (value == null) return
-      const folder = await createNote({ kind: 'folder', title: value.trim() || '未命名文件夹' })
-      await updateNote(n.id, { parent_id: folder.id })
-    } else {
-      await updateNote(n.id, { parent_id: cmd })
-    }
-    await loadTree()
-  } catch (e) {
-    if (!isCancel(e)) ElMessage.error(e.message || e)
   }
 }
 
@@ -518,47 +496,21 @@ async function createPage(parent = null) {
 
 // ---------- 页面排序（纯顺序操作：上移 / 置顶，无"置顶状态"概念） ----------
 
-// 同级兄弟按当前展示顺序（与后端一致：pinned > sort > updated_at）
-function siblingsOf(n) {
-  return notes.value
-    .filter((x) => (x.parent_id || null) === (n.parent_id || null))
-    .sort((a, b) => ((b.pinned - a.pinned) || (a.sort - b.sort)
-      || (b.updated_at > a.updated_at ? 1 : b.updated_at < a.updated_at ? -1 : 0)))
-}
-
-// 按新顺序重排同级 sort（0,10,20…），顺带清掉旧的 pinned 标记
-async function applyOrder(ordered) {
-  const jobs = []
-  ordered.forEach((n, i) => {
-    const sort = i * 10
-    if (n.sort !== sort || n.pinned) jobs.push(updateNote(n.id, { sort, pinned: false }))
-  })
-  await Promise.all(jobs)
-  await loadTree()
-}
-
-async function moveUp(n) {
-  const sibs = siblingsOf(n)
-  const i = sibs.findIndex((x) => x.id === n.id)
-  if (i <= 0) {
-    ElMessage.info('已经在最前面了')
-    return
-  }
-  ;[sibs[i - 1], sibs[i]] = [sibs[i], sibs[i - 1]]
-  await applyOrder(sibs)
-}
-
-async function moveTop(n) {
-  const sibs = siblingsOf(n)
-  const i = sibs.findIndex((x) => x.id === n.id)
-  if (i <= 0) {
-    ElMessage.info('已经在最前面了')
-    return
-  }
-  sibs.unshift(...sibs.splice(i, 1))
-  await applyOrder(sibs)
-  ElMessage.success('已置顶')
-}
+// 目录拖拽排序（通用逻辑与样式：composables/useTreeDnd.js + styles/tree-dnd.css + components/DndHandle.vue）
+const dnd = useTreeDnd({
+  items: notes,
+  visible: displayTree,
+  persist: updateNote,
+  reload: loadTree,
+  onMoved: (zone, target) => {
+    // 移入收起的文件夹时自动展开，让用户看到落点
+    if (zone === 'into' && collapsed.value.has(target.id)) {
+      const s = new Set(collapsed.value)
+      s.delete(target.id)
+      collapsed.value = s
+    }
+  },
+})
 
 async function del(n) {
   try {
@@ -600,22 +552,40 @@ onBeforeUnmount(async () => {
 </script>
 
 <style scoped>
-.notes-page { display: flex; gap: 16px; height: calc(100vh - 110px); }
+.notes-page { display: flex; height: calc(100vh - var(--chrome-h, 48px)); }
 
-/* 左侧页面树：业内笔记本风格（Notion/语雀）——折叠箭头 + 文档图标 + 悬浮操作 */
+/* 左侧页面树：业内笔记本风格（Notion/语雀）——折叠箭头 + 图标芯片 + 悬浮操作 */
 .notes-side {
-  width: 280px; flex-shrink: 0; background: #fff; border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, .06); display: flex; flex-direction: column; overflow: hidden;
+  width: 280px; flex-shrink: 0; background: #fff;
+  box-shadow: 0 2px 12px rgba(31, 45, 61, .08); display: flex; flex-direction: column; overflow: hidden;
 }
-.side-top { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid #ebeef5; }
-.tree { flex: 1; overflow-y: auto; padding: 8px 6px; }
+.side-top { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f0f2f5; }
+.side-top-row { display: flex; align-items: center; gap: 8px; }
+.side-new { flex: 1; padding: 8px 4px; }
+/* flex 布局下用 gap 控制间距，去掉 EP 相邻按钮的默认左外边距 */
+.side-top-row .el-button + .el-button { margin-left: 0; }
+.side-fold { font-size: 16px; color: #909399; cursor: pointer; padding: 4px; border-radius: 6px; flex-shrink: 0; }
+.side-fold:hover { background: #f5f7fa; color: #303133; }
+/* 分隔条：悬浮显示把手，按住横向拖动调宽 */
+.side-resizer { width: 10px; flex-shrink: 0; cursor: col-resize; display: flex; align-items: center; justify-content: center; }
+.side-resizer::after { content: ''; width: 3px; height: 36px; border-radius: 2px; background: transparent; transition: background-color .15s ease; }
+.side-resizer:hover::after { background: #c0c4cc; }
+/* 目录栏收起后的窄条：图标位置与收起前的收起图标对齐（距顶 18px、距左 16px） */
+.side-expand {
+  width: 36px; flex-shrink: 0; margin-right: 10px; padding: 14px 0 0 12px;
+  background: #fff; box-shadow: 0 2px 12px rgba(31, 45, 61, .08);
+  display: flex; justify-content: flex-start; cursor: pointer; color: #909399;
+}
+.side-expand .el-icon { padding: 4px; font-size: 16px; border-radius: 6px; }
+.side-expand:hover { color: var(--grt-primary, #409eff); }
+.tree { flex: 1; overflow-y: auto; padding: 8px; }
 .tree-item {
-  display: flex; align-items: center; gap: 2px; height: 32px; padding: 0 6px;
+  display: flex; align-items: center; gap: 2px; height: 34px; padding: 0 8px;
   border-radius: 6px; cursor: pointer; font-size: 14px; color: #303133;
   transition: background-color .12s ease;
 }
 .tree-item:hover { background: #f5f7fa; }
-.tree-item.active { background: #ecf5ff; color: #409eff; font-weight: 500; }
+.tree-item.active { background: #e8f1fd; color: var(--grt-primary, #409eff); font-weight: 500; }
 .tree-chevron {
   width: 20px; height: 20px; flex-shrink: 0; display: inline-flex;
   align-items: center; justify-content: center; border-radius: 4px; color: #909399;
@@ -623,8 +593,9 @@ onBeforeUnmount(async () => {
 .tree-chevron.has:hover { background: #e4e7ed; color: #303133; }
 .tree-chevron .el-icon { font-size: 12px; transition: transform .15s ease; }
 .tree-chevron.open .el-icon { transform: rotate(90deg); }
-.tree-doc { color: #a8abb2; font-size: 15px; flex-shrink: 0; margin: 0 3px; }
-.tree-item.active .tree-doc { color: #409eff; }
+/* 条目图标：纯图标，不加底块 */
+.tree-doc { color: #a8abb2; font-size: 15px; flex-shrink: 0; margin: 0 4px 0 2px; }
+.tree-item.active .tree-doc { color: var(--grt-primary, #409eff); }
 .tree-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-ops { display: none; gap: 2px; flex-shrink: 0; color: #909399; align-items: center; }
 .tree-item:hover .tree-ops { display: inline-flex; }
@@ -634,7 +605,7 @@ onBeforeUnmount(async () => {
 
 /* 右侧编辑区 */
 .notes-main {
-  flex: 1; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+  flex: 1; background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(31, 45, 61, .08);
   display: flex; flex-direction: column; overflow: hidden; position: relative;
 }
 .main-top {
@@ -698,10 +669,4 @@ onBeforeUnmount(async () => {
 .ai-preview :deep(blockquote) { border-left: 3px solid #dcdfe6; padding-left: 10px; margin: 6px 0; color: #606266; }
 .ai-preview :deep(pre) { background: #f5f7fa; border-radius: 6px; padding: 8px 10px; font-size: 13px; overflow-x: auto; }
 .ai-preview :deep(hr) { border: none; border-top: 1px solid #e4e7ed; margin: 10px 0; }
-</style>
-
-<!-- ⋯ 菜单的弹出层被 el-dropdown 传送到 body，scoped 样式够不到，这里用全局类（与 Whiteboards.vue 保持一致） -->
-<style>
-.tree-move-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; }
-.tree-move-label .el-icon { font-size: 12px; color: #909399; }
 </style>

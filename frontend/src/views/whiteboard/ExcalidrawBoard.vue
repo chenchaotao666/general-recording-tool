@@ -19,7 +19,7 @@ import { layoutDiagram } from './aiLayout'
 const props = defineProps({
   initial: { type: String, default: '' },   // 上次保存的画布 JSON（空 = 新画布）
 })
-const emit = defineEmits(['change'])
+const emit = defineEmits(['change', 'ai'])   // ai：画布工具栏最左侧的「AI 生成」按钮点击
 
 const hostEl = ref(null)
 const ready = ref(false)   // 工具栏注入完成（含 200ms 渲染落地缓冲）后才撤遮罩
@@ -361,6 +361,7 @@ onMounted(() => {
     },
     onApi: (a) => { api = a; window.__wb = a },   // __wb：调试句柄（e2e 读 scrollX/scrollY 等），与导图 window.__mm 同款
     onReady: () => { ready.value = true },
+    onAiClick: () => emit('ai'),
   }))
 })
 

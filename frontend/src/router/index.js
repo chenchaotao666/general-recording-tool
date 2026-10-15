@@ -37,12 +37,15 @@ const router = createRouter({
     { path: '/import', component: ImportWizard , meta: { perm: 'menu_import', title: '导入 Excel' } },
     { path: '/t/:id', component: DynamicTable, meta: { title: '数据表详情' } },
     // 思维导图：懒加载隔离两个引擎的体积
-    { path: '/mindmaps', component: () => import('../views/MindMaps.vue'), meta: { perm: 'menu_mindmaps', title: '思维导图' } },
-    { path: '/mindmaps/:id', component: () => import('../views/MindMapEditor.vue'), meta: { perm: 'menu_mindmaps', title: '思维导图编辑器' } },   // 不用正则参数：vue-router 4.6 对 :id(\d+) 不匹配
+    // 思维导图：目录树 + 嵌入编辑器（与记事本/画板同款布局）；/mindmaps/:id 旧链接重定向到 ?id=
+    { path: '/mindmaps', component: () => import('../views/MindMaps.vue'), meta: { perm: 'menu_mindmaps', title: '思维导图', flush: true } },
+    { path: '/mindmaps/:id', redirect: (to) => ({ path: '/mindmaps', query: { id: to.params.id } }) },   // 不用正则参数：vue-router 4.6 对 :id(\d+) 不匹配
     // 懒加载隔离富文本编辑器（wangEditor）体积
-    { path: '/notes', component: () => import('../views/Notes.vue') , meta: { perm: 'menu_notes', title: '记事本' } },
+    { path: '/notes', component: () => import('../views/Notes.vue') , meta: { perm: 'menu_notes', title: '记事本', flush: true } },
     // 画板：懒加载隔离 React 白板（excalidraw/tldraw）体积
-    { path: '/whiteboard', component: () => import('../views/Whiteboards.vue'), meta: { perm: 'menu_whiteboard', title: '画板' } },
+    { path: '/whiteboard', component: () => import('../views/Whiteboards.vue'), meta: { perm: 'menu_whiteboard', title: '画板', flush: true } },
+    // /studio 是曾经合并入口的临时路径，已拆回两个菜单；旧链接按 tab 参数分流
+    { path: '/studio', redirect: (to) => ({ path: to.query.tab === 'boards' ? '/whiteboard' : '/notes', query: Object.fromEntries(Object.entries(to.query).filter(([k]) => k !== 'tab')) }) },
     // 工作流：编辑器懒加载隔离 vue-flow 体积
     { path: '/workflows', component: () => import('../views/Workflows.vue') , meta: { perm: 'menu_workflows', title: '工作流' } },
     { path: '/workflows/new', component: () => import('../views/WorkflowEditor.vue'), meta: { title: '工作流编辑器' } },

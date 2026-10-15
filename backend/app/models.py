@@ -557,14 +557,18 @@ class Whiteboard(Base):
 
 class Mindmap(Base):
     """思维导图：data 存引擎无关的纯文本树 {text, children[]}（前端各引擎组件自行转换），
-    租户内成员共享编辑；删除限 所有者/租户 admin。"""
+    租户内成员共享编辑；删除限 所有者/租户 admin。支持文件夹目录（kind=folder 仅分组，无内容）。"""
     __tablename__ = "mindmaps"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 创建人
+    parent_id = Column(Integer, ForeignKey("mindmaps.id"), nullable=True, index=True)  # 父文件夹，可空=顶级
+    kind = Column(String(16), default="page")   # page / folder（文件夹仅作目录分组，无内容）
     title = Column(String(200), default="未命名导图")
     data = Column(JSON, default=dict)   # {text: str, children: [...]}
+    pinned = Column(Boolean, default=False)
+    sort = Column(Integer, default=0)               # 同级手工排序
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 

@@ -373,6 +373,8 @@ export const deleteWhiteboard = (id) => http.delete(`/whiteboards/${id}`)
 // 站内通知
 // 思维导图
 export const listMindmaps = () => http.get('/mindmaps')
+export const mindmapTree = () => http.get('/mindmaps/tree')
+export const searchMindmaps = (keyword) => http.get('/mindmaps/search', { params: { keyword } })
 export const createMindmap = (p) => http.post('/mindmaps', p)
 export const getMindmap = (id) => http.get(`/mindmaps/${id}`)
 export const updateMindmap = (id, p) => http.put(`/mindmaps/${id}`, p)
@@ -427,6 +429,7 @@ export const smartDeleteViewPref = (vid) => http.delete(`/smart/views/${vid}/pre
 export const smartFieldDeps = (tid, fieldName) => http.get(`/smart/tables/${tid}/fields/${fieldName}/deps`)
 // 网格与记录
 export const smartGrid = (tid, params) => http.get(`/smart/tables/${tid}/grid`, { params })
+export const smartFieldStats = (tid, params) => http.get(`/smart/tables/${tid}/field-stats`, { params })
 export const smartCreateRecord = (tid, payload) => http.post(`/smart/tables/${tid}/records`, payload)
 export const smartUpdateRecord = (tid, rid, payload) => http.patch(`/smart/tables/${tid}/records/${rid}`, payload)
 export const smartDeleteRecord = (tid, rid) => http.delete(`/smart/tables/${tid}/records/${rid}`)

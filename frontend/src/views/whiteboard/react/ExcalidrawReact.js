@@ -38,6 +38,17 @@ const LIB_CSS = `
   .wb-excalidraw .wb-extra-tool:hover { background: var(--button-hover-bg, #f1f0ff); }
   .wb-excalidraw .wb-extra-tool svg { width: 20px; height: 20px; display: block; }
   .wb-extra-divider { width: 1px; height: 20px; margin: 0 4px; background: var(--default-border-color, #e0e0e0); }
+  /* AI 生成入口：注入工具栏最左侧（样式与记事本工具栏的「AI 写作」一致：
+     MagicStick 图标 + 紫色文字、透明底，hover 用 excalidraw 原生 hover 色，右侧带分隔线） */
+  .wb-excalidraw .wb-ai-tool {
+    display: inline-flex; align-items: center; gap: 4px;
+    height: 40px; padding: 0 10px; margin-right: 2px;
+    border: none; border-radius: 8px; background: transparent;
+    color: #7c5cff; font-size: 16px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  .wb-excalidraw .wb-ai-tool:hover { background: var(--button-hover-bg, #f1f0ff); }
+  .wb-excalidraw .wb-ai-tool svg { width: 18px; height: 18px; display: block; flex-shrink: 0; }
+  .wb-excalidraw .wb-ai-tool span { line-height: 1; }
   /* 画布背景色板弹层（fixed 定位，逃出画布的 overflow:hidden） */
   .wb-bg-pop {
     position: fixed; z-index: 999; display: flex; align-items: center; gap: 6px; padding: 8px 10px;
@@ -253,8 +264,28 @@ function injectExtraTools(api, host) {
   container.insertBefore(wrap, anchor)
 }
 
-// props: initialData / onChange(elements, appState, files) / onApi(excalidrawAPI) / onReady(工具栏注入完成)
-export default function ExcalidrawBoard({ initialData, onChange, onApi, onReady }) {
+// 「AI 生成」按钮注入工具栏最左侧（与平铺工具同一容器，prepend 到首位，右侧补分隔线）。
+// 图标与记事本「AI 写作」/全局 AI 按钮统一为 Element Plus MagicStick（内联 SVG）
+const AI_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="14" height="14"><path fill="currentColor" d="M512 64h64v192h-64zm0 576h64v192h-64zM160 480v-64h192v64zm576 0v-64h192v64zM249.856 199.04l45.248-45.184L430.848 289.6 385.6 334.848 249.856 199.104zM657.152 606.4l45.248-45.248 135.744 135.744-45.248 45.248zM114.048 923.2 68.8 877.952l316.8-316.8 45.248 45.248zM702.4 334.848 657.152 289.6l135.744-135.744 45.248 45.248z"/></svg>'
+function injectAiButton(host, onAiClick) {
+  if (!host || host.querySelector('.wb-ai-tool')) return
+  const anchor = host.querySelector('.App-toolbar__extra-tools-trigger')
+  const container = anchor?.parentElement
+  if (!container) return
+  const btn = document.createElement('button')
+  btn.type = 'button'
+  btn.className = 'wb-ai-tool'
+  btn.title = 'AI 生成'
+  btn.innerHTML = AI_SVG + '<span>AI 生成</span>'
+  btn.addEventListener('click', () => onAiClick?.())
+  container.insertBefore(btn, container.firstChild)
+  const divider = document.createElement('span')
+  divider.className = 'wb-extra-divider'
+  container.insertBefore(divider, btn.nextSibling)
+}
+
+// props: initialData / onChange(elements, appState, files) / onApi(excalidrawAPI) / onReady(工具栏注入完成) / onAiClick(工具栏 AI 按钮)
+export default function ExcalidrawBoard({ initialData, onChange, onApi, onReady, onAiClick }) {
   // 工具栏锁定按钮默认锁定（画完图形后工具保持，不弹回选择工具）
   const merged = initialData
     ? {
@@ -282,6 +313,7 @@ export default function ExcalidrawBoard({ initialData, onChange, onApi, onReady 
       if (hostRef.current && apiRef.current
           && hostRef.current.querySelector('.App-toolbar__extra-tools-trigger')) {
         injectExtraTools(apiRef.current, hostRef.current)
+        injectAiButton(hostRef.current, onAiClick)
         clearInterval(timer)
         setTimeout(() => onReady?.(), 200)
       } else if (tries > 100) {

@@ -1,23 +1,21 @@
 <template>
   <div class="editor-page">
+    <!-- 画布占满整页，标题与工具栏悬浮其上（与手绘画板同款布局） -->
+    <div class="editor-body" v-loading="loading">
+      <MindmapSimple v-if="ready" ref="eng" :data="currentData" @change="onEngChange" @ai="openAi" />
+    </div>
+
+    <!-- 悬浮标题条：标题 + 保存状态（左上角，与画板同款 36px 胶囊） -->
+    <div class="mm-title-pill">
+      <input v-model="title" class="title-input" maxlength="200" placeholder="导图标题" @input="scheduleSave" />
+      <span class="save-state" :class="{ err: saveState === '保存失败' }">{{ saveState }}</span>
+    </div>
+
+    <!-- 悬浮工具栏：顶部居中浮岛，所有操作收进其中（样式对齐手绘画板工具栏） -->
     <div class="editor-toolbar">
-      <el-button :icon="Back" @click="back">返回</el-button>
-      <el-input v-model="title" class="title-input" maxlength="200" placeholder="导图标题" @input="scheduleSave" />
       <!-- AI：浮动指令面板（统一 AiPromptPanel），贴按钮弹出；改写/总结入口在面板内 -->
       <el-button ref="aiBtnRef" class="ai-btn" :icon="MagicStick" :loading="ai.loading" @click="openAi()">AI 生成</el-button>
-
-      <!-- 前进/后退（库内置历史栈） -->
-      <!-- 可用状态视觉区分：可用=蓝色实心，不可用=灰化 -->
-      <el-button-group>
-        <el-button title="后退（Ctrl+Z）" :disabled="!eng?.canUndo"
-          :type="eng?.canUndo ? 'primary' : 'info'" :plain="!eng?.canUndo" @click="eng?.undo()">
-          <el-icon><RefreshLeft /></el-icon>
-        </el-button>
-        <el-button title="前进（Ctrl+Y）" :disabled="!eng?.canRedo"
-          :type="eng?.canRedo ? 'primary' : 'info'" :plain="!eng?.canRedo" @click="eng?.redo()">
-          <el-icon><RefreshRight /></el-icon>
-        </el-button>
-      </el-button-group>
+      <span class="tb-divider" />
 
       <!-- 布局：图标下拉（小示意图 + 名称） -->
       <el-dropdown trigger="click" @command="(v) => { layout = v; eng?.setLayout(v) }">
@@ -55,6 +53,8 @@
         </template>
       </el-dropdown>
 
+      <span class="tb-divider" />
+
       <!-- 主题：与配色同款下拉按钮（按钮显示当前主题色块+名称；列表分组 + 勾选当前项） -->
       <el-dropdown trigger="click" popper-class="mm-theme-popper" @command="(v) => { theme = v; eng?.setTheme(v) }">
         <el-button title="主题皮肤">
@@ -62,7 +62,6 @@
             <span class="palette-dot" :style="{ background: themeSwatch(theme) }" />
             {{ themeLabel }}
           </span>
-          <el-icon><ArrowDown /></el-icon>
         </el-button>
         <template #dropdown>
           <el-dropdown-menu>
@@ -88,7 +87,6 @@
             {{ activePalette }}
           </span>
           <span v-else>配色</span>
-          <el-icon><ArrowDown /></el-icon>
         </el-button>
         <template #dropdown>
           <el-dropdown-menu>
@@ -104,11 +102,13 @@
         </template>
       </el-dropdown>
 
+      <span class="tb-divider" />
+
       <el-button @click="openOutline">大纲</el-button>
 
       <!-- 导出：PNG / PDF / XMind -->
       <el-dropdown trigger="click" @command="(t) => eng?.exportFile(t, title)">
-        <el-button>导出<el-icon><ArrowDown /></el-icon></el-button>
+        <el-button>导出</el-button>
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item command="png">PNG 图片</el-dropdown-item>
@@ -117,10 +117,20 @@
           </el-dropdown-menu>
         </template>
       </el-dropdown>
-      <span class="shortcut-hint">双击编辑 · Tab 子节点 · Enter 同级 · 左键拖框多选 · 右键拖动视图 · 右键菜单更多</span>
-      
-      <span class="save-state" :class="{ err: saveState === '保存失败' }">{{ saveState }}</span>
+      <span class="tb-divider" />
+
+      <!-- 前进/后退（库内置历史栈）：可用=深色可点，不可用=灰化禁用 -->
+      <el-button-group>
+        <el-button title="后退（Ctrl+Z）" :disabled="!eng?.canUndo" @click="eng?.undo()">
+          <el-icon><RefreshLeft /></el-icon>
+        </el-button>
+        <el-button title="前进（Ctrl+Y）" :disabled="!eng?.canRedo" @click="eng?.redo()">
+          <el-icon><RefreshRight /></el-icon>
+        </el-button>
+      </el-button-group>
     </div>
+
+    <span class="shortcut-hint">双击编辑 · Tab 子节点 · Enter 同级 · 左键拖框多选 · 右键拖动视图 · 右键菜单更多</span>
 
     <!-- AI 生成：选中节点时顶部显示上下文条 + 建议操作 chips（记事本同款）；渐进渲染 -->
     <AiPromptPanel
@@ -157,19 +167,14 @@
       </div>
       <div class="outline-hint">编辑会同步到画布 · Enter 同级 · Tab 子级 · 清空后按退格删除</div>
     </el-drawer>
-
-    <div class="editor-body" v-loading="loading">
-      <MindmapSimple v-if="ready" ref="eng" :data="currentData" @change="onEngChange" @ai="openAi" />
-    </div>
   </div>
 </template>
 
 <script setup>
 // 思维导图编辑器：引擎定型 simple-mind-map；数据存引擎无关中间格式（{text, children[]}）
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, Back, Check, Delete, MagicStick, RefreshLeft, RefreshRight } from '@element-plus/icons-vue'
+import { Check, Delete, MagicStick, RefreshLeft, RefreshRight } from '@element-plus/icons-vue'
 import { getMindmap, mindmapAiAssist, updateMindmap } from '../api'
 import MindmapSimple from '../components/MindmapSimple.vue'
 import AiPromptPanel from '../components/AiPromptPanel.vue'
@@ -266,9 +271,9 @@ function flattenOutline(node, depth = 0, out = []) {
   return out
 }
 
-const route = useRoute()
-const router = useRouter()
-const id = route.params.id
+// 嵌入在导图目录页（MindMaps.vue）右侧：id 由父组件传入，切换导图时父组件用 :key 整体重建
+const props = defineProps({ id: { type: [Number, String], required: true } })
+const emit = defineEmits(['saved', 'close'])   // saved：落盘后通知目录刷新标题/时间；close：加载失败（被删/无权限）
 
 const title = ref('')
 const currentData = ref(null)
@@ -578,8 +583,9 @@ async function flushSave() {
   saveState.value = '保存中…'
   try {
     if (eng.value) currentData.value = eng.value.getDoc()
-    await updateMindmap(id, { title: title.value, data: currentData.value })
+    await updateMindmap(props.id, { title: title.value, data: currentData.value })
     saveState.value = `已保存 ${new Date().toTimeString().slice(0, 5)}`
+    emit('saved')
   } catch (e) {
     saveState.value = '保存失败'
     ElMessage.error(e.message)
@@ -656,7 +662,7 @@ watch(lineStyle, (v) => { localStorage.setItem('grt_mm_simple_linestyle', v); sc
 async function load() {
   loading.value = true
   try {
-    const m = await getMindmap(id)
+    const m = await getMindmap(props.id)
     title.value = m.title
     currentData.value = m.data
     // 原生文档：工具栏同步文档内保存的 主题/布局/分支样式
@@ -670,15 +676,10 @@ async function load() {
     setTimeout(() => { loadReady = true }, 500)
   } catch (e) {
     ElMessage.error(e.message)
-    router.replace('/mindmaps')
+    emit('close')   // 加载失败（被删/无权限）：通知目录页清掉选中态
   } finally {
     loading.value = false
   }
-}
-
-async function back() {
-  await flushSave()   // 返回前补存未落盘的修改
-  router.push('/mindmaps')
 }
 
 // Ctrl+S 立即保存（拦浏览器默认的另存为；平时靠 1s 防抖自动保存）
@@ -702,8 +703,8 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.editor-page { display: flex; flex-direction: column; height: calc(100vh - 120px); }
-.save-state { font-size: 12px; color: #909399; flex-shrink: 0; margin-left: auto; }
+.editor-page { position: relative; height: calc(100vh - var(--chrome-h, 48px)); }
+.save-state { font-size: 12px; color: #909399; flex-shrink: 0; }
 .save-state.err { color: #f56c6c; }
 /* 主题下拉的分组小标题（滚动时吸附顶部，白底防止列表文字透过来） */
 .theme-group-label {
@@ -711,16 +712,53 @@ onBeforeUnmount(() => {
   cursor: default; user-select: none;
   position: sticky; top: -6px; background: #fff; z-index: 1;
 }
+
+/* 悬浮标题条：左上角 36px 胶囊（与画板页同款） */
+.mm-title-pill {
+  position: absolute; top: 10px; left: 12px; z-index: 20; max-width: 45%;
+  display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box;
+  padding: 0 12px; background: rgba(255, 255, 255, .92);
+  border: 1px solid #ebeef5; border-radius: 8px; box-shadow: 0 2px 8px rgba(31, 45, 61, .08);
+}
+.title-input {
+  width: 200px; min-width: 0; border: none; outline: none; background: transparent;
+  font-size: 15px; font-weight: 600; color: #303133;
+}
+.title-input::placeholder { color: #c0c4cc; }
+
+/* 悬浮工具栏：顶部居中浮岛（对齐手绘画板工具栏：48px 高 + 白底圆角 + 轻阴影 + 图标按钮 + 分隔线） */
 .editor-toolbar {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20;
+  display: flex; align-items: center; gap: 2px; height: 48px; box-sizing: border-box; padding: 0 8px;
+  max-width: calc(100% - 340px); overflow-x: auto;
+  background: rgba(255, 255, 255, .96); border: 1px solid #ebeef5; border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(31, 45, 61, .12);
 }
-/* 间距统一交给 flex gap：清掉相邻 el-button 默认的 12px 左外边距（否则两按钮相邻时间距翻倍） */
-.editor-toolbar :deep(.el-button + .el-button) { margin-left: 0; }
-.title-input { width: 240px; }
-.shortcut-hint { font-size: 12px; color: #c0c4cc; }
-.editor-body {
-  flex: 1; background: #fff; border: 1px solid #e4e7ed; border-radius: 8px; overflow: hidden;
+/* 浮岛内按钮统一为透明图标按钮（36px，hover 淡紫底）；间距交给 gap，清掉相邻按钮默认左外边距 */
+.editor-toolbar :deep(.el-button) {
+  border: none; background: transparent; height: 36px; padding: 0 8px;
+  border-radius: 8px; color: #303133; margin-left: 0;
 }
+.editor-toolbar :deep(.el-button:hover) { background: #f1f0ff; }
+.editor-toolbar :deep(.el-button.is-disabled),
+.editor-toolbar :deep(.el-button.is-disabled:hover) { color: #c0c4cc; background: transparent; }
+.editor-toolbar :deep(.el-button-group) { display: inline-flex; flex-shrink: 0; }
+/* AI 生成：紫色文字按钮（与记事本/画板 AI 入口同款：14px 加粗 + MagicStick 图标）；保留 .ai-btn 类（e2e 依赖） */
+.editor-toolbar .ai-btn {
+  color: var(--grt-ai, #7c5cff) !important; background: transparent !important; border: none !important;
+  font-size: 16px; font-weight: 600; padding: 0 10px;
+}
+.editor-toolbar .ai-btn :deep(.el-icon) { font-size: 18px; }
+.editor-toolbar .ai-btn:hover { background: #f4f0ff !important; }
+.tb-divider { width: 1px; height: 20px; margin: 0 4px; background: #e4e7ed; flex-shrink: 0; }
+
+/* 快捷键提示：画布底部居中，半透明不挡操作 */
+.shortcut-hint {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); z-index: 10;
+  font-size: 12px; color: #b1b5bd; pointer-events: none; white-space: nowrap;
+  background: rgba(255, 255, 255, .8); padding: 2px 10px; border-radius: 10px;
+}
+.editor-body { height: 100%; background: #fff; overflow: hidden; }
 .dd-icon { display: inline-flex; vertical-align: -3px; }
 .dd-icon :deep(svg) { width: 34px; height: 22px; }
 .dd-item { display: flex; align-items: center; gap: 8px; }

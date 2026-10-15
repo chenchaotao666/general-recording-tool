@@ -2,7 +2,7 @@
 import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -24,19 +24,39 @@ DEFAULT_DATA = {
 }
 
 
+MAX_DEPTH = 3   # 目录最多 3 层嵌套（顶级为第 1 层），与记事本/画板一致
+
+
 class MindmapIn(BaseModel):
     title: str | None = None
     data: dict | None = None
+    kind: str | None = None        # 仅创建时有效：page（默认）/ folder（目录分组，无内容）
+    parent_id: int | None = None
+    sort: int | None = None
+    pinned: bool | None = None
 
 
 def _out(m: Mindmap, user: User, ctx: Context, owner_name: str | None = None) -> dict:
     return {
         "id": m.id, "title": m.title,
+        "parent_id": m.parent_id, "kind": m.kind or "page",
+        "pinned": m.pinned, "sort": m.sort or 0,
         "owner_id": m.user_id, "owner_name": owner_name or str(m.user_id),
         "can_delete": m.user_id == user.id or ctx.is_tenant_admin,
         "created_at": m.created_at.isoformat(sep=" ") if m.created_at else None,
         "updated_at": m.updated_at.isoformat(sep=" ") if m.updated_at else None,
     }
+
+
+def _depth(db: Session, m: Mindmap) -> int:
+    """目录层级深度（顶级 = 1）。"""
+    d, cur = 1, m
+    while cur.parent_id and d <= MAX_DEPTH + 1:
+        cur = db.get(Mindmap, cur.parent_id)
+        if not cur:
+            break
+        d += 1
+    return d
 
 
 def _check_data(data: dict) -> None:
@@ -395,15 +415,50 @@ def list_mindmaps(db: Session = Depends(get_db), ctx: Context = Depends(get_curr
 def create_mindmap(body: MindmapIn, db: Session = Depends(get_db),
                    ctx: Context = Depends(get_current_context)):
     entitlement.assert_tenant_writable(db, ctx.tenant.id)
-    title = (body.title or "").strip() or "未命名导图"
+    kind = "folder" if body.kind == "folder" else "page"
+    parent = None
+    if body.parent_id:
+        parent = _get(db, ctx, body.parent_id)
+        if parent.kind != "folder" or parent.tenant_id != ctx.tenant.id:
+            raise HTTPException(400, "只能在本租户的文件夹下新建")
+        if _depth(db, parent) >= MAX_DEPTH:
+            raise HTTPException(400, f"目录最多嵌套 {MAX_DEPTH} 层")
+    title = (body.title or "").strip() or ("未命名文件夹" if kind == "folder" else "未命名导图")
     if body.data is not None:
         _check_data(body.data)
-    m = Mindmap(tenant_id=ctx.tenant.id, user_id=ctx.user.id, title=title[:200],
-                data=body.data or DEFAULT_DATA)
+    m = Mindmap(tenant_id=ctx.tenant.id, user_id=ctx.user.id,
+                parent_id=parent.id if parent else None, kind=kind,
+                title=title[:200], data={} if kind == "folder" else (body.data or DEFAULT_DATA),
+                sort=0)
     db.add(m)
     db.commit()
     db.refresh(m)
     return _out(m, ctx.user, ctx, ctx.user.username)
+
+
+@router.get("/tree")
+def mindmap_tree(db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    """本租户导图目录（扁平列表，前端组装树）：置顶在前，其余按同级 sort + 更新时间排序。
+    跨租户的成员分享不进目录树（不能挂到本租户文件夹下），由列表接口的 shared 区单独展示。"""
+    rows = (db.query(Mindmap).filter_by(tenant_id=ctx.tenant.id)
+            .order_by(Mindmap.pinned.desc(), Mindmap.sort.asc(), Mindmap.updated_at.desc()).all())
+    names = {u.id: u.username for u in db.query(User).filter(
+        User.id.in_({m.user_id for m in rows} or [-1]))}
+    return {"maps": [_out(m, ctx.user, ctx, names.get(m.user_id)) for m in rows]}
+
+
+@router.get("/search")
+def search_mindmaps(keyword: str = Query("", max_length=100), db: Session = Depends(get_db),
+                    ctx: Context = Depends(get_current_context)):
+    kw = (keyword or "").strip()
+    if not kw:
+        return {"maps": []}
+    rows = (db.query(Mindmap).filter_by(tenant_id=ctx.tenant.id)
+            .order_by(Mindmap.pinned.desc(), Mindmap.updated_at.desc()).all())
+    hit = [m for m in rows if kw.lower() in (m.title or "").lower()]
+    names = {u.id: u.username for u in db.query(User).filter(
+        User.id.in_({m.user_id for m in hit[:50]} or [-1]))}
+    return {"maps": [_out(m, ctx.user, ctx, names.get(m.user_id)) for m in hit[:50]]}
 
 
 @router.get("/{mid}")
@@ -429,6 +484,29 @@ def update_mindmap(mid: int, body: MindmapIn, db: Session = Depends(get_db),
         _check_data(body.data)
         m.data = body.data
         m.updated_at = datetime.now()
+    if body.pinned is not None:
+        m.pinned = body.pinned
+    if body.sort is not None:
+        m.sort = body.sort
+    if "parent_id" in body.model_fields_set:  # 显式传 null = 移回顶级
+        if body.parent_id is None:
+            m.parent_id = None
+        else:
+            if body.parent_id == m.id:
+                raise HTTPException(400, "不能把自己移到自己下面")
+            parent = _get(db, ctx, body.parent_id)
+            if parent.kind != "folder" or parent.tenant_id != ctx.tenant.id:
+                raise HTTPException(400, "只能移入本租户的文件夹")
+            # 不能移到自己的子孙下面（成环）
+            cur, guard = parent, 0
+            while cur and guard <= MAX_DEPTH + 2:
+                if cur.id == m.id:
+                    raise HTTPException(400, "不能移到它自己的子孙下面")
+                cur = db.get(Mindmap, cur.parent_id) if cur.parent_id else None
+                guard += 1
+            if _depth(db, parent) >= MAX_DEPTH:
+                raise HTTPException(400, f"目录最多嵌套 {MAX_DEPTH} 层")
+            m.parent_id = parent.id
     db.commit()
     return _out(m, ctx.user, ctx)
 
@@ -439,6 +517,9 @@ def delete_mindmap(mid: int, db: Session = Depends(get_db), ctx: Context = Depen
     if m.user_id != ctx.user.id and not ctx.is_tenant_admin:
         raise HTTPException(403, "只有创建人或管理员可以删除")
     entitlement.assert_tenant_writable(db, ctx.tenant.id)
+    has_child = db.query(Mindmap).filter(Mindmap.parent_id == m.id).first()
+    if has_child:
+        raise HTTPException(400, "文件夹非空，请先移出或删除其中的内容")
     db.delete(m)
     db.commit()
     return {"ok": True}
