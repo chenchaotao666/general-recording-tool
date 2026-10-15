@@ -445,7 +445,8 @@ function runItem(item) {
       // 归纳作用于当前激活节点列表（不能传 menu.node——它会被当作概要文本数据）
       addGeneralization()
     } else if (item.cmd === 'ADD_OUTER_FRAME') {
-      // 概要（外框）传空数组 → 库回退到激活节点列表，多选时给整组兄弟节点加框
+      // 概要（外框）传空数组 → 库回退到激活节点列表；先做顶层祖先归约（与归纳对齐）
+      reduceActiveToTopAncestors()
       mind.execCommand('ADD_OUTER_FRAME', [])
     } else {
       mind.execCommand(item.cmd, menu.node)
@@ -453,10 +454,30 @@ function runItem(item) {
   } catch { /* 根节点限制等由库兜底 */ }
 }
 
+// 把激活选区归约到顶层祖先：框选容易把父节点连同其子节点一起选进来，
+// 库的归纳解析（parseAddGeneralizationNodeList）只按父节点分组、不做祖先去重，
+// 不归约会给每个父级各创建一个归纳——XMind 语义是只归约后的顶层节点创建一次
+function reduceActiveToTopAncestors() {
+  const r = mind?.renderer
+  if (!r) return []
+  const list = [...(r.activeNodeList || [])]
+  const set = new Set(list)
+  const top = list.filter((n) => {
+    let p = n.parent
+    while (p) {
+      if (set.has(p)) return false
+      p = p.parent
+    }
+    return true
+  })
+  list.filter((n) => !top.includes(n)).forEach((n) => r.removeNodeFromActiveList(n))
+  return top
+}
+
 // 归纳（概要卡片）：对激活节点加右侧大括号+概要节点；多选兄弟节点时合并归纳
 function addGeneralization() {
   if (!mind) return
-  const nodes = (mind.renderer?.activeNodeList || []).filter((n) => !n.isRoot)
+  const nodes = reduceActiveToTopAncestors().filter((n) => !n.isRoot)
   if (!nodes.length) return ElMessage.warning('请先选中要归纳的节点（右键拖框可多选）')
   mind.execCommand('ADD_GENERALIZATION')
 }
