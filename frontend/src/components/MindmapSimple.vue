@@ -74,6 +74,18 @@
       </template>
     </el-dialog>
 
+    <!-- 字体色/背景色：色块网格（∅ = 清除自定义色回退主题；多选时批量生效） -->
+    <el-dialog v-model="colorDlg.show" :title="colorDlg.prop === 'color' ? '字体颜色' : '背景颜色'" width="300px" :z-index="3100" :modal="false" modal-penetrable :lock-scroll="false" :style="popStyle" append-to-body destroy-on-close>
+      <div class="mm-cp-grid">
+        <span class="mm-cp-cell mm-cp-cell-theme" title="跟随主题（清除自定义色）" @click="applyColor(null)">∅</span>
+        <span
+          v-for="c in colorDlg.presets" :key="c" class="mm-cp-cell"
+          :class="{ active: colorDlg.current?.toLowerCase() === c.toLowerCase() }"
+          :style="{ background: c }" :title="c" @click="applyColor(c)"
+        />
+      </div>
+    </el-dialog>
+
     <!-- 图片/图标/超链接/备注/标签标记的操作浮层（单击标记弹出：✎ 编辑 / × 删除，链接含 ↗ 打开） -->
     <div
       v-if="opTip.show" class="mm-op-tip"
@@ -150,6 +162,7 @@ import NodeBase64ImageStorage from 'simple-mind-map/src/plugins/NodeBase64ImageS
 import icons from 'simple-mind-map/src/svg/icons.js'
 import Themes from 'simple-mind-map-plugin-themes'
 import { canonicalToSimple, simpleToCanonical } from '../mindmap/convert'
+import { FONT_PRESETS, BG_PRESETS } from '../mindmap/colorPresets'
 import { walk as smmWalk } from 'simple-mind-map/src/utils/index.js'
 import { getNodeOuterFrameList } from 'simple-mind-map/src/plugins/outerFrame/outerFrameUtils.js'
 
@@ -242,6 +255,13 @@ let cutClipboard = null   // 剪切/复制的节点数据（CUT/COPY 作用于�
 let preContextSelection = []   // 右键前的激活选区快照（capture 阶段采集，恢复多选用）
 const menuItems = reactive([])
 const dlg = reactive({ image: false, link: false, note: false, icon: false, tag: false })
+
+// 字体色/背景色弹窗（色块网格；作用于全部激活节点，与工具栏取色器同一套预设）
+const colorDlg = reactive({ show: false, prop: 'color', presets: FONT_PRESETS, current: null })
+function applyColor(v) {
+  setActiveStyle(colorDlg.prop, v)   // null = 清除自定义色，回退主题色
+  colorDlg.show = false
+}
 
 // ---------- 编辑弹窗定位（非模态，出现在触发的编辑按钮/菜单附近；宽度统一 450px，图标 540px） ----------
 const POP_W = 450
@@ -399,6 +419,8 @@ const MENU = [
   { label: '插入超链接', dialog: 'link', singleOnly: true },
   { label: '节点标签', dialog: 'tag', singleOnly: true },
   { label: '节点备注', dialog: 'note', singleOnly: true },
+  { label: '字体颜色', color: 'color' },        // 作用于全部激活节点（与工具栏取色器一致，多选可批量）
+  { label: '背景颜色', color: 'fillColor' },
   { label: '上移', cmd: 'UP_NODE', noRoot: true, singleOnly: true },
   { label: '下移', cmd: 'DOWN_NODE', noRoot: true, singleOnly: true },
   { label: '复制', cmd: 'COPY_NODE', noRoot: true },   // 库作用于全部激活节点
@@ -471,6 +493,15 @@ function runItem(item) {
     const data = cutClipboard || mind.renderer.beingCopyData
     if (!data) return ElMessage.warning('请先剪切或复制一个节点')
     mind.execCommand('PASTE_NODE', data)
+    return
+  }
+  // 字体色/背景色：色块网格弹窗，作用于全部激活节点（与工具栏取色器同一套预设）
+  if (item.color) {
+    colorDlg.prop = item.color
+    colorDlg.presets = item.color === 'color' ? FONT_PRESETS : BG_PRESETS
+    colorDlg.current = getActiveStyle(item.color)
+    anchorPop(menu.cx, menu.cy, 300)
+    colorDlg.show = true
     return
   }
   if (item.dialog) {
@@ -1220,6 +1251,17 @@ onBeforeUnmount(() => {
 .mm-menu-icon { display: inline-flex; flex-shrink: 0; }
 
 .mm-dlg-hint { font-size: 12px; color: #909399; margin-top: 8px; line-height: 1.5; }
+/* 字体色/背景色色块网格（与工具栏取色器同款） */
+.mm-cp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.mm-cp-cell {
+  width: 26px; height: 26px; border-radius: 6px; cursor: pointer;
+  border: 2px solid rgba(0, 0, 0, .08); box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 14px; color: #909399;
+}
+.mm-cp-cell:hover { transform: scale(1.12); border-color: #409eff; }
+.mm-cp-cell.active { border-color: #409eff; box-shadow: 0 0 0 2px #d9ecff; }
+.mm-cp-cell-theme { background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 8px 8px; }
 
 .icon-toolbar { margin-bottom: 10px; }
 .icon-group { margin-bottom: 10px; }
