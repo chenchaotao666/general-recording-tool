@@ -359,7 +359,7 @@ onMounted(() => {
       // 打开素材库面板（侧边栏展开）时按需加载默认素材库
       if (as?.openSidebar) loadDefaultLibraries()
     },
-    onApi: (a) => { api = a },
+    onApi: (a) => { api = a; window.__wb = a },   // __wb：调试句柄（e2e 读 scrollX/scrollY 等），与导图 window.__mm 同款
     onReady: () => { ready.value = true },
   }))
 })

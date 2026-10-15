@@ -170,13 +170,18 @@ function cellClass({ row, column }) {
   if (row.__rowType !== 'add' && row.__rowType !== 'group' && row.__indent > 0 && column.field === visibleFields.value[0]?.field_name) {
     cls.push('cell-indent')
   }
-  // 单击选中态（企微式：边框与单元格同大，与编辑态边框同款）
+  // 单击选中态（企微式：边框与单元格同大，与编辑态边框同款）。
+  // 单选/多选用独立类名：选中框由锚点自绘（标签换行展开时随内容增高），不走 td inset 阴影
   if (selectedCell.value && row.__key === selectedCell.value.key && column.field === selectedCell.value.fieldName) {
-    cls.push('cell-selected')
+    const f = props.fields.find(x => x.field_name === column.field)
+    cls.push(['singleSelect', 'multiSelect'].includes(f?.field_type) ? 'cell-selected-enum' : 'cell-selected')
   }
-  // 编辑态：去单元格内边距，编辑器与单元格严格同边界
+  // 编辑态：去单元格内边距，编辑器与单元格严格同边界。
+  // 单选/多选追加 cell-editing-enum：锚点换行展开（同选中态），边框由锚点自绘
   if (editingCell.value && row.__key === editingCell.value.key && column.field === editingCell.value.fieldName) {
     cls.push('cell-editing')
+    const f = props.fields.find(x => x.field_name === column.field)
+    if (['singleSelect', 'multiSelect'].includes(f?.field_type)) cls.push('cell-editing-enum')
   }
   return cls.join(' ')
 }
@@ -204,6 +209,12 @@ function CellSlot(props2) {
       frozen: isFrozen(field.field_name),   // 编辑器按 wrapper 判断自己是不是显示副本用
       onCommit: (v) => { editingCell.value = null; emit('cell-commit', { row, field, value: v }) },
       onCancel: () => { editingCell.value = null },
+      // 枚举收起面板：草稿软提交（不关编辑器、未改不写库）后回到选中态，而非取消选中
+      'onCommit-soft': (v) => emit('cell-commit', { row, field, value: v }),
+      onCollapse: () => {
+        editingCell.value = null
+        selectedCell.value = { key: row.__key, fieldName: field.field_name }
+      },
       'onOpen-config': (f) => emit('open-config', f),
       // 单元格内新建选项：父级落库为真选项后提交新 optionId（编辑器即关闭）
       'onAdd-option': (label) => { editingCell.value = null; emit('add-option', { row, field, label }) },
@@ -261,6 +272,7 @@ function fmtAgg(v) {
 
 const IMMEDIATE = ['checkbox']
 const selectedCell = ref(null)   // 单击选中态 {key, fieldName}（企微式：单击选中、双击编辑）
+let lastClick = { key: null, fieldName: null, t: 0 }   // 自检测双击用
 
 function onCellClick({ row, column }) {
   if (props.readonly) return
@@ -272,7 +284,17 @@ function onCellClick({ row, column }) {
     emit('cell-commit', { row, field: f, value: !row[f.field_name] })
     return
   }
-  // 单击只做选中（重复点同一格也保持选中态），进入编辑只能通过双击
+  // 自检测双击：同一单元格 400ms 内的第二击直接进编辑。原生 dblclick 不可靠——
+  // 第一击后选中态锚点/预览浮层会替换单元格 DOM，两次点击落在不同元素上时 Chrome 不合成 dblclick
+  const now = Date.now()
+  const isSecond = lastClick.key === row.__key && lastClick.fieldName === f.field_name && now - lastClick.t < 400
+  lastClick = isSecond ? { key: null, fieldName: null, t: 0 } : { key: row.__key, fieldName: f.field_name, t: now }
+  if (isSecond) {
+    selectedCell.value = null
+    editingCell.value = { key: row.__key, fieldName: f.field_name }
+    return
+  }
+  // 单击只做选中，进入编辑只能通过双击（或选中态锚点上的 ▼/双击）
   selectedCell.value = { key: row.__key, fieldName: f.field_name }
 }
 
@@ -292,6 +314,16 @@ function onDocKeydown(e) {
     // vxe 的 cell-class-name 只在渲染周期重算：Esc 清选中不走数据流，手动触发列重渲染
     gridRef.value?.refreshColumn?.()
   }
+}
+
+// 点外部取消选中：目标在选中单元格（含枚举锚点展开区）或文本预览浮层内不动，其余一律清选中。
+// 用 mousedown 而不是 click：与 vxe 的 cell-click 错开时序，点其他单元格时先清旧、再由 click 落新选中
+function onDocMouseDown(e) {
+  if (!selectedCell.value || editingCell.value) return
+  if (e.target.closest?.('td.cell-selected, td.cell-selected-enum')) return
+  if (e.target.closest?.('.cell-overlay')) return   // 文本预览浮层 teleport 在 body，它自己管外部关闭
+  selectedCell.value = null
+  gridRef.value?.refreshColumn?.()
 }
 
 // vxe 原生右键菜单（menu-config；cell-contextmenu 事件在 v4 不对外暴露）
@@ -335,9 +367,13 @@ function footerMethod({ columns }) {
   ]
 }
 
-onBeforeUnmount(() => document.removeEventListener('keydown', onDocKeydown))
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onDocKeydown)
+  document.removeEventListener('mousedown', onDocMouseDown)
+})
 
 document.addEventListener('keydown', onDocKeydown)
+document.addEventListener('mousedown', onDocMouseDown)
 
 defineExpose({ clearEditing: () => { editingCell.value = null; selectedCell.value = null } })
 </script>
@@ -357,6 +393,11 @@ defineExpose({ clearEditing: () => { editingCell.value = null; selectedCell.valu
 .smart-vxe :deep(.vxe-body--column.col-no) { color: var(--el-text-color-placeholder); font-size: 18px; }
 /* 单击选中态：2px 主色边框（inset 阴影实现，与单元格同大、不占布局），与编辑态边框同款 */
 .smart-vxe :deep(.vxe-body--column.cell-selected) { box-shadow: 0 0 0 2px var(--el-color-primary) inset; position: relative; z-index: 1; }
+/* 枚举（单选/多选）选中态：锚点换行向下展开成浮层框——放开单元格裁剪并顶对齐，
+   边框/阴影由 SelectCellPanel 的 .sel-anchor.closed 自绘（随内容增高） */
+.smart-vxe :deep(.vxe-body--column.cell-selected-enum) { position: relative; z-index: 2; overflow: visible; }
+.smart-vxe :deep(.vxe-body--column.cell-selected-enum .vxe-cell) { overflow: visible; align-items: flex-start; }
+.smart-vxe :deep(.vxe-body--column.cell-selected-enum .vxe-cell--wrapper) { overflow: visible; margin: 0; width: 100%; height: 100%; }
 /* 编辑态：去内边距，编辑器严格填满单元格。编辑边框画在 .vxe-cell 上（它与 td 严格同盒），
    不能画在 el-input__wrapper 上——EP wrapper 是 content-box，height:100%+padding 会高出 2px
    被 .vxe-cell 的 overflow:hidden 各裁 1px（上下边框变细的原因） */
@@ -373,6 +414,11 @@ defineExpose({ clearEditing: () => { editingCell.value = null; selectedCell.valu
   box-shadow: none; background: transparent;   /* 透出 .vxe-cell 上的编辑态边框 */
 }
 .smart-vxe :deep(.vxe-body--column.cell-editing .el-input__inner) { height: 100%; }
+/* 枚举（单选/多选）编辑态：锚点换行向下展开成浮层框（打开下拉时锚点不回单行）——
+   放开裁剪、顶对齐、关掉 .vxe-cell 的 inset 边框（改由锚点自绘，随内容增高） */
+.smart-vxe :deep(.vxe-body--column.cell-editing-enum) { overflow: visible; position: relative; z-index: 3; }
+.smart-vxe :deep(.vxe-body--column.cell-editing-enum .vxe-cell) { overflow: visible; box-shadow: none; align-items: flex-start; }
+.smart-vxe :deep(.vxe-body--column.cell-editing-enum .vxe-cell--wrapper) { overflow: visible; height: 100%; min-height: 100%; width: 100%; }
 .smart-vxe :deep(.cell-indent) { padding-left: 18px; }
 /* 显示态内容整体上移 1px：13px CJK 文字在 36px 行高内半行距分布偏下，光学居中补偿。
    只作用非编辑态——编辑边框画在 .vxe-cell 上、编辑器严格填满单元格，不能跟着移 */

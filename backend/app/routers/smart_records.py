@@ -65,7 +65,8 @@ def grid_query(table_id: int, view_id: int | None = None, page: int = 1, page_si
     rules = view_config.conditions_to_rules(effective.get("filters"))
     recs = json_store.all_dicts(db, table_id, fields, normalized=True)
     if rules:
-        recs = [r for r in recs if match_filters(r, fields_by_name, {"logic": "AND", "rules": rules})]
+        logic = "OR" if (effective.get("filters") or {}).get("conjunction") == "or" else "AND"
+        recs = [r for r in recs if match_filters(r, fields_by_name, {"logic": logic, "rules": rules})]
     aggs = view_config.compute_aggregations(recs, effective.get("aggregations"), fields)
     total = len(recs)
 

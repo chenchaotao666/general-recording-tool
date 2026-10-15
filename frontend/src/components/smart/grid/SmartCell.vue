@@ -1,12 +1,15 @@
 <template>
   <!-- 展示态单元格：按 field_type 分发渲染（存原始值/ID，渲染层格式化，设计文档 §3.1 原则 2/3） -->
   <span class="smart-cell" :class="`cell-${ft}`" :style="cellStyle">
-    <!-- 单选/多选：彩色标签胶囊 -->
+    <!-- 单选/多选：彩色标签胶囊；一行放不下时只渲染放得下的，末尾 +N 表示隐藏个数 -->
     <template v-if="ft === 'singleSelect' || ft === 'multiSelect'">
-      <span v-for="o in selectedOptions" :key="o.id" class="opt-tag"
-            :style="{ background: optionColor(o.color).value, color: optionColor(o.color).text }">{{ o.label }}</span>
-      <!-- 未匹配到选项的原始值（如改类型前录入的文本）原样兜底显示，不消失 -->
-      <span v-for="(v, i) in unmatchedValues" :key="`raw-${i}`" class="opt-tag raw">{{ v }}</span>
+      <span ref="enumBox" class="enum-box" :class="{ 'has-more': hiddenCount > 0 }">
+        <span v-for="t in visibleTags" :key="t.key" class="opt-tag" :class="{ raw: t.raw }"
+              :style="t.raw ? {} : { background: optionColor(t.color).value, color: optionColor(t.color).text }">{{ t.label }}</span>
+        <span v-if="hiddenCount > 0" class="enum-more">+{{ hiddenCount }}</span>
+        <!-- 徽标宽度测量幽灵（不入流、不可见） -->
+        <span ref="ghostRef" class="enum-more enum-ghost">+99</span>
+      </span>
     </template>
     <!-- 进度条 -->
     <span v-else-if="ft === 'progress'" class="progress-wrap">
@@ -57,7 +60,7 @@
 </template>
 
 <script setup>
-import { computed, inject } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { optionColor } from '../../../smart/registry/fieldRegistry.js'
 import { formatCurrency, formatDate, formatNumber } from '../../../smart/utils/format.js'
 
@@ -78,6 +81,51 @@ const value = computed(() => props.record[props.field.field_name])
 const isDate = computed(() => ['date', 'createdTime', 'lastModifiedTime'].includes(ft.value))
 
 const cellStyle = computed(() => props.fillColor ? { background: props.fillColor } : {})
+
+// 单选/多选一行放不下时 +N。容器是 nowrap + overflow 裁剪，测量用 scrollWidth
+// （截断标签的自然宽度）；先按全量宽度判断能否全放下，放不下再预留徽标位
+// （ghost 实测）重算容量，只渲染放得下的 + 徽标（否则徽标自身会被挤出裁剪区）
+const enumBox = ref(null)
+const ghostRef = ref(null)
+const visibleCount = ref(Infinity)   // Infinity = 全渲染（测量态）
+const enumTags = computed(() => [
+  ...selectedOptions.value.map(o => ({ key: o.id, label: o.label, color: o.color, raw: false })),
+  ...unmatchedValues.value.map((v, i) => ({ key: `raw-${i}`, label: v, raw: true })),
+])
+const visibleTags = computed(() => Number.isFinite(visibleCount.value)
+  ? enumTags.value.slice(0, visibleCount.value) : enumTags.value)
+const hiddenCount = computed(() => Number.isFinite(visibleCount.value)
+  ? enumTags.value.length - visibleCount.value : 0)
+function countFit(tags, W) {
+  let used = 0, k = 0
+  for (const t of tags) {
+    used += Math.min(t.scrollWidth, W) + (k ? 4 : 0)   // gap 4px；截断标签按容量上限计
+    if (used > W + 1) break
+    k++
+  }
+  return k
+}
+async function measureEnum() {
+  visibleCount.value = Infinity
+  await nextTick()
+  const box = enumBox.value
+  if (!box) return
+  const tags = [...box.querySelectorAll('.opt-tag')]
+  if (!tags.length) return
+  if (countFit(tags, box.clientWidth) >= tags.length) return   // 全放得下
+  const W = box.clientWidth - ((ghostRef.value?.offsetWidth || 24) + 4)   // 预留徽标位
+  visibleCount.value = Math.max(1, countFit(tags, W))   // 至少显示 1 个（截断）+ 徽标
+}
+let enumRO = null
+onMounted(() => {
+  if (!enumBox.value) return
+  measureEnum()
+  // 列宽拖拽/窗口缩放都会改变容量
+  enumRO = new ResizeObserver(() => measureEnum())
+  enumRO.observe(enumBox.value)
+})
+watch(value, measureEnum)
+onBeforeUnmount(() => enumRO?.disconnect())
 
 const selectedOptions = computed(() => {
   const opts = cfg.value.options || []
@@ -140,7 +188,13 @@ const lookupText = computed(() => {
 .smart-cell { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow: hidden; white-space: nowrap; font-size: 13px; min-height: 20px; width: 100%; }
 /* 纯文本单行省略号（flex 容器里的文本节点吃不到 ellipsis，须包一层） */
 .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.opt-tag { padding: 1px 8px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
+/* 单选/多选查看态：一行展示，放不下的由 +N 徽标报数（只渲染放得下的）；
+   单个标签超宽时自身省略号截断；有徽标时标签再让出徽标位 */
+.enum-box { position: relative; display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow: hidden; max-height: 22px; width: 100%; }
+.enum-box.has-more .opt-tag { max-width: calc(100% - 32px); }
+.enum-more { flex: none; color: var(--el-text-color-secondary); font-size: 12px; white-space: nowrap; }
+.enum-ghost { position: absolute; visibility: hidden; pointer-events: none; }
+.opt-tag { padding: 1px 8px; border-radius: 6px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; flex: none; }
 .opt-tag.raw { background: var(--el-fill-color-light); color: var(--el-text-color-regular); border: 1px dashed var(--el-border-color); }
 .progress-wrap { display: flex; align-items: center; gap: 6px; width: 100%; }
 .progress-bar { flex: 1; height: 8px; background: var(--el-fill-color); border-radius: 4px; overflow: hidden; }

@@ -41,6 +41,8 @@ def validate_view_config(config: dict | None, fields: list) -> dict:
     by_name = {f.field_name: f for f in fields}
 
     filters = cfg.get("filters") or {}
+    if filters.get("conjunction", "and") not in ("and", "or"):
+        raise HTTPException(400, "筛选组合方式必须是 and/or")
     conds = filters.get("conditions") or []
     if not isinstance(conds, list) or len(conds) > 20:
         raise HTTPException(400, "筛选条件格式无效（最多 20 条）")

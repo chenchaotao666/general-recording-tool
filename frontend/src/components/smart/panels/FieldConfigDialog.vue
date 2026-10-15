@@ -258,9 +258,11 @@ const LOOKUP_AGGS = { raw: '原样引用', rawDistinct: '去重引用', sum: '�
 
 const form = reactive({ label: '', field_type: 'text', config: {} })
 const srcFields = ref([])
+let lastSelectCfg = null   // 弹窗内最近一次单选/多选配置（选项在单选↔多选间切换时保留）
 
 watch(() => props.visible, async (v) => {
   if (!v) return
+  lastSelectCfg = null
   if (props.field) {
     form.label = props.field.label
     form.field_type = props.field.field_type || 'text'
@@ -279,7 +281,15 @@ function typesOf(group) {
   return Object.fromEntries(Object.entries(FIELD_REGISTRY).filter(([, r]) => r.group === group))
 }
 function onTypeChange(ft) {
+  // 单选/多选互换（含经其他类型中转）时保留已配选项，不被 defaultConfig 清空
+  if (Array.isArray(form.config?.options)) {
+    lastSelectCfg = { options: form.config.options, allow: form.config.allowAddOptionWhenEditing }
+  }
   form.config = FIELD_REGISTRY[ft].defaultConfig()
+  if (['singleSelect', 'multiSelect'].includes(ft) && lastSelectCfg) {
+    form.config.options = lastSelectCfg.options
+    if (lastSelectCfg.allow !== undefined) form.config.allowAddOptionWhenEditing = lastSelectCfg.allow
+  }
   normalizeConfig()
   if (!form.label) form.label = FIELD_REGISTRY[ft].label
 }

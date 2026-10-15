@@ -25,6 +25,7 @@ const LIB_CSS = `
   .wb-excalidraw .library-unit__checkbox-container,
   .wb-excalidraw .library-unit__checkbox { display: none !important; }
   .wb-excalidraw .help-icon { display: none !important; }
+  .wb-excalidraw .HintViewer { display: none !important; }   /* 工具栏下方的操作提示文字（"要移动画布…"） */
   .wb-excalidraw .main-menu-trigger { display: none !important; }
   .wb-excalidraw .App-toolbar__extra-tools-trigger { display: none !important; }
   .wb-excalidraw .App-toolbar__extra-tools-trigger + .App-toolbar__divider,
@@ -48,7 +49,58 @@ const LIB_CSS = `
   .wb-bg-swatch.active { border-color: #6965db; }
   .wb-bg-swatch:hover { transform: scale(1.08); }
   .wb-bg-custom { width: 28px; height: 28px; padding: 0; border: 1px dashed #c0c4cc; border-radius: 6px; background: none; cursor: pointer; }
+  /* 右键拖动平移中：画布光标改成抓取手型 */
+  .wb-excalidraw.wb-panning .excalidraw__canvas { cursor: grabbing !important; }
 `
+
+// 右键拖动平移视图（excalidraw 原生平移只有中键/空格+左键/抓手工具；与思维导图"右键拖动视图"习惯一致）。
+// 按下右键未移动仍算右键单击 → 官方右键菜单（复制/粘贴/图层等）照常弹出；
+// 移动超过阈值才进入平移，并吞掉抬手后的那次 contextmenu，避免平移完又弹菜单。
+// 平移靠 updateScene 写 scrollX/scrollY（scroll 增大 = 内容向屏幕右/下移，跟手方向一致）
+const PAN_THRESHOLD = 4
+function bindRightDragPan(host, apiRef) {
+  let pan = null   // { startX, startY, scrollX, scrollY, moved }
+  const onPointerDown = (e) => {
+    if (e.button !== 2 || !apiRef.current) return
+    if (!(e.target instanceof HTMLCanvasElement)) return   // 只在画布上生效，不抢 UI 控件的右键
+    const st = apiRef.current.getAppState()
+    pan = { startX: e.clientX, startY: e.clientY, scrollX: st.scrollX, scrollY: st.scrollY, moved: false }
+  }
+  const onPointerMove = (e) => {
+    if (!pan || !apiRef.current) return
+    const dx = e.clientX - pan.startX
+    const dy = e.clientY - pan.startY
+    if (!pan.moved && Math.hypot(dx, dy) < PAN_THRESHOLD) return
+    pan.moved = true
+    host.classList.add('wb-panning')
+    const zoom = apiRef.current.getAppState().zoom?.value || 1
+    apiRef.current.updateScene({
+      appState: { scrollX: pan.scrollX + dx / zoom, scrollY: pan.scrollY + dy / zoom },
+    })
+  }
+  const onPointerUp = (e) => {
+    if (e.button !== 2 || !pan) return
+    if (pan.moved) {
+      const swallow = (ce) => {
+        ce.preventDefault(); ce.stopPropagation()
+        host.removeEventListener('contextmenu', swallow, true)
+      }
+      host.addEventListener('contextmenu', swallow, true)
+      setTimeout(() => host.removeEventListener('contextmenu', swallow, true), 400)   // 兜底自清
+    }
+    pan = null
+    host.classList.remove('wb-panning')
+  }
+  host.addEventListener('pointerdown', onPointerDown, true)
+  // move/up 挂 window：拖出画布范围也能继续平移、正常结束
+  window.addEventListener('pointermove', onPointerMove, true)
+  window.addEventListener('pointerup', onPointerUp, true)
+  return () => {
+    host.removeEventListener('pointerdown', onPointerDown, true)
+    window.removeEventListener('pointermove', onPointerMove, true)
+    window.removeEventListener('pointerup', onPointerUp, true)
+  }
+}
 
 // 「更多工具」下拉的 4 个工具平铺到主工具栏（Generate 走官方 AI 服务，不放）：
 // 画框 / 嵌入网页 / 激光笔 直接 setActiveTool；Mermaid 打开官方转换对话框
@@ -252,6 +304,10 @@ export default function ExcalidrawBoard({ initialData, onChange, onApi, onReady 
     const ob = new MutationObserver(patch)
     ob.observe(host, { childList: true, subtree: true })
     return () => ob.disconnect()
+  }, [])
+  React.useEffect(() => {
+    if (!hostRef.current) return undefined
+    return bindRightDragPan(hostRef.current, apiRef)
   }, [])
   return h(
     'div',

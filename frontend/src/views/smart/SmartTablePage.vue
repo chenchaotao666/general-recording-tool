@@ -10,7 +10,7 @@
       <el-button size="small" text @click="settingsVisible = true">▦ 表格设置</el-button>
 
       <FilterPanel :visible="activePanel === 'filter'" @update:visible="(v) => (activePanel = v ? 'filter' : (activePanel === 'filter' ? null : activePanel))" :fields="resolvedFields"
-                   :conditions="panelConditions" :scope="filterScope"
+                   :conditions="panelConditions" :conjunction="cfg.filters?.conjunction || 'and'" :scope="filterScope"
                    @change="onFiltersChange" @scope-change="onScopeChange">
         <el-button size="small" text :type="filterCount ? 'primary' : ''"
                    >⧩ 筛选{{ filterCount ? ` ${filterCount}` : '' }}</el-button>
@@ -356,13 +356,16 @@ function togglePanel(name) { activePanel.value = activePanel.value === name ? nu
 // 受控 popover 的外点关闭（点击面板与工具栏以外区域时收起）
 function onDocClick(e) {
   if (!activePanel.value) return
+  // 点击目标在本次事件处理中已被移出 DOM（如点面板里的"删除行"先删了自身所在行），
+  // detached 节点 closest 必为 null，不能算作外点
+  if (!document.contains(e.target)) return
   if (e.target.closest('.el-popover') || e.target.closest('.toolbar')) return
   activePanel.value = null
 }
 
 // ---------- 筛选（含个人覆盖） ----------
-function onFiltersChange(conditions) {
-  const filters = { conjunction: 'and', conditions }
+function onFiltersChange(conditions, conjunction = 'and') {
+  const filters = { conjunction, conditions }
   if (filterScope.value === 'personal') {
     view.value = { ...view.value, config: { ...view.value.config, filters, filtersScope: 'personal' } }
     smartPutViewPref(view.value.id, { filters }).then(() => loadGrid(view.value.id))
@@ -380,13 +383,39 @@ async function onScopeChange(scope) {
 function labelOf(fn) { return fields.value.find(f => f.field_name === fn)?.label || fn }
 function opsOf(c) { const f = fields.value.find(x => x.field_name === c.fieldId); return f ? filterOpsOf(f) : [] }
 function updateChip(c, patch) {
-  onFiltersChange(panelConditions.value.map(x => (x.id === c.id ? { ...x, ...patch } : x)))
+  onFiltersChange(panelConditions.value.map(x => (x.id === c.id ? { ...x, ...patch } : x)), cfg.value.filters?.conjunction || 'and')
 }
-function removeChip(c) { onFiltersChange(panelConditions.value.filter(x => x.id !== c.id)) }
+function removeChip(c) { onFiltersChange(panelConditions.value.filter(x => x.id !== c.id), cfg.value.filters?.conjunction || 'and') }
 
 // ---------- 记录操作 ----------
+// 值比较：null/''/undefined/空数组等价（都视为"空"）；数组按集合比较（多选顺序无语义）；
+// 数字与数字字符串等价（存量可能是文本，编辑器提交的是 number）
+function sameCellValue(a, b) {
+  const isEmpty = (v) => v == null || v === '' || (Array.isArray(v) && !v.length)
+  if (isEmpty(a) && isEmpty(b)) return true
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+    const sa = a.map(String).sort(), sb = b.map(String).sort()
+    return sa.every((x, i) => x === sb[i])
+  }
+  if (a && b && typeof a === 'object' && typeof b === 'object') return JSON.stringify(a) === JSON.stringify(b)
+  return String(a ?? '') === String(b ?? '')
+}
+
+// 该字段的改动是否影响当前视图的服务端结果（排序/筛选/分组/聚合），决定提交后要不要整表重查。
+// 填色规则在前端渲染层即时计算（evalFillRules 随乐观更新生效），不需要重查。
+function fieldAffectsView(field) {
+  const c = cfg.value
+  const name = field.field_name
+  return (c.autoSort !== false && (c.sorts || []).some(s => s.fieldId === name))
+    || (c.filters?.conditions || []).some(x => x.fieldId === name)
+    || (c.groups || []).some(g => g.fieldId === name)
+    || aggregations.value[name] != null   // 汇总行/分组求和展示了该字段，编辑后数值会过期
+}
+
 async function onCellCommit({ row, field, value }) {
   const old = row[field.field_name]
+  if (sameCellValue(old, value)) return   // 未修改：不写库、不刷新
   row[field.field_name] = value   // 乐观更新
   try {
     const r = await smartUpdateRecord(tableId, row.id, { data: { [field.field_name]: value } })
@@ -396,7 +425,8 @@ async function onCellCommit({ row, field, value }) {
       undo: async () => { await smartUpdateRecord(tableId, row.id, { data: { [field.field_name]: old } }); loadGrid(view.value?.id) },
       redo: async () => { await smartUpdateRecord(tableId, row.id, { data: { [field.field_name]: value } }); loadGrid(view.value?.id) },
     })
-    if (field.field_type !== 'checkbox' && cfg.value.autoSort !== false && (cfg.value.sorts || []).length) loadGrid(view.value?.id)
+    // 只在改动影响排序/筛选/分组/聚合结果时重查；否则乐观更新即可（公式/查找由 PATCH 响应带回）
+    if (field.field_type !== 'checkbox' && fieldAffectsView(field)) loadGrid(view.value?.id)
   } catch (e) {
     row[field.field_name] = old
     ElMessage.error(e.message || '保存失败')

@@ -16,7 +16,7 @@
     <span ref="anchorRef" class="cell-anchor" />
     <teleport to="body">
       <div v-if="overlayRect" class="cell-overlay" :class="{ preview }" :style="overlayStyle"
-           @mousedown.stop @dblclick.stop="preview && $emit('enter-edit')">
+           @mousedown.stop @click="onPreviewClick" @dblclick.stop="preview && $emit('enter-edit')">
         <div v-if="preview" ref="taRef" class="cell-textarea preview-text" :style="taStyle">{{ draft }}</div>
         <textarea v-else ref="taRef" v-model="draft" class="cell-textarea" :style="taStyle" rows="1"
                   @input="autoGrow" @keydown.esc="discard"
@@ -29,6 +29,7 @@
   <SelectCellPanel
     v-else-if="editorKind === 'select'" :field="field" :record="record" :frozen="frozen"
     @commit="(v) => $emit('commit', v)" @cancel="$emit('cancel')"
+    @commit-soft="(v) => $emit('commit-soft', v)" @collapse="$emit('collapse')"
     @add-option="(label) => $emit('add-option', label)" />
 
   <!-- 日期（面板挂 body：teleported=false 会被单元格 overflow 裁掉，等于打不开） -->
@@ -97,7 +98,7 @@ const props = defineProps({
   frozen: { type: Boolean, default: false },   // 列是否被冻结（判断显示副本在哪个 wrapper）
   preview: { type: Boolean, default: false },  // 单击选中的只读预览（仅文本浮层用）
 })
-const emit = defineEmits(['commit', 'cancel', 'open-config', 'add-option', 'enter-edit'])
+const emit = defineEmits(['commit', 'commit-soft', 'cancel', 'open-config', 'add-option', 'enter-edit', 'collapse'])
 
 const memberList = inject('smartMembers', { value: [] })          // [{id, name}]
 const relationRows = inject('smartRelationRows', { value: new Map() })  // targetTableId → [{id,label}]
@@ -116,7 +117,10 @@ const blockedText = computed(() => ({
 const cur = props.record[props.field.field_name]
 const draft = ref(
   ft.value === 'progress' ? Number(cur ?? cfg.value.range?.min ?? 0)
-    : Array.isArray(cur) ? [...cur] : (cur ?? (isMulti.value ? [] : '')))
+    : Array.isArray(cur) ? [...cur]
+    // 多选兜底包成数组（单选改多选后存量值仍是标量 id）
+    : isMulti.value ? (cur == null || cur === '' ? [] : [cur])
+    : (cur ?? ''))
 
 // 链接双字段
 const urlText = ref(cur?.text || '')
@@ -210,6 +214,16 @@ function onPreviewOutside(e) {
   const td = anchorRef.value?.closest('td')
   if (overlay?.contains(e.target) || td?.contains(e.target)) return
   emit('cancel')
+}
+
+// 预览浮层自检测双击：原生 dblclick 在单元格 DOM 被选中态替换后可能不合成
+// （两次点击落在不同元素上），400ms 内第二击直接进编辑
+let lastPreviewClick = 0
+function onPreviewClick() {
+  if (!props.preview) return
+  const now = Date.now()
+  if (now - lastPreviewClick < 400) emit('enter-edit')
+  lastPreviewClick = now
 }
 
 // 预览 → 编辑切换：内容从 div 换成 textarea，补焦一次；预览的外部点击监听摘掉

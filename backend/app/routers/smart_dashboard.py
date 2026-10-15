@@ -191,7 +191,8 @@ def chart_preview(payload: dict, db: Session = Depends(get_db),
     rules = view_config.conditions_to_rules(payload.get("filter"))
     if rules:
         from ..services.pyquery import match_filters
-        recs = [r for r in recs if match_filters(r, names, {"logic": "AND", "rules": rules})]
+        logic = "OR" if (payload.get("filter") or {}).get("conjunction") == "or" else "AND"
+        recs = [r for r in recs if match_filters(r, names, {"logic": logic, "rules": rules})]
 
     def dim_keys(v):
         if v is None or v == "" or v == []:

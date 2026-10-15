@@ -362,25 +362,33 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
                 raise MetaError(f"不支持的字段类型：{new_type}")
             if not is_json:
                 raise MetaError("physical 模式表暂不支持修改字段类型（可导出数据后重建表，或联系管理员）")
-            # json 模式：转换存量值，转不了的置空并计数
-            old_type, cleared = f.data_type, 0
+            old_type = f.data_type
+            if old_field_type in ("singleSelect", "multiSelect") and new_field_type in ("singleSelect", "multiSelect"):
+                # 单选↔多选互换：值是选项 id，通用 varchar↔json 强转会把 id 列表字符串化成
+                # "['opt_x']"（或把 id 字符串 json 化），必须跳过——标量↔列表的形状转换
+                # 交给下方 _convert_to_select_options 按选项 id 语义处理
+                f.data_type = new_type
+                changes.append(f"字段「{f.label}」存储类型 {old_type} → {new_type}")
+            else:
+                # json 模式：转换存量值，转不了的置空并计数
+                cleared = 0
 
-            def _convert(d, fname=name, nt=new_type):
-                if fname not in d or d[fname] is None:
-                    return None
-                ok, cv, _ = coerce_value(d[fname], nt, True)
-                nonlocal cleared
-                if not ok:
-                    cv, cleared = None, cleared + 1
-                d[fname] = cv
-                return d
-            n = _json_records_rewrite(db, mt.id, _convert)
-            f.data_type = new_type
-            if f.widget not in ("select",):   # 控件未显式指定时跟随新类型
-                f.widget = op.get("widget") or default_widget(new_type)
-            msg = f"字段「{f.label}」类型 {old_type} → {new_type}（转换 {n} 条存量数据"
-            msg += f"，{cleared} 条无法转换已置空）" if cleared else "）"
-            changes.append(msg)
+                def _convert(d, fname=name, nt=new_type):
+                    if fname not in d or d[fname] is None:
+                        return None
+                    ok, cv, _ = coerce_value(d[fname], nt, True)
+                    nonlocal cleared
+                    if not ok:
+                        cv, cleared = None, cleared + 1
+                    d[fname] = cv
+                    return d
+                n = _json_records_rewrite(db, mt.id, _convert)
+                f.data_type = new_type
+                if f.widget not in ("select",):   # 控件未显式指定时跟随新类型
+                    f.widget = op.get("widget") or default_widget(new_type)
+                msg = f"字段「{f.label}」类型 {old_type} → {new_type}（转换 {n} 条存量数据"
+                msg += f"，{cleared} 条无法转换已置空）" if cleared else "）"
+                changes.append(msg)
         for attr in ("label", "nullable", "widget", "options", "default_value", "sort_order", "field_type"):
             if op.get(attr) is not None:
                 setattr(f, attr, op[attr])
@@ -436,9 +444,18 @@ def _convert_to_select_options(db: Session, table_id: int, field_name: str,
         if field_type == "multiSelect":
             items = v if isinstance(v, list) else [v]
             if all(x in by_id for x in items):
+                if not isinstance(v, list):
+                    d[field_name] = items   # 标量 id 归一成列表（单选改多选的存量值）
+                    converted += 1
+                    return d
                 return None   # 已经是 id 列表
             d[field_name] = [x if x in by_id else to_id(x) for x in items]
         else:
+            if isinstance(v, list):
+                # 多选改单选：保留第一个有效选项 id（list in set 会直接 TypeError）
+                d[field_name] = next((x for x in v if x in by_id), None)
+                converted += 1
+                return d
             if v in by_id:
                 return None   # 已经是选项 id
             d[field_name] = to_id(v)

@@ -16,7 +16,7 @@
           <el-radio-button value="asc">{{ labelsOf(s)[0] }}</el-radio-button>
           <el-radio-button value="desc">{{ labelsOf(s)[1] }}</el-radio-button>
         </el-radio-group>
-        <span class="r-del" @click="remove(i)">⊖</span>
+        <span class="r-del" @click.stop="remove(i)">⊖</span>
       </div>
       <el-button link type="primary" size="small" @click="add">＋ 添加排序字段</el-button>
     </div>

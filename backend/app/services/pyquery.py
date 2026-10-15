@@ -110,9 +110,10 @@ def match_rule(rec: dict, fields_by_name: dict, flt: dict) -> bool:
 
     f = fields_by_name.get(name)
 
-    # 数组字段（多选/人员等 json 类型）的集合语义
-    if isinstance(v, list) and op in ("contains", "not_contains", "eq", "ne"):
-        cell = {str(x) for x in v}
+    # 集合语义：单元格是数组（多选/人员 json），或筛选值是列表（单选/多选/成员的选项多选编辑器）。
+    # 缺这个分支时单选会拿 str(['opt_x']) 去做子串匹配，永远筛不中。
+    if (isinstance(v, list) or isinstance(value, list)) and op in ("contains", "not_contains", "eq", "ne"):
+        cell = {str(x) for x in v} if isinstance(v, list) else ({str(v)} if v is not None else set())
         want = value if isinstance(value, list) else [value]
         want_set = {str(x) for x in want}
         hit = bool(cell & want_set)

@@ -18,7 +18,7 @@
                         :operator="r.operator" :value="r.value" @update="(v) => update(i, { value: v })" />
         <span class="arrow">→</span>
         <el-color-picker :model-value="r.color" size="small" @change="(v) => update(i, { color: v })" />
-        <span class="r-del" @click="remove(i)">⊖</span>
+        <span class="r-del" @click.stop="remove(i)">⊖</span>
       </div>
       <el-button link type="primary" size="small" @click="add">＋ 添加条件</el-button>
       <div class="panel-foot">

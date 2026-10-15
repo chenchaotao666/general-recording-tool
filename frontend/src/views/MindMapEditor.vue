@@ -104,32 +104,6 @@
         </template>
       </el-dropdown>
 
-      <!-- 字体色/背景色：色块网格面板（点一下直接应用），作用于选中节点（右键拖框多选可批量）。
-           第一格 ∅ = 清除自定义色，跟随主题 -->
-      <el-popover
-        v-for="cp in COLOR_CONTROLS" :key="cp.prop" v-model:visible="cpVisible[cp.prop]"
-        trigger="click" placement="bottom" :width="252" @show="syncColors"
-      >
-        <template #reference>
-          <span class="cp-group">
-            <span class="cp-label">{{ cp.label }}</span>
-            <span class="cp-trigger" :title="cp.title">
-              <span class="cp-swatch" :class="{ empty: !colors[cp.prop] }"
-                :style="colors[cp.prop] ? { background: colors[cp.prop] } : {}" />
-              <el-icon class="cp-caret"><ArrowDown /></el-icon>
-            </span>
-          </span>
-        </template>
-        <div class="cp-grid">
-          <span class="cp-cell cp-cell-theme" title="跟随主题（清除自定义色）" @click="applyStyle(cp.prop, null)">∅</span>
-          <span
-            v-for="c in cp.presets" :key="c" class="cp-cell"
-            :class="{ active: colors[cp.prop]?.toLowerCase() === c.toLowerCase() }"
-            :style="{ background: c }" :title="c" @click="applyStyle(cp.prop, c)"
-          />
-        </div>
-      </el-popover>
-
       <el-button @click="openOutline">大纲</el-button>
 
       <!-- 导出：PNG / PDF / XMind -->
@@ -199,7 +173,6 @@ import { ArrowDown, Back, Check, Delete, MagicStick, RefreshLeft, RefreshRight }
 import { getMindmap, mindmapAiAssist, updateMindmap } from '../api'
 import MindmapSimple from '../components/MindmapSimple.vue'
 import AiPromptPanel from '../components/AiPromptPanel.vue'
-import { FONT_PRESETS, BG_PRESETS } from '../mindmap/colorPresets'
 
 // simple-mind-map 主题（simple-mind-map-plugin-themes 注册；中文标签为本项目翻译）
 // 分组展示 + 预览色块（swatch 为各主题主色，近似即可）
@@ -307,23 +280,6 @@ const layout = ref(localStorage.getItem('grt_mm_simple_layout') || 'logicalStruc
 const lineStyle = ref(localStorage.getItem('grt_mm_simple_linestyle') || 'straight')
 const outlineVisible = ref(false)
 const outlineItems = ref([])
-
-// 字体色/背景色：色块网格面板。∅ = 清除自定义色（回退主题色）；预设与右键菜单共用
-const COLOR_CONTROLS = [
-  { prop: 'color', label: '字体', title: '字体颜色（先选中节点，可多选）', presets: FONT_PRESETS },
-  { prop: 'fillColor', label: '背景', title: '节点背景颜色（先选中节点，可多选）', presets: BG_PRESETS },
-]
-const colors = reactive({ color: null, fillColor: null })
-const cpVisible = reactive({ color: false, fillColor: false })
-function syncColors() {
-  colors.color = eng.value?.getActiveStyle?.('color') || null
-  colors.fillColor = eng.value?.getActiveStyle?.('fillColor') || null
-}
-function applyStyle(prop, v) {
-  colors[prop] = v
-  eng.value?.setActiveStyle?.(prop, v)   // null = 清除，回退主题色
-  cpVisible[prop] = false                // 点色块即应用并收起面板
-}
 
 // ---------- AI（生成/扩写/改写分支、总结全文、改进建议；文本类结果在面板内展示） ----------
 const ai = reactive({
@@ -770,28 +726,6 @@ onBeforeUnmount(() => {
 .dd-item { display: flex; align-items: center; gap: 8px; }
 .dd-item .dd-icon-lg :deep(svg) { width: 44px; height: 26px; }
 .dd-check { margin-left: auto; color: #409eff; }
-/* 色块选择器（字体/背景） */
-.cp-group { display: inline-flex; align-items: center; gap: 4px; }
-.cp-label { font-size: 12px; color: #909399; }
-.cp-trigger {
-  display: inline-flex; align-items: center; gap: 2px; padding: 3px 4px;
-  border: 1px solid #dcdfe6; border-radius: 6px; cursor: pointer; background: #fff;
-}
-.cp-trigger:hover { border-color: #409eff; }
-.cp-swatch { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0, 0, 0, .1); }
-.cp-swatch.empty { background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 8px 8px; }
-.cp-caret { font-size: 12px; color: #909399; }
-/* 色块网格面板（popover 内容teleport到body，slot 保留本组件 scope id，scoped 样式有效） */
-.cp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
-.cp-cell {
-  width: 26px; height: 26px; border-radius: 6px; cursor: pointer;
-  border: 2px solid rgba(0, 0, 0, .08); box-sizing: border-box;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 14px; color: #909399;
-}
-.cp-cell:hover { transform: scale(1.12); border-color: #409eff; }
-.cp-cell.active { border-color: #409eff; box-shadow: 0 0 0 2px #d9ecff; }
-.cp-cell-theme { background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 8px 8px; }
 /* AI 生成对话框提示 */
 .ai-hint { font-size: 12px; color: #c0c4cc; margin-top: 8px; }
 .outline-tree { font-size: 13px; color: #303133; line-height: 1.5; }
