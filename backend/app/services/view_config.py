@@ -5,6 +5,9 @@
 """
 from __future__ import annotations
 
+import json
+from datetime import date, datetime
+
 from fastapi import HTTPException
 
 from .field_registry import FIELD_TYPES, ROW_HEIGHTS
@@ -19,7 +22,9 @@ OP_MAP = {
     "today": "today", "pastDays": "past_days", "withinDays": "within_days",
 }
 
-AGGREGATIONS = {"count", "sum", "avg", "max", "min"}
+# 通用统计（所有字段类型可用，统计行按列配置）：行数/填写计数/去重/占比
+GENERIC_AGGS = {"countRecords", "empty", "distinct", "filledRatio", "emptyRatio", "distinctRatio"}
+AGGREGATIONS = {"count", "sum", "avg", "max", "min"} | GENERIC_AGGS
 
 # V1 视图 config 允许的键（白名单，防注入脏数据）
 CONFIG_KEYS = {"filters", "sorts", "groups", "fillRules", "rowHeight", "fieldVisibility",
@@ -92,6 +97,8 @@ def validate_view_config(config: dict | None, fields: list) -> dict:
             raise HTTPException(400, f"聚合配置引用了不存在的字段：{fn}")
         if agg not in AGGREGATIONS:
             raise HTTPException(400, f"不支持的聚合方式：{agg}")
+        if agg in GENERIC_AGGS:
+            continue   # 通用统计对所有字段类型开放
         reg = FIELD_TYPES.get(getattr(by_name[fn], "field_type", None) or "")
         if reg and agg not in reg["aggregations"]:
             raise HTTPException(400, f"字段「{by_name[fn].label}」不支持聚合方式：{agg}")
@@ -122,27 +129,72 @@ def conditions_to_rules(filters_cfg: dict | None) -> list[dict]:
     return rules
 
 
+def _is_empty(v) -> bool:
+    return v is None or v == "" or v == []
+
+
+def _distinct_key(v) -> str:
+    """去重计数的值规范化：list/dict 结构按内容哈希，标量直接 JSON 化。"""
+    return json.dumps(v, sort_keys=True, default=str, ensure_ascii=False)
+
+
+def compute_stat(recs: list[dict], fn: str, agg: str):
+    """单个字段在筛选后全集上的一种统计值。占比返回 0~1 小数（前端格式化 %）。"""
+    total = len(recs)
+    vals = [r.get(fn) for r in recs]
+    filled = sum(1 for v in vals if not _is_empty(v))
+    if agg == "countRecords":
+        return total
+    if agg == "count":
+        return filled
+    if agg == "empty":
+        return total - filled
+    if agg in ("distinct", "distinctRatio"):
+        uniq = len({_distinct_key(v) for v in vals if not _is_empty(v)})
+        return uniq if agg == "distinct" else (round(uniq / total, 6) if total else None)
+    if agg in ("filledRatio", "emptyRatio"):
+        if not total:
+            return None
+        return round((filled if agg == "filledRatio" else total - filled) / total, 6)
+    nums = [v for v in vals if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    if agg in ("max", "min") and not nums:
+        # 日期/日期时间等可比非标量：按 ISO 文本序取最值后序列化输出
+        pool = [v for v in vals if isinstance(v, (datetime, date)) or (isinstance(v, str) and v)]
+        if not pool:
+            return None
+        best = (max if agg == "max" else min)(pool, key=lambda v: v.isoformat() if hasattr(v, "isoformat") else v)
+        if isinstance(best, datetime):
+            return best.isoformat(sep=" ")
+        if isinstance(best, date):
+            return best.isoformat()
+        return best
+    if not nums:
+        return None
+    if agg == "sum":
+        return sum(nums)
+    if agg == "avg":
+        return sum(nums) / len(nums)
+    if agg == "max":
+        return max(nums)
+    if agg == "min":
+        return min(nums)
+    return None
+
+
+def field_stat_kinds(field) -> list[str]:
+    """某字段可用的全部统计方式：注册表数值聚合 + 已填写(count) + 通用统计。"""
+    reg = FIELD_TYPES.get(getattr(field, "field_type", None) or "")
+    extras = [a for a in (reg["aggregations"] if reg else []) if a != "count"]
+    return extras + ["count"] + sorted(GENERIC_AGGS)
+
+
 def compute_aggregations(recs: list[dict], aggs_cfg: dict | None, fields: list) -> dict:
     """对筛选后的规范化全集计算聚合（json 模式内存求值）。返回 {field_name: value}。"""
     out = {}
     if not aggs_cfg:
         return out
     for fn, agg in aggs_cfg.items():
-        vals = [r.get(fn) for r in recs]
-        if agg == "count":
-            out[fn] = sum(1 for v in vals if v is not None and v != "" and v != [])
-            continue
-        nums = [v for v in vals if isinstance(v, (int, float)) and not isinstance(v, bool)]
-        if not nums:
-            out[fn] = None
-        elif agg == "sum":
-            out[fn] = sum(nums)
-        elif agg == "avg":
-            out[fn] = sum(nums) / len(nums)
-        elif agg == "max":
-            out[fn] = max(nums)
-        elif agg == "min":
-            out[fn] = min(nums)
+        out[fn] = compute_stat(recs, fn, agg)
     return out
 
 

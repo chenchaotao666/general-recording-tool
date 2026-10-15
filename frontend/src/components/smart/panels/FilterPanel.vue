@@ -33,7 +33,8 @@
             <span class="h-act pin" :class="{ on: c.pinned }" title="固定到工具栏" @click="update(i, { pinned: !c.pinned })">📌</span>
             <span class="h-act" title="收起" @click="toggleOpen(c)">︿</span>
           </div>
-          <el-select :teleported="false" :model-value="c.operator" size="small" class="c-op" placeholder="条件"
+          <el-select :teleported="false" :model-value="opsOf(c).includes(c.operator) ? c.operator : null"
+                     size="small" class="c-op" placeholder="条件"
                      @change="(v) => update(i, { operator: v })">
             <el-option v-for="op in opsOf(c)" :key="op" :value="op" :label="OP_LABELS[op]" />
           </el-select>
@@ -98,7 +99,7 @@ function iconOf(c) {
 function opsOf(c) { return fieldOf(c) ? filterOpsOf(fieldOf(c)) : [] }
 function defaultOp(fieldName) {
   const f = props.fields.find(x => x.field_name === fieldName)
-  return f ? filterOpsOf(f)[0] : 'contains'
+  return f ? filterOpsOf(f)[0] : null
 }
 function isComplete(c) {
   if (!c.fieldId) return false
@@ -138,7 +139,7 @@ function update(i, patch) {
 }
 function add() {
   const id = `c_${Date.now()}`
-  draft.value = [...draft.value, { id, fieldId: null, operator: 'contains', value: undefined, pinned: false }]
+  draft.value = [...draft.value, { id, fieldId: null, operator: null, value: undefined, pinned: false }]
   openIds.value = new Set(openIds.value).add(id)
 }
 function remove(i) { draft.value = draft.value.filter((_, j) => j !== i) }

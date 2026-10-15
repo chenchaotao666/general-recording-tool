@@ -1,10 +1,13 @@
 <template>
   <!-- SmartGrid：智能表网格（vxe-table 封装）。
-       flatten 行序列：分组标题行 / 数据行（树形缩进）/ 末尾加行。
+       flatten 行序列：分组标题行 / 数据行（树形缩进）。添加一行入口在统计行左侧「＋」。
        视图配置（显隐/列序/列宽/冻结/行高/填色）纯前端应用，数据层不动（设计文档 §1.3 原则 1）。 -->
   <div class="smart-grid" @contextmenu.prevent>
+    <!-- :key="t_colSig"：列序/列集变化时整表重挂载。vxe 列注册只在挂载时按 DOM 位次进行，
+         增量重挂载会与静态列/编组竞态导致顺序错乱，整表重挂载保证按 headerTree 顺序干净注册 -->
     <vxe-table
       ref="gridRef"
+      :key="`t_${colSig}`"
       class="smart-vxe"
       :data="gridRows"
       :height="height"
@@ -15,8 +18,11 @@
       :scroll-x="{ enabled: true, gt: 20 }"
       :show-footer="true"
       :footer-method="footerMethod"
+      :footer-cell-config="{ height: 52 }"
       :row-class-name="rowClass"
       :cell-class-name="cellClass"
+      :cell-style="cellFillStyle"
+      :header-cell-style="headerCellStyle"
       :menu-config="menuConfig"
       @cell-click="onCellClick"
       @cell-dblclick="onCellDblClick"
@@ -30,29 +36,40 @@
           <span v-if="row.__rowType === 'group'" class="group-toggle" @click.stop="$emit('toggle-group', row.key)">
             {{ collapsedGroups.has(row.key) ? '▸' : '▾' }}
           </span>
-          <span v-else-if="row.__rowType !== 'add'" class="row-no">{{ row.__no }}</span>
+          <span v-else class="row-no">{{ row.__no }}</span>
+        </template>
+        <!-- 统计行左侧：添加一行「＋」（居中，设计稿 PixPin_2026-10-15_20-03-52 位置） -->
+        <template #footer>
+          <span v-if="!readonly" class="footer-add-btn" title="添加一行" @click.stop="$emit('add-row')">＋</span>
         </template>
       </vxe-column>
 
-      <!-- 编组（两级表头）+ 散列字段列 -->
-      <template v-for="node in headerTree" :key="node.key">
-        <vxe-colgroup v-if="node.isGroup" :title="node.name">
+      <!-- 编组（两级表头）+ 散列字段列（key 带 colSig：列序变化时重挂载以触发 vxe 重注册） -->
+      <template v-for="node in headerTree" :key="`${node.key}:${colSig}`">
+        <vxe-colgroup v-if="node.isGroup" :title="node.name" header-align="center">
+          <template #header>
+            <span class="colgroup-title" title="编组操作" @click.stop="(e) => $emit('group-menu', node.group, e)">
+              {{ node.name }} <span class="cg-caret">▾</span>
+            </span>
+          </template>
           <vxe-column v-for="f in node.fields" :key="f.field_name" :field="f.field_name"
                       :width="colWidths[f.field_name] || 160"
                       :fixed="isFrozen(f.field_name) ? 'left' : undefined">
             <template #header><FieldHeader :field="f" :view="view" @menu="(e) => $emit('field-menu', f, e)" /></template>
             <template #default="{ row }"><CellSlot :row="row" :field="f" /></template>
+            <template #footer><FooterCell :field="f" /></template>
           </vxe-column>
         </vxe-colgroup>
         <vxe-column v-else :field="node.field.field_name" :width="colWidths[node.field.field_name] || 160"
                     :fixed="isFrozen(node.field.field_name) ? 'left' : undefined">
           <template #header><FieldHeader :field="node.field" :view="view" @menu="(e) => $emit('field-menu', node.field, e)" /></template>
           <template #default="{ row }"><CellSlot :row="row" :field="node.field" /></template>
+          <template #footer><FooterCell :field="node.field" /></template>
         </vxe-column>
       </template>
 
       <!-- 末尾「+」添加列 -->
-      <vxe-column width="48" fixed="right">
+      <vxe-column width="48" fixed="right" align="center" header-align="center">
         <template #header>
           <span class="add-col" title="添加一列" @click.stop="$emit('add-field')">＋</span>
         </template>
@@ -68,8 +85,8 @@ import SmartCell from './SmartCell.vue'
 import SmartCellEditor from './SmartCellEditor.vue'
 import SelectCellPanel from './SelectCellPanel.vue'
 import FieldHeader from './FieldHeader.vue'
-import { regOf, sortDirectionLabels } from '../../../smart/registry/fieldRegistry.js'
-import { evalFillRules } from '../../../smart/utils/format.js'
+import { regOf, sortDirectionLabels, STAT_LABELS, formatStatValue } from '../../../smart/registry/fieldRegistry.js'
+import { evalFillRules, evalRowFill, headerFillColor } from '../../../smart/utils/format.js'
 
 const props = defineProps({
   fields: { type: Array, default: () => [] },
@@ -84,7 +101,7 @@ const props = defineProps({
   readonly: { type: Boolean, default: false },
 })
 const emit = defineEmits(['cell-commit', 'add-row', 'cell-menu', 'field-menu', 'toggle-group',
-                          'selection-change', 'open-config', 'agg-change', 'add-option'])
+                          'selection-change', 'open-config', 'footer-menu', 'add-option', 'group-menu'])
 
 const gridRef = ref(null)
 const editingCell = ref(null)   // {key, fieldName}
@@ -106,6 +123,10 @@ const visibleFields = computed(() => {
   return fs
 })
 
+// 列序签名：vxe 的列注册（assembleColumn）只在列组件挂载时按 DOM 位次进行——
+// v-for 同 key 重排不会重注册，列序变更不生效。把签名并入 key，顺序一变整列重挂载强制重注册
+const colSig = computed(() => visibleFields.value.map(f => f.field_name).join(','))
+
 // 两级表头：编组节点 + 散列字段（保持相对顺序，编组内字段聚合到组下）
 const headerTree = computed(() => {
   const groups = props.columnGroups.filter(g => (g.field_names || []).length)
@@ -118,7 +139,7 @@ const headerTree = computed(() => {
       nodes.push({ key: f.field_name, isGroup: false, field: f })
     } else if (!emittedGroups.has(g.id)) {
       emittedGroups.add(g.id)
-      nodes.push({ key: `g_${g.id}`, isGroup: true, name: g.name,
+      nodes.push({ key: `g_${g.id}`, isGroup: true, name: g.name, group: g,
                    fields: visibleFields.value.filter(x => g.field_names.includes(x.field_name)) })
     }
   }
@@ -134,7 +155,7 @@ const isFrozen = (name) => {
   return idx >= 0 && mine >= 0 && mine <= idx
 }
 
-// 行序列：折叠分组过滤 + 树形缩进标记 + 行号 + 末尾加行
+// 行序列：折叠分组过滤 + 树形缩进标记 + 行号（添加一行入口在统计行左侧「＋」，不再虚拟数据行）
 const gridRows = computed(() => {
   const out = []
   let no = 0
@@ -155,15 +176,26 @@ const gridRows = computed(() => {
     idDepth.set(r.id, depth)
     out.push({ ...r, __key: `r_${r.id}`, __no: no, __indent: depth })
   }
-  out.push({ __rowType: 'add', __key: '__add__' })
   return out
 })
 
 const rowClass = ({ row }) => {
   if (row.__rowType === 'group') return `row-group depth-${row.depth}`
-  if (row.__rowType === 'add') return 'row-add'
   return ''
 }
+
+// 整行填色：数据行 __key → 命中色（规则勾了 wholeRow 且条件命中）
+const rowFills = computed(() => {
+  const m = new Map()
+  const rules = fillRules.value || []
+  if (!rules.some(r => r.wholeRow)) return m
+  for (const r of gridRows.value) {
+    if (r.__rowType) continue
+    const c = evalRowFill(rules, props.fields, r)
+    if (c) m.set(r.__key, c)
+  }
+  return m
+})
 
 function cellClass({ row, column }) {
   const cls = []
@@ -189,16 +221,12 @@ function cellClass({ row, column }) {
 // 单元格渲染（含填色命中 + 编辑态分发）
 function CellSlot(props2) {
   const { row, field } = props2
-  if (row.__rowType === 'add') {
-    return h('span', {
-      class: 'add-row-cell',
-      onClick: (e) => { e.stopPropagation(); emit('add-row') },
-    }, field.field_name === visibleFields.value[0]?.field_name ? '＋ 添加' : '')
-  }
   if (row.__rowType === 'group') {
     if (field.field_name !== visibleFields.value[0]?.field_name) {
       const agg = row.aggs?.[field.field_name]
-      return h('span', { class: 'group-agg' }, agg != null ? `求和 ${fmtAgg(agg)}` : '')
+      const aggKind = viewConfig.value.aggregations?.[field.field_name]
+      return h('span', { class: 'group-agg' },
+        agg != null && aggKind ? `${STAT_LABELS[aggKind] || ''} ${formatStatValue(aggKind, agg, field)}` : '')
     }
     return h('span', { class: 'group-head' }, `${groupLabel(row)}（记录数 ${row.count}）`)
   }
@@ -250,8 +278,24 @@ function CellSlot(props2) {
       },
     })
   }
-  const fill = evalFillRules(fillRules.value, field, row[field.field_name])
+  // 填色：单元格自身规则优先，整行规则兜底（返回 null 走 cellFillStyle 在 td 级着色）
+  const fill = evalFillRules(fillRules.value, field, row[field.field_name]) || rowFills.value.get(row.__key) || null
   return h(SmartCell, { field, record: row, fillColor: fill })
+}
+
+// 填色在 td 级着底色（整格铺满，企微式）；SmartCell 的 fillColor 作为内容级兜底保留
+function cellFillStyle({ row, column }) {
+  if (!row || row.__rowType) return null
+  const f = props.fields.find(x => x.field_name === column.field)
+  if (!f) return null
+  const fill = evalFillRules(fillRules.value, f, row[f.field_name]) || rowFills.value.get(row.__key) || null
+  return fill ? { backgroundColor: fill } : null
+}
+
+// 整列填色之「为字段名称填色」：表头单元格着底色
+function headerCellStyle({ column }) {
+  const color = headerFillColor(fillRules.value, column.field)
+  return color ? { backgroundColor: color } : null
 }
 
 function groupLabel(row) {
@@ -266,8 +310,34 @@ function groupLabel(row) {
   return `${f?.label}: ${v}`
 }
 
-function fmtAgg(v) {
-  return typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(2) : v
+// 统计行单元格（设计稿 PixPin_2026-10-15_19-57-43）：已配置列两行布局——上行小灰字统计方式名、
+// 下行数值（右对齐）；未配置列默认空白，hover 浮现「统计 ▾」提示可点击。点击出统计方式菜单。
+// 未配置时首字段列默认「记录数 N」，与已配置列同款两行样式
+function FooterCell({ field }) {
+  const aggKind = viewConfig.value.aggregations?.[field.field_name]
+  const val = props.aggregations[field.field_name]
+  const isFirst = field.field_name === visibleFields.value[0]?.field_name
+  const label = aggKind ? (STAT_LABELS[aggKind] || '') : (isFirst ? '记录数' : '')
+  const children = []
+  if (label) {
+    const value = aggKind ? (val != null ? formatStatValue(aggKind, val, field) : '-') : props.total
+    children.push(
+      h('div', { class: 'fs-label' }, label),
+      h('div', { class: 'fs-value' }, String(value)),
+    )
+  } else {
+    children.push(h('div', { class: 'fs-hint' }, ['统计', h('span', { class: 'fs-caret' }, ' ▾')]))
+  }
+  return h('div', {
+    class: 'footer-stat', title: '点击设置统计方式',
+    onClick: (e) => { e.stopPropagation(); emit('footer-menu', field, e) },
+  }, children)
+}
+
+// vxe 的 footer 行数由 footer-method 决定：返回一行占位（内容由各列 #footer 插槽渲染），
+// 没有它 footerTableData 为空，整个统计栏不会渲染
+function footerMethod({ columns }) {
+  return [columns.map(() => '')]
 }
 
 const IMMEDIATE = ['checkbox']
@@ -276,8 +346,7 @@ let lastClick = { key: null, fieldName: null, t: 0 }   // 自检测双击用
 
 function onCellClick({ row, column }) {
   if (props.readonly) return
-  if (!row || row.__rowType === 'add') return
-  if (row.__rowType === 'group') return
+  if (!row || row.__rowType === 'group') return
   const f = props.fields.find(x => x.field_name === column.field)
   if (!f) return
   if (IMMEDIATE.includes(f.field_type)) {
@@ -300,7 +369,7 @@ function onCellClick({ row, column }) {
 
 function onCellDblClick({ row, column }) {
   if (props.readonly) return
-  if (!row || row.__rowType === 'add' || row.__rowType === 'group') return
+  if (!row || row.__rowType === 'group') return
   const f = props.fields.find(x => x.field_name === column.field)
   if (!f || IMMEDIATE.includes(f.field_type)) return   // checkbox 单击已切换，无需编辑态
   selectedCell.value = null   // 编辑态即脱离选中态
@@ -354,19 +423,6 @@ function dataRowSelection() {
   return recs.filter(r => !r.__rowType)
 }
 
-// 汇总行：首字段列「记录数 N」，各列按 aggregations 渲染，可点击切换聚合方式
-function footerMethod({ columns }) {
-  const firstField = visibleFields.value[0]?.field_name
-  return [
-    columns.map((col) => {
-      if (col.field === firstField) return `记录数 ${props.total}`
-      const f = props.fields.find(x => x.field_name === col.field)
-      if (f && props.aggregations[f.field_name] != null) return `求和 ${fmtAgg(props.aggregations[f.field_name])}`
-      return ''
-    }),
-  ]
-}
-
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onDocKeydown)
   document.removeEventListener('mousedown', onDocMouseDown)
@@ -380,8 +436,13 @@ defineExpose({ clearEditing: () => { editingCell.value = null; selectedCell.valu
 
 <style scoped>
 .smart-grid { width: 100%; }
-.add-col { color: var(--el-color-primary); font-weight: 600; cursor: pointer; font-size: 15px; }
-.add-row-cell { color: var(--el-color-primary); cursor: pointer; font-size: 13px; }
+.add-col { display: block; width: 100%; text-align: center; color: var(--el-color-primary); font-weight: 600; cursor: pointer; font-size: 15px; }
+/* 统计行左侧的添加一行「＋」：单元格内居中、整格可点、hover 主色 */
+.footer-add-btn {
+  display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;
+  cursor: pointer; color: var(--el-text-color-regular); font-size: 16px; user-select: none;
+}
+.footer-add-btn:hover { color: var(--el-color-primary); }
 .group-toggle { cursor: pointer; color: var(--el-text-color-secondary); user-select: none; }
 .row-no { color: var(--el-text-color-placeholder); font-size: 12px; }
 .group-head { font-weight: 600; font-size: 13px; }
@@ -389,7 +450,6 @@ defineExpose({ clearEditing: () => { editingCell.value = null; selectedCell.valu
 .smart-vxe :deep(.row-group) { background: #fffbe6; }
 .smart-vxe :deep(.row-group.depth-1) { background: #fffdf0; }
 .smart-vxe :deep(.row-group.depth-2) { background: #fffef7; }
-.smart-vxe :deep(.row-add) { background: var(--el-fill-color-lighter); }
 .smart-vxe :deep(.vxe-body--column.col-no) { color: var(--el-text-color-placeholder); font-size: 18px; }
 /* 单击选中态：2px 主色边框（inset 阴影实现，与单元格同大、不占布局），与编辑态边框同款 */
 .smart-vxe :deep(.vxe-body--column.cell-selected) { box-shadow: 0 0 0 2px var(--el-color-primary) inset; position: relative; z-index: 1; }
@@ -453,6 +513,20 @@ defineExpose({ clearEditing: () => { editingCell.value = null; selectedCell.valu
 /* 表头单元格统一灰色（含 # 列；字段名/图标的样式由 FieldHeader 自己管，这里不覆盖避免优先级打架） */
 .smart-vxe :deep(.vxe-header--column) { font-size: 13px; color: var(--el-text-color-secondary); }
 :deep(.field-head) { display: inline-flex; align-items: center; gap: 4px; width: 100%; cursor: default; }
+/* 编组组头：居中标题 + ▾（点击出编组操作菜单） */
+:deep(.colgroup-title) { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+:deep(.colgroup-title .cg-caret) { color: var(--el-text-color-placeholder); font-size: 10px; }
+:deep(.colgroup-title:hover .cg-caret) { color: var(--el-color-primary); }
+/* 统计行（设计稿 PixPin_2026-10-15_19-57-43）：单元格整格可点，hover 浅灰底；
+   已配置列两行（方式名小灰字 + 数值右对齐）；未配置列 hover 浮现「统计 ▾」 */
+.smart-vxe :deep(.vxe-footer--column) { cursor: pointer; }
+.smart-vxe :deep(.vxe-footer--column:hover) { background: var(--el-fill-color-light); }
+:deep(.footer-stat) { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; }
+:deep(.footer-stat .fs-label) { text-align: right; font-size: 12px; line-height: 18px; color: var(--el-text-color-secondary); }
+:deep(.footer-stat .fs-value) { text-align: right; font-size: 15px; line-height: 22px; color: var(--el-text-color-primary); font-variant-numeric: tabular-nums; }
+:deep(.footer-stat .fs-hint) { font-size: 13px; color: var(--el-text-color-secondary); visibility: hidden; }
+:deep(.footer-stat:hover .fs-hint) { visibility: visible; }
+:deep(.footer-stat .fs-caret) { color: var(--el-text-color-placeholder); font-size: 11px; }
 :deep(.filter-dot) { color: var(--el-color-primary); }
 :deep(.sort-mark) { color: var(--el-color-primary); }
 :deep(.head-menu) { margin-left: auto; color: var(--el-text-color-placeholder); padding: 0 2px; cursor: pointer; }

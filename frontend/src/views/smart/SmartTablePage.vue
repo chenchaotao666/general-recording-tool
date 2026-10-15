@@ -5,7 +5,7 @@
 
     <!-- 工具栏（设计文档 §2.1 L3：徽章=生效规则数） -->
     <div class="toolbar">
-      <el-button type="primary" size="small" :disabled="!perms.can_create" @click="addRow">⊕ 添加一行</el-button>
+      <el-button size="small" :disabled="!perms.can_create" @click="addRow">＋ 添加一行</el-button>
       <el-divider direction="vertical" />
       <el-button size="small" text @click="settingsVisible = true">▦ 表格设置</el-button>
 
@@ -84,7 +84,8 @@
       :height="gridHeight" :readonly="!perms.can_edit"
       @cell-commit="onCellCommit" @add-row="addRow" @cell-menu="onCellMenu" @field-menu="onFieldMenu"
       @toggle-group="toggleGroup" @selection-change="(s) => (selection = s)" @open-config="openFieldConfig"
-      @add-field="openFieldConfig(null)" @add-option="onAddOption"
+      @add-field="openFieldConfig(null)" @add-option="onAddOption" @footer-menu="onFooterMenu"
+      @group-menu="onGroupMenu"
     />
 
     <!-- 分页（未分组时） -->
@@ -96,8 +97,7 @@
     <!-- 面板与弹窗 -->
     <TableSettingsPanel :visible="settingsVisible" @update:visible="(v) => (settingsVisible = v)" :fields="fields" :view="view" :column-groups="columnGroups"
                         @close="settingsVisible = false" @toggle-visible="onToggleVisible" @reorder="onReorder"
-                        @field-action="onFieldAction" @add-field="openFieldConfig(null)"
-                        @edit-group="editGroup" @delete-group="deleteGroup" />
+                        @field-action="onFieldAction" @add-field="openFieldConfig(null)" @set-field-group="setFieldGroup" />
     <FieldConfigDialog :visible="fieldDialog.visible" :field="fieldDialog.field" :fields="fields"
                        :tables="allTables" :source-fields-of="loadFieldsOf"
                        @close="fieldDialog.visible = false" @save="onFieldSave" />
@@ -106,6 +106,21 @@
                         @close="detail.visible = false" @nav="navDetail" @cell-commit="onCellCommit" />
     <FindReplaceDialog :visible="findVisible" :table-id="tableId"
                        @close="findVisible = false" @replaced="loadGrid" />
+
+    <!-- 新建/修改编组弹窗（设计文档 §6.1：编组名称 + 包含字段，默认含当前列） -->
+    <el-dialog :model-value="groupDialog.visible" :title="groupDialog.id ? '修改编组' : '新建编组'"
+               width="420px" @close="groupDialog.visible = false">
+      <div class="gd-form">
+        <el-input v-model="groupDialog.name" placeholder="编组名称" maxlength="100" />
+        <el-select v-model="groupDialog.members" multiple placeholder="包含字段" style="width: 100%">
+          <el-option v-for="f in fields" :key="f.field_name" :value="f.field_name" :label="f.label" />
+        </el-select>
+      </div>
+      <template #footer>
+        <el-button size="small" @click="groupDialog.visible = false">取消</el-button>
+        <el-button size="small" type="primary" @click="saveGroupDialog">确定</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 字段列头菜单 -->
     <teleport to="body">
@@ -118,8 +133,68 @@
           <div class="mi" @click="fieldAct('sortDesc')">↓ {{ dirLabels[1] }}</div>
           <div class="mi" @click="fieldAct('freeze')">❄ 冻结至此列</div>
           <div class="mi" @click="fieldAct('hide')">🚫 隐藏</div>
+          <!-- 整列填色 ▸（设计稿 PixPin_2026-10-16_00-14-52）：创建整列规则并打开填色面板选色 -->
+          <div class="mi has-sub">
+            🖌 整列填色 <span class="sub-caret">▸</span>
+            <div class="fm-sub">
+              <div class="mi" @click="columnFill('all')">为所有内容填色</div>
+              <div class="mi" @click="columnFill('header')">为字段名称填色</div>
+            </div>
+          </div>
+          <div class="mi" @click="openGroupDialog(fieldMenu.field)">▦ 新建编组</div>
+          <!-- 移入编组 ▸（设计文档 §6.1：存在编组时出现；已在组内的项点击为移出） -->
+          <div v-if="columnGroups.length" class="mi has-sub">
+            ⇥ 移入编组 <span class="sub-caret">▸</span>
+            <div class="fm-sub">
+              <div v-for="g in columnGroups" :key="g.id" class="mi" @click="moveToGroup(g)">
+                <span class="sub-check">{{ g.field_names?.includes(fieldMenu.field?.field_name) ? '✓' : '' }}</span>{{ g.name }}
+              </div>
+            </div>
+          </div>
           <div class="mi" @click="fieldAct('duplicate')">⧉ 创建副本</div>
           <div class="mi danger" @click="fieldAct('delete')">🗑 删除</div>
+        </div>
+      </div>
+    </teleport>
+
+    <!-- 编组组头菜单（设计稿 PixPin_2026-10-16_00-40-59） -->
+    <teleport to="body">
+      <div v-if="groupMenu.visible" class="fm-mask" @click="groupMenu.visible = false"
+           @contextmenu.prevent="groupMenu.visible = false">
+        <div class="fm" :style="{ left: `${groupMenu.x}px`, top: `${groupMenu.y}px` }" @click.stop>
+          <div class="mi" @click="groupAct('edit')">✏ 修改编组</div>
+          <div class="mi has-sub">
+            ⇥ 插入字段 <span class="sub-caret">▸</span>
+            <div class="fm-sub">
+              <div class="mi" @click="groupAct('insertRight')">→ 向右插入</div>
+              <div class="mi" @click="groupAct('insertLeft')">← 向左插入</div>
+              <div class="mi" @click="groupAct('insertInside')">在编组内插入</div>
+            </div>
+          </div>
+          <div class="mi" @click="groupAct('duplicate')">⧉ 创建副本</div>
+          <div class="mi" @click="groupAct('freeze')">❄ 冻结至此编组</div>
+          <div class="mi" @click="groupAct('autoFit')">⤢ 自动调整列宽</div>
+          <div class="mi" @click="groupAct('hide')">🚫 隐藏</div>
+          <div class="mi danger" @click="groupAct('dissolve')">解散编组</div>
+        </div>
+      </div>
+    </teleport>
+
+    <!-- 统计行设置菜单（点击 footer 单元格弹出，向上展开） -->
+    <teleport to="body">
+      <div v-if="statMenu.visible" class="fm-mask" @click="statMenu.visible = false"
+           @contextmenu.prevent="statMenu.visible = false">
+        <div class="fm stat-fm" :style="{ left: `${statMenu.x}px`, top: `${statMenu.y}px` }" @click.stop>
+          <div v-for="o in statOptions" :key="o.key" class="mi stat-mi" @click="statAct(o.key)">
+            <span class="sm-check">{{ statCurrent === o.key ? '✓' : '' }}</span>
+            <span class="sm-label">{{ o.label }}</span>
+            <span class="sm-val">{{ o.value }}</span>
+          </div>
+          <div v-if="statCurrent" class="mi stat-mi" @click="statAct(null)">
+            <span class="sm-check" /><span class="sm-label">不展示</span>
+          </div>
+          <div class="fm-divider" />
+          <div class="mi" @click="copyStats">⧉ 复制数据统计</div>
         </div>
       </div>
     </teleport>
@@ -140,7 +215,8 @@ import TableSettingsPanel from '../../components/smart/panels/TableSettingsPanel
 import FieldConfigDialog from '../../components/smart/panels/FieldConfigDialog.vue'
 import RecordDetailDrawer from '../../components/smart/panels/RecordDetailDrawer.vue'
 import FindReplaceDialog from '../../components/smart/panels/FindReplaceDialog.vue'
-import { FIELD_REGISTRY, filterOpsOf, OP_LABELS, OPTION_COLORS, sortDirectionLabels } from '../../smart/registry/fieldRegistry.js'
+import { FIELD_REGISTRY, filterOpsOf, OP_LABELS, OPTION_COLORS, sortDirectionLabels,
+         footerStatsOf, STAT_LABELS, formatStatValue } from '../../smart/registry/fieldRegistry.js'
 import { isRuleComplete, createUndoStack } from '../../smart/utils/format.js'
 import { resolveRefOptions } from '../../smart/utils/refOptions.js'
 import {
@@ -148,8 +224,8 @@ import {
   smartGrid, smartListViews, smartCreateView, smartUpdateView, smartDeleteView,
   smartDuplicateView, smartSetDefaultView, smartPutViewPref, smartDeleteViewPref,
   smartCreateRecord, smartUpdateRecord, smartDeleteRecord, smartBatchDelete,
-  smartDuplicateRecord, smartDuplicateField, smartFieldDeps,
-  smartListColumnGroups, smartCreateColumnGroup, smartDeleteColumnGroup,
+  smartDuplicateRecord, smartDuplicateField, smartFieldDeps, smartFieldStats,
+  smartListColumnGroups, smartCreateColumnGroup, smartUpdateColumnGroup, smartDeleteColumnGroup,
 } from '../../api/index.js'
 
 const route = useRoute()
@@ -241,7 +317,7 @@ const refContext = computed(() => {
 provide('smartRefContext', refContext)
 
 const cfg = computed(() => view.value?.config || {})
-const dataRows = computed(() => rows.value.filter(r => r.__rowType !== 'group' && r.__rowType !== 'add'))
+const dataRows = computed(() => rows.value.filter(r => r.__rowType !== 'group'))
 const gridHeight = computed(() => window.innerHeight - 220)
 const gridRef = ref(null)
 
@@ -533,10 +609,14 @@ function navDetail(step) {
 }
 
 // ---------- 字段操作 ----------
-const fieldDialog = reactive({ visible: false, field: null })
+const fieldDialog = reactive({ visible: false, field: null, insertCtx: null })
 const allTables = ref([])
 
-function openFieldConfig(f) { fieldDialog.field = f; fieldDialog.visible = true }
+function openFieldConfig(f, insertCtx = null) {
+  fieldDialog.field = f
+  fieldDialog.insertCtx = insertCtx
+  fieldDialog.visible = true
+}
 
 const DATA_TYPE_MAP = {
   text: 'varchar', singleSelect: 'varchar', multiSelect: 'json', number: 'decimal', percent: 'decimal',
@@ -585,12 +665,18 @@ async function onFieldSave({ label, field_type, config }) {
     const op = { op: 'update_field', field_name: f.field_name, label, options: config, field_type }
     if (f.field_type !== field_type) op.data_type = DATA_TYPE_MAP[field_type]
     await alterTable(tableId, [op])
+    fieldDialog.visible = false
+    await reloadMeta()
+    loadGrid(view.value?.id)
   } else {
-    await alterTable(tableId, [{ op: 'add_field', field: buildFieldPayload(field_type, label, config) }])
+    const payload = buildFieldPayload(field_type, label, config)
+    await alterTable(tableId, [{ op: 'add_field', field: payload }])
+    fieldDialog.visible = false
+    await reloadMeta()
+    // 编组菜单「插入字段」：创建后按插入上下文定位（左/右/组内）
+    if (fieldDialog.insertCtx?.group) await placeNewField(payload.field_name, fieldDialog.insertCtx)
+    loadGrid(view.value?.id)
   }
-  fieldDialog.visible = false
-  await reloadMeta()
-  loadGrid(view.value?.id)
 }
 
 async function reloadMeta() {
@@ -606,6 +692,22 @@ function onFieldMenu(field, event) {
   Object.assign(fieldMenu, { visible: true, x: event.clientX, y: event.clientY, field })
 }
 
+// 整列填色：为「所有内容 / 字段名称」创建整列规则（无运算符），并打开填色面板选色
+function columnFill(target) {
+  const f = fieldMenu.field
+  if (!f) return
+  fieldMenu.visible = false
+  const rules = [...(cfg.value.fillRules || [])]
+  if (!rules.some(r => r.fieldId === f.field_name && r.fillTarget === target)) {
+    rules.push({
+      id: `f_${Date.now()}`, fieldId: f.field_name, fillTarget: target,
+      color: target === 'header' ? '#e8f0fe' : '#feefe3', wholeRow: false, order: rules.length,
+    })
+    patchConfig({ fillRules: rules })
+  }
+  activePanel.value = 'fill'
+}
+
 async function fieldAct(cmd) {
   const f = fieldMenu.field
   fieldMenu.visible = false
@@ -619,6 +721,104 @@ async function fieldAct(cmd) {
   else if (cmd === 'hide') patchConfig({ fieldVisibility: { ...(cfg.value.fieldVisibility || {}), [f.field_name]: false } }, { reload: false })
   else if (cmd === 'duplicate') { await smartDuplicateField(tableId, f.field_name); reloadMeta(); loadGrid(view.value?.id) }
   else if (cmd === 'delete') await deleteField(f)
+}
+
+// ---------- 统计行：按列设置统计方式 ----------
+const statMenu = reactive({ visible: false, x: 0, y: 0, field: null, stats: {} })
+const statCurrent = computed(() => (statMenu.field && cfg.value.aggregations?.[statMenu.field.field_name]) || null)
+const statOptions = computed(() => footerStatsOf(statMenu.field).map(k => ({
+  key: k, label: STAT_LABELS[k],
+  value: statMenu.stats[k] != null ? formatStatValue(k, statMenu.stats[k], statMenu.field) : '',
+})))
+
+function onFooterMenu(field, e) {
+  // 菜单从点击处向上展开（footer 在视口底部）；高度按选项数估算
+  const estH = footerStatsOf(field).length * 30 + 80
+  Object.assign(statMenu, {
+    visible: true, field, stats: {},
+    x: Math.min(e.clientX, window.innerWidth - 200),
+    y: Math.max(8, e.clientY - estH),
+  })
+  // 各统计方式的值异步拉取（服务端按筛选后全集计算），到位后填入菜单
+  smartFieldStats(tableId, { field_name: field.field_name, view_id: view.value?.id })
+    .then(r => { if (statMenu.visible && statMenu.field === field) statMenu.stats = r.stats || {} })
+    .catch(() => {})
+}
+
+function statAct(key) {
+  const fn = statMenu.field?.field_name
+  if (!fn) return
+  const aggs = { ...(cfg.value.aggregations || {}) }
+  if (key) aggs[fn] = key
+  else delete aggs[fn]
+  statMenu.visible = false
+  patchConfig({ aggregations: aggs })
+}
+
+async function copyStats() {
+  const lines = statOptions.value.filter(o => o.value !== '').map(o => `${o.label}: ${o.value}`)
+  if (!lines.length) { statMenu.visible = false; return }
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'))
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = lines.join('\n')
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    ta.remove()
+  }
+  ElMessage.success('已复制数据统计')
+  statMenu.visible = false
+}
+
+// ---------- 列编组（设计文档 §6.3：新建/修改弹窗 + 移入移出；字段最多属于一个编组） ----------
+const groupDialog = reactive({ visible: false, id: null, name: '', members: [] })
+function openGroupDialog(field, group = null) {
+  fieldMenu.visible = false
+  Object.assign(groupDialog, group
+    ? { visible: true, id: group.id, name: group.name, members: [...(group.field_names || [])] }
+    : { visible: true, id: null, name: '', members: field ? [field.field_name] : [] })
+}
+async function saveGroupDialog() {
+  const members = groupDialog.members
+  if (!members.length) { ElMessage.warning('请选择包含字段'); return }
+  // 字段最多属于一个编组：先把这些字段从其他编组移除
+  for (const g of columnGroups.value) {
+    if (g.id === groupDialog.id) continue
+    const rest = (g.field_names || []).filter(n => !members.includes(n))
+    if (rest.length !== (g.field_names || []).length) {
+      await smartUpdateColumnGroup(g.id, { field_names: rest })
+    }
+  }
+  if (groupDialog.id) await smartUpdateColumnGroup(groupDialog.id, { name: groupDialog.name, field_names: members })
+  else await smartCreateColumnGroup(tableId, { name: groupDialog.name || '编组', field_names: members })
+  groupDialog.visible = false
+  columnGroups.value = (await smartListColumnGroups(tableId)).groups
+}
+
+// 字段编组归属变更：targetGroup 为 null = 移出所有编组；否则移入目标组（字段最多属于一个编组）。
+// 组的最后成员被移出时直接解散该组（"拖出去那就没编组了"）
+async function setFieldGroup(fieldName, targetGroup) {
+  for (const g of columnGroups.value) {
+    if ((g.field_names || []).includes(fieldName) && g.id !== targetGroup?.id) {
+      const rest = g.field_names.filter(n => n !== fieldName)
+      if (rest.length) await smartUpdateColumnGroup(g.id, { field_names: rest })
+      else await smartDeleteColumnGroup(g.id)
+    }
+  }
+  if (targetGroup && !(targetGroup.field_names || []).includes(fieldName)) {
+    await smartUpdateColumnGroup(targetGroup.id, { field_names: [...(targetGroup.field_names || []), fieldName] })
+  }
+  columnGroups.value = (await smartListColumnGroups(tableId)).groups
+}
+
+// 列头菜单「移入编组 ▸」：切换语义（已在该组则移出）
+async function moveToGroup(g) {
+  const f = fieldMenu.field
+  if (!f) return
+  fieldMenu.visible = false
+  await setFieldGroup(f.field_name, (g.field_names || []).includes(f.field_name) ? null : g)
 }
 
 async function deleteField(f) {
@@ -641,26 +841,94 @@ async function onFieldAction(cmd, f) {
   if (cmd === 'edit') openFieldConfig(f)
   else if (cmd === 'delete') deleteField(f)
   else if (cmd === 'duplicate') { await smartDuplicateField(tableId, f.field_name); reloadMeta(); loadGrid(view.value?.id) }
-  else if (cmd === 'newGroup') {
-    const { value } = await ElMessageBox.prompt('编组名称', '新建编组', { inputValue: '编组' })
-    if (value) {
-      await smartCreateColumnGroup(tableId, { name: value, field_names: [f.field_name] })
-      columnGroups.value = (await smartListColumnGroups(tableId)).groups
-    }
-  }
+  else if (cmd === 'newGroup') openGroupDialog(f)
 }
-async function editGroup(g) {
-  const { value } = await ElMessageBox.prompt('编组名称', '修改编组', { inputValue: g.name })
-  if (value) {
-    const { smartUpdateColumnGroup } = await import('../../api/index.js')
-    await smartUpdateColumnGroup(g.id, { name: value })
+
+// ---------- 编组组头菜单（设计稿 PixPin_2026-10-16_00-40-59） ----------
+const groupMenu = reactive({ visible: false, x: 0, y: 0, group: null })
+function onGroupMenu(group, e) {
+  Object.assign(groupMenu, { visible: true, x: e.clientX, y: e.clientY, group })
+}
+
+async function groupAct(cmd) {
+  const g = groupMenu.group
+  groupMenu.visible = false
+  if (!g) return
+  const members = g.field_names || []
+  if (cmd === 'edit') openGroupDialog(null, g)
+  else if (cmd === 'insertRight' || cmd === 'insertLeft' || cmd === 'insertInside') {
+    openFieldConfig(null, { mode: { insertRight: 'right', insertLeft: 'left', insertInside: 'inside' }[cmd], group: g })
+  } else if (cmd === 'duplicate') await duplicateGroup(g)
+  else if (cmd === 'freeze') patchConfig({ frozenFieldId: members[members.length - 1] }, { reload: false })
+  else if (cmd === 'autoFit') autoFitGroup(g)
+  else if (cmd === 'hide') {
+    const vis = { ...(cfg.value.fieldVisibility || {}) }
+    members.forEach(n => { vis[n] = false })
+    patchConfig({ fieldVisibility: vis }, { reload: false })
+  } else if (cmd === 'dissolve') {
+    await ElMessageBox.confirm(`解散编组「${g.name}」？字段保留。`, '解散编组', { type: 'warning' })
+    await smartDeleteColumnGroup(g.id)
     columnGroups.value = (await smartListColumnGroups(tableId)).groups
   }
 }
-async function deleteGroup(g) {
-  await ElMessageBox.confirm(`解散编组「${g.name}」？字段保留。`, '解散编组', { type: 'warning' })
-  await smartDeleteColumnGroup(g.id)
+
+// 插入字段创建后的定位：left=首成员前 / right=末成员后 / inside=加入编组并排末位
+async function placeNewField(newName, ctx) {
+  const g = ctx.group
+  const members = g.field_names || []
+  const base = cfg.value.fieldOrder?.length ? [...cfg.value.fieldOrder] : fields.value.map(f => f.field_name)
+  const order = base.filter(n => n !== newName)
+  let anchor
+  if (ctx.mode === 'inside') {
+    await smartUpdateColumnGroup(g.id, { field_names: [...members, newName] })
+    columnGroups.value = (await smartListColumnGroups(tableId)).groups
+    anchor = members[members.length - 1]
+  } else {
+    anchor = ctx.mode === 'left' ? members[0] : members[members.length - 1]
+  }
+  let idx = anchor ? order.indexOf(anchor) : -1
+  if (idx < 0) idx = order.length
+  else if (ctx.mode !== 'left') idx += 1
+  order.splice(idx, 0, newName)
+  patchConfig({ fieldOrder: order }, { reload: false })
+}
+
+// 创建副本：逐成员复制字段（名称加「副本」），新编组「名称 副本」排在原组之后
+async function duplicateGroup(g) {
+  const newNames = []
+  for (const fn of g.field_names || []) {
+    const r = await smartDuplicateField(tableId, fn)
+    newNames.push(r.field_name)
+  }
+  await reloadMeta()
+  await smartCreateColumnGroup(tableId, { name: `${g.name} 副本`, field_names: newNames })
   columnGroups.value = (await smartListColumnGroups(tableId)).groups
+  const base = cfg.value.fieldOrder?.length ? [...cfg.value.fieldOrder] : fields.value.map(f => f.field_name)
+  const order = base.filter(n => !newNames.includes(n))
+  const last = (g.field_names || [])[(g.field_names || []).length - 1]
+  let idx = last ? order.indexOf(last) : -1
+  order.splice((idx < 0 ? order.length : idx) + 1, 0, ...newNames)
+  patchConfig({ fieldOrder: order }, { reload: false })
+  loadGrid(view.value?.id)
+}
+
+// 自动调整列宽：按表头与内容文本宽度估算（canvas 测量，上限 400）
+function autoFitGroup(g) {
+  const ctx = document.createElement('canvas').getContext('2d')
+  ctx.font = '13px "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif'
+  const widths = { ...(cfg.value.colWidths || {}) }
+  for (const fn of g.field_names || []) {
+    const f = fields.value.find(x => x.field_name === fn)
+    if (!f) continue
+    let w = ctx.measureText(f.label).width + 56   // 图标/排序标/▾/内边距
+    for (const r of dataRows.value.slice(0, 200)) {
+      const v = r[fn]
+      const text = v == null ? '' : (Array.isArray(v) ? v.join('、') : String(v))
+      w = Math.max(w, ctx.measureText(text).width + 24)
+    }
+    widths[fn] = Math.round(Math.min(Math.max(w, 80), 400))
+  }
+  patchConfig({ colWidths: widths }, { reload: false })
 }
 
 async function loadFieldsOf(tid) {
@@ -702,4 +970,21 @@ onUnmounted(() => {
 .mi { padding: 6px 12px; font-size: 13px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 .mi:hover { background: var(--el-fill-color-light); }
 .mi.danger { color: var(--el-color-danger); }
+/* 列头菜单的移入编组子菜单：hover 右侧飞出 */
+.mi.has-sub { position: relative; display: flex; align-items: center; }
+.sub-caret { margin-left: auto; color: var(--el-text-color-placeholder); font-size: 11px; }
+.fm-sub {
+  display: none; position: absolute; left: calc(100% - 2px); top: -4px; z-index: 1;
+  background: #fff; border-radius: 8px; box-shadow: var(--el-box-shadow); padding: 4px; min-width: 140px;
+}
+.mi.has-sub:hover .fm-sub { display: block; }
+.sub-check { display: inline-block; width: 16px; color: var(--el-color-primary); }
+.gd-form { display: flex; flex-direction: column; gap: 12px; }
+/* 统计行菜单：勾选位 + 方式名 + 右对齐值（对齐设计稿 PixPin_2026-10-15_16-56-53） */
+.stat-fm { min-width: 180px; }
+.stat-mi { display: flex; align-items: center; gap: 6px; }
+.sm-check { width: 14px; color: var(--el-color-primary); }
+.sm-label { flex: 1; }
+.sm-val { color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
+.fm-divider { height: 1px; background: var(--el-border-color-lighter); margin: 4px 6px; }
 </style>

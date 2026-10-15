@@ -34,45 +34,88 @@ export function formatDate(v, cfg = {}) {
   return map[fmt] || s.slice(0, cfg.includeTime ? 16 : 10)
 }
 
-// 填色规则求值（设计文档 §5.5）：返回命中的颜色或 null
+// 填色规则求值（设计文档 §5.5）：返回命中的颜色或 null。
+// 整列规则（fillTarget）：all=该列所有内容单元格恒命中（排最后，条件规则优先）；
+// header=字段名称（表头）填色，不参与单元格求值（由 header-cell-style 应用）
 export function evalFillRules(rules, field, value) {
   const hit = (rules || [])
-    .filter(r => r.fieldId === field.field_name && r.color && isRuleComplete(r))
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .filter(r => r.fieldId === field.field_name && r.color && r.fillTarget !== 'header' && isRuleComplete(r))
+    .sort((a, b) => ((a.fillTarget === 'all') - (b.fillTarget === 'all')) || ((a.order ?? 0) - (b.order ?? 0)))
   for (const r of hit) {
+    if (r.fillTarget === 'all') return r.color
     if (matchCondition(r, value)) return r.color
   }
   return null
 }
 
+// 字段名称（表头）填色：返回该字段 header 规则的底色或 null
+export function headerFillColor(rules, fieldName) {
+  const r = (rules || []).find(r => r.fieldId === fieldName && r.fillTarget === 'header' && r.color)
+  return r ? r.color : null
+}
+
+// 整行填色求值：规则勾了 wholeRow 时，命中条件则整行所有单元格填色（优先级低于单元格自身的规则）
+export function evalRowFill(rules, fields, row) {
+  const hit = (rules || [])
+    .filter(r => r.wholeRow && !r.fillTarget && r.color && isRuleComplete(r))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  for (const r of hit) {
+    const f = fields.find(x => x.field_name === r.fieldId)
+    if (f && matchCondition(r, row[f.field_name])) return r.color
+  }
+  return null
+}
+
 export function isRuleComplete(r) {
+  // 整列规则（fillTarget header/all）无需运算符与取值即完整
+  if (r.fillTarget) return !!r.fieldId
   const noValue = ['isEmpty', 'isNotEmpty']
   return r.fieldId && r.operator && (noValue.includes(r.operator) || (r.value != null && r.value !== ''))
 }
 
 export function matchCondition(c, v) {
   const empty = v == null || v === '' || (Array.isArray(v) && !v.length)
+  // 任一侧为数组（枚举/人员的条件多选、或多选单元格值）：按集合交集判断（与后端 pyquery 一致），
+  // 不能把条件数组 String() 成逗号串再做子串匹配——那样标量单元格永不命中
+  const setHit = () => {
+    const cell = new Set((Array.isArray(v) ? v : [v]).map(String))
+    return (Array.isArray(c.value) ? c.value : [c.value]).map(String).some(x => cell.has(x))
+  }
+  // 日期比较：单元格值带时间部分（2026-10-08 00:00:00）、条件值可能只是日期——
+  // 按条件值的精度截断单元格值后按 ISO 字典序比较（ISO 日期/日期时间字典序即时间序）
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}/
+  const isDateCond = typeof c.value === 'string' && DATE_RE.test(c.value)
+  const dateKey = (x) => String(x).slice(0, String(c.value).length)
+  // 相对日期：今天 / 过去 N 天（含今天）/ 未来 N 天（含今天）
+  const dayOf = (x) => { const m = String(x).match(DATE_RE); return m ? new Date(`${m[0]}T00:00:00`) : null }
+  if (['today', 'pastDays', 'withinDays'].includes(c.operator)) {
+    const dv = dayOf(v)
+    if (!dv) return false
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const diff = Math.round((dv - today) / 86400000)
+    if (c.operator === 'today') return diff === 0
+    const n = Number(c.value) || 1
+    return c.operator === 'pastDays' ? diff <= 0 && diff >= -(n - 1) : diff >= 0 && diff <= n
+  }
   switch (c.operator) {
     case 'isEmpty': return empty
     case 'isNotEmpty': return !empty
-    case 'eq': return !empty && String(v) === String(c.value)
-    case 'neq': return !empty && String(v) !== String(c.value)
+    case 'eq': return Array.isArray(c.value) ? setHit()
+      : isDateCond ? !empty && DATE_RE.test(String(v)) && dateKey(v) === c.value
+      : !empty && String(v) === String(c.value)
+    case 'neq': return Array.isArray(c.value) ? !setHit()
+      : isDateCond ? !empty && !(DATE_RE.test(String(v)) && dateKey(v) === c.value)
+      : !empty && String(v) !== String(c.value)
     case 'contains':
-      if (Array.isArray(v)) {
-        const want = Array.isArray(c.value) ? c.value.map(String) : [String(c.value)]
-        return v.map(String).some(x => want.includes(x))
-      }
+      if (Array.isArray(v) || Array.isArray(c.value)) return setHit()
       return !empty && String(v).toLowerCase().includes(String(c.value).toLowerCase())
     case 'notContains':
-      if (Array.isArray(v)) {
-        const want = Array.isArray(c.value) ? c.value.map(String) : [String(c.value)]
-        return !v.map(String).some(x => want.includes(x))
-      }
+      if (Array.isArray(v) || Array.isArray(c.value)) return !setHit()
       return !empty && !String(v).toLowerCase().includes(String(c.value).toLowerCase())
-    case 'gt': return !empty && Number(v) > Number(c.value)
-    case 'gte': return !empty && Number(v) >= Number(c.value)
-    case 'lt': return !empty && Number(v) < Number(c.value)
-    case 'lte': return !empty && Number(v) <= Number(c.value)
+    case 'gt': return !empty && (isDateCond ? DATE_RE.test(String(v)) && dateKey(v) > c.value : Number(v) > Number(c.value))
+    case 'gte': return !empty && (isDateCond ? DATE_RE.test(String(v)) && dateKey(v) >= c.value : Number(v) >= Number(c.value))
+    case 'lt': return !empty && (isDateCond ? DATE_RE.test(String(v)) && dateKey(v) < c.value : Number(v) < Number(c.value))
+    case 'lte': return !empty && (isDateCond ? DATE_RE.test(String(v)) && dateKey(v) <= c.value : Number(v) <= Number(c.value))
     default: return false
   }
 }

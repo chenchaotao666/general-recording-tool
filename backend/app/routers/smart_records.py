@@ -101,6 +101,29 @@ def grid_query(table_id: int, view_id: int | None = None, page: int = 1, page_si
     }
 
 
+# ---------- 统计行：按列统计方式选择 ----------
+@router.get("/tables/{table_id}/field-stats")
+def field_stats(table_id: int, field_name: str, view_id: int | None = None,
+                db: Session = Depends(get_db),
+                access: TableAccess = Depends(require_table("view"))):
+    """某字段在当前视图筛选后全集上的全部可用统计值（统计行菜单展示用）。"""
+    user = access.ctx.user
+    view, effective = _load_effective_view(db, table_id, view_id, user.id)
+    fields = get_meta_fields(db, table_id)
+    fields_by_name = {f.field_name: f for f in fields}
+    f = fields_by_name.get(field_name)
+    if f is None:
+        raise HTTPException(404, f"字段不存在：{field_name}")
+
+    rules = view_config.conditions_to_rules(effective.get("filters"))
+    recs = json_store.all_dicts(db, table_id, fields, normalized=True)
+    if rules:
+        logic = "OR" if (effective.get("filters") or {}).get("conjunction") == "or" else "AND"
+        recs = [r for r in recs if match_filters(r, fields_by_name, {"logic": logic, "rules": rules})]
+    stats = {a: view_config.compute_stat(recs, field_name, a) for a in view_config.field_stat_kinds(f)}
+    return {"field_name": field_name, "total": len(recs), "stats": stats}
+
+
 # ---------- 记录 CRUD（包装 json_store，带 parent_id/updated_by） ----------
 
 @router.post("/tables/{table_id}/records")

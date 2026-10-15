@@ -13,6 +13,13 @@ export const OPTION_COLORS = [
   { key: 'gray', label: '灰', value: '#f1f3f4', text: '#5f6368' },
 ]
 
+// 填色色板（设计稿 PixPin_2026-10-15_20-26-47）：9 色 × 3 深浅档，按行浅→深
+export const FILL_PALETTE = [
+  ['#f1f3f4', '#e8f0fe', '#e0f7fa', '#e6f4ea', '#fce8e6', '#feefe3', '#fef9e0', '#f3e8fd', '#fce4ec'],
+  ['#dadce0', '#aecbfa', '#9ee7f0', '#a9e5c0', '#f6b8b3', '#fbcfa6', '#fde293', '#d0aff2', '#f8a8cd'],
+  ['#bdc1c6', '#8ab4f8', '#5fd4e0', '#81c995', '#ee675c', '#f2995c', '#fcc934', '#b475e8', '#f06292'],
+]
+
 export function optionColor(key) {
   return OPTION_COLORS.find(c => c.key === key) || OPTION_COLORS[0]
 }
@@ -89,4 +96,32 @@ export function conditionToRule(c) {
   const rule = { field: c.fieldId, op }
   if (!NO_VALUE_OPS.includes(c.operator)) rule.value = c.value
   return rule
+}
+
+// ---------- 统计行（footer）按列统计方式 ----------
+export const STAT_LABELS = {
+  sum: '求和', avg: '平均值', max: '最大值', min: '最小值',
+  countRecords: '记录行数', empty: '未填写', count: '已填写', distinct: '去重计数',
+  emptyRatio: '未填写占比', filledRatio: '已填写占比', distinctRatio: '去重占比',
+}
+// 通用统计（所有字段类型可选，与后端 view_config.GENERIC_AGGS 对齐）
+export const GENERIC_STATS = ['countRecords', 'empty', 'count', 'distinct', 'emptyRatio', 'filledRatio', 'distinctRatio']
+
+// 某字段统计行可选的统计方式：注册表数值聚合（sum/avg/max/min）在前，通用统计在后
+export function footerStatsOf(field) {
+  const extras = (regOf(field).aggregations || []).filter(a => a !== 'count')
+  return [...extras, ...GENERIC_STATS]
+}
+
+// 统计值展示格式化：占比（后端返回 0~1 小数）→ 百分比；非整数保留两位；
+// 日期类字段的最值按 includeTime 选项裁掉时间部分
+export function formatStatValue(agg, v, field) {
+  if (v == null) return ''
+  if (agg.endsWith('Ratio')) return `${(v * 100).toFixed(2)}%`
+  if (typeof v === 'string' && ['date', 'createdTime', 'lastModifiedTime'].includes(field?.field_type)
+      && !field?.options?.includeTime && /^\d{4}-\d{2}-\d{2}/.test(v)) {
+    return v.slice(0, 10)
+  }
+  if (typeof v === 'number' && !Number.isInteger(v)) return v.toFixed(2)
+  return String(v)
 }
