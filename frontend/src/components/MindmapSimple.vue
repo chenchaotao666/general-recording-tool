@@ -870,6 +870,7 @@ onMounted(() => {
     const ls = localStorage.getItem('grt_mm_simple_linestyle')
     if (ls) mind.setThemeConfig({ lineStyle: ls })
   }
+  patchGeneralizationBounds()   // 概要纵向跨度只跨选中节点自身（补丁定义见 setLayout 上方）
   if (!props.readonly) {
     mind.on('node_contextmenu', onNodeContextmenu)
     // 图标标记单击 → 操作浮层（编辑/删除）；图片不走这里：悬停图片右上角已有 ✎/× 操作条
@@ -941,7 +942,34 @@ async function exportFile(type, name) {
 
 function setLayout(name) {
   mind?.setLayout(name)
+  patchGeneralizationBounds()   // setLayout 会重建 layout 实例，补丁要重打
   localStorage.setItem('grt_mm_simple_layout', name)
+}
+
+// 概要（归纳大括号）边界补丁：库的边界是子树递归的，向右布局里子节点竖直堆叠，
+// 导致大括号纵向区间包含整个子树、概要节点按子树居中——视觉上「下偏」，不对着选中节点。
+// 补丁：跨度轴只取选中节点自身盒子（h 布局=纵向 top/bottom；v 布局=横向 left/right）；
+// 另一轴保持子树边界不变，否则概要节点会和选中节点的子节点重叠。
+// 所有布局的 renderGeneralization 都走 getNodeGeneralizationRenderBoundaries，统一在此打补丁。
+function patchGeneralizationBounds() {
+  const l = mind?.renderer?.layout
+  if (!l || l.__genBoundPatched) return
+  l.__genBoundPatched = true
+  const orig = l.getNodeGeneralizationRenderBoundaries.bind(l)
+  l.getNodeGeneralizationRenderBoundaries = (item, dir) => {
+    const full = orig(item, dir)
+    const nodes = (item.range ? item.node.children.slice(item.range[0], item.range[1] + 1) : [item.node]).filter(Boolean)
+    if (!nodes.length) return full
+    let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity
+    for (const c of nodes) {
+      left = Math.min(left, c.left)
+      right = Math.max(right, c.left + c.width)
+      top = Math.min(top, c.top)
+      bottom = Math.max(bottom, c.top + c.height)
+    }
+    if (dir === 'h') return { ...full, top, bottom }
+    return { ...full, left, right }
+  }
 }
 
 // 分支样式：曲线 curve / 直线 straight / 直连 direct（部分布局不支持时库自行降级）
