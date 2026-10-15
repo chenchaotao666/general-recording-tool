@@ -7,13 +7,14 @@
           v-model="keyword" placeholder="搜索画板" clearable :prefix-icon="Search"
           @input="onSearchInput" @clear="searchResults = null"
         />
-        <!-- 新建时选引擎；建好后引擎固定（数据格式不同不能互转） -->
-        <el-dropdown trigger="click" @command="(eng) => createPage(null, eng)">
+        <!-- 新建时选引擎；建好后引擎固定（数据格式不同不能互转）。文件夹仅作目录分组，无引擎 -->
+        <el-dropdown trigger="click" @command="(eng) => eng === '__folder' ? createFolder() : createPage(null, eng)">
           <el-button type="primary" :icon="Plus">新建</el-button>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="excalidraw">Excalidraw（手绘风）</el-dropdown-item>
               <el-dropdown-item command="drawio">drawio（图形库全）</el-dropdown-item>
+              <el-dropdown-item command="__folder" divided>📂 新建文件夹</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -24,7 +25,7 @@
             v-for="n in displayTree" :key="n.id"
             class="tree-item" :class="{ active: current?.id === n.id }"
             :style="{ paddingLeft: 6 + n.level * 16 + 'px' }"
-            @click="open(n)"
+            @click="onItemClick(n)"
           >
             <span
               class="tree-chevron" :class="{ has: n.hasChildren, open: n.hasChildren && !collapsed.has(n.id) }"
@@ -32,14 +33,36 @@
             >
               <el-icon v-if="n.hasChildren"><ArrowRight /></el-icon>
             </span>
-            <el-icon class="tree-doc"><Brush /></el-icon>
-            <span class="tree-title">{{ n.title || '无标题画板' }}</span>
-            <el-tag v-if="n.engine === 'drawio'" size="small" type="warning" effect="plain" class="engine-tag">drawio</el-tag>
+            <el-icon class="tree-doc"><Folder v-if="n.kind === 'folder'" /><Brush v-else /></el-icon>
+            <span class="tree-title">{{ n.title || (n.kind === 'folder' ? '未命名文件夹' : '无标题画板') }}</span>
+            <el-tag v-if="n.kind !== 'folder' && n.engine === 'drawio'" size="small" type="warning" effect="plain" class="engine-tag">drawio</el-tag>
             <span class="tree-ops" @click.stop>
               <el-icon v-if="n.level < 2" title="新增子页" @click="createPage(n)"><Plus /></el-icon>
               <el-icon title="上移" @click="moveUp(n)"><ArrowUp /></el-icon>
               <el-icon title="置顶" @click="moveTop(n)"><Top /></el-icon>
-              <el-icon title="删除" @click="del(n)"><Delete /></el-icon>
+              <el-dropdown trigger="click" placement="bottom-end" @command="(cmd) => onMenu(cmd, n)">
+                <el-icon title="更多" class="tree-more"><MoreFilled /></el-icon>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="rename">重命名</el-dropdown-item>
+                    <el-dropdown-item class="move-host">
+                      <el-dropdown trigger="hover" placement="right-start" @command="(cmd) => onMovePick(cmd, n)">
+                        <span class="tree-move-label">移入文件夹<el-icon><ArrowRight /></el-icon></span>
+                        <template #dropdown>
+                          <el-dropdown-menu>
+                            <el-dropdown-item v-if="n.parent_id" command="__root">（移到根级）</el-dropdown-item>
+                            <el-dropdown-item v-for="f in moveTargets(n)" :key="f.id" :command="f.id">
+                              {{ f.title || '未命名文件夹' }}
+                            </el-dropdown-item>
+                            <el-dropdown-item command="__new" divided>＋ 新建文件夹</el-dropdown-item>
+                          </el-dropdown-menu>
+                        </template>
+                      </el-dropdown>
+                    </el-dropdown-item>
+                    <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </span>
           </div>
         </template>
@@ -98,7 +121,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowRight, ArrowUp, Brush, Delete, MagicStick, Plus, Search, Top } from '@element-plus/icons-vue'
+import { ArrowRight, ArrowUp, Brush, Folder, MagicStick, MoreFilled, Plus, Search, Top } from '@element-plus/icons-vue'
 import {
   createWhiteboard, deleteWhiteboard, generateBoardContent, getWhiteboard,
   searchWhiteboards, updateWhiteboard, whiteboardTree,
@@ -231,6 +254,93 @@ function toggleCollapse(n) {
   collapsed.value = s
 }
 
+// 文件夹（kind=folder）仅作目录分组：点击折叠/展开，不打开内容
+function onItemClick(n) {
+  if (n.kind === 'folder') {
+    toggleCollapse(n)
+    return
+  }
+  open(n)
+}
+
+// ---------- 文件夹（新建 / 重命名 / 移入，对齐智能表目录的 ⋯ 菜单） ----------
+
+const folders = computed(() => boards.value.filter((x) => x.kind === 'folder'))
+
+// n 的子孙 id 集合：移入文件夹时排除自身与子孙（前端预过滤，后端仍有防环兜底）
+function descendantIds(id) {
+  const out = new Set()
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const x of boards.value) {
+      if (x.parent_id && (x.parent_id === id || out.has(x.parent_id)) && !out.has(x.id)) {
+        out.add(x.id)
+        grew = true
+      }
+    }
+  }
+  return out
+}
+
+// 可选目标文件夹：排除自身、子孙与当前所在文件夹
+function moveTargets(n) {
+  const excl = descendantIds(n.id)
+  excl.add(n.id)
+  if (n.parent_id) excl.add(n.parent_id)
+  return folders.value.filter((f) => !excl.has(f.id))
+}
+
+function isCancel(e) {
+  return e === 'cancel' || e === 'close'
+}
+
+async function createFolder() {
+  try {
+    const { value } = await ElMessageBox.prompt('文件夹名称', '新建文件夹', { inputValue: '未命名文件夹' })
+    if (value == null) return
+    await createWhiteboard({ kind: 'folder', title: value.trim() || '未命名文件夹' })
+    await loadTree()
+  } catch (e) {
+    if (!isCancel(e)) ElMessage.error(e.message || e)
+  }
+}
+
+async function onMenu(cmd, n) {
+  if (cmd === 'rename') {
+    try {
+      const { value } = await ElMessageBox.prompt('名称', '重命名', { inputValue: n.title })
+      if (!value?.trim()) return
+      await updateWhiteboard(n.id, { title: value.trim() })
+      if (current.value?.id === n.id) current.value.title = value.trim()
+      await loadTree()
+    } catch (e) {
+      if (!isCancel(e)) ElMessage.error(e.message || e)
+    }
+  } else if (cmd === 'delete') {
+    del(n)
+  }
+}
+
+// 移入文件夹二级菜单：__root=移到根级，__new=新建文件夹并移入，其余=目标文件夹 id
+async function onMovePick(cmd, n) {
+  try {
+    if (cmd === '__root') {
+      await updateWhiteboard(n.id, { parent_id: null })
+    } else if (cmd === '__new') {
+      const { value } = await ElMessageBox.prompt('文件夹名称', '新建文件夹', { inputValue: '未命名文件夹' })
+      if (value == null) return
+      const folder = await createWhiteboard({ kind: 'folder', title: value.trim() || '未命名文件夹' })
+      await updateWhiteboard(n.id, { parent_id: folder.id })
+    } else {
+      await updateWhiteboard(n.id, { parent_id: cmd })
+    }
+    await loadTree()
+  } catch (e) {
+    if (!isCancel(e)) ElMessage.error(e.message || e)
+  }
+}
+
 // 扁平列表 → 带层级的树（平铺展示，用 level 缩进；收起的父页不显示其子树）
 const displayTree = computed(() => {
   if (searchResults.value !== null) return searchResults.value.map((n) => ({ ...n, level: 0, hasChildren: false }))
@@ -275,7 +385,7 @@ const onSearchInput = debounce(async () => {
     return
   }
   try {
-    searchResults.value = (await searchWhiteboards(kw)).whiteboards
+    searchResults.value = (await searchWhiteboards(kw)).whiteboards.filter((x) => x.kind !== 'folder')
   } catch (e) {
     ElMessage.error(e.message)
   }
@@ -314,6 +424,7 @@ async function flushSave() {
 }
 
 async function open(n) {
+  if (n.kind === 'folder') return   // 文件夹无内容，点击走 onItemClick 的折叠/展开
   if (current.value?.id === n.id) return
   clearTimeout(saveTimer)
   if (dirty && editorRef.value) {
@@ -471,7 +582,7 @@ onBeforeUnmount(async () => {
 .tree-item.active .tree-doc { color: #409eff; }
 .tree-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .engine-tag { flex-shrink: 0; transform: scale(.85); transform-origin: left center; margin-right: 2px; }
-.tree-ops { display: none; gap: 2px; flex-shrink: 0; color: #909399; }
+.tree-ops { display: none; gap: 2px; flex-shrink: 0; color: #909399; align-items: center; }
 .tree-item:hover .tree-ops { display: inline-flex; }
 .tree-ops .el-icon { padding: 3px; border-radius: 4px; font-size: 14px; }
 .tree-ops .el-icon:hover { background: #e4e7ed; color: #303133; }
@@ -498,4 +609,10 @@ onBeforeUnmount(async () => {
 .ai-hint { font-size: 12px; color: #909399; margin-top: 8px; }
 .ai-modes { margin-bottom: 10px; }
 .editor-wrap { flex: 1; min-height: 0; padding: 4px 16px 16px; }
+</style>
+
+<!-- ⋯ 菜单的弹出层被 el-dropdown 传送到 body，scoped 样式够不到，这里用全局类（与 Notes.vue 保持一致） -->
+<style>
+.tree-move-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; }
+.tree-move-label .el-icon { font-size: 12px; color: #909399; }
 </style>

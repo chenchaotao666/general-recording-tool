@@ -149,6 +149,7 @@ def _preview(content_html: str, limit: int = 60) -> str:
 class NoteIn(BaseModel):
     title: str | None = None
     content: str | None = None     # 富文本 HTML
+    kind: str | None = None        # 仅创建时有效：page（默认）/ folder（目录分组，无内容）
     pinned: bool | None = None
     parent_id: int | None = None
     sort: int | None = None
@@ -175,6 +176,7 @@ def _depth(db: Session, note: Note, user: User) -> int:
 def _out(n: Note, with_content: bool = False) -> dict:
     d = {
         "id": n.id, "parent_id": n.parent_id, "title": n.title or "",
+        "kind": n.kind or "page",
         "pinned": n.pinned, "sort": n.sort or 0,
         "preview": _preview(n.content_html),
         "created_at": n.created_at.isoformat(sep=" ", timespec="seconds") if n.created_at else None,
@@ -215,6 +217,7 @@ def search_notes(keyword: str = Query("", max_length=100), db: Session = Depends
 
 @router.post("")
 def create_note(payload: NoteIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    kind = "folder" if payload.kind == "folder" else "page"
     parent = None
     if payload.parent_id:
         parent = _get_own(db, payload.parent_id, user)
@@ -223,7 +226,8 @@ def create_note(payload: NoteIn, db: Session = Depends(get_db), user: User = Dep
     n = Note(
         user_id=user.id,
         parent_id=parent.id if parent else None,
-        title=(payload.title or "")[:200],
+        kind=kind,
+        title=(payload.title or ("未命名文件夹" if kind == "folder" else ""))[:200],
         content_html="",
         sort=0,
     )
@@ -277,6 +281,8 @@ def delete_note(note_id: int, db: Session = Depends(get_db), user: User = Depend
     n = _get_own(db, note_id, user)
     has_child = db.query(Note).filter(Note.parent_id == n.id, Note.user_id == user.id).first()
     if has_child:
+        if n.kind == "folder":
+            raise HTTPException(400, "文件夹非空，请先移出或删除其中的内容")
         raise HTTPException(400, "请先删除或移走该页面的子页面")
     from ..services import images
     images.delete_note_images(db, n.id)   # 级联删除笔记插图

@@ -26,6 +26,7 @@ class WhiteboardIn(BaseModel):
     title: str | None = None
     content: str | None = None      # 画布序列化 JSON 字符串
     engine: str | None = None       # 仅创建时有效
+    kind: str | None = None         # 仅创建时有效：page（默认）/ folder（目录分组，无内容）
     pinned: bool | None = None
     parent_id: int | None = None
     sort: int | None = None
@@ -63,6 +64,7 @@ def _depth(db: Session, wb: Whiteboard, user: User) -> int:
 def _out(w: Whiteboard, with_content: bool = False) -> dict:
     d = {
         "id": w.id, "parent_id": w.parent_id, "title": w.title or "",
+        "kind": w.kind or "page",
         "engine": w.engine or "excalidraw",
         "pinned": w.pinned, "sort": w.sort or 0,
         "content_size": len(w.content_json or ""),
@@ -103,8 +105,9 @@ def search_whiteboards(keyword: str = Query("", max_length=100), db: Session = D
 
 @router.post("")
 def create_whiteboard(payload: WhiteboardIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    kind = "folder" if payload.kind == "folder" else "page"
     engine = (payload.engine or "excalidraw").lower()
-    if engine not in ENGINES:
+    if kind == "page" and engine not in ENGINES:
         raise HTTPException(400, f"不支持的画板引擎：{engine}")
     parent = None
     if payload.parent_id:
@@ -114,7 +117,8 @@ def create_whiteboard(payload: WhiteboardIn, db: Session = Depends(get_db), user
     w = Whiteboard(
         user_id=user.id,
         parent_id=parent.id if parent else None,
-        title=(payload.title or "")[:200],
+        kind=kind,
+        title=(payload.title or ("未命名文件夹" if kind == "folder" else ""))[:200],
         engine=engine,
         content_json="",
         sort=0,
@@ -188,6 +192,8 @@ def delete_whiteboard(wb_id: int, db: Session = Depends(get_db), user: User = De
     w = _get_own(db, wb_id, user)
     has_child = db.query(Whiteboard).filter(Whiteboard.parent_id == w.id, Whiteboard.user_id == user.id).first()
     if has_child:
+        if w.kind == "folder":
+            raise HTTPException(400, "文件夹非空，请先移出或删除其中的内容")
         raise HTTPException(400, "请先删除或移走该画板的子页面")
     db.delete(w)
     db.commit()

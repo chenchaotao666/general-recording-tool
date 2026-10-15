@@ -57,6 +57,9 @@ _NEW_COLUMNS = [
     # 智能表 V2：树形子记录 + 最后编辑人
     ("records", "parent_id", "BIGINT"),
     ("records", "updated_by", "INTEGER"),
+    # 记事本/画板：文件夹节点（kind=folder 仅作目录分组，无内容）
+    ("notes", "kind", "VARCHAR(16) DEFAULT 'page'"),
+    ("whiteboards", "kind", "VARCHAR(16) DEFAULT 'page'"),
 ]
 
 

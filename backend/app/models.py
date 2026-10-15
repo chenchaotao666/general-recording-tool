@@ -528,6 +528,7 @@ class Note(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（仅本人可见，admin 也不例外）
     parent_id = Column(Integer, ForeignKey("notes.id"), nullable=True, index=True)  # 父页面，可空=顶级
+    kind = Column(String(16), default="page")    # page / folder（文件夹仅作目录分组，无内容）
     title = Column(String(200), default="")
     content_html = Column(Text, default="")    # 富文本 HTML（服务端白名单清洗后存储）
     pinned = Column(Boolean, default=False)
@@ -544,6 +545,7 @@ class Whiteboard(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（仅本人可见，admin 也不例外）
     parent_id = Column(Integer, ForeignKey("whiteboards.id"), nullable=True, index=True)  # 父页面，可空=顶级
+    kind = Column(String(16), default="page")    # page / folder（文件夹仅作目录分组，无内容）
     title = Column(String(200), default="")
     engine = Column(String(16), default="excalidraw")   # excalidraw / tldraw，创建时选定后不改
     content_json = Column(Text, default="")             # 画布序列化 JSON（服务端只校验长度与 JSON 合法性）
