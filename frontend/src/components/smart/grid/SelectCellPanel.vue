@@ -15,7 +15,7 @@
     <!-- 未匹配到选项的原始值兜底（改类型/引用源被删场景） -->
     <span v-for="(v, i) in unmatchedValues" :key="`raw-${i}`" class="opt-tag raw"><span class="opt-label">{{ v }}</span></span>
     <!-- 下拉按钮：单个三角，点击切换展开/收起（方向随状态翻转） -->
-    <span class="chev" title="展开/收起选项" @click.stop="onChevClick">{{ closed ? '▼' : '▲' }}</span>
+    <span class="chev" title="展开/收起选项" @click.stop="onChevClick"><StIcon :name="closed ? 'caret-down' : 'caret-up'" :size="10" /></span>
   </span>
   <teleport to="body">
     <div v-if="rect && !closed" ref="panelRef" class="sel-panel" :style="panelStyle" @mousedown.stop>
@@ -37,6 +37,7 @@
 
 <script setup>
 import { computed, inject, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import StIcon from '../icons/StIcon.vue'
 import { optionColor } from '../../../smart/registry/fieldRegistry.js'
 import { filterLinkageOptions } from '../../../smart/utils/refOptions.js'
 
@@ -211,7 +212,7 @@ onUnmounted(() => {
    高度 +16px 补回上下 padding，使边框盒与单元格外沿严格对齐；编辑态 padding 已归零，无需补偿 */
 .sel-anchor.closed { margin: -6px 0 0 -8px; width: calc(100% + 16px); min-height: calc(100% + 16px); }
 .sel-anchor .chev { position: absolute; top: 5px; right: 5px; margin-left: 0; }
-.opt-tag { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 6px; font-size: 12px; white-space: nowrap; max-width: 100%; box-sizing: border-box; }
+.opt-tag { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; max-width: 100%; box-sizing: border-box; }
 /* 单个标签超宽时省略号截断，✕ 始终保留 */
 .opt-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .opt-tag.raw { background: var(--el-fill-color); color: var(--el-text-color-secondary); }

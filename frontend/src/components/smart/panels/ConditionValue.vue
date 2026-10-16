@@ -13,7 +13,7 @@
       </template>
       <span v-else class="ev-ph">请选择</span>
     </div>
-    <span class="ev-caret">{{ open ? '▴' : '▾' }}</span>
+    <span class="ev-caret"><StIcon :name="open ? 'caret-up' : 'caret-down'" :size="10" /></span>
 
     <!-- 浮动选项面板 -->
     <div v-if="open" class="ev-pop" @click.stop @mousedown.stop>
@@ -44,6 +44,7 @@
 
 <script setup>
 import { computed, inject, ref, watch } from 'vue'
+import StIcon from '../icons/StIcon.vue'
 import { optionColor } from '../../../smart/registry/fieldRegistry.js'
 
 const props = defineProps({ field: Object, operator: String, value: [String, Number, Array] })

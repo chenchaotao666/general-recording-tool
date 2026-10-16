@@ -3,38 +3,43 @@
     <!-- 视图页签 -->
     <ViewTabs :views="views" :current-id="view?.id" @switch="switchView" @action="onViewAction" />
 
-    <!-- 工具栏（设计文档 §2.1 L3：徽章=生效规则数） -->
+    <!-- 工具栏（对齐参照 上方Tab页签.png：添加一行=蓝字圆⊕；条件按钮生效时浅蓝胶囊+计数） -->
     <div class="toolbar">
-      <el-button size="small" :disabled="!perms.can_create" @click="addRow">＋ 添加一行</el-button>
-      <el-divider direction="vertical" />
-      <el-button size="small" text @click="settingsVisible = true">▦ 表格设置</el-button>
+      <button class="tb-btn tb-add" :disabled="!perms.can_create" @click="addRow">
+        <StIcon name="plus-circle" :size="15" />添加一行
+      </button>
+      <span class="tb-sep" />
+      <button class="tb-btn" @click="settingsVisible = true"><StIcon name="table" :size="15" />表格设置</button>
 
       <FilterPanel :visible="activePanel === 'filter'" @update:visible="(v) => (activePanel = v ? 'filter' : (activePanel === 'filter' ? null : activePanel))" :fields="resolvedFields"
                    :conditions="panelConditions" :conjunction="cfg.filters?.conjunction || 'and'" :scope="filterScope"
                    @change="onFiltersChange" @scope-change="onScopeChange">
-        <el-button size="small" text :type="filterCount ? 'primary' : ''"
-                   >⧩ 筛选{{ filterCount ? ` ${filterCount}` : '' }}</el-button>
+        <button class="tb-btn" :class="{ on: filterCount }">
+          <StIcon name="filter" :size="15" />筛选{{ filterCount ? ` ${filterCount}` : '' }}
+        </button>
       </FilterPanel>
 
       <GroupPanel :visible="activePanel === 'group'" @update:visible="(v) => (activePanel = v ? 'group' : (activePanel === 'group' ? null : activePanel))" :fields="fields" :groups="cfg.groups || []"
                   @change="(v) => patchConfig({ groups: v })">
-        <el-button size="small" text :type="(cfg.groups || []).length ? 'primary' : ''"
-                   >≡ 分组{{ (cfg.groups || []).length ? ` ${cfg.groups.length}` : '' }}</el-button>
+        <button class="tb-btn" :class="{ on: (cfg.groups || []).length }">
+          <StIcon name="group" :size="15" />分组{{ (cfg.groups || []).length ? ` ${cfg.groups.length}` : '' }}
+        </button>
       </GroupPanel>
 
       <SortPanel :visible="activePanel === 'sort'" @update:visible="(v) => (activePanel = v ? 'sort' : (activePanel === 'sort' ? null : activePanel))" :fields="fields" :sorts="cfg.sorts || []"
                  :auto-sort="cfg.autoSort !== false"
                  @change="(v) => patchConfig({ sorts: v })" @auto-sort="(v) => patchConfig({ autoSort: v })">
-        <el-button size="small" text :type="(cfg.sorts || []).length ? 'primary' : ''"
-                   >⇅ 排序{{ (cfg.sorts || []).length ? ` ${cfg.sorts.length}` : '' }}</el-button>
+        <button class="tb-btn" :class="{ on: (cfg.sorts || []).length }">
+          <StIcon name="sort" :size="15" />排序{{ (cfg.sorts || []).length ? ` ${cfg.sorts.length}` : '' }}
+        </button>
       </SortPanel>
 
       <el-dropdown trigger="click" @command="(v) => patchConfig({ rowHeight: v })">
-        <el-button size="small" text @click.stop>⇕ 行高</el-button>
+        <button class="tb-btn" @click.stop><StIcon name="row-height" :size="15" />行高</button>
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item v-for="(l, k) in ROW_HEIGHTS" :key="k" :command="k">
-              <span :style="{ color: cfg.rowHeight === k || (!cfg.rowHeight && k === 'default') ? 'var(--el-color-primary)' : '' }">
+              <span :style="{ color: cfg.rowHeight === k || (!cfg.rowHeight && k === 'default') ? 'var(--st-primary)' : '' }">
                 {{ cfg.rowHeight === k || (!cfg.rowHeight && k === 'default') ? '✓ ' : '' }}{{ l }}
               </span>
             </el-dropdown-item>
@@ -44,27 +49,24 @@
 
       <FillPanel :visible="activePanel === 'fill'" @update:visible="(v) => (activePanel = v ? 'fill' : (activePanel === 'fill' ? null : activePanel))" :fields="resolvedFields" :rules="cfg.fillRules || []"
                  @change="(v) => patchConfig({ fillRules: v })">
-        <el-button size="small" text :type="fillCount ? 'primary' : ''"
-                   >🖌 填色{{ fillCount ? ` ${fillCount}` : '' }}</el-button>
+        <button class="tb-btn" :class="{ on: fillCount }">
+          <StIcon name="fill" :size="15" />填色{{ fillCount ? ` ${fillCount}` : '' }}
+        </button>
       </FillPanel>
 
       <div class="tb-right">
-        <!-- 条件胶囊（pin 的筛选条件） -->
-        <el-popover v-for="c in pinnedConditions" :key="c.id" trigger="click" placement="bottom-start" :width="320">
+        <!-- 条件胶囊（pin 的筛选条件）：点击弹单字段筛选浮层（运算符+勾选清单，与列头「筛选」同款） -->
+        <el-popover v-for="c in pinnedConditions" :key="c.id" trigger="click" placement="bottom-start" :width="300" popper-class="st-pop">
           <template #reference>
-            <span class="chip">✓ {{ labelOf(c.fieldId) }} ▾</span>
+            <span class="chip"><StIcon name="filter" :size="12" />{{ labelOf(c.fieldId) }}<StIcon name="chevron-down" :size="12" /></span>
           </template>
-          <div class="chip-edit">
-            <el-select :model-value="c.operator" size="small" style="width: 100px"
-                       @change="(v) => updateChip(c, { operator: v })">
-              <el-option v-for="op in opsOf(c)" :key="op" :value="op" :label="OP_LABELS[op]" />
-            </el-select>
-            <el-button link type="danger" size="small" @click="removeChip(c)">删除</el-button>
-          </div>
+          <FieldFilterPop v-if="fieldOfName(c.fieldId)" :field="fieldOfName(c.fieldId)" :condition="c"
+                          :scope-text="filterScope === 'personal' ? '调整仅你可见' : '对所有人生效'"
+                          @change="(cond) => applyFieldCondition(c.fieldId, cond)" />
         </el-popover>
-        <el-button size="small" text circle title="撤销" :disabled="!undoStack.canUndo" @click="doUndo">↶</el-button>
-        <el-button size="small" text circle title="重做" :disabled="!undoStack.canRedo" @click="doRedo">↷</el-button>
-        <el-button size="small" text circle title="查找替换" @click="findVisible = true">🔍</el-button>
+        <button class="tb-ico" title="撤销" :disabled="!undoStack.canUndo" @click="doUndo"><StIcon name="undo" :size="16" /></button>
+        <button class="tb-ico" title="重做" :disabled="!undoStack.canRedo" @click="doRedo"><StIcon name="redo" :size="16" /></button>
+        <button class="tb-ico" title="查找替换" @click="findVisible = true"><StIcon name="search" :size="16" /></button>
       </div>
     </div>
 
@@ -84,8 +86,8 @@
       :height="gridHeight" :readonly="!perms.can_edit"
       @cell-commit="onCellCommit" @add-row="addRow" @cell-menu="onCellMenu" @field-menu="onFieldMenu"
       @toggle-group="toggleGroup" @selection-change="(s) => (selection = s)" @open-config="openFieldConfig"
-      @add-field="openFieldConfig(null)" @add-option="onAddOption" @footer-menu="onFooterMenu"
-      @group-menu="onGroupMenu"
+      @add-field="onAddFieldAt" @add-option="onAddOption" @footer-menu="onFooterMenu"
+      @group-menu="onGroupMenu" @add-row-in-group="addRowInGroup"
     />
 
     <!-- 分页（未分组时） -->
@@ -97,11 +99,12 @@
     <!-- 面板与弹窗 -->
     <TableSettingsPanel :visible="settingsVisible" @update:visible="(v) => (settingsVisible = v)" :fields="fields" :view="view" :column-groups="columnGroups"
                         @close="settingsVisible = false" @toggle-visible="onToggleVisible" @reorder="onReorder"
-                        @field-action="onFieldAction" @add-field="openFieldConfig(null)" @set-field-group="setFieldGroup" />
-    <FieldConfigDialog :visible="fieldDialog.visible" :field="fieldDialog.field" :fields="fields"
+                        @field-action="onFieldAction" @add-field="onAddFieldAt" @set-field-group="setFieldGroup" />
+    <FieldConfigDialog :visible="fieldDialog.visible" :field="fieldDialog.field" :preset="fieldDialog.preset" :fields="fields"
                        :tables="allTables" :source-fields-of="loadFieldsOf"
                        @close="fieldDialog.visible = false" @save="onFieldSave" />
     <RecordDetailDrawer :visible="detail.visible" @update:visible="(v) => (detail.visible = v)" :record="detail.record" :fields="resolvedFields"
+                        :column-groups="columnGroups"
                         :has-prev="detailIdx > 0" :has-next="detailIdx < dataRows.length - 1"
                         @close="detail.visible = false" @nav="navDetail" @cell-commit="onCellCommit" />
     <FindReplaceDialog :visible="findVisible" :table-id="tableId"
@@ -127,32 +130,62 @@
       <div v-if="fieldMenu.visible" class="fm-mask" @click="fieldMenu.visible = false"
            @contextmenu.prevent="fieldMenu.visible = false">
         <div class="fm" :style="{ left: `${fieldMenu.x}px`, top: `${fieldMenu.y}px` }" @click.stop>
-          <div class="mi" @click="fieldAct('edit')">✏ 修改字段</div>
-          <div class="mi" @click="fieldAct('filterBy')">⧩ 筛选</div>
-          <div class="mi" @click="fieldAct('sortAsc')">↑ {{ dirLabels[0] }}</div>
-          <div class="mi" @click="fieldAct('sortDesc')">↓ {{ dirLabels[1] }}</div>
-          <div class="mi" @click="fieldAct('freeze')">❄ 冻结至此列</div>
-          <div class="mi" @click="fieldAct('hide')">🚫 隐藏</div>
+          <div class="mi" @click="fieldAct('edit')"><StIcon name="pencil" :size="15" />修改字段</div>
+          <div class="mi has-sub">
+            <StIcon name="move-into" :size="15" />插入字段 <span class="sub-caret"><StIcon name="chevron-right" :size="12" /></span>
+            <div class="fm-sub">
+              <div class="mi" @click="fieldAct('insertLeft')">← 向左插入</div>
+              <div class="mi" @click="fieldAct('insertRight')">→ 向右插入</div>
+            </div>
+          </div>
+          <div class="fm-divider" />
+          <div class="mi" @click="fieldAct('filterBy')"><StIcon name="filter" :size="15" />筛选</div>
+          <div class="mi" @click="fieldAct('toggleGroupBy')"><StIcon name="group" :size="15" />{{ isMenuFieldGrouped ? '取消分组' : '分组' }}</div>
+          <div class="mi has-sub">
+            <StIcon name="sort" :size="15" />排序
+            <span class="mi-tail">{{ menuSortInline }}<span class="sub-caret"><StIcon name="chevron-right" :size="12" /></span></span>
+            <div class="fm-sub">
+              <div class="mi" @click="fieldAct('sortAsc')"><span class="sub-check">{{ menuSortDir === 'asc' ? '✓' : '' }}</span>{{ dirLabels[0] }}</div>
+              <div class="mi" @click="fieldAct('sortDesc')"><span class="sub-check">{{ menuSortDir === 'desc' ? '✓' : '' }}</span>{{ dirLabels[1] }}</div>
+            </div>
+          </div>
           <!-- 整列填色 ▸（设计稿 PixPin_2026-10-16_00-14-52）：创建整列规则并打开填色面板选色 -->
           <div class="mi has-sub">
-            🖌 整列填色 <span class="sub-caret">▸</span>
+            <StIcon name="fill" :size="15" />整列填色 <span class="sub-caret"><StIcon name="chevron-right" :size="12" /></span>
             <div class="fm-sub">
               <div class="mi" @click="columnFill('all')">为所有内容填色</div>
               <div class="mi" @click="columnFill('header')">为字段名称填色</div>
             </div>
           </div>
-          <div class="mi" @click="openGroupDialog(fieldMenu.field)">▦ 新建编组</div>
+          <div class="fm-divider" />
+          <div class="mi" @click="openGroupDialog(fieldMenu.field)"><StIcon name="colgroup" :size="15" />新建编组</div>
           <!-- 移入编组 ▸（设计文档 §6.1：存在编组时出现；已在组内的项点击为移出） -->
           <div v-if="columnGroups.length" class="mi has-sub">
-            ⇥ 移入编组 <span class="sub-caret">▸</span>
+            <StIcon name="move-into" :size="15" />移入编组 <span class="sub-caret"><StIcon name="chevron-right" :size="12" /></span>
             <div class="fm-sub">
               <div v-for="g in columnGroups" :key="g.id" class="mi" @click="moveToGroup(g)">
                 <span class="sub-check">{{ g.field_names?.includes(fieldMenu.field?.field_name) ? '✓' : '' }}</span>{{ g.name }}
               </div>
             </div>
           </div>
-          <div class="mi" @click="fieldAct('duplicate')">⧉ 创建副本</div>
-          <div class="mi danger" @click="fieldAct('delete')">🗑 删除</div>
+          <!-- 底部图标快捷栏（对齐参照 表头-工具栏.png：副本/列宽/冻结/隐藏/删除，黑底 tooltip） -->
+          <div class="fm-bar">
+            <el-tooltip content="创建副本" placement="top" :show-after="150">
+              <span class="fb-item" @click="fieldAct('duplicate')"><StIcon name="copy" :size="16" /></span>
+            </el-tooltip>
+            <el-tooltip content="自动调整列宽" placement="top" :show-after="150">
+              <span class="fb-item" @click="fieldAct('autoFit')"><StIcon name="autofit" :size="16" /></span>
+            </el-tooltip>
+            <el-tooltip content="冻结至此列" placement="top" :show-after="150">
+              <span class="fb-item" @click="fieldAct('freeze')"><StIcon name="freeze" :size="16" /></span>
+            </el-tooltip>
+            <el-tooltip content="隐藏" placement="top" :show-after="150">
+              <span class="fb-item" @click="fieldAct('hide')"><StIcon name="eye-off" :size="16" /></span>
+            </el-tooltip>
+            <el-tooltip content="删除" placement="top" :show-after="150">
+              <span class="fb-item" @click="fieldAct('delete')"><StIcon name="trash" :size="16" /></span>
+            </el-tooltip>
+          </div>
         </div>
       </div>
     </teleport>
@@ -162,19 +195,19 @@
       <div v-if="groupMenu.visible" class="fm-mask" @click="groupMenu.visible = false"
            @contextmenu.prevent="groupMenu.visible = false">
         <div class="fm" :style="{ left: `${groupMenu.x}px`, top: `${groupMenu.y}px` }" @click.stop>
-          <div class="mi" @click="groupAct('edit')">✏ 修改编组</div>
+          <div class="mi" @click="groupAct('edit')"><StIcon name="pencil" :size="15" />修改编组</div>
           <div class="mi has-sub">
-            ⇥ 插入字段 <span class="sub-caret">▸</span>
+            <StIcon name="move-into" :size="15" />插入字段 <span class="sub-caret"><StIcon name="chevron-right" :size="12" /></span>
             <div class="fm-sub">
               <div class="mi" @click="groupAct('insertRight')">→ 向右插入</div>
               <div class="mi" @click="groupAct('insertLeft')">← 向左插入</div>
               <div class="mi" @click="groupAct('insertInside')">在编组内插入</div>
             </div>
           </div>
-          <div class="mi" @click="groupAct('duplicate')">⧉ 创建副本</div>
-          <div class="mi" @click="groupAct('freeze')">❄ 冻结至此编组</div>
-          <div class="mi" @click="groupAct('autoFit')">⤢ 自动调整列宽</div>
-          <div class="mi" @click="groupAct('hide')">🚫 隐藏</div>
+          <div class="mi" @click="groupAct('duplicate')"><StIcon name="copy" :size="15" />创建副本</div>
+          <div class="mi" @click="groupAct('freeze')"><StIcon name="freeze" :size="15" />冻结至此编组</div>
+          <div class="mi" @click="groupAct('autoFit')"><StIcon name="autofit" :size="15" />自动调整列宽</div>
+          <div class="mi" @click="groupAct('hide')"><StIcon name="eye-off" :size="15" />隐藏</div>
           <div class="mi danger" @click="groupAct('dissolve')">解散编组</div>
         </div>
       </div>
@@ -194,7 +227,26 @@
             <span class="sm-check" /><span class="sm-label">不展示</span>
           </div>
           <div class="fm-divider" />
-          <div class="mi" @click="copyStats">⧉ 复制数据统计</div>
+          <div class="mi" @click="copyStats"><StIcon name="copy" :size="15" />复制数据统计</div>
+        </div>
+      </div>
+    </teleport>
+    <!-- 添加列类型网格浮层（表格末尾「+」/设置面板「新增字段」统一入口） -->
+    <teleport to="body">
+      <AddFieldPop v-if="addFieldPop.visible" :x="addFieldPop.x" :y="addFieldPop.y"
+                   @pick="(p) => onTypePick(p, false)" @pick-again="(p) => onTypePick(p, true)"
+                   @close="addFieldPop.visible = false" />
+    </teleport>
+
+    <!-- 列头「筛选」：贴列头的单字段筛选浮层 -->
+    <teleport to="body">
+      <div v-if="fieldFilter.visible" class="fm-mask" @click="fieldFilter.visible = false"
+           @contextmenu.prevent="fieldFilter.visible = false">
+        <div class="fm ffp-wrap" :style="{ left: `${fieldFilter.x}px`, top: `${fieldFilter.y}px` }" @click.stop>
+          <FieldFilterPop v-if="fieldFilter.field" :field="fieldFilter.field"
+                          :condition="panelConditions.find(c => c.fieldId === fieldFilter.field?.field_name) || null"
+                          :scope-text="filterScope === 'personal' ? '调整仅你可见' : '对所有人生效'"
+                          @change="(cond) => applyFieldCondition(fieldFilter.field.field_name, cond)" />
         </div>
       </div>
     </teleport>
@@ -206,6 +258,7 @@ import { computed, onMounted, onUnmounted, provide, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import SmartGrid from '../../components/smart/grid/SmartGrid.vue'
+import StIcon from '../../components/smart/icons/StIcon.vue'
 import ViewTabs from '../../components/smart/ViewTabs.vue'
 import FilterPanel from '../../components/smart/panels/FilterPanel.vue'
 import SortPanel from '../../components/smart/panels/SortPanel.vue'
@@ -213,6 +266,8 @@ import GroupPanel from '../../components/smart/panels/GroupPanel.vue'
 import FillPanel from '../../components/smart/panels/FillPanel.vue'
 import TableSettingsPanel from '../../components/smart/panels/TableSettingsPanel.vue'
 import FieldConfigDialog from '../../components/smart/panels/FieldConfigDialog.vue'
+import FieldFilterPop from '../../components/smart/panels/FieldFilterPop.vue'
+import AddFieldPop from '../../components/smart/panels/AddFieldPop.vue'
 import RecordDetailDrawer from '../../components/smart/panels/RecordDetailDrawer.vue'
 import FindReplaceDialog from '../../components/smart/panels/FindReplaceDialog.vue'
 import { FIELD_REGISTRY, filterOpsOf, OP_LABELS, OPTION_COLORS, sortDirectionLabels,
@@ -458,6 +513,16 @@ async function onScopeChange(scope) {
 }
 function labelOf(fn) { return fields.value.find(f => f.field_name === fn)?.label || fn }
 function opsOf(c) { const f = fields.value.find(x => x.field_name === c.fieldId); return f ? filterOpsOf(f) : [] }
+function fieldOfName(fn) { return resolvedFields.value.find(f => f.field_name === fn) }
+// 单字段筛选浮层（pin 胶囊 / 列头「筛选」共用）：upsert 或移除该字段的条件，其余条件不动
+function applyFieldCondition(fieldName, cond) {
+  const conds = panelConditions.value.filter(c => c.fieldId !== fieldName)
+  if (cond) {
+    const existing = panelConditions.value.find(c => c.fieldId === fieldName)
+    conds.push({ ...cond, id: existing?.id || `c_${Date.now()}`, pinned: existing?.pinned || false })
+  }
+  onFiltersChange(conds, cfg.value.filters?.conjunction || 'and')
+}
 function updateChip(c, patch) {
   onFiltersChange(panelConditions.value.map(x => (x.id === c.id ? { ...x, ...patch } : x)), cfg.value.filters?.conjunction || 'and')
 }
@@ -529,15 +594,24 @@ async function onAddOption({ row, field, label }) {
   }
 }
 
-async function addRow() {
-  const r = await smartCreateRecord(tableId, { data: {} })
+async function addRow(preset = {}) {
+  const r = await smartCreateRecord(tableId, { data: preset })
   undoStack.push({
     label: '添加行',
     undo: async () => { await smartDeleteRecord(tableId, r.record.id); loadGrid(view.value?.id) },
-    redo: async () => { await smartCreateRecord(tableId, { data: {} }); loadGrid(view.value?.id) },
+    redo: async () => { await smartCreateRecord(tableId, { data: preset }); loadGrid(view.value?.id) },
   })
   ElMessage.success('已添加一行')
   loadGrid(view.value?.id)
+}
+
+// 组内「+」行：带上该组全部分组条件的预设值（多级分组逐层下发）
+function addRowInGroup(groupConds) {
+  const preset = {}
+  for (const gc of groupConds || []) {
+    if (gc.fieldId && gc.value != null && gc.value !== '') preset[gc.fieldId] = gc.value
+  }
+  addRow(preset)
 }
 
 async function batchDelete() {
@@ -609,12 +683,36 @@ function navDetail(step) {
 }
 
 // ---------- 字段操作 ----------
-const fieldDialog = reactive({ visible: false, field: null, insertCtx: null })
+const fieldDialog = reactive({ visible: false, field: null, insertCtx: null, preset: null, addAgain: false })
 const allTables = ref([])
 
 function openFieldConfig(f, insertCtx = null) {
   fieldDialog.field = f
   fieldDialog.insertCtx = insertCtx
+  fieldDialog.preset = null
+  fieldDialog.addAgain = false
+  fieldDialog.visible = true
+}
+
+// 添加列类型网格浮层（AddFieldPop）：表格末尾「+」/表格设置「新增字段」/列头「插入字段」之外的统一入口
+const addFieldPop = reactive({ visible: false, x: 0, y: 0 })
+const lastAddFieldPos = { x: 200, y: 100 }
+function openAddFieldPop(x, y) {
+  Object.assign(addFieldPop, { visible: true, x, y })
+  lastAddFieldPos.x = x; lastAddFieldPos.y = y
+}
+function onAddFieldAt(e) {
+  // 事件可能来自网格表头（MouseEvent）或设置面板（同样透传 MouseEvent）
+  const x = e?.clientX ?? window.innerWidth - 520
+  const y = e?.clientY ?? 120
+  openAddFieldPop(x, y)
+}
+function onTypePick({ field_type, label }, again = false) {
+  addFieldPop.visible = false
+  fieldDialog.field = null
+  fieldDialog.insertCtx = null
+  fieldDialog.preset = { field_type, label }
+  fieldDialog.addAgain = again
   fieldDialog.visible = true
 }
 
@@ -673,9 +771,11 @@ async function onFieldSave({ label, field_type, config }) {
     await alterTable(tableId, [{ op: 'add_field', field: payload }])
     fieldDialog.visible = false
     await reloadMeta()
-    // 编组菜单「插入字段」：创建后按插入上下文定位（左/右/组内）
-    if (fieldDialog.insertCtx?.group) await placeNewField(payload.field_name, fieldDialog.insertCtx)
+    // 插入上下文定位（编组菜单/列头菜单「插入字段」；AddFieldPop 无上下文保持末尾）
+    if (fieldDialog.insertCtx) await placeNewField(payload.field_name, fieldDialog.insertCtx)
     loadGrid(view.value?.id)
+    // AddFieldPop 的「Tab 再添加一列」：保存完成后重新打开类型网格
+    if (fieldDialog.addAgain) { fieldDialog.addAgain = false; openAddFieldPop(lastAddFieldPos.x, lastAddFieldPos.y) }
   }
 }
 
@@ -688,8 +788,22 @@ async function reloadMeta() {
 // 列头菜单
 const fieldMenu = reactive({ visible: false, x: 0, y: 0, field: null })
 const dirLabels = computed(() => sortDirectionLabels(fieldMenu.field))
+// 动态项：该列是否已是分组字段（分组/取消分组切换）；排序项内联显示当前方向
+const isMenuFieldGrouped = computed(() =>
+  !!fieldMenu.field && (cfg.value.groups || []).some(g => g.fieldId === fieldMenu.field.field_name))
+const menuSortDir = computed(() =>
+  (cfg.value.sorts || []).find(s => s.fieldId === fieldMenu.field?.field_name)?.direction || null)
+const menuSortInline = computed(() => menuSortDir.value ? dirLabels.value[menuSortDir.value === 'desc' ? 1 : 0] : '')
 function onFieldMenu(field, event) {
   Object.assign(fieldMenu, { visible: true, x: event.clientX, y: event.clientY, field })
+}
+
+// 列头「筛选」：贴列头的单字段筛选浮层（与 pin 胶囊共用 FieldFilterPop）
+const fieldFilter = reactive({ visible: false, x: 0, y: 0, field: null })
+function openFieldFilter(field, x, y) {
+  fieldMenu.visible = false
+  Object.assign(fieldFilter, { visible: true, field,
+    x: Math.min(x, window.innerWidth - 320), y: Math.min(y, window.innerHeight - 360) })
 }
 
 // 整列填色：为「所有内容 / 字段名称」创建整列规则（无运算符），并打开填色面板选色
@@ -710,17 +824,29 @@ function columnFill(target) {
 
 async function fieldAct(cmd) {
   const f = fieldMenu.field
-  fieldMenu.visible = false
-  if (cmd === 'edit') openFieldConfig(f)
-  else if (cmd === 'filterBy') { activePanel.value = 'filter' }
+  if (!f) return
+  if (cmd === 'edit') { fieldMenu.visible = false; openFieldConfig(f) }
+  else if (cmd === 'filterBy') openFieldFilter(f, fieldMenu.x, fieldMenu.y)
+  else if (cmd === 'insertLeft' || cmd === 'insertRight') {
+    fieldMenu.visible = false
+    openFieldConfig(null, { mode: cmd === 'insertLeft' ? 'left' : 'right', field: f })
+  }
+  else if (cmd === 'toggleGroupBy') {
+    fieldMenu.visible = false
+    const groups = (cfg.value.groups || []).filter(g => g.fieldId)
+    if (isMenuFieldGrouped.value) patchConfig({ groups: groups.filter(g => g.fieldId !== f.field_name) })
+    else patchConfig({ groups: [...groups, { fieldId: f.field_name, direction: 'asc' }] })
+  }
   else if (cmd === 'sortAsc' || cmd === 'sortDesc') {
+    fieldMenu.visible = false
     const sorts = (cfg.value.sorts || []).filter(s => s.fieldId !== f.field_name)
     sorts.push({ fieldId: f.field_name, direction: cmd === 'sortDesc' ? 'desc' : 'asc' })
     patchConfig({ sorts })
-  } else if (cmd === 'freeze') patchConfig({ frozenFieldId: f.field_name }, { reload: false })
-  else if (cmd === 'hide') patchConfig({ fieldVisibility: { ...(cfg.value.fieldVisibility || {}), [f.field_name]: false } }, { reload: false })
-  else if (cmd === 'duplicate') { await smartDuplicateField(tableId, f.field_name); reloadMeta(); loadGrid(view.value?.id) }
-  else if (cmd === 'delete') await deleteField(f)
+  } else if (cmd === 'freeze') { fieldMenu.visible = false; patchConfig({ frozenFieldId: f.field_name }, { reload: false }) }
+  else if (cmd === 'hide') { fieldMenu.visible = false; patchConfig({ fieldVisibility: { ...(cfg.value.fieldVisibility || {}), [f.field_name]: false } }, { reload: false }) }
+  else if (cmd === 'autoFit') { fieldMenu.visible = false; autoFitFields([f.field_name]) }
+  else if (cmd === 'duplicate') { fieldMenu.visible = false; await smartDuplicateField(tableId, f.field_name); reloadMeta(); loadGrid(view.value?.id) }
+  else if (cmd === 'delete') { fieldMenu.visible = false; await deleteField(f) }
 }
 
 // ---------- 统计行：按列设置统计方式 ----------
@@ -872,12 +998,21 @@ async function groupAct(cmd) {
   }
 }
 
-// 插入字段创建后的定位：left=首成员前 / right=末成员后 / inside=加入编组并排末位
+// 插入字段创建后的定位：ctx.group → left=首成员前 / right=末成员后 / inside=加入编组并排末位；
+// ctx.field（列头菜单「插入字段」）→ 该字段前/后
 async function placeNewField(newName, ctx) {
-  const g = ctx.group
-  const members = g.field_names || []
   const base = cfg.value.fieldOrder?.length ? [...cfg.value.fieldOrder] : fields.value.map(f => f.field_name)
   const order = base.filter(n => n !== newName)
+  if (!ctx.group) {
+    let idx = ctx.field ? order.indexOf(ctx.field.field_name) : -1
+    if (idx < 0) idx = order.length
+    else if (ctx.mode !== 'left') idx += 1
+    order.splice(idx, 0, newName)
+    patchConfig({ fieldOrder: order }, { reload: false })
+    return
+  }
+  const g = ctx.group
+  const members = g.field_names || []
   let anchor
   if (ctx.mode === 'inside') {
     await smartUpdateColumnGroup(g.id, { field_names: [...members, newName] })
@@ -912,12 +1047,12 @@ async function duplicateGroup(g) {
   loadGrid(view.value?.id)
 }
 
-// 自动调整列宽：按表头与内容文本宽度估算（canvas 测量，上限 400）
-function autoFitGroup(g) {
+// 自动调整列宽：按表头与内容文本宽度估算（canvas 测量，80–400px）；编组菜单与列头菜单共用
+function autoFitFields(names) {
   const ctx = document.createElement('canvas').getContext('2d')
   ctx.font = '13px "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif'
   const widths = { ...(cfg.value.colWidths || {}) }
-  for (const fn of g.field_names || []) {
+  for (const fn of names) {
     const f = fields.value.find(x => x.field_name === fn)
     if (!f) continue
     let w = ctx.measureText(f.label).width + 56   // 图标/排序标/▾/内边距
@@ -930,6 +1065,7 @@ function autoFitGroup(g) {
   }
   patchConfig({ colWidths: widths }, { reload: false })
 }
+function autoFitGroup(g) { autoFitFields(g.field_names || []) }
 
 async function loadFieldsOf(tid) {
   const meta = await getTable(tid)
@@ -958,33 +1094,73 @@ onUnmounted(() => {
 
 <style scoped>
 .st-page { display: flex; flex-direction: column; height: 100%; background: #fff; }
-.toolbar { display: flex; align-items: center; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--el-border-color-lighter); }
-.tb-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-.chip { background: var(--el-fill-color-light); border-radius: 12px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
-.chip:hover { background: var(--el-fill-color); }
+.toolbar { display: flex; align-items: center; gap: 2px; padding: 6px 12px; border-bottom: 1px solid var(--st-border); }
+/* 幽灵按钮（对齐参照）：图标+文字 13px，hover 浅灰；生效条件=浅蓝胶囊+计数 */
+.tb-btn {
+  display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px;
+  border: none; background: transparent; border-radius: 6px; cursor: pointer;
+  font-size: 13px; color: var(--st-text-1); white-space: nowrap;
+}
+.tb-btn .st-icon { color: var(--st-text-2); }
+.tb-btn:hover { background: var(--st-bg-hover); }
+.tb-btn:disabled { color: var(--st-disabled); cursor: not-allowed; background: transparent; }
+.tb-btn:disabled .st-icon { color: var(--st-disabled); }
+.tb-btn.on { background: var(--st-primary-weak); color: var(--st-primary); }
+.tb-btn.on .st-icon { color: var(--st-primary); }
+.tb-btn.tb-add { color: var(--st-primary); font-weight: 500; }
+.tb-btn.tb-add .st-icon { color: var(--st-primary); }
+.tb-sep { width: 1px; height: 16px; background: var(--st-border); margin: 0 6px; flex: none; }
+.tb-right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.tb-ico {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  border: none; background: transparent; border-radius: 6px; cursor: pointer; color: var(--st-text-2);
+}
+.tb-ico:hover { background: var(--st-bg-hover); color: var(--st-text-1); }
+.tb-ico:disabled { color: var(--st-disabled); cursor: not-allowed; background: transparent; }
+/* pin 的条件胶囊：浅灰底圆角块（类型图标+字段名+⌄） */
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; background: var(--st-bg-hover);
+  border-radius: 6px; padding: 4px 8px; font-size: 12px; color: var(--st-text-1); cursor: pointer;
+}
+.chip .st-icon { color: var(--st-text-3); }
+.chip:hover { background: var(--st-bg-active); }
 .chip-edit { display: flex; gap: 8px; align-items: center; }
-.batch-bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: var(--el-color-primary-light-9); font-size: 13px; }
+.batch-bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: var(--st-primary-weak); font-size: 13px; }
 .pager { padding: 8px; display: flex; justify-content: center; }
 .fm-mask { position: fixed; inset: 0; z-index: 3000; }
-.fm { position: fixed; background: #fff; border-radius: 8px; box-shadow: var(--el-box-shadow); padding: 4px; min-width: 170px; }
-.mi { padding: 6px 12px; font-size: 13px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
-.mi:hover { background: var(--el-fill-color-light); }
+.fm { position: fixed; background: #fff; border-radius: 8px; box-shadow: var(--st-shadow-pop); padding: 4px; min-width: 170px; }
+.mi {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13px;
+  border-radius: 4px; cursor: pointer; white-space: nowrap; color: var(--st-text-1);
+}
+.mi .st-icon { color: var(--st-text-2); }
+.mi:hover { background: var(--st-bg-hover); }
 .mi.danger { color: var(--el-color-danger); }
+.mi.danger .st-icon { color: var(--el-color-danger); }
 /* 列头菜单的移入编组子菜单：hover 右侧飞出 */
 .mi.has-sub { position: relative; display: flex; align-items: center; }
-.sub-caret { margin-left: auto; color: var(--el-text-color-placeholder); font-size: 11px; }
+.sub-caret { margin-left: auto; color: var(--st-text-3); display: inline-flex; }
 .fm-sub {
   display: none; position: absolute; left: calc(100% - 2px); top: -4px; z-index: 1;
-  background: #fff; border-radius: 8px; box-shadow: var(--el-box-shadow); padding: 4px; min-width: 140px;
+  background: #fff; border-radius: 8px; box-shadow: var(--st-shadow-pop); padding: 4px; min-width: 140px;
 }
 .mi.has-sub:hover .fm-sub { display: block; }
-.sub-check { display: inline-block; width: 16px; color: var(--el-color-primary); }
+.sub-check { display: inline-block; width: 16px; color: var(--st-primary); }
 .gd-form { display: flex; flex-direction: column; gap: 12px; }
 /* 统计行菜单：勾选位 + 方式名 + 右对齐值（对齐设计稿 PixPin_2026-10-15_16-56-53） */
 .stat-fm { min-width: 180px; }
 .stat-mi { display: flex; align-items: center; gap: 6px; }
-.sm-check { width: 14px; color: var(--el-color-primary); }
+.sm-check { width: 14px; color: var(--st-primary); }
 .sm-label { flex: 1; }
-.sm-val { color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
-.fm-divider { height: 1px; background: var(--el-border-color-lighter); margin: 4px 6px; }
+.sm-val { color: var(--st-text-2); font-variant-numeric: tabular-nums; }
+.fm-divider { height: 1px; background: var(--st-border); margin: 4px 6px; }
+/* 排序项行尾：当前方向内联灰字（参照 表头-工具栏.png「选项正序 ›」） */
+.mi-tail { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; color: var(--st-text-3); font-size: 12px; }
+.mi.has-sub .mi-tail .sub-caret { margin-left: 0; }
+/* 列头菜单底部图标快捷栏：5 图标等距，hover 浅灰块，tooltip 由 el-tooltip 提供 */
+.fm-bar { display: flex; align-items: center; justify-content: space-around; border-top: 1px solid var(--st-border); margin-top: 4px; padding: 6px 4px 2px; }
+.fb-item { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 28px; border-radius: 6px; cursor: pointer; color: var(--st-text-2); }
+.fb-item:hover { background: var(--st-bg-hover); color: var(--st-text-1); }
+/* 列头单字段筛选浮层容器 */
+.ffp-wrap { padding: 12px; min-width: 280px; }
 </style>

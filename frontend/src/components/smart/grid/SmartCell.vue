@@ -149,7 +149,7 @@ const unmatchedValues = computed(() => {
 const progressStyle = computed(() => {
   const range = cfg.value.range || { min: 0, max: 100 }
   const pct = Math.min(1, Math.max(0, ((Number(value.value) || 0) - range.min) / (range.max - range.min)))
-  return { width: `${pct * 100}%`, background: cfg.value.color || 'green' }
+  return { width: `${pct * 100}%`, background: cfg.value.color || '#52C41A' }
 })
 const progressText = computed(() => {
   if (value.value == null) return ''
@@ -194,20 +194,27 @@ const lookupText = computed(() => {
 .enum-box.has-more .opt-tag { max-width: calc(100% - 32px); }
 .enum-more { flex: none; color: var(--el-text-color-secondary); font-size: 12px; white-space: nowrap; }
 .enum-ghost { position: absolute; visibility: hidden; pointer-events: none; }
-.opt-tag { padding: 1px 8px; border-radius: 6px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; flex: none; }
+.opt-tag { padding: 1px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; flex: none; }
 .opt-tag.raw { background: var(--el-fill-color-light); color: var(--el-text-color-regular); border: 1px dashed var(--el-border-color); }
 .progress-wrap { display: flex; align-items: center; gap: 6px; width: 100%; }
-.progress-bar { flex: 1; height: 8px; background: var(--el-fill-color); border-radius: 4px; overflow: hidden; }
-.progress-fill { display: block; height: 100%; border-radius: 4px; }
+.progress-bar { flex: 1; height: 8px; background: var(--el-fill-color); border-radius: 4px; position: relative; }
+.progress-fill { display: block; height: 100%; border-radius: 4px; position: relative; }
+/* 白色圆形滑块手柄（对齐参照 单元格输入-进度.png：填充段右端的拖拽暗示） */
+.progress-fill::after {
+  content: ''; position: absolute; right: -1px; top: 50%; transform: translateY(-50%);
+  width: 10px; height: 10px; border-radius: 50%; background: #fff;
+  border: 1px solid rgba(0, 0, 0, .12); box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
+}
 .progress-num { font-size: 12px; color: var(--el-text-color-secondary); }
 .member-chip { display: inline-flex; align-items: center; gap: 4px; }
-.avatar { width: 18px; height: 18px; border-radius: 50%; background: var(--el-color-primary-light-5); color: #fff; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
+/* 方形圆角头像（对齐参照 单元格输入-人员.png） */
+.avatar { width: 20px; height: 20px; border-radius: 4px; background: var(--el-color-primary-light-5); color: #fff; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
 .link { color: var(--el-color-primary); text-decoration: none; }
 .imgs { display: flex; gap: 4px; }
 .thumb { width: 28px; height: 28px; border-radius: 4px; }
 .more { font-size: 12px; color: var(--el-text-color-secondary); }
 .file-chip, .rel-chip { background: var(--el-fill-color-light); border-radius: 4px; padding: 1px 6px; font-size: 12px; white-space: nowrap; }
 .checkbox { width: 18px; height: 18px; border: 1px solid var(--el-border-color); border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; color: #fff; }
-.checkbox.checked { background: var(--el-color-success); border-color: var(--el-color-success); }
+.checkbox.checked { background: var(--st-success); border-color: var(--st-success); }
 .cell-currency, .cell-number, .cell-percent, .cell-progress { justify-content: flex-end; }
 </style>

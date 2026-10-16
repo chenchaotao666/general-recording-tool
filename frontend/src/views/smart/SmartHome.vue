@@ -12,10 +12,11 @@
         @node-click="onNodeClick">
         <template #default="{ data }">
           <span class="tree-node">
-            <span class="t-icon">{{ data.type === 'folder' ? '📂' : data.type === 'dashboard' ? '⌚' : '⊞' }}</span>
+            <StIcon :name="data.type === 'folder' ? 'folder' : data.type === 'dashboard' ? 'dashboard' : 'view-grid'"
+                    :size="14" class="t-icon" />
             <span class="t-name">{{ data.name }}</span>
             <el-dropdown trigger="click" @command="(cmd) => onNodeAction(cmd, data)">
-              <span class="t-more" @click.stop>⋯</span>
+              <span class="t-more" @click.stop><StIcon name="more-h" :size="14" /></span>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="rename">重命名</el-dropdown-item>
@@ -30,10 +31,10 @@
 
       <div class="nav-new">
         <div class="new-title">新建</div>
-        <div class="new-item" @click="createEntry('sheet')">⊞ 工作表</div>
-        <div class="new-item" @click="createEntry('dashboard')">⌚ 仪表盘</div>
-        <div class="new-item" @click="createEntry('folder')">📂 文件夹</div>
-        <div class="new-item" @click="importVisible = true">⤓ 导入表格</div>
+        <div class="new-item" @click="createEntry('sheet')"><StIcon name="view-grid" :size="14" />工作表</div>
+        <div class="new-item" @click="createEntry('dashboard')"><StIcon name="dashboard" :size="14" />仪表盘</div>
+        <div class="new-item" @click="createEntry('folder')"><StIcon name="folder" :size="14" />文件夹</div>
+        <div class="new-item" @click="importVisible = true"><StIcon name="import" :size="14" />导入表格</div>
       </div>
     </div>
 
@@ -46,7 +47,7 @@
           <div class="quick">
             <el-card v-for="e in recentSheets" :key="e.id" shadow="hover" class="quick-card"
                      @click="openEntry(e)">
-              <span class="q-icon">⊞</span>
+              <span class="q-icon"><StIcon name="view-grid" :size="16" /></span>
               <span class="q-name">{{ e.name }}</span>
             </el-card>
           </div>
@@ -101,6 +102,7 @@ import {
   smartGetDoc, smartGetTree, smartCreateEntry, smartUpdateEntry, smartDeleteEntry,
   smartImportExcel, uploadExcel, excelPreview,
 } from '../../api/index.js'
+import StIcon from '../../components/smart/icons/StIcon.vue'
 
 const router = useRouter()
 const doc = ref(null)
@@ -222,23 +224,29 @@ onMounted(load)
 
 <style scoped>
 .smart-home { display: flex; height: 100%; background: #fff; }
-.nav { width: 240px; border-right: 1px solid var(--el-border-color-lighter); display: flex; flex-direction: column; padding: 12px; gap: 8px; overflow: auto; }
+.nav { width: 240px; border-right: 1px solid var(--st-border); display: flex; flex-direction: column; padding: 12px; gap: 8px; overflow: auto; }
 .nav-head { font-weight: 700; font-size: 15px; }
 .nav-search { margin-bottom: 4px; }
 .tree-node { display: flex; align-items: center; gap: 6px; width: 100%; }
+.t-icon { color: var(--st-text-2); flex: none; }
 .t-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.t-more { visibility: hidden; padding: 0 4px; }
+.t-more { visibility: hidden; padding: 0 4px; display: inline-flex; color: var(--st-text-3); }
 .tree-node:hover .t-more { visibility: visible; }
-.nav-new { border-top: 1px solid var(--el-border-color-lighter); padding-top: 8px; margin-top: auto; }
-.new-title { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 4px; }
-.new-item { padding: 6px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; }
-.new-item:hover { background: var(--el-fill-color-light); }
+/* 选中条目：薄荷绿底 + 深青字（对齐参照 左侧菜单.png） */
+.nav :deep(.el-tree-node__content) { border-radius: 6px; }
+.nav :deep(.el-tree-node.is-current > .el-tree-node__content) { background: var(--st-mint); color: var(--st-mint-text); }
+.nav :deep(.el-tree-node.is-current > .el-tree-node__content .t-icon) { color: var(--st-mint-text); }
+.nav-new { border-top: 1px solid var(--st-border); padding-top: 8px; margin-top: auto; }
+.new-title { font-size: 12px; color: var(--st-text-3); margin-bottom: 4px; }
+.new-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; color: var(--st-text-1); }
+.new-item .st-icon { color: var(--st-teal); }
+.new-item:hover { background: var(--st-bg-hover); }
 .main { flex: 1; padding: 40px; }
 .welcome h3 { margin: 0 0 8px; }
 .hint { color: #909399; font-size: 12px; }
 .quick { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
 .quick-card { width: 160px; cursor: pointer; }
-.q-icon { color: var(--el-color-primary); margin-right: 6px; }
+.q-icon { color: var(--st-primary); margin-right: 6px; display: inline-flex; }
 .imp { display: flex; flex-direction: column; gap: 10px; }
 .up { padding: 30px; color: var(--el-text-color-secondary); font-size: 13px; }
 </style>

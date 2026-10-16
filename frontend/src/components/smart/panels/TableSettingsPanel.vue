@@ -11,7 +11,7 @@
              draggable="true" @dragstart="dndStartGroup(row.group, $event)"
              @dragover="dndOver(row, $event)" @drop="dndDrop(row, $event)" @dragend="dndEnd"
              @click="toggleGroup(row.group.id)">
-          <span class="g-caret">{{ collapsed.has(row.group.id) ? '▸' : '▾' }}</span>
+          <span class="g-caret"><StIcon :name="collapsed.has(row.group.id) ? 'chevron-right' : 'chevron-down'" :size="13" /></span>
           <span class="g-name">{{ row.group.name }}</span>
           <span class="g-count">{{ row.fields.length }} 列</span>
         </div>
@@ -24,10 +24,10 @@
           <span class="f-name">{{ row.field.label }}</span>
           <span class="f-eye" :title="isHidden(row.field) ? '显示' : '隐藏'"
                 @click.stop="$emit('toggle-visible', row.field, isHidden(row.field))">
-            <el-icon :size="15"><Hide v-if="isHidden(row.field)" /><View v-else /></el-icon>
+            <StIcon :name="isHidden(row.field) ? 'eye-off' : 'eye'" :size="15" />
           </span>
           <el-dropdown trigger="click" @command="(cmd) => $emit('field-action', cmd, row.field)">
-            <span class="f-more" @click.stop>⋯</span>
+            <span class="f-more" @click.stop><StIcon name="more-h" :size="15" /></span>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="edit">修改字段</el-dropdown-item>
@@ -39,16 +39,16 @@
           </el-dropdown>
         </div>
       </template>
-      <div class="add-field" @click="$emit('add-field')">＋ 新增字段</div>
+      <div class="add-field" @click="(e) => $emit('add-field', e)">＋ 新增字段</div>
     </div>
   </el-drawer>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
-import { Hide, View } from '@element-plus/icons-vue'
 import DndHandle from '../../DndHandle.vue'
 import FieldTypeIcon from '../grid/FieldTypeIcon.vue'
+import StIcon from '../icons/StIcon.vue'
 
 const props = defineProps({
   visible: Boolean,

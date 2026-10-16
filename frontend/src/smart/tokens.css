@@ -1,0 +1,37 @@
+/* 智慧表格设计令牌（对齐 docs/智慧表格差距分析.md §0 参照值） */
+:root {
+  --st-primary: #2E6BE6;          /* 主色蓝：主按钮/聚焦框/选中勾/开关/添加一行 */
+  --st-primary-weak: #E8F1FF;     /* 激活胶囊底（筛选 1 / 排序 3） */
+  --st-primary-hover: #2459C4;
+  --st-cell-selected: #EAF2FE;    /* 单元格选中底 */
+  --st-ai: #7F3FF1;               /* AI 紫 */
+  --st-text-1: #1F2329;
+  --st-text-2: #646A73;
+  --st-text-3: #8F959E;
+  --st-text-4: #BBBFC4;
+  --st-disabled: #C4C6CC;
+  --st-bg-hover: #F2F3F5;
+  --st-bg-active: #F0F1F3;        /* 页签激活圆角块 */
+  --st-bg-canvas: #F7F8FA;        /* 分组头/画布/添加列格 */
+  --st-border: #E5E6EB;
+  --st-mint: #D6F4EE;             /* SmartHome 选中行薄荷绿 */
+  --st-mint-text: #0F7B6C;
+  --st-teal: #2BB3A3;             /* 新建区图标青绿 */
+  --st-success: #52C41A;          /* 复选框/进度默认绿 */
+  --st-shadow-pop: 0 6px 24px rgba(0, 0, 0, .12);
+  --st-radius-sm: 4px;
+  --st-radius-md: 6px;
+  --st-radius-lg: 8px;
+}
+
+/* 智慧表格作用域内把 Element 主色换为参照蓝（popover/抽屉 teleport 到 body，逐个列出） */
+.st-page, .smart-home, .smart-dash,
+.filter-popover, .st-pop {
+  --el-color-primary: var(--st-primary);
+  --el-color-primary-light-3: #6B97EE;
+  --el-color-primary-light-5: #96B4F2;
+  --el-color-primary-light-7: #C1D2F8;
+  --el-color-primary-light-8: #D6E2FA;
+  --el-color-primary-light-9: #EAF1FD;
+  --el-color-primary-dark-2: var(--st-primary-hover);
+}

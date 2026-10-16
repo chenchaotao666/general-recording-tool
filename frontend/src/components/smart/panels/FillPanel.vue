@@ -28,7 +28,7 @@
              弹出 9 色 × 3 深浅档预设色板 + 整行填色勾选 -->
         <div class="r-color" @click.stop="togglePalette(i)">
           <span class="rc-swatch" :style="{ background: r.color || 'transparent' }" />
-          <span class="rc-caret">▾</span>
+          <StIcon name="caret-down" :size="11" class="rc-caret" />
           <div v-if="paletteIdx === i" class="rc-pop" @click.stop @mousedown.stop>
             <div v-for="(row, ri) in FILL_PALETTE" :key="ri" class="rc-row">
               <span v-for="c in row" :key="c" class="rc-cell" :class="{ on: r.color === c }"
@@ -38,7 +38,7 @@
                          @change="(v) => update(i, { wholeRow: v })">整行填色</el-checkbox>
           </div>
         </div>
-        <span class="r-del" @click.stop="remove(i)">⊖</span>
+        <span class="r-del" title="删除" @click.stop="remove(i)"><StIcon name="minus-circle" :size="16" /></span>
       </div>
       <el-button link type="primary" size="small" @click="add">＋ 添加条件</el-button>
       <div class="panel-foot">
@@ -52,6 +52,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import ConditionValue from './ConditionValue.vue'
+import StIcon from '../icons/StIcon.vue'
 import { filterOpsOf, OP_LABELS, NO_VALUE_OPS, FILL_PALETTE } from '../../../smart/registry/fieldRegistry.js'
 
 const props = defineProps({
@@ -118,7 +119,8 @@ function confirm() {
 .r-op { width: 90px; }
 .r-target { flex: 1; }   /* 整列规则的目标选择占满运算符+取值区 */
 .arrow { color: var(--el-text-color-placeholder); }
-.r-del { cursor: pointer; color: var(--el-color-danger); }
+.r-del { cursor: pointer; color: var(--st-text-3); display: inline-flex; }
+.r-del:hover { color: var(--st-primary); }
 /* 颜色设置：色块按钮（色块 + ▾）与预设色板弹层 */
 .r-color {
   display: flex; align-items: center; gap: 4px; position: relative; cursor: pointer;
@@ -126,7 +128,7 @@ function confirm() {
 }
 .r-color:hover { border-color: var(--el-color-primary); }
 .rc-swatch { width: 30px; height: 16px; border-radius: 2px; border: 1px solid var(--el-border-color-lighter); }
-.rc-caret { font-size: 10px; color: var(--el-text-color-placeholder); }
+.rc-caret { color: var(--st-text-3); display: inline-flex; }
 .rc-pop {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 10;
   background: #fff; border-radius: 8px; box-shadow: var(--el-box-shadow);

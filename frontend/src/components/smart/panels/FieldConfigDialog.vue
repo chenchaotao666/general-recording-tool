@@ -7,7 +7,9 @@
       <el-select :teleported="false" v-model="form.field_type" class="cfg-type" :disabled="!!field && isSystemLike"
                  @change="onTypeChange">
         <el-option-group v-for="g in FIELD_TYPE_GROUPS" :key="g" :label="g">
-          <el-option v-for="(reg, ft) in typesOf(g)" :key="ft" :value="ft" :label="`${reg.icon} ${reg.label}`" />
+          <el-option v-for="(reg, ft) in typesOf(g)" :key="ft" :value="ft" :label="reg.label">
+            <span class="ft-opt"><StIcon :name="ft" :size="14" />{{ reg.label }}</span>
+          </el-option>
         </el-option-group>
       </el-select>
 
@@ -228,7 +230,7 @@
       <div class="dlg-footer">
         <!-- AI 匹配标签：设计文档 §18 划在 V3，本轮占位 -->
         <el-button v-if="['singleSelect', 'multiSelect'].includes(form.field_type)" text class="ai-btn"
-                   @click="ElMessage.info('AI 匹配标签将在 V3 版本提供，敬请期待')">✨ 使用 AI 匹配标签</el-button>
+                   @click="ElMessage.info('AI 匹配标签将在 V3 版本提供，敬请期待')"><StIcon name="sparkle" :size="14" /> 使用 AI 匹配标签</el-button>
         <span v-else />
         <span>
           <el-button @click="$emit('close')">取消</el-button>
@@ -242,11 +244,13 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import StIcon from '../icons/StIcon.vue'
 import { FIELD_REGISTRY, FIELD_TYPE_GROUPS, optionColor } from '../../../smart/registry/fieldRegistry.js'
 
 const props = defineProps({
   visible: Boolean,
   field: Object,          // 编辑态传入现有字段；新增为 null
+  preset: { type: Object, default: null },   // 新增预设 {field_type, label}（AddFieldPop 类型网格跳入）
   fields: { type: Array, default: () => [] },   // 本表字段（lookup 条件右值用）
   tables: { type: Array, default: () => [] },   // 可选的关联/引用目标表
   sourceFieldsOf: { type: Function, default: () => () => [] },  // (tableId) => Promise<fields[]>
@@ -269,9 +273,12 @@ watch(() => props.visible, async (v) => {
     form.config = JSON.parse(JSON.stringify(props.field.options || {}))
     normalizeConfig()
   } else {
-    form.label = ''
-    form.field_type = 'text'
-    form.config = FIELD_REGISTRY.text.defaultConfig()
+    // 新增：可带预设（AddFieldPop 类型网格选定后跳入）
+    form.label = props.preset?.label || ''
+    form.field_type = props.preset?.field_type || 'text'
+    form.config = FIELD_REGISTRY[form.field_type].defaultConfig()
+    normalizeConfig()
+    if (!form.label && props.preset?.field_type) form.label = FIELD_REGISTRY[form.field_type].label
   }
 })
 
@@ -423,5 +430,8 @@ function save() {
 .linkage-match { font-size: 12px; color: var(--el-text-color-secondary); display: flex; align-items: center; gap: 4px; }
 .match-select { width: 96px; }
 .dlg-footer { display: flex; align-items: center; justify-content: space-between; width: 100%; }
-.ai-btn { color: #9334e6; }
+.ft-opt { display: inline-flex; align-items: center; gap: 8px; }
+.ft-opt .st-icon { color: var(--st-text-2); }
+.ai-btn { color: var(--st-ai); background: transparent; border: none; }
+.ai-btn:hover { color: var(--st-ai); background: var(--st-bg-hover); }
 </style>

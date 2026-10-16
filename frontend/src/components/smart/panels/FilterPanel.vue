@@ -24,14 +24,14 @@
         <!-- 展开态：字段选择 + 操作图标（删除/固定/收起） -->
         <template v-if="isOpen(c)">
           <div class="cond-head">
-            <span class="f-icon">{{ iconOf(c) }}</span>
+            <StIcon :name="fieldOf(c)?.field_type || 'text'" :size="15" class="f-icon" />
             <el-select :teleported="false" :model-value="c.fieldId" size="small" class="c-field" placeholder="选择字段"
                        @change="(v) => update(i, { fieldId: v, operator: defaultOp(v), value: undefined })">
               <el-option v-for="f in fields" :key="f.field_name" :value="f.field_name" :label="f.label" />
             </el-select>
-            <span class="h-act" title="删除条件" @click="remove(i)">⊖</span>
-            <span class="h-act pin" :class="{ on: c.pinned }" title="固定到工具栏" @click="update(i, { pinned: !c.pinned })">📌</span>
-            <span class="h-act" title="收起" @click="toggleOpen(c)">︿</span>
+            <span class="h-act" title="删除条件" @click="remove(i)"><StIcon name="minus-circle" :size="15" /></span>
+            <span class="h-act pin" :class="{ on: c.pinned }" title="固定到工具栏" @click="update(i, { pinned: !c.pinned })"><StIcon name="pin" :size="15" /></span>
+            <span class="h-act" title="收起" @click="toggleOpen(c)"><StIcon name="chevron-up" :size="15" /></span>
           </div>
           <el-select :teleported="false" :model-value="opsOf(c).includes(c.operator) ? c.operator : null"
                      size="small" class="c-op" placeholder="条件"
@@ -44,13 +44,13 @@
         </template>
         <!-- 收起态：单行摘要（图标 + 字段名 + 条件与取值）；hover 显示删除/固定 -->
         <div v-else class="cond-summary" @click="toggleOpen(c)">
-          <span class="f-icon">{{ iconOf(c) }}</span>
+          <StIcon :name="fieldOf(c)?.field_type || 'text'" :size="15" class="f-icon" />
           <span class="s-field">{{ fieldOf(c)?.label || '选择字段' }}</span>
           <span class="s-text">{{ summaryOf(c) }}</span>
-          <span class="h-act hover-only" title="删除条件" @click.stop="remove(i)">⊖</span>
+          <span class="h-act hover-only" title="删除条件" @click.stop="remove(i)"><StIcon name="minus-circle" :size="15" /></span>
           <span class="h-act pin hover-only" :class="{ on: c.pinned }" title="固定到工具栏"
-                @click.stop="update(i, { pinned: !c.pinned })">📌</span>
-          <span class="h-act" title="展开">﹀</span>
+                @click.stop="update(i, { pinned: !c.pinned })"><StIcon name="pin" :size="15" /></span>
+          <span class="h-act" title="展开"><StIcon name="chevron-down" :size="15" /></span>
         </div>
       </div>
 
@@ -66,7 +66,8 @@
 <script setup>
 import { computed, inject, ref, watch } from 'vue'
 import ConditionValue from './ConditionValue.vue'
-import { filterOpsOf, OP_LABELS, NO_VALUE_OPS, FIELD_REGISTRY } from '../../../smart/registry/fieldRegistry.js'
+import StIcon from '../icons/StIcon.vue'
+import { filterOpsOf, OP_LABELS, NO_VALUE_OPS } from '../../../smart/registry/fieldRegistry.js'
 
 const props = defineProps({
   visible: Boolean,
@@ -92,10 +93,6 @@ watch(() => props.visible, (v) => {
 })
 
 function fieldOf(c) { return props.fields.find(f => f.field_name === c.fieldId) }
-function iconOf(c) {
-  const f = fieldOf(c)
-  return (f && FIELD_REGISTRY[f.field_type]?.icon) || '▦'
-}
 function opsOf(c) { return fieldOf(c) ? filterOpsOf(fieldOf(c)) : [] }
 function defaultOp(fieldName) {
   const f = props.fields.find(x => x.field_name === fieldName)
@@ -167,12 +164,12 @@ function confirm() {
 .cond-card { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 8px 10px;
              display: flex; flex-direction: column; gap: 8px; background: var(--el-fill-color-blank); }
 .cond-head { display: flex; align-items: center; gap: 6px; }
-.f-icon { flex: none; width: 18px; text-align: center; color: var(--el-text-color-secondary); }
+.f-icon { flex: none; color: var(--st-text-2); }
 .c-field { flex: 1; min-width: 0; }
 .c-field :deep(.el-select__wrapper) { box-shadow: none; background: transparent; font-weight: 600; }
 .c-op { width: 100%; }
-.h-act { flex: none; cursor: pointer; color: var(--el-text-color-secondary); padding: 0 2px; }
-.h-act:hover { color: var(--el-color-primary); }
+.h-act { flex: none; cursor: pointer; color: var(--st-text-3); padding: 0 2px; display: inline-flex; }
+.h-act:hover { color: var(--st-primary); }
 /* 收起态的删除/固定：仅卡片 hover 时显示（已固定的图钉常显，作为状态标识） */
 .hover-only { visibility: hidden; }
 .cond-card:hover .hover-only { visibility: visible; }

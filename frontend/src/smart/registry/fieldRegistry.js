@@ -2,15 +2,15 @@
 // 每类型注册：图标/名称/分组/默认配置/运算符/编辑器/渲染器形态/聚合能力
 
 export const OPTION_COLORS = [
-  { key: 'blue', label: '蓝', value: '#e8f0fe', text: '#1967d2' },
-  { key: 'cyan', label: '青', value: '#e0f7fa', text: '#00838f' },
-  { key: 'green', label: '绿', value: '#e6f4ea', text: '#188038' },
-  { key: 'orange', label: '橙', value: '#feefe3', text: '#e8710a' },
-  { key: 'red', label: '红', value: '#fce8e6', text: '#d93025' },
-  { key: 'purple', label: '紫', value: '#f3e8fd', text: '#9334e6' },
-  { key: 'pink', label: '粉', value: '#fce4ec', text: '#d81b60' },
-  { key: 'yellow', label: '黄', value: '#fef9e0', text: '#b06000' },
-  { key: 'gray', label: '灰', value: '#f1f3f4', text: '#5f6368' },
+  { key: 'blue', label: '蓝', value: '#D9E7FF', text: '#2460C9' },
+  { key: 'cyan', label: '青', value: '#D5F4F4', text: '#0E7C86' },
+  { key: 'green', label: '绿', value: '#D8F5DF', text: '#1E7E34' },
+  { key: 'orange', label: '橙', value: '#FFE8CC', text: '#B25009' },
+  { key: 'red', label: '红', value: '#FDE3E3', text: '#C92A2A' },
+  { key: 'purple', label: '紫', value: '#F0E4F7', text: '#7E3FBF' },
+  { key: 'pink', label: '粉', value: '#FDE8EF', text: '#C22A66' },
+  { key: 'yellow', label: '黄', value: '#FDF3D7', text: '#8A6D1A' },
+  { key: 'gray', label: '灰', value: '#F0F1F3', text: '#646A73' },
 ]
 
 // 填色色板（设计稿 PixPin_2026-10-15_20-26-47）：9 色 × 3 深浅档，按行浅→深
