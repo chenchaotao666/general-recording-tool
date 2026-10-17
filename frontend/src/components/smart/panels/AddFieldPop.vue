@@ -25,7 +25,6 @@
 
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
 import StIcon from '../icons/StIcon.vue'
 import { FIELD_REGISTRY } from '../../../smart/registry/fieldRegistry.js'
 
@@ -33,7 +32,7 @@ const props = defineProps({
   x: { type: Number, default: 200 },
   y: { type: Number, default: 100 },
 })
-const emit = defineEmits(['pick', 'pick-again', 'close'])
+const emit = defineEmits(['pick', 'pick-again', 'close', 'ai'])
 
 // 参照顺序：基础 → 协作/媒体 → 标识 → 关联 → 计算 → 系统（只列 FIELD_REGISTRY 支持的类型）
 const ORDER = ['text', 'singleSelect', 'multiSelect', 'number', 'percent', 'currency', 'progress', 'date',
@@ -47,12 +46,18 @@ const nameRef = ref(null)
 const popRef = ref(null)
 
 // 位置钳制在视口内
+// 按浮层实际尺寸限制在视口内（固定估值会让右侧/底部最后一行被裁掉）
+const size = ref({ w: 500, h: 480 })
 const pos = computed(() => ({
-  x: Math.max(8, Math.min(props.x, window.innerWidth - 500)),
-  y: Math.max(8, Math.min(props.y, window.innerHeight - 480)),
+  x: Math.max(8, Math.min(props.x, window.innerWidth - size.value.w - 8)),
+  y: Math.max(8, Math.min(props.y, window.innerHeight - size.value.h - 8)),
 }))
 
-onMounted(async () => { await nextTick(); nameRef.value?.focus() })
+onMounted(async () => {
+  await nextTick()
+  if (popRef.value) size.value = { w: popRef.value.offsetWidth, h: popRef.value.offsetHeight }
+  nameRef.value?.focus()
+})
 
 function onKey(e) {
   const n = typeList.value.length
@@ -67,7 +72,8 @@ function pick(t, again) {
   if (!t) return
   emit(again ? 'pick-again' : 'pick', { field_type: t.key, label: name.value.trim() })
 }
-function ai() { ElMessage.info('AI 字段将在后续版本提供，敬请期待') }
+// AI 字段：打开场景市场（V3），带上已输入的字段名
+function ai() { emit('ai', { label: name.value.trim(), x: pos.value.x, y: pos.value.y }) }
 </script>
 
 <style scoped>

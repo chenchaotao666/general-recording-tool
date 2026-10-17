@@ -219,6 +219,12 @@ def alter_table(table_id: int, payload: AlterIn, db: Session = Depends(get_db),
     log_audit(db, "alter_table", table_id, after={"ops": payload.ops},
               user=access.ctx.user.username, tenant_id=access.table.tenant_id)
     db.commit()
+    # 智能表：字段变更后公式全表重算（新增/修改公式、或被引用字段改名/删除/改类型）
+    if access.table.storage_mode == "json":
+        from ..services import json_store
+        json_store.recompute_formulas(db, access.table, meta_service.get_meta_fields(db, table_id))
+        from ..services import formula_tables
+        formula_tables.refresh_dependents(db, table_id)   # 本表字段变化影响整表引用了它的其他表
     return {**result, "table": meta_service.table_out(db, access.table)}
 
 

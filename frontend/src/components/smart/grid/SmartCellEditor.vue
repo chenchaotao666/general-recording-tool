@@ -15,7 +15,7 @@
   <template v-else-if="editorKind === 'inline'">
     <span ref="anchorRef" class="cell-anchor" />
     <teleport to="body">
-      <div v-if="overlayRect" class="cell-overlay" :class="{ preview }" :style="overlayStyle"
+      <div v-if="overlayRect" v-show="!overlayOut" class="cell-overlay" :class="{ preview }" :style="overlayStyle"
            @mousedown.stop @click="onPreviewClick" @dblclick.stop="preview && $emit('enter-edit')">
         <div v-if="preview" ref="taRef" class="cell-textarea preview-text" :style="taStyle">{{ draft }}</div>
         <textarea v-else ref="taRef" v-model="draft" class="cell-textarea" :style="taStyle" rows="1"
@@ -34,8 +34,9 @@
 
   <!-- 日期（面板挂 body：teleported=false 会被单元格 overflow 裁掉，等于打不开） -->
   <el-date-picker
-    v-else-if="editorKind === 'date'" ref="dateRef" v-model="draft" size="small" class="cell-editor"
+    v-else-if="editorKind === 'date'" ref="dateRef" v-model="draft" size="small" class="cell-editor cell-date-editor"
     :type="cfg.includeTime ? 'datetime' : 'date'" value-format="YYYY-MM-DD HH:mm:ss"
+    :format="dateDisplayFormat" :prefix-icon="NoIcon"
     @change="commit" @visible-change="(vis) => !vis && $emit('cancel')" />
 
   <!-- 人员：成员多选（V1 单层浮层，数据源=租户成员；面板挂 body 防单元格裁剪） -->
@@ -86,11 +87,13 @@
 </template>
 
 <script setup>
-import { computed, getCurrentInstance, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, getCurrentInstance, h, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { regOf } from '../../../smart/registry/fieldRegistry.js'
-import { uploadImageFile } from '../../../api/index.js'
+import { dayjsDateFormat } from '../../../smart/utils/format.js'
+import { smartUploadFile, uploadImageFile } from '../../../api/index.js'
 import SelectCellPanel from './SelectCellPanel.vue'
+import { afterFrame, isDisplayCell, visibleCellRect } from '../../../smart/utils/vxeCell.js'
 
 const props = defineProps({
   field: { type: Object, required: true },
@@ -101,9 +104,13 @@ const props = defineProps({
 const emit = defineEmits(['commit', 'commit-soft', 'cancel', 'open-config', 'add-option', 'enter-edit', 'collapse'])
 
 const memberList = inject('smartMembers', { value: [] })          // [{id, name}]
+const smartTableId = inject('smartTableId', { value: null })
 const relationRows = inject('smartRelationRows', { value: new Map() })  // targetTableId → [{id,label}]
 
 const cfg = computed(() => props.field.options || {})
+// 日期编辑框的显示格式与查看态 formatDate 一致（字段格式 yyyy… → dayjs 格式），双击进编辑文字不变
+const dateDisplayFormat = computed(() => dayjsDateFormat(cfg.value))
+const NoIcon = { render: () => h('span') }   // 去掉日期框前置日历图标：文字起点与查看态一致
 const ft = computed(() => props.field.field_type || 'text')
 const editorKind = computed(() => regOf(props.field).editor)
 const isMulti = computed(() => ft.value === 'multiSelect')
@@ -149,9 +156,12 @@ const overlayStyle = computed(() => {
 // 浮层 2px 边框吞掉的 2px 从 padding-top 里扣回，padBottom 补齐使单行 scrollHeight 恰等于内容盒高。
 const taStyle = computed(() => {
   const r = overlayRect.value
-  const viewTop = Math.max(6, ((r?.height || 36) - 26) / 2)
+  // 查看态文字顶部偏移：默认行高 6（垂直居中实测）；行高变大时内容顶对齐（上内边距 7 - 光学上移 2，22px 行高）→ 3
+  const viewTop = (r?.height || 36) > 36 ? 4 : 6
   const padTop = Math.max(0, viewTop - 2)
-  const padBottom = ((r?.height || 36) - 26) - padTop
+  // 底部留白封顶 6px：内容盒最小高度由 autoGrow 的 min（= 单元格高）兜住；若按行高补齐底部留白，
+  // 行高变大时多行文本会把浮层撑出单元格（内容明明放得下，参照 PixPin_2026-10-17_16-53-48）
+  const padBottom = Math.min(6, ((r?.height || 36) - 26) - padTop)
   return { padding: `${padTop}px 6px ${padBottom}px` }
 })
 function autoGrow() {
@@ -173,22 +183,26 @@ function focusTextarea() {
   const end = draft.value?.length || 0
   ta.setSelectionRange?.(end, end)
 }
-onMounted(() => nextTick(() => {
-  // vxe 冻结列会把同一单元格渲染三份（main / fixed-left / fixed-right wrapper），
-  // 冻结列的显示副本在 fixed wrapper、非冻结列在 main wrapper；非显示副本的编辑器
-  // 必须完全惰性（不聚焦不开浮层），否则多实例互抢焦点，失焦误提交并把编辑态关掉。
-  // （td 上的 fixed--hidden 类是 vxe 后置补的，挂载时不存在，只能按 wrapper 判断；
-  //  多根组件的 $el 可能是文本锚点节点，没有 closest，须先取到元素节点）
+onMounted(async () => {
+  // vxe 冻结列会把同一单元格渲染多份；非显示副本的编辑器必须完全惰性（不聚焦不开浮层），
+  // 否则多实例互抢焦点、浮层定位到隐藏副本（冻结列单击/双击看不到内容的原因）。
+  // 等一帧（vxe 后置补 fixed--hidden）再按实际可见性判定；
+  // 多根组件的 $el 可能是文本锚点节点，没有 closest，须先取到元素节点
+  await nextTick()
+  await afterFrame()
+  if (discarded) return   // 等待期间已卸载
   const root = selfInst?.proxy?.$el
   const rootEl = root?.nodeType === 1 ? root : root?.parentElement
   const hostTd = rootEl?.closest?.('td')
-  const inFixed = !!hostTd?.closest?.('.vxe-table--fixed-left-wrapper, .vxe-table--fixed-right-wrapper')
-  if (inFixed !== props.frozen) return
+  if (hostTd && !isDisplayCell(hostTd)) return
   const el = inputRef.value?.focus?.() || selectRef.value?.focus?.() || dateRef.value?.focus?.()
   // 文本浮层：锚定单元格位置；编辑态聚焦，预览态（div）不可聚焦、由 Esc/点外部关闭
   if (anchorRef.value) {
     const td = anchorRef.value.closest('td') || anchorRef.value.parentElement
     overlayRect.value = td?.getBoundingClientRect() || null
+    // 表格滚动时浮层跟随单元格；单元格滚出可视区（或被表头/统计行遮住）时隐藏
+    document.addEventListener('scroll', onAnyScroll, true)
+    window.addEventListener('resize', onAnyScroll)
     // overlayRect 驱动 v-if 渲染内容——等下一拍渲染完成再聚焦（否则 taRef 还是 null）
     nextTick(() => {
       autoGrow()
@@ -206,7 +220,23 @@ onMounted(() => nextTick(() => {
     })
   }
   return el
-}))
+})
+
+// 浮层跟随：fixed 定位在打开时取的单元格坐标，滚动后需按单元格当前位置重算
+const overlayOut = ref(false)
+let scrollRaf = 0
+function onAnyScroll(e) {
+  if (e?.target && taRef.value && e.target === taRef.value) return   // 浮层自身内容滚动
+  cancelAnimationFrame(scrollRaf)
+  scrollRaf = requestAnimationFrame(() => {
+    const td = anchorRef.value?.closest('td') || anchorRef.value?.parentElement   // 详情面板内：宿主是值容器
+    const r = visibleCellRect(td)
+    overlayOut.value = !r
+    if (r && overlayRect.value) {
+      overlayRect.value = { left: r.left, top: r.top, width: r.width, height: overlayRect.value.height }
+    }
+  })
+}
 
 // 预览态点外部关闭（捕获阶段；浮层自身 mousedown.stop 不会触发）
 function onPreviewOutside(e) {
@@ -267,15 +297,23 @@ let discarded = false
 onBeforeUnmount(() => {
   discarded = true
   document.removeEventListener('mousedown', onPreviewOutside, true)
+  document.removeEventListener('scroll', onAnyScroll, true)
+  window.removeEventListener('resize', onAnyScroll)
+  cancelAnimationFrame(scrollRaf)
 })
 const uploading = ref(false)
 async function onUpload({ file }) {
   uploading.value = true
   try {
-    const res = await uploadImageFile(file)
-    const fid = res?.id ?? res?.file_id ?? res
+    // 图片走图片库（返回 {files:[{id}]}）；文件走智能表附件存储（支持 PDF 等任意类型，V3）
     const list = Array.isArray(draft.value) ? [...draft.value] : []
-    list.push(ft.value === 'image' ? String(fid) : { id: fid, name: file.name })
+    if (ft.value === 'image') {
+      const res = await uploadImageFile(file)
+      list.push(String(res?.files?.[0]?.id ?? res?.id))
+    } else {
+      const res = await smartUploadFile(smartTableId.value, file)
+      list.push({ id: res.id, name: res.name || file.name, size: res.size })
+    }
     draft.value = list
     commit()
   } catch (e) {
@@ -296,7 +334,7 @@ const relationOptions = computed(() => relationRows.value.get(cfg.value.targetTa
 /* 文本浮层编辑（teleport 到 body）：边框与选中态同款 2px 主色，边界起于单元格 */
 .cell-overlay {
   position: fixed; z-index: 3000; background: #fff; box-sizing: border-box;
-  border: 2px solid var(--el-color-primary); border-radius: 2px;
+  border: 2px solid var(--st-primary); border-radius: 2px;   /* teleport 到 body，不在 EP 主色作用域内，直接用令牌 */
   box-shadow: 0 4px 16px rgba(0, 0, 0, .12);
 }
 .cell-textarea {
@@ -315,4 +353,13 @@ const relationOptions = computed(() => relationRows.value.get(cfg.value.targetTa
 .blocked { display: flex; align-items: center; gap: 6px; background: #fff; padding: 4px 8px; border-radius: 6px; box-shadow: var(--el-box-shadow-light); font-size: 12px; }
 .blocked-text { color: var(--el-text-color-secondary); }
 .hint { color: #909399; font-size: 12px; margin-top: 4px; }
+</style>
+
+<style>
+/* 日期编辑框：去前置图标，字号/字体/左边距与查看态单元格一致（双击进编辑文字不跳）。
+   不能写在 scoped 里：el-date-picker 根元素不带本组件作用域属性，:deep 选择器命中不到 */
+.cell-date-editor .el-input__prefix { display: none; }
+.cell-date-editor .el-input__wrapper { padding: 0 8px; }
+/* translateY(-2px)：查看态内容整体上移 2px 做光学居中（SmartGrid .vxe-cell--wrapper），编辑框文字同步上移 */
+.cell-date-editor .el-input__inner { font-size: 13px; font-family: inherit; color: var(--el-text-color-primary); transform: translateY(-2px); }
 </style>

@@ -59,7 +59,7 @@ class SmartDocEntry(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     doc_id = Column(Integer, ForeignKey("smart_docs.id"), index=True, nullable=False)
     parent_id = Column(Integer, ForeignKey("smart_doc_entries.id"), index=True)  # NULL=根级
-    type = Column(String(16), nullable=False)        # folder | sheet
+    type = Column(String(16), nullable=False)        # folder | sheet | dashboard | form（收集表单=表单视图+结果表）
     name = Column(String(128), nullable=False)
     ref_table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True)  # type=sheet 时非空
     order_no = Column(Integer, default=0)
@@ -74,7 +74,7 @@ class MetaView(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
     name = Column(String(100), nullable=False, default="表格视图")
-    type = Column(String(16), default="grid")        # V1 仅 grid
+    type = Column(String(16), default="grid")        # grid / form（表单视图，V3）/ kanban（看板，V3）
     config = Column(JSON, default=dict)              # filters/sorts/fillRules/rowHeight/fieldVisibility/fieldOrder/colWidths/frozenFieldId/aggregations
     is_default = Column(Boolean, default=False)
     created_by = Column(Integer, ForeignKey("users.id"))
@@ -193,6 +193,7 @@ class Record(Base):
     data = Column(JSON, nullable=False, default=dict)
     parent_id = Column(BigInteger, index=True)               # 智能表树形子记录：父记录 id（V2）
     updated_by = Column(Integer, ForeignKey("users.id"))     # 最后编辑人（智能表系统字段，V2）
+    updated_by_type = Column(String(16), default="user")      # 最后编辑主体：user / ai / automation（V3 留痕）
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -759,3 +760,93 @@ class DashboardWidget(Base):
     layout = Column(JSON, default=dict)              # {x,y,w,h}
     order_no = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.now)
+
+
+# ---------- 智能表 V3：内容权限（设计文档 §13） ----------
+
+class SmartEntryPermission(Base):
+    """条目级内容权限·全员基线（§13.5 SheetPermission.base）。无行 = 全员「全部权限」（V2 行为）。
+    以条目为键：工作表/收集表单/仪表盘统一管理（仪表盘仅 FULL/VIEW 两档）。"""
+    __tablename__ = "smart_entry_permissions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entry_id = Column(Integer, ForeignKey("smart_doc_entries.id"), nullable=False, unique=True)
+    base_profile = Column(JSON, nullable=False, default=dict)   # PermissionProfile
+    updated_by = Column(Integer, ForeignKey("users.id"))
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class SmartPermGroup(Base):
+    """指定成员组（§13.2）：成员集合 + 备注名（「负责人」「设计」…，对组内成员可见）"""
+    __tablename__ = "smart_perm_groups"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    doc_id = Column(Integer, ForeignKey("smart_docs.id"), index=True, nullable=False)
+    name = Column(String(50), nullable=False)
+    member_ids = Column(JSON, default=list)
+    order_no = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class SmartGroupGrant(Base):
+    """指定成员组对某条目的额外权限（grant-only 叠加，effective = max(全员, ∪组)）"""
+    __tablename__ = "smart_group_grants"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    group_id = Column(Integer, ForeignKey("smart_perm_groups.id"), index=True, nullable=False)
+    entry_id = Column(Integer, ForeignKey("smart_doc_entries.id"), index=True, nullable=False)
+    profile = Column(JSON, nullable=False, default=dict)
+
+    __table_args__ = (UniqueConstraint("group_id", "entry_id", name="uq_smart_group_grants"),)
+
+
+# ---------- 智能表 V3：自动化（设计文档 §11） ----------
+
+class SmartAutomation(Base):
+    """自动化规则：触发器（定时/新增/变更）+ 有序动作链"""
+    __tablename__ = "smart_automations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_id = Column(Integer, ForeignKey("meta_tables.id"), index=True, nullable=False)
+    tenant_id = Column(Integer, index=True)
+    name = Column(String(200), nullable=False, default="自动化")
+    enabled = Column(Boolean, default=True)
+    trigger_config = Column(JSON, nullable=False, default=dict)
+    actions = Column(JSON, nullable=False, default=list)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class SmartAutomationRun(Base):
+    """自动化运行日志：触发快照 + 各步结果"""
+    __tablename__ = "smart_automation_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    rule_id = Column(Integer, ForeignKey("smart_automations.id"), index=True, nullable=False)
+    status = Column(String(16))                      # success / partial / failed / skipped
+    trigger_snapshot = Column(JSON)
+    step_results = Column(JSON)
+    error = Column(Text)
+    started_at = Column(DateTime, default=datetime.now)
+    finished_at = Column(DateTime)
+
+
+# ---------- 智能表 V3：AI 字段运行状态（设计文档 §10.2） ----------
+
+class SmartAiRun(Base):
+    """AI 字段单元格计算状态（结果落 records.data，这里只记状态/错误/用量）"""
+    __tablename__ = "smart_ai_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_id = Column(Integer, index=True, nullable=False)
+    tenant_id = Column(Integer, index=True)              # 配额按租户按月计量
+    field_name = Column(String(64), nullable=False)
+    record_id = Column(BigInteger().with_variant(Integer, "sqlite"), nullable=False)
+    status = Column(String(16), default="pending")   # pending / running / ok / error
+    error = Column(Text)
+    tokens_used = Column(Integer, default=0)
+    billable = Column(Boolean, default=False)            # 调用了大模型（计入配额）；本地场景（查重/PDF 抽取）不计
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (UniqueConstraint("table_id", "field_name", "record_id", name="uq_smart_ai_runs"),)

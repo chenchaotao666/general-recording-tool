@@ -31,13 +31,21 @@ def _row_to_client(rec: Record, fields_by_name: dict) -> dict:
     out["owner_id"] = rec.owner_id
     out["parent_id"] = rec.parent_id
     out["updated_by"] = rec.updated_by
+    out["updated_by_type"] = rec.updated_by_type or "user"
     out["created_at"] = dyn_engine.serialize_value(rec.created_at)
     out["updated_at"] = dyn_engine.serialize_value(rec.updated_at)
     for name, f in fields_by_name.items():
         sys_key = FIELD_TYPES.get(getattr(f, "field_type", None) or "", {}).get("sys_key")
         if sys_key:
-            out[name] = out.get(sys_key)
+            out[name] = actor_value(out, sys_key)
     return {k: dyn_engine.serialize_value(v) for k, v in out.items()}
+
+
+def actor_value(rec: dict, sys_key: str):
+    """系统字段取值：最后编辑人遇非人主体（AI/自动化）时返回占位标识，前端渲染为「AI 生成」/「自动化」。"""
+    if sys_key == "updated_by" and rec.get("updated_by_type") in ("ai", "automation"):
+        return f"__{rec['updated_by_type']}__"
+    return rec.get(sys_key)
 
 
 def all_dicts(db: Session, table_id: int, fields: list[MetaField], normalized: bool = False) -> list[dict]:
@@ -57,10 +65,67 @@ def all_dicts(db: Session, table_id: int, fields: list[MetaField], normalized: b
         rec["tenant_id"] = r.tenant_id
         rec["parent_id"] = r.parent_id    # 智能表树形子记录
         rec["updated_by"] = r.updated_by  # 智能表系统字段（最后编辑人）
+        rec["updated_by_type"] = r.updated_by_type or "user"
         rec["created_at"] = r.created_at
         rec["updated_at"] = r.updated_at
         out.append(normalize_record(rec, fields_by_name))
     return out
+
+
+def normalized_one(db: Session, table_id: int, record_id: int, fields: list[MetaField]) -> dict:
+    """单条记录的 normalized 形态（与 all_dicts(normalized=True) 同形；权限行条件/自动化条件求值用）。"""
+    rec = db.get(Record, record_id)
+    if not rec or rec.table_id != table_id:
+        raise HTTPException(404, "记录不存在")
+    out = {f.field_name: None for f in fields}
+    out.update(rec.data or {})
+    out.update({"id": rec.id, "owner_id": rec.owner_id, "tenant_id": rec.tenant_id,
+                "parent_id": rec.parent_id, "updated_by": rec.updated_by,
+                "updated_by_type": rec.updated_by_type or "user",
+                "created_at": rec.created_at, "updated_at": rec.updated_at})
+    return normalize_record(out, {f.field_name: f for f in fields})
+
+
+def recompute_formulas(db: Session, mt: MetaTable, fields: list[MetaField]) -> int:
+    """公式新增/修改后全表重算（§9.3：保存公式后全表计算）。只改公式结果，不动「最后编辑人/时间」。"""
+    from sqlalchemy import update
+    formula_names = [f.field_name for f in fields if isinstance((f.options or {}).get("formula"), str)]
+    if not formula_names:
+        return 0
+    from . import formula_tables
+    fbn = {f.field_name: f for f in fields}
+    changed = 0
+    with formula_tables.scope(db, mt.tenant_id):
+        for rec in db.execute(select(Record).where(Record.table_id == mt.id)).scalars().all():
+            computed: dict = {}
+            dyn_engine.apply_computed(fields, computed, base=_row_to_client(rec, fbn))
+            new_vals = {k: dyn_engine.serialize_value(computed.get(k)) for k in formula_names}
+            data = dict(rec.data or {})
+            if all(data.get(k) == v for k, v in new_vals.items()):
+                continue
+            data.update(new_vals)
+            db.execute(update(Record).where(Record.id == rec.id)
+                       .values(data=data, updated_at=Record.updated_at))   # 显式自赋值：屏蔽 onupdate
+            changed += 1
+    db.commit()
+    return changed
+
+
+def _post_insert_formulas(db: Session, mt: MetaTable, fields: list[MetaField], rec: Record) -> None:
+    """RECORD_ID() 在插入前没有 id：含该函数的公式在插入后补算一次。"""
+    from . import formula_tables
+    names = [f.field_name for f in fields
+             if "RECORD_ID" in str((f.options or {}).get("formula") or "").upper()]
+    if not names:
+        return
+    computed: dict = {}
+    with formula_tables.scope(db, mt.tenant_id):
+        dyn_engine.apply_computed(fields, computed, base=_row_to_client(rec, {f.field_name: f for f in fields}))
+    data = dict(rec.data or {})
+    data.update({k: dyn_engine.serialize_value(computed.get(k)) for k in names})
+    rec.data = data
+    db.commit()
+    db.refresh(rec)
 
 
 def count(db: Session, table_id: int) -> int:
@@ -118,13 +183,16 @@ def get_record(db: Session, table_id: int, record_id: int, fields: list[MetaFiel
 def _strip_readonly(fields: list[MetaField], data: dict) -> dict:
     """智能表只读/系统/读时计算字段（公式/查找引用/创建人等）不接收提交值（设计文档 §3.3 系统字段纪律）。"""
     from .field_registry import READONLY_TYPES
-    blocked = {f.field_name for f in fields if (f.field_type or "") in READONLY_TYPES}
+    # AI 字段可在网格里手动修正（如单选/多选改标签，参照企微）；表单等入口仍按只读处理（READONLY_TYPES）
+    blocked = {f.field_name for f in fields if (f.field_type or "") in READONLY_TYPES and f.field_type != "ai"}
     return {k: v for k, v in (data or {}).items() if k not in blocked}
 
 
 def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dict,
                   user: str | None = None, owner_id: int | None = None,
-                  parent_id: int | None = None) -> dict:
+                  parent_id: int | None = None, actor_type: str = "user",
+                  anonymous: bool = False) -> dict:
+    """anonymous=True：公开表单的匿名外部填写者（创建人为空）；actor_type：user / ai / automation。"""
     cleaned, errors = dyn_engine.coerce_payload(fields, _strip_readonly(fields, data))
     if errors:
         raise HTTPException(422, detail=errors)
@@ -135,16 +203,18 @@ def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dic
             if ok:
                 cleaned[f.field_name] = cv
     dyn_engine.apply_serials(db, mt.id, fields, cleaned)
-    dyn_engine.apply_computed(fields, cleaned)
+    from . import formula_tables
+    with formula_tables.scope(db, mt.tenant_id):
+        dyn_engine.apply_computed(fields, cleaned)
     now = datetime.now()
+    owner = None if anonymous else (owner_id if owner_id is not None else mt.owner_id)
     rec = Record(table_id=mt.id, tenant_id=mt.tenant_id,
-                 owner_id=owner_id if owner_id is not None else mt.owner_id,
-                 parent_id=parent_id,
-                 updated_by=owner_id if owner_id is not None else mt.owner_id,
+                 owner_id=owner, parent_id=parent_id, updated_by=owner, updated_by_type=actor_type,
                  data=serialize_data(cleaned), created_at=now, updated_at=now)
     db.add(rec)
     db.commit()
     db.refresh(rec)
+    _post_insert_formulas(db, mt, fields, rec)
     record = _row_to_client(rec, {f.field_name: f for f in fields})
     dyn_engine.log_audit(db, "create", mt.id, record["id"], after=record, user=user,
                          tenant_id=mt.tenant_id)
@@ -153,7 +223,9 @@ def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dic
 
 
 def update_record(db: Session, mt: MetaTable, fields: list[MetaField], record_id: int, data: dict,
-                  user: str | None = None, editor_id: int | None = None) -> dict:
+                  user: str | None = None, editor_id: int | None = None,
+                  actor_type: str = "user", allow_fields: set[str] | None = None) -> dict:
+    """allow_fields：额外放行的只读字段（AI 字段由 AI 服务回写，普通提交一律拦截）。"""
     rec = db.execute(
         select(Record).where(Record.table_id == mt.id, Record.id == record_id)
     ).scalars().first()
@@ -161,17 +233,24 @@ def update_record(db: Session, mt: MetaTable, fields: list[MetaField], record_id
         raise HTTPException(404, "记录不存在")
     fbn = {f.field_name: f for f in fields}
     before = _row_to_client(rec, fbn)
-    cleaned, errors = dyn_engine.coerce_payload(fields, _strip_readonly(fields, data), partial=True)
+    payload = _strip_readonly(fields, data)
+    for k in allow_fields or ():
+        if k in (data or {}):
+            payload[k] = data[k]
+    cleaned, errors = dyn_engine.coerce_payload(fields, payload, partial=True)
     if errors:
         raise HTTPException(422, detail=errors)
     dyn_engine.strip_serial_fields(fields, cleaned)
-    dyn_engine.apply_computed(fields, cleaned, base=before)
+    from . import formula_tables
+    with formula_tables.scope(db, mt.tenant_id):
+        dyn_engine.apply_computed(fields, cleaned, base=before)
     merged = dict(rec.data or {})
     merged.update(serialize_data(cleaned))
     rec.data = merged
     rec.updated_at = datetime.now()
     if editor_id is not None:
         rec.updated_by = editor_id
+    rec.updated_by_type = actor_type
     db.commit()
     after = _row_to_client(rec, fbn)
     dyn_engine.log_audit(db, "update", mt.id, record_id, before=before, after=after, user=user,

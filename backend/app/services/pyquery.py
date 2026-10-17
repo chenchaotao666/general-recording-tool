@@ -81,6 +81,63 @@ def _cmp_ok(a, b, op: str) -> bool:
         return False
 
 
+# 日期筛选值的「日期模式」（筛选面板：具体日期 / 今天 / 本周 / 过去 7 天内…）：
+# 条件值 = {"mode": ..., "date": "YYYY-MM-DD"（仅 exact）}，查询时按当天换算为闭区间 [lo, hi]，
+# 再按运算符比较（等于=落在区间内，早于=早于区间首日，晚于=晚于区间末日…）。前端 format.js dateModeRange 同口径
+DATE_MODES = {"exact", "today", "tomorrow", "yesterday", "thisWeek", "lastWeek", "thisMonth", "lastMonth",
+              "past7", "next7", "past30", "next30"}
+
+
+def date_mode_range(value: dict, today: date) -> tuple[date, date] | None:
+    mode = value.get("mode")
+    if mode == "exact":
+        dt = try_parse_datetime(value.get("date"))
+        return (dt.date(), dt.date()) if dt else None
+    if mode == "today":
+        return today, today
+    if mode == "tomorrow":
+        d = today + timedelta(days=1)
+        return d, d
+    if mode == "yesterday":
+        d = today - timedelta(days=1)
+        return d, d
+    if mode in ("thisWeek", "lastWeek"):   # 周一 ~ 周日
+        mon = today - timedelta(days=today.weekday()) - timedelta(days=7 if mode == "lastWeek" else 0)
+        return mon, mon + timedelta(days=6)
+    if mode in ("thisMonth", "lastMonth"):
+        first = today.replace(day=1)
+        if mode == "lastMonth":
+            first = (first - timedelta(days=1)).replace(day=1)
+        nxt = (first.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return first, nxt - timedelta(days=1)
+    if mode in ("past7", "past30"):        # 含今天
+        return today - timedelta(days=(7 if mode == "past7" else 30) - 1), today
+    if mode in ("next7", "next30"):        # 含今天
+        return today, today + timedelta(days=(7 if mode == "next7" else 30) - 1)
+    return None
+
+
+def _date_mode_match(v, value: dict, op: str, today: date) -> bool:
+    rng = date_mode_range(value, today)
+    if rng is None or v is None:
+        return False
+    d = v.date() if isinstance(v, datetime) else v
+    if not isinstance(d, date):
+        return False
+    lo, hi = rng
+    if op == "eq":
+        return lo <= d <= hi
+    if op == "ne":
+        return not (lo <= d <= hi)
+    if op == "gt":
+        return d > hi
+    if op == "gte":
+        return d >= lo
+    if op == "lt":
+        return d < lo
+    return d <= hi   # lte
+
+
 def _sys_int(x):
     """系统整型列（id/owner_id）的筛选值规范化：尽量转 int，转不了保留原值（永不命中）。"""
     try:
@@ -127,6 +184,10 @@ def match_rule(rec: dict, fields_by_name: dict, flt: dict) -> bool:
     is_date = f is not None and f.data_type == "date"
     now = datetime.now()
     today = now.date()
+
+    # 日期模式条件值（{"mode": ...}）：按当天换算区间后比较
+    if isinstance(value, dict) and value.get("mode") in DATE_MODES and op in ("eq", "ne", "gt", "gte", "lt", "lte"):
+        return _date_mode_match(v, value, op, today)
 
     if op == "today":
         if is_date:

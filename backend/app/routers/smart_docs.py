@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import MetaTable, MetaView, SmartDoc, SmartDocEntry
+from ..models import (MetaTable, MetaView, SmartAutomation, SmartAutomationRun, SmartDoc, SmartDocEntry,
+                      SmartEntryPermission, SmartGroupGrant)
 from ..schemas import FieldIn, TableCreate
 from ..services import entitlement, meta_service
 from ..services.dyn_engine import log_audit
@@ -94,8 +95,8 @@ def create_entry(doc_id: int, payload: dict, db: Session = Depends(get_db),
     etype = payload.get("type")
     name = str(payload.get("name") or "").strip()
     parent_id = payload.get("parent_id")
-    if etype not in ("folder", "sheet", "dashboard"):
-        raise HTTPException(400, "条目类型必须是 folder / sheet / dashboard")
+    if etype not in ("folder", "sheet", "dashboard", "form"):
+        raise HTTPException(400, "条目类型必须是 folder / sheet / dashboard / form")
     if parent_id is not None:
         parent = db.get(SmartDocEntry, parent_id)
         if not parent or parent.doc_id != doc_id or parent.type != "folder":
@@ -116,6 +117,9 @@ def create_entry(doc_id: int, payload: dict, db: Session = Depends(get_db),
         db.commit()
         db.refresh(e)
         return {"entry": _entry_out(e)}
+
+    if etype == "form":
+        return _create_collect_form(db, doc_id, parent_id, name or "收集表单", ctx)
 
     # sheet：组合事务
     entitlement.assert_tenant_writable(db, ctx.tenant.id)
@@ -157,6 +161,65 @@ def create_entry(doc_id: int, payload: dict, db: Session = Depends(get_db),
     return {"entry": _entry_out(e), "table_id": mt.id}
 
 
+def _create_collect_form(db: Session, doc_id: int, parent_id, label: str, ctx: Context) -> dict:
+    """新建 → 收集表单（§2.5/§12.1）：表单 + 结果表组合对象。默认 3 题（文本题/单选题/图片题），
+    视图页签为「收集表单 | 表单收集结果」，表单视图为默认视图。"""
+    from ..services import view_config
+    entitlement.assert_tenant_writable(db, ctx.tenant.id)
+    entitlement.check_quota(db, ctx.tenant.id, "max_tables")
+    tpls = [
+        ("text", "文本题", None),
+        ("singleSelect", "单选题", {"options": [{"id": f"opt_{i}", "label": f"选项{i}",
+                                                 "color": c, "order": i - 1}
+                                                for i, c in ((1, "blue"), (2, "green"), (3, "orange"))],
+                                    "allowAddOptionWhenEditing": True}),
+        ("image", "图片题", None),
+    ]
+    fields, names = [], set()
+    for ft, lb, cfg in tpls:
+        fn = gen_field_name(names)
+        names.add(fn)
+        fields.append(FieldIn(**to_field_in(ft, lb, fn, cfg)))
+    try:
+        mt = meta_service.create_business_table(
+            db, TableCreate(label=label, fields=fields, storage_mode="json"),
+            owner_id=ctx.user.id, tenant_id=ctx.tenant.id)
+        from ..services.meta_service import get_meta_fields
+        mfields = get_meta_fields(db, mt.id)
+        form_cfg = view_config.validate_view_config(
+            {"form": {"title": label, "items": view_config.default_form_items(mfields)}}, mfields)
+        db.add(MetaView(table_id=mt.id, name="收集表单", type="form", config=form_cfg, is_default=True,
+                        created_by=ctx.user.id))
+        db.add(MetaView(table_id=mt.id, name="表单收集结果", type="grid", config={}, is_default=False,
+                        created_by=ctx.user.id))
+        e = SmartDocEntry(doc_id=doc_id, parent_id=parent_id, type="form", name=label,
+                          ref_table_id=mt.id, order_no=_next_order(db, doc_id, parent_id))
+        db.add(e)
+        db.commit()
+    except MetaError as ex:
+        db.rollback()
+        raise HTTPException(400, str(ex))
+    entitlement.bump_usage(db, ctx.tenant.id, "table_count", 1)
+    log_audit(db, "create_table", mt.id, after={"name": mt.name, "label": mt.label, "via": "smart_form"},
+              user=ctx.user.username, tenant_id=ctx.tenant.id)
+    db.commit()
+    db.refresh(e)
+    return {"entry": _entry_out(e), "table_id": mt.id}
+
+
+def _purge_entry_extras(db: Session, e: SmartDocEntry) -> None:
+    """条目删除前清理 V3 附属配置：内容权限 / 组额外权限 / 自动化规则与日志。"""
+    db.query(SmartEntryPermission).filter_by(entry_id=e.id).delete()
+    db.query(SmartGroupGrant).filter_by(entry_id=e.id).delete()
+    if e.ref_table_id:
+        rule_ids = [a.id for a in db.query(SmartAutomation.id).filter_by(table_id=e.ref_table_id).all()]
+        if rule_ids:
+            db.query(SmartAutomationRun).filter(SmartAutomationRun.rule_id.in_(rule_ids)).delete(
+                synchronize_session=False)
+            db.query(SmartAutomation).filter(SmartAutomation.id.in_(rule_ids)).delete(synchronize_session=False)
+    db.flush()
+
+
 @router.patch("/entries/{entry_id}")
 def update_entry(entry_id: int, payload: dict, db: Session = Depends(get_db),
                  ctx: Context = Depends(get_current_context)):
@@ -176,8 +239,8 @@ def update_entry(entry_id: int, payload: dict, db: Session = Depends(get_db),
             if e.type == "folder" and _is_descendant(db, e.id, pid):
                 raise HTTPException(400, "不能移动到自身或其子文件夹内")
         e.parent_id = pid
-    # sheet 改名联动表 label
-    if "name" in payload and e.type == "sheet" and e.ref_table_id:
+    # sheet / form 改名联动表 label
+    if "name" in payload and e.type in ("sheet", "form") and e.ref_table_id:
         mt = db.get(MetaTable, e.ref_table_id)
         if mt:
             mt.label = e.name
@@ -198,7 +261,8 @@ def delete_entry(entry_id: int, db: Session = Depends(get_db),
         db.delete(e)
         db.commit()
         return {"ok": True}
-    # sheet：校验表的删除权限
+    _purge_entry_extras(db, e)
+    # sheet / form：校验表的删除权限
     if e.ref_table_id:
         table_id = e.ref_table_id
         access = get_table_access(db, table_id, ctx.user, ctx)
@@ -226,7 +290,7 @@ def entry_table(entry_id: int, db: Session = Depends(get_db),
                 ctx: Context = Depends(get_current_context)):
     """sheet 条目 → 表详情（含字段与我的权限），进入网格页时调用。"""
     e = _get_entry(db, entry_id, ctx)
-    if e.type != "sheet" or not e.ref_table_id:
+    if e.type not in ("sheet", "form") or not e.ref_table_id:
         raise HTTPException(400, "该条目不是工作表")
     mt = db.get(MetaTable, e.ref_table_id)
     if not mt:

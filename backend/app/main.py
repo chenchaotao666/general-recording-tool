@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import assistant, audit, auth, billing, departments, dyn, excel, friends, groups, home, images, mcp, members, mindmaps, notes, notify, platform, print_templates, rbac, reports, scopes, settings as settings_router, share_links, shares, smart_docs, smart_dashboard, smart_records, smart_views, tables, tenants, users, vision, whiteboards, workflows
+from .routers import assistant, audit, auth, billing, departments, dyn, excel, friends, groups, home, images, mcp, members, mindmaps, notes, notify, platform, print_templates, rbac, reports, scopes, settings as settings_router, share_links, shares, smart_ai, smart_automation, smart_docs, smart_dashboard, smart_forms, smart_perms, smart_records, smart_views, tables, tenants, users, vision, whiteboards, workflows
 from .services import scheduler
 from .services.migrate import run_migrations
 from .utils.auth import get_current_user, hash_password
@@ -72,6 +72,7 @@ app.include_router(auth.router)  # 登录接口本身不鉴权
 app.include_router(share_links.router)  # 管理端点自带 get_current_user；/share/{token} 公开免登录
 app.include_router(workflows.public_router)  # webhook 触发：URL 即凭证，免登录
 app.include_router(mcp.public_router)        # MCP 端点：URL 路径 token 即凭证，免登录
+app.include_router(smart_forms.public_router)  # 智能表公开表单：分享链接 token 即凭证，免登录
 
 # 其余所有接口都需要登录（支持 Authorization 头或 ?token= 查询参数，后者供导出下载用）
 protected = [Depends(get_current_user)]
@@ -110,6 +111,10 @@ app.include_router(smart_docs.router, dependencies=protected)
 app.include_router(smart_views.router, dependencies=protected)
 app.include_router(smart_records.router, dependencies=protected)
 app.include_router(smart_dashboard.router, dependencies=protected)
+app.include_router(smart_perms.router, dependencies=protected)
+app.include_router(smart_automation.router, dependencies=protected)
+app.include_router(smart_forms.router, dependencies=protected)
+app.include_router(smart_ai.router, dependencies=protected)
 
 # 前端构建产物存在时直接由后端托管（生产模式）
 # Excalidraw 素材库：独立目录按需托管（前端打开素材库面板时才加载，不进前端 dist；静态资源不做鉴权）

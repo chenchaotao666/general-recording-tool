@@ -34,6 +34,15 @@ export function formatDate(v, cfg = {}) {
   return map[fmt] || s.slice(0, cfg.includeTime ? 16 : 10)
 }
 
+// 日期字段格式（yyyy… 写法）→ dayjs 格式，供日期编辑框 format/placeholder 使用，显示结果与 formatDate 一致
+const DAYJS_DATE_FORMATS = {
+  'yyyy-MM-dd': 'YYYY-MM-DD', 'yyyy/MM/dd': 'YYYY/M/D', 'yyyy年M月d日': 'YYYY年M月D日',
+  'yyyy-MM-dd HH:mm': 'YYYY-MM-DD HH:mm', 'yyyy年M月d日 HH:mm': 'YYYY年M月D日 HH:mm',
+}
+export function dayjsDateFormat(cfg = {}) {
+  return DAYJS_DATE_FORMATS[cfg.format || 'yyyy-MM-dd'] || (cfg.includeTime ? 'YYYY-MM-DD HH:mm' : 'YYYY-MM-DD')
+}
+
 // 填色规则求值（设计文档 §5.5）：返回命中的颜色或 null。
 // 整列规则（fillTarget）：all=该列所有内容单元格恒命中（排最后，条件规则优先）；
 // header=字段名称（表头）填色，不参与单元格求值（由 header-cell-style 应用）
@@ -66,11 +75,61 @@ export function evalRowFill(rules, fields, row) {
   return null
 }
 
+// ---------- 日期筛选值的「日期模式」（具体日期 / 今天 / 本周 / 过去 7 天内…，参照 PixPin_2026-10-18_00-16-20） ----------
+// 条件值 = { mode, date? }：按当天换算闭区间 [lo, hi]（YYYY-MM-DD），再按运算符比较。后端 pyquery.date_mode_range 同口径
+export const DATE_MODE_OPTIONS = [
+  { value: 'exact', label: '具体日期' },
+  { value: 'today', label: '今天' }, { value: 'tomorrow', label: '明天' }, { value: 'yesterday', label: '昨天' },
+  { value: 'thisWeek', label: '本周' }, { value: 'lastWeek', label: '上周' },
+  { value: 'thisMonth', label: '本月' }, { value: 'lastMonth', label: '上月' },
+  { value: 'past7', label: '过去 7 天内' }, { value: 'next7', label: '未来 7 天内' },
+  { value: 'past30', label: '过去 30 天内' }, { value: 'next30', label: '未来 30 天内' },
+]
+// 运算符可用的日期模式：等于/不等于 = 全部；晚于/早于 = 具体日期/今天/明天/昨天（参照 PixPin_2026-10-18_00-48-27）
+const POINT_MODES = ['exact', 'today', 'tomorrow', 'yesterday']
+export function dateModesFor(op) {
+  return ['gt', 'lt', 'gte', 'lte'].includes(op) ? DATE_MODE_OPTIONS.filter(o => POINT_MODES.includes(o.value)) : DATE_MODE_OPTIONS
+}
+export const isDateModeValue = (v) => !!v && typeof v === 'object' && !Array.isArray(v) && typeof v.mode === 'string'
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
+export function dateModeRange(v, now = new Date()) {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const pair = (a, b) => [ymd(a), ymd(b)]
+  switch (v?.mode) {
+    case 'exact': return v.date ? [String(v.date).slice(0, 10), String(v.date).slice(0, 10)] : null
+    case 'today': return pair(today, today)
+    case 'tomorrow': return pair(addDays(today, 1), addDays(today, 1))
+    case 'yesterday': return pair(addDays(today, -1), addDays(today, -1))
+    case 'thisWeek': case 'lastWeek': {   // 周一 ~ 周日
+      const mon = addDays(today, -((today.getDay() + 6) % 7) - (v.mode === 'lastWeek' ? 7 : 0))
+      return pair(mon, addDays(mon, 6))
+    }
+    case 'thisMonth': return pair(new Date(today.getFullYear(), today.getMonth(), 1), new Date(today.getFullYear(), today.getMonth() + 1, 0))
+    case 'lastMonth': return pair(new Date(today.getFullYear(), today.getMonth() - 1, 1), new Date(today.getFullYear(), today.getMonth(), 0))
+    case 'past7': return pair(addDays(today, -6), today)
+    case 'next7': return pair(today, addDays(today, 6))
+    case 'past30': return pair(addDays(today, -29), today)
+    case 'next30': return pair(today, addDays(today, 29))
+    default: return null
+  }
+}
+export function dateModeLabel(v) {
+  if (!isDateModeValue(v)) return v == null ? '' : String(v)
+  if (v.mode === 'exact') return v.date ? String(v.date).slice(0, 10) : ''
+  return DATE_MODE_OPTIONS.find(o => o.value === v.mode)?.label || ''
+}
+// 条件值是否为空（未填完）：null/空串/空数组；日期模式「具体日期」未选日期也算空
+export function isCondValueEmpty(v) {
+  if (isDateModeValue(v)) return v.mode === 'exact' && !v.date
+  return v == null || v === '' || (Array.isArray(v) && !v.length)
+}
+
 export function isRuleComplete(r) {
   // 整列规则（fillTarget header/all）无需运算符与取值即完整
   if (r.fillTarget) return !!r.fieldId
   const noValue = ['isEmpty', 'isNotEmpty']
-  return r.fieldId && r.operator && (noValue.includes(r.operator) || (r.value != null && r.value !== ''))
+  return r.fieldId && r.operator && (noValue.includes(r.operator) || !isCondValueEmpty(r.value))
 }
 
 export function matchCondition(c, v) {
@@ -84,6 +143,15 @@ export function matchCondition(c, v) {
   // 日期比较：单元格值带时间部分（2026-10-08 00:00:00）、条件值可能只是日期——
   // 按条件值的精度截断单元格值后按 ISO 字典序比较（ISO 日期/日期时间字典序即时间序）
   const DATE_RE = /^\d{4}-\d{2}-\d{2}/
+  // 日期模式值（今天/本周/具体日期…）：单元格日期落在换算区间的位置决定命中
+  if (isDateModeValue(c.value) && ['eq', 'neq', 'gt', 'gte', 'lt', 'lte'].includes(c.operator)) {
+    const rng = dateModeRange(c.value)
+    const m = String(v ?? '').match(DATE_RE)
+    if (!rng || empty || !m) return false
+    const d = m[0]
+    const [lo, hi] = rng
+    return { eq: d >= lo && d <= hi, neq: !(d >= lo && d <= hi), gt: d > hi, gte: d >= lo, lt: d < lo, lte: d <= hi }[c.operator]
+  }
   const isDateCond = typeof c.value === 'string' && DATE_RE.test(c.value)
   const dateKey = (x) => String(x).slice(0, String(c.value).length)
   // 相对日期：今天 / 过去 N 天（含今天）/ 未来 N 天（含今天）

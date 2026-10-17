@@ -164,6 +164,13 @@ FIELD_TYPES: dict[str, dict] = {
         "filter_ops": OP_TEXT, "aggregations": ["count"],
         "readonly": True,
     },
+    # ---------- V3：AI 字段（设计文档 §10）：场景模板 + 输入字段 → 输出类型；由 AI 服务异步回写 ----------
+    "ai": {
+        "label": "AI 字段", "data_type": "json", "widget": "input",
+        "default_config": {"scene": "custom", "inputFields": [], "prompt": "", "outputType": "text",
+                           "options": [], "autoUpdate": True, "allowNewOptions": True},
+        "filter_ops": OP_TEXT, "aggregations": ["count"], "readonly": True,
+    },
     # 系统字段：值来自记录系统列（owner_id/updated_by/created_at/updated_at），不可写
     "createdBy": {
         "label": "创建人", "data_type": "varchar", "widget": "input", "sys_key": "owner_id",
@@ -281,6 +288,16 @@ def validate_field_type_config(field_type: str, config: dict, label: str = "") -
         if cfg.get("aggregation", "raw") not in LOOKUP_AGGS:
             raise FieldTypeError(f"{prefix}的统计方式不支持：{cfg.get('aggregation')}")
 
+    if field_type == "ai":
+        if cfg.get("outputType", "text") not in AI_OUTPUT_TYPES:
+            raise FieldTypeError(f"{prefix}的输出类型不支持：{cfg.get('outputType')}")
+        if not isinstance(cfg.get("inputFields", []), list):
+            raise FieldTypeError(f"{prefix}的输入字段必须是数组")
+        # 自定义场景：新版配置的提示词在 systemPrompt（AI 配置生成），旧版在 prompt（模板），有其一即可
+        if cfg.get("scene", "custom") == "custom" and not (
+                str(cfg.get("systemPrompt") or "").strip() or str(cfg.get("prompt") or "").strip()):
+            raise FieldTypeError(f"{prefix}的自定义提示词不能为空")
+
     if field_type == "formula":
         expr = (cfg.get("formula") or "").strip()
         if not expr:
@@ -335,6 +352,9 @@ def gen_field_name(existing: set[str]) -> str:
 READONLY_TYPES = {ft for ft, reg in FIELD_TYPES.items() if reg.get("readonly")}
 SYSTEM_TYPES = {ft for ft, reg in FIELD_TYPES.items() if reg.get("system")}
 COMPUTED_TYPES = {"formula", "lookup"}
+
+# AI 字段输出类型（V3）
+AI_OUTPUT_TYPES = {"text", "number", "singleSelect", "multiSelect", "checkbox"}
 
 # 查找引用统计方式（设计文档 §8.2）
 LOOKUP_AGGS = {"raw", "rawDistinct", "sum", "count", "countDistinct", "avg", "max", "min"}

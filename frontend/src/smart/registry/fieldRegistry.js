@@ -13,11 +13,30 @@ export const OPTION_COLORS = [
   { key: 'gray', label: '灰', value: '#F0F1F3', text: '#646A73' },
 ]
 
+// 进度条颜色（参照 添加列/列-进度.png）：第一行 9 个纯色，第二行 9 个渐变/分段色；key 存 config.color
+export const PROGRESS_COLORS = [
+  { key: 'blue', css: '#4E8CF7' }, { key: 'cyan', css: '#5DD3C9' }, { key: 'green', css: '#3DC15E' },
+  { key: 'red', css: '#F5554A' }, { key: 'orange', css: '#FA7D2E' }, { key: 'yellow', css: '#FCB900' },
+  { key: 'purple', css: '#8B5CF6' }, { key: 'pink', css: '#F2699A' }, { key: 'gray', css: '#B6B8BC' },
+  { key: 'g-blue', css: 'linear-gradient(90deg, #DCE8FD, #4E8CF7)' },
+  { key: 'g-cyan', css: 'linear-gradient(90deg, #E0F7F4, #5DD3C9)' },
+  { key: 's-green-red', css: 'linear-gradient(90deg, #3DC15E 50%, #F5554A 50%)' },
+  { key: 's-red-green', css: 'linear-gradient(90deg, #F5554A 50%, #3DC15E 50%)' },
+  { key: 's-blue-orange', css: 'linear-gradient(90deg, #4E8CF7 50%, #FA7D2E 50%)' },
+  { key: 's-orange-blue', css: 'linear-gradient(90deg, #FA7D2E 50%, #4E8CF7 50%)' },
+  { key: 's-ryg', css: 'linear-gradient(90deg, #F5554A 33%, #FCB900 33% 66%, #3DC15E 66%)' },
+  { key: 's-gyr', css: 'linear-gradient(90deg, #3DC15E 33%, #FCB900 33% 66%, #F5554A 66%)' },
+  { key: 's-rainbow', css: 'linear-gradient(90deg, #F5554A 20%, #FA7D2E 20% 40%, #FCB900 40% 60%, #3DC15E 60% 80%, #8B5CF6 80%)' },
+]
+export function progressColor(key) {
+  return PROGRESS_COLORS.find(c => c.key === key)?.css || key || '#3DC15E'
+}
+
 // 填色色板（设计稿 PixPin_2026-10-15_20-26-47）：9 色 × 3 深浅档，按行浅→深
 export const FILL_PALETTE = [
-  ['#f1f3f4', '#e8f0fe', '#e0f7fa', '#e6f4ea', '#fce8e6', '#feefe3', '#fef9e0', '#f3e8fd', '#fce4ec'],
-  ['#dadce0', '#aecbfa', '#9ee7f0', '#a9e5c0', '#f6b8b3', '#fbcfa6', '#fde293', '#d0aff2', '#f8a8cd'],
-  ['#bdc1c6', '#8ab4f8', '#5fd4e0', '#81c995', '#ee675c', '#f2995c', '#fcc934', '#b475e8', '#f06292'],
+  ['#F2F3F5', '#DFE9FC', '#DFF2FB', '#DFF6F3', '#FDE4E4', '#FDEEE4', '#FEF5DA', '#ECE8FC', '#FCE6EF'],
+  ['#E3E4E6', '#ABC8F7', '#B3E0F7', '#B5E8E1', '#FBC2C0', '#FCCEB0', '#FDE5A6', '#CFC4F7', '#F7C3D9'],
+  ['#D5D6D8', '#82B1F5', '#8DCDF2', '#8DDBD1', '#F79E9B', '#FAB287', '#FCD574', '#AD98F1', '#F29DBF'],
 ]
 
 export function optionColor(key) {
@@ -32,10 +51,20 @@ export const OP_LABELS = {
 }
 export const NO_VALUE_OPS = ['isEmpty', 'isNotEmpty', 'today']
 
+// 日期字段的比较运算符文案：大于/小于 → 晚于/早于（参照 PixPin_2026-10-18_00-48-13）
+const DATE_OP_LABELS = { gt: '晚于', lt: '早于', gte: '不早于', lte: '不晚于' }
+const DATE_TYPES = ['date', 'createdTime', 'lastModifiedTime']
+export function opLabel(field, op) {
+  if (DATE_TYPES.includes(field?.field_type) && DATE_OP_LABELS[op]) return DATE_OP_LABELS[op]
+  return OP_LABELS[op] || op || ''
+}
+
 const OP_TEXT = ['contains', 'notContains', 'eq', 'neq', 'isEmpty', 'isNotEmpty']
 const OP_NUMBER = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'isEmpty', 'isNotEmpty']
 const OP_ENUM = ['contains', 'notContains', 'eq', 'neq', 'isEmpty', 'isNotEmpty']
-const OP_DATE = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'today', 'pastDays', 'withinDays', 'isEmpty', 'isNotEmpty']
+// 日期：等于 / 不等于 / 晚于 / 早于 / 为空 / 不为空；今天、本周、过去 7 天等相对日期改由值的「日期模式」表达。
+// 旧条件里的 gte/lte/today/pastDays/withinDays 后端仍可求值，文案照常显示，只是不再出现在可选列表
+const OP_DATE = ['eq', 'neq', 'gt', 'lt', 'isEmpty', 'isNotEmpty']
 
 // editor: inline（内联输入）/ select / date / member / url / progress / upload / relation / checkbox(即时) / readonly
 export const FIELD_REGISTRY = {
@@ -62,10 +91,21 @@ export const FIELD_REGISTRY = {
   createdBy: { label: '创建人', icon: '👤', group: '系统', editor: 'readonly', filterOps: OP_ENUM, aggregations: ['count'], readonly: true, system: true, defaultConfig: () => ({}) },
   lastModifiedBy: { label: '最后编辑人', icon: '👤', group: '系统', editor: 'readonly', filterOps: OP_ENUM, aggregations: ['count'], readonly: true, system: true, defaultConfig: () => ({}) },
   createdTime: { label: '创建时间', icon: '📅', group: '系统', editor: 'readonly', filterOps: OP_DATE, aggregations: ['count'], readonly: true, system: true, defaultConfig: () => ({ format: 'yyyy-MM-dd' }) },
+  // V3：AI 字段（场景市场配置；值由服务端 AI 回写，按 outputType 渲染）
+  ai: { label: 'AI 字段', icon: '✦', group: '计算', editor: 'readonly', filterOps: OP_TEXT, aggregations: ['count'], readonly: true, ai: true, defaultConfig: () => ({ scene: 'custom', inputFields: [], prompt: '', outputType: 'text', options: [], autoUpdate: true, allowNewOptions: true }) },
   lastModifiedTime: { label: '最后编辑时间', icon: '📅', group: '系统', editor: 'readonly', filterOps: OP_DATE, aggregations: ['count'], readonly: true, system: true, defaultConfig: () => ({ format: 'yyyy-MM-dd' }) },
 }
 
 export const FIELD_TYPE_GROUPS = ['基础', '协作', '媒体', '标识', '关联', '计算', '系统']
+
+// 不可直接编辑的字段：单击/双击时的提示文案（表格单元格与右侧详情面板共用）；
+// BLOCKED_CONFIGURABLE 可通过提示里的「修改设置」调整规则
+export const BLOCKED_EDIT_TEXT = {
+  formula: '公式计算结果不可直接编辑', lookup: '查找引用内容不可直接编辑', autoNumber: '自动编号不可直接编辑',
+  createdBy: '创建人由系统自动记录，不可编辑', lastModifiedBy: '最后编辑人由系统自动记录，不可编辑',
+  createdTime: '创建时间由系统自动记录，不可编辑', lastModifiedTime: '最后编辑时间由系统自动记录，不可编辑',
+}
+export const BLOCKED_CONFIGURABLE = ['formula', 'lookup', 'autoNumber']
 
 export function regOf(field) {
   return FIELD_REGISTRY[field?.field_type] || FIELD_REGISTRY.text

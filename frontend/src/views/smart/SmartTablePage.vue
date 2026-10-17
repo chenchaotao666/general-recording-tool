@@ -3,116 +3,175 @@
     <!-- 视图页签 -->
     <ViewTabs :views="views" :current-id="view?.id" @switch="switchView" @action="onViewAction" />
 
+    <!-- 表单视图（V3 §12）：自带工具条与编辑/填写页签 -->
+    <FormView v-if="viewType === 'form' && view" ref="formRef" :view="view" :fields="resolvedFields" :table-id="tableId"
+              :table-name="entry?.name || ''" :members="members" :can-manage="contentPerm.viewManage"
+              @save="onFormSave" @add-field="onFormAddField" @update-options="onFormOptions"
+              @edit-field="(f) => openFieldConfig(f)" @open-automation="openAutomation(formAutomationDraft())" />
+
+    <template v-else>
     <!-- 工具栏（对齐参照 上方Tab页签.png：添加一行=蓝字圆⊕；条件按钮生效时浅蓝胶囊+计数） -->
     <div class="toolbar">
       <button class="tb-btn tb-add" :disabled="!perms.can_create" @click="addRow">
         <StIcon name="plus-circle" :size="15" />添加一行
       </button>
       <span class="tb-sep" />
-      <button class="tb-btn" @click="settingsVisible = true"><StIcon name="table" :size="15" />表格设置</button>
+      <!-- 工具栏按钮（对齐参照 docs/智慧表格/表格上方按钮）：筛选/分组/排序/填色生效或面板展开=浅灰底（个人筛选追加「· 仅你可见」）；
+           排序与行高之间竖分隔 -->
+      <TableSettingsPanel :visible="activePanel === 'settings'" @update:visible="(v) => setPanel('settings', v)" :fields="fields" :view="view"
+                          :column-groups="columnGroups" @toggle-visible="onToggleVisible" @reorder="onReorder"
+                          @field-action="onFieldAction" @add-field="(e) => { activePanel = null; onAddFieldAt(e) }" @set-field-group="setFieldGroup">
+        <button class="tb-btn" :class="{ open: activePanel === 'settings' }"><StIcon name="table" :size="15" />表格设置</button>
+      </TableSettingsPanel>
 
-      <FilterPanel :visible="activePanel === 'filter'" @update:visible="(v) => (activePanel = v ? 'filter' : (activePanel === 'filter' ? null : activePanel))" :fields="resolvedFields"
-                   :conditions="panelConditions" :conjunction="cfg.filters?.conjunction || 'and'" :scope="filterScope"
-                   @change="onFiltersChange" @scope-change="onScopeChange">
-        <button class="tb-btn" :class="{ on: filterCount }">
-          <StIcon name="filter" :size="15" />筛选{{ filterCount ? ` ${filterCount}` : '' }}
+      <FilterPanel :visible="activePanel === 'filter'" @update:visible="(v) => setPanel('filter', v)" :fields="resolvedFields"
+                   :column-groups="columnGroups" :conditions="panelConditions" :conjunction="cfg.filters?.conjunction || 'and'"
+                   :scope="filterScope" @change="onFiltersChange" @scope-change="onScopeChange">
+        <!-- 生效/展开态与排序、分组一致：浅灰底深色字 -->
+        <button class="tb-btn" :class="{ on: filterCount || activePanel === 'filter' }">
+          <StIcon name="filter" :size="15" />筛选{{ filterCount ? ` ${filterCount}` : '' }}<span v-if="filterCount && filterScope === 'personal'" class="tb-scope">· 仅你可见</span>
         </button>
       </FilterPanel>
 
-      <GroupPanel :visible="activePanel === 'group'" @update:visible="(v) => (activePanel = v ? 'group' : (activePanel === 'group' ? null : activePanel))" :fields="fields" :groups="cfg.groups || []"
+      <GroupPanel :visible="activePanel === 'group'" @update:visible="(v) => setPanel('group', v)" :fields="fields" :groups="cfg.groups || []"
                   @change="(v) => patchConfig({ groups: v })">
-        <button class="tb-btn" :class="{ on: (cfg.groups || []).length }">
+        <button class="tb-btn" :class="{ on: (cfg.groups || []).length || activePanel === 'group' }">
           <StIcon name="group" :size="15" />分组{{ (cfg.groups || []).length ? ` ${cfg.groups.length}` : '' }}
         </button>
       </GroupPanel>
 
-      <SortPanel :visible="activePanel === 'sort'" @update:visible="(v) => (activePanel = v ? 'sort' : (activePanel === 'sort' ? null : activePanel))" :fields="fields" :sorts="cfg.sorts || []"
+      <SortPanel :visible="activePanel === 'sort'" @update:visible="(v) => setPanel('sort', v)" :fields="fields" :sorts="cfg.sorts || []"
                  :auto-sort="cfg.autoSort !== false"
                  @change="(v) => patchConfig({ sorts: v })" @auto-sort="(v) => patchConfig({ autoSort: v })">
-        <button class="tb-btn" :class="{ on: (cfg.sorts || []).length }">
+        <button class="tb-btn" :class="{ on: (cfg.sorts || []).length || activePanel === 'sort' }">
           <StIcon name="sort" :size="15" />排序{{ (cfg.sorts || []).length ? ` ${cfg.sorts.length}` : '' }}
         </button>
       </SortPanel>
+      <span class="tb-sep" />
 
-      <el-dropdown trigger="click" @command="(v) => patchConfig({ rowHeight: v })">
-        <button class="tb-btn" @click.stop><StIcon name="row-height" :size="15" />行高</button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item v-for="(l, k) in ROW_HEIGHTS" :key="k" :command="k">
-              <span :style="{ color: cfg.rowHeight === k || (!cfg.rowHeight && k === 'default') ? 'var(--st-primary)' : '' }">
-                {{ cfg.rowHeight === k || (!cfg.rowHeight && k === 'default') ? '✓ ' : '' }}{{ l }}
-              </span>
-            </el-dropdown-item>
-          </el-dropdown-menu>
+      <!-- 行高（对齐参照 行高.png）：✓ + 档位图标 + 文案；底部自定义行高（行数） -->
+      <!-- 弹出方式与排序/分组等工具栏面板一致：trigger=click + 受控 visible（点按钮开合、点外部关闭，带指向箭头） -->
+      <el-popover trigger="click" :visible="activePanel === 'rowHeight'" @update:visible="(v) => setPanel('rowHeight', v)"
+                  placement="bottom-start" :width="250" popper-class="st-tbpanel st-rh-pop">
+        <template #reference>
+          <button class="tb-btn" :class="{ on: activePanel === 'rowHeight' }">
+            <StIcon name="row-height" :size="15" />行高
+          </button>
         </template>
-      </el-dropdown>
+        <div class="rh-menu">
+          <div v-for="(l, k) in ROW_HEIGHTS" :key="k" class="rh-item" @click="patchConfig({ rowHeight: k }); activePanel = null">
+            <span class="rh-check">{{ currentRowHeight === k ? '✓' : '' }}</span>
+            <StIcon :name="`rh-${k}`" :size="17" class="rh-ico" />{{ l }}
+          </div>
+          <div class="rh-custom">自定义行高
+            <el-input-number :model-value="typeof cfg.rowHeight === 'number' ? cfg.rowHeight : null" :min="1" :max="20" :controls="false"
+                             size="small" class="rh-num" placeholder="" @change="(v) => v && patchConfig({ rowHeight: Math.round(v) })" />行
+          </div>
+        </div>
+      </el-popover>
 
-      <FillPanel :visible="activePanel === 'fill'" @update:visible="(v) => (activePanel = v ? 'fill' : (activePanel === 'fill' ? null : activePanel))" :fields="resolvedFields" :rules="cfg.fillRules || []"
+      <FillPanel :visible="activePanel === 'fill'" @update:visible="(v) => setPanel('fill', v)" :fields="resolvedFields" :rules="cfg.fillRules || []"
                  @change="(v) => patchConfig({ fillRules: v })">
-        <button class="tb-btn" :class="{ on: fillCount }">
+        <button class="tb-btn" :class="{ on: fillCount || activePanel === 'fill' }">
           <StIcon name="fill" :size="15" />填色{{ fillCount ? ` ${fillCount}` : '' }}
         </button>
       </FillPanel>
 
+      <!-- 批量操作（勾选行后出现，紧跟填色右侧）：已选 N 条 · 批量删除 · 取消 -->
+      <template v-if="selection.length">
+        <span class="tb-sep" />
+        <span class="tb-selected">已选 {{ selection.length }} 条</span>
+        <button class="tb-btn tb-danger" :disabled="!perms.can_delete" @click="batchDelete">批量删除</button>
+        <button class="tb-btn" @click="selection = []; gridRef?.clearSelection()">取消</button>
+      </template>
+
       <div class="tb-right">
         <!-- 条件胶囊（pin 的筛选条件）：点击弹单字段筛选浮层（运算符+勾选清单，与列头「筛选」同款） -->
-        <el-popover v-for="c in pinnedConditions" :key="c.id" trigger="click" placement="bottom-start" :width="300" popper-class="st-pop">
+        <el-popover v-for="c in pinnedConditions" :key="c.id" trigger="click" placement="bottom-start" :width="480" popper-class="st-pop st-ffp-pop">
           <template #reference>
             <span class="chip"><StIcon name="filter" :size="12" />{{ labelOf(c.fieldId) }}<StIcon name="chevron-down" :size="12" /></span>
           </template>
-          <FieldFilterPop v-if="fieldOfName(c.fieldId)" :field="fieldOfName(c.fieldId)" :condition="c"
+          <FieldFilterPop v-if="fieldOfName(c.fieldId)" :field="fieldOfName(c.fieldId)" :condition="c" pinned
                           :scope-text="filterScope === 'personal' ? '调整仅你可见' : '对所有人生效'"
-                          @change="(cond) => applyFieldCondition(c.fieldId, cond)" />
+                          @change="(cond) => applyFieldCondition(c.fieldId, cond)"
+                          @pin="(v) => setFieldPinned(c.fieldId, v)" @open-panel="setPanel('filter', true)" />
         </el-popover>
+        <!-- V3 右上工具栏（对齐参照 右上工具栏.png）：内容权限 / 自动化 / 生成表单 -->
+        <el-tooltip content="内容权限" placement="bottom" :show-after="200">
+          <button class="tb-ico" :class="{ on: permPanel.visible }" @click="openPermPanel()"><StIcon name="lock" :size="16" /></button>
+        </el-tooltip>
+        <el-tooltip content="自动化" placement="bottom" :show-after="200">
+          <button class="tb-ico" :class="{ on: automation.visible }" @click="openAutomation()"><StIcon name="automation" :size="16" /></button>
+        </el-tooltip>
+        <el-tooltip content="生成表单" placement="bottom" :show-after="200">
+          <button class="tb-ico" :disabled="!contentPerm.viewManage" @click="generateForm"><StIcon name="form-add" :size="16" /></button>
+        </el-tooltip>
+        <span class="tb-sep" />
         <button class="tb-ico" title="撤销" :disabled="!undoStack.canUndo" @click="doUndo"><StIcon name="undo" :size="16" /></button>
         <button class="tb-ico" title="重做" :disabled="!undoStack.canRedo" @click="doRedo"><StIcon name="redo" :size="16" /></button>
         <button class="tb-ico" title="查找替换" @click="findVisible = true"><StIcon name="search" :size="16" /></button>
       </div>
     </div>
 
-    <!-- 批量操作条 -->
-    <div v-if="selection.length" class="batch-bar">
-      已选 {{ selection.length }} 条
-      <el-button size="small" type="danger" plain @click="batchDelete">批量删除</el-button>
-      <el-button size="small" text @click="selection = []">取消</el-button>
-    </div>
 
-    <!-- 网格 -->
+    <!-- 主体：表格区 + 右侧记录详情面板（占位停靠，表格让出宽度） -->
+    <div class="st-body">
+    <div class="st-main">
+    <!-- 看板（V3 数据可视化入口）/ 网格 -->
+    <KanbanView v-if="viewType === 'kanban'" v-loading="loading" :fields="resolvedFields" :rows="dataRows"
+                :config="cfg.kanban || {}" :can-edit-cell="canEditCell" :can-add="perms.can_create"
+                :can-manage="contentPerm.viewManage" @move="onKanbanMove" @add="onKanbanAdd"
+                @open="(r) => { detail.record = r; detail.visible = true }"
+                @config="(p) => patchConfig({ kanban: { ...(cfg.kanban || {}), ...p } }, { reload: false })" />
     <SmartGrid
+      v-else
       ref="gridRef"
       v-loading="loading"
       :fields="resolvedFields" :rows="rows" :grouped="grouped" :total="total" :aggregations="aggregations"
       :view="view" :column-groups="columnGroups" :collapsed-groups="collapsedGroups"
-      :height="gridHeight" :readonly="!perms.can_edit"
-      @cell-commit="onCellCommit" @add-row="addRow" @cell-menu="onCellMenu" @field-menu="onFieldMenu"
+      :height="gridHeight" :readonly="!perms.can_edit" :can-edit-cell="canEditCell"
+      :menu-field="fieldMenu.visible ? fieldMenu.field?.field_name : null"
+      :active-row-id="detail.visible ? detailRecord?.id : null"
+      @expand-row="(r) => openDetail(r)"
+      @cell-commit="onCellCommit" @add-row="addRow" @cell-menu="onCellMenu" @field-menu="onFieldMenu" @ai-run="runAiField" @field-edit="(f, at) => openFieldConfig(f, null, at)"
+      @group-edit="(g, at) => openGroupDialog(null, g, at)"
+      @field-filter="(f, rect) => openFieldFilterAt(f, rect)"
       @toggle-group="toggleGroup" @selection-change="(s) => (selection = s)" @open-config="openFieldConfig"
       @add-field="onAddFieldAt" @add-option="onAddOption" @footer-menu="onFooterMenu"
       @group-menu="onGroupMenu" @add-row-in-group="addRowInGroup"
     />
 
     <!-- 分页（未分组时） -->
-    <div v-if="!grouped && total > pageSize" class="pager">
-      <el-pagination layout="prev, pager, next, total" :total="total" :page-size="pageSize"
+    <div v-if="showPager" class="pager">
+      <el-pagination small layout="prev, pager, next, total" :total="total" :page-size="pageSize"
                      :current-page="page" @current-change="(p) => { page = p; loadGrid() }" />
     </div>
+    </div>
+    <RecordDetailPanel v-if="detail.visible && detailRecord" :record="detailRecord" :fields="resolvedFields"
+                       :view="view" :column-groups="columnGroups"
+                       :has-prev="detailIdx > 0" :has-next="detailIdx < dataRows.length - 1"
+                       :readonly="!perms.can_edit" :can-edit-cell="canEditCell"
+                       :can-create="perms.can_create" :can-delete="perms.can_delete"
+                       :title-field="cfg.recordTitleField" :can-set-title="contentPerm.viewManage"
+                       @set-title-field="(fn) => patchConfig({ recordTitleField: fn }, { reload: false })"
+                       @close="detail.visible = false" @nav="navDetail" @cell-commit="onCellCommit"
+                       @add-option="onAddOption" @open-config="openFieldConfig" @record-action="onDetailAction" />
+    </div>
+    </template>
 
     <!-- 面板与弹窗 -->
-    <TableSettingsPanel :visible="settingsVisible" @update:visible="(v) => (settingsVisible = v)" :fields="fields" :view="view" :column-groups="columnGroups"
-                        @close="settingsVisible = false" @toggle-visible="onToggleVisible" @reorder="onReorder"
-                        @field-action="onFieldAction" @add-field="onAddFieldAt" @set-field-group="setFieldGroup" />
-    <FieldConfigDialog :visible="fieldDialog.visible" :field="fieldDialog.field" :preset="fieldDialog.preset" :fields="fields"
+    <FieldConfigDialog :visible="fieldDialog.visible" :field="fieldDialog.field" :preset="fieldDialog.preset" :fields="fields" :at="fieldDialog.at"
+                       :table-id="tableId" :sample-record-id="dataRows[0]?.id || null"
                        :tables="allTables" :source-fields-of="loadFieldsOf"
-                       @close="fieldDialog.visible = false" @save="onFieldSave" />
-    <RecordDetailDrawer :visible="detail.visible" @update:visible="(v) => (detail.visible = v)" :record="detail.record" :fields="resolvedFields"
-                        :column-groups="columnGroups"
-                        :has-prev="detailIdx > 0" :has-next="detailIdx < dataRows.length - 1"
-                        @close="detail.visible = false" @nav="navDetail" @cell-commit="onCellCommit" />
+                       @close="fieldDialog.visible = false" @save="onFieldSave"
+                       @ai-tags="(f) => { fieldDialog.visible = false; Object.assign(aiTags, { visible: true, field: f }) }" />
     <FindReplaceDialog :visible="findVisible" :table-id="tableId"
                        @close="findVisible = false" @replaced="loadGrid" />
 
     <!-- 新建/修改编组弹窗（设计文档 §6.1：编组名称 + 包含字段，默认含当前列） -->
+    <!-- 非模态（同字段编辑框）：双击编组表头时在鼠标位置弹出，点外部收起 -->
     <el-dialog :model-value="groupDialog.visible" :title="groupDialog.id ? '修改编组' : '新建编组'"
-               width="420px" @close="groupDialog.visible = false">
+               width="420px" append-to-body v-bind="anchoredDialogAttrs(groupDialog.at, 420, 220)" @close="groupDialog.visible = false">
       <div class="gd-form">
         <el-input v-model="groupDialog.name" placeholder="编组名称" maxlength="100" />
         <el-select v-model="groupDialog.members" multiple placeholder="包含字段" style="width: 100%">
@@ -168,6 +227,41 @@
               </div>
             </div>
           </div>
+          <!-- 根据此列…（V3，对齐参照 表头-数据可视化.png）：内容权限 / 数据可视化 / AI 匹配标签 / 内容变更时提醒 -->
+          <div class="fm-divider" />
+          <div class="fm-group-t">根据此列...</div>
+          <div class="mi" @click="fieldAct('perm')"><StIcon name="lock" :size="15" />内容权限<span class="st-free-tag fm-free">限时免费</span>
+            <span class="sub-caret"><StIcon name="chevron-right" :size="12" /></span></div>
+          <div class="mi has-sub">
+            <StIcon name="magic" :size="15" />数据可视化 <span class="sub-caret"><StIcon name="chevron-right" :size="12" /></span>
+            <div class="fm-sub fm-viz">
+              <div class="fm-sub-t">视图</div>
+              <div class="mi mi-2" :class="{ disabled: !menuIsSingleSelect }" @click="menuIsSingleSelect && fieldAct('kanban')">
+                <StIcon name="kanban" :size="16" /><div><div>新建看板</div><div class="mi-s">{{ menuIsSingleSelect ? '按选项分类查看' : '仅单选字段可建看板' }}</div></div>
+              </div>
+              <div class="fm-divider" />
+              <div class="fm-sub-t">图表</div>
+              <div v-for="ch in VIZ_CHARTS" :key="ch.type" class="mi mi-2 has-sub">
+                <StIcon :name="ch.icon" :size="16" /><div><div>{{ ch.label }}</div><div class="mi-s">{{ ch.desc }}</div></div>
+                <span class="sub-caret"><StIcon name="chevron-right" :size="12" /></span>
+                <div class="fm-sub">
+                  <div class="fm-sub-t">添加到仪表盘</div>
+                  <div v-for="d in dashboards" :key="d.id" class="mi" @click="addVizChart(ch.type, d)"><StIcon name="dashboard" :size="14" />{{ d.name }}</div>
+                  <div class="mi" @click="addVizChart(ch.type, null)"><StIcon name="plus" :size="14" />新建仪表盘</div>
+                </div>
+              </div>
+              <div class="mi has-sub">
+                添加更多图表… <span class="sub-caret"><StIcon name="chevron-right" :size="12" /></span>
+                <div class="fm-sub">
+                  <div class="fm-sub-t">在仪表盘中配置</div>
+                  <div v-for="d in dashboards" :key="d.id" class="mi" @click="addMoreCharts(d)"><StIcon name="dashboard" :size="14" />{{ d.name }}</div>
+                  <div class="mi" @click="addMoreCharts(null)"><StIcon name="plus" :size="14" />新建仪表盘</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-if="menuIsSelect" class="mi" @click="fieldAct('aiTags')"><StIcon name="sparkle" :size="15" class="fm-ai" />AI 匹配标签</div>
+          <div class="mi" @click="fieldAct('reminder')"><StIcon name="play-circle" :size="15" />内容变更时提醒</div>
           <!-- 底部图标快捷栏（对齐参照 表头-工具栏.png：副本/列宽/冻结/隐藏/删除，黑底 tooltip） -->
           <div class="fm-bar">
             <el-tooltip content="创建副本" placement="top" :show-after="150">
@@ -235,8 +329,30 @@
     <teleport to="body">
       <AddFieldPop v-if="addFieldPop.visible" :x="addFieldPop.x" :y="addFieldPop.y"
                    @pick="(p) => onTypePick(p, false)" @pick-again="(p) => onTypePick(p, true)"
-                   @close="addFieldPop.visible = false" />
+                   @close="addFieldPop.visible = false" @ai="onAiFromAddField" />
+      <AiFieldEditor v-if="aiPanel.visible && aiPanel.field" :x="aiPanel.x" :y="aiPanel.y" :table-id="tableId" :fields="resolvedFields"
+                     :field="aiPanel.field" :rows="dataRows" @close="aiPanel.visible = false" @save="onAiSave"
+                     @run="({ scope }) => runAiField(aiPanel.field, scope)" />
+      <AiFieldPanel v-if="aiPanel.visible && !aiPanel.field" :x="aiPanel.x" :y="aiPanel.y" :table-id="tableId" :fields="resolvedFields"
+                    :rows="dataRows" :total-rows="total"
+                    :preset-label="aiPanel.label" @close="aiPanel.visible = false" @save="onAiSave"
+                    @run="({ scope }) => runAiField(aiPanel.field, scope)"
+                    @write-formula="() => { aiPanel.visible = false; aiFormulaDlg.visible = true }" />
     </teleport>
+
+    <!-- ========== V3：协作与智能 ========== -->
+    <PermissionPanel :visible="permPanel.visible" :doc-id="doc?.id" :members="members" :focus-entry-id="permPanel.focus"
+                     @close="permPanel.visible = false" @changed="loadGrid(view?.id)" />
+    <AutomationDrawer :visible="automation.visible" :table-id="tableId" :table-name="entry?.name || ''" :fields="fields"
+                      :tables="smartTables" :members="members" :dashboards="dashboards" :load-fields="loadFieldsOf"
+                      :initial-draft="automation.draft" @close="automation.visible = false" />
+    <QuickReminderDialog :visible="reminder.visible" :table-id="tableId" :field="reminder.field" :fields="fields"
+                         :members="members" :me="me?.id" @close="reminder.visible = false"
+                         @more="(d) => openAutomation(d)" />
+    <AiFormulaDialog :visible="aiFormulaDlg.visible" :table-id="tableId" :fields="fields" with-name
+                     @close="aiFormulaDlg.visible = false" @apply="onAiFormulaApply" />
+    <AiMatchTagsDialog :visible="aiTags.visible" :table-id="tableId" :field="aiTags.field" :fields="fields"
+                       @close="aiTags.visible = false" @done="reloadMeta(); loadGrid(view?.id)" />
 
     <!-- 列头「筛选」：贴列头的单字段筛选浮层 -->
     <teleport to="body">
@@ -245,8 +361,11 @@
         <div class="fm ffp-wrap" :style="{ left: `${fieldFilter.x}px`, top: `${fieldFilter.y}px` }" @click.stop>
           <FieldFilterPop v-if="fieldFilter.field" :field="fieldFilter.field"
                           :condition="panelConditions.find(c => c.fieldId === fieldFilter.field?.field_name) || null"
+                          :pinned="!!panelConditions.find(c => c.fieldId === fieldFilter.field?.field_name)?.pinned"
                           :scope-text="filterScope === 'personal' ? '调整仅你可见' : '对所有人生效'"
-                          @change="(cond) => applyFieldCondition(fieldFilter.field.field_name, cond)" />
+                          @change="(cond) => applyFieldCondition(fieldFilter.field.field_name, cond)"
+                          @pin="(v) => setFieldPinned(fieldFilter.field.field_name, v)"
+                          @open-panel="fieldFilter.visible = false; setPanel('filter', true)" />
         </div>
       </div>
     </teleport>
@@ -255,7 +374,7 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, provide, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import SmartGrid from '../../components/smart/grid/SmartGrid.vue'
 import StIcon from '../../components/smart/icons/StIcon.vue'
@@ -268,11 +387,21 @@ import TableSettingsPanel from '../../components/smart/panels/TableSettingsPanel
 import FieldConfigDialog from '../../components/smart/panels/FieldConfigDialog.vue'
 import FieldFilterPop from '../../components/smart/panels/FieldFilterPop.vue'
 import AddFieldPop from '../../components/smart/panels/AddFieldPop.vue'
-import RecordDetailDrawer from '../../components/smart/panels/RecordDetailDrawer.vue'
+import RecordDetailPanel from '../../components/smart/panels/RecordDetailPanel.vue'
 import FindReplaceDialog from '../../components/smart/panels/FindReplaceDialog.vue'
+import PermissionPanel from '../../components/smart/perms/PermissionPanel.vue'
+import AutomationDrawer from '../../components/smart/automation/AutomationDrawer.vue'
+import QuickReminderDialog from '../../components/smart/automation/QuickReminderDialog.vue'
+import FormView from '../../components/smart/form/FormView.vue'
+import KanbanView from '../../components/smart/kanban/KanbanView.vue'
+import AiFieldPanel from '../../components/smart/ai/AiFieldPanel.vue'
+import AiFieldEditor from '../../components/smart/ai/AiFieldEditor.vue'
+import AiFormulaDialog from '../../components/smart/ai/AiFormulaDialog.vue'
+import AiMatchTagsDialog from '../../components/smart/ai/AiMatchTagsDialog.vue'
 import { FIELD_REGISTRY, filterOpsOf, OP_LABELS, OPTION_COLORS, sortDirectionLabels,
          footerStatsOf, STAT_LABELS, formatStatValue } from '../../smart/registry/fieldRegistry.js'
-import { isRuleComplete, createUndoStack } from '../../smart/utils/format.js'
+import { anchoredDialogAttrs, useNonModalOutsideClose } from '../../smart/utils/anchorDialog.js'
+import { isRuleComplete, isCondValueEmpty, createUndoStack } from '../../smart/utils/format.js'
 import { resolveRefOptions } from '../../smart/utils/refOptions.js'
 import {
   alterTable, getTable, listMembers, listTables,
@@ -281,10 +410,14 @@ import {
   smartCreateRecord, smartUpdateRecord, smartDeleteRecord, smartBatchDelete,
   smartDuplicateRecord, smartDuplicateField, smartFieldDeps, smartFieldStats,
   smartListColumnGroups, smartCreateColumnGroup, smartUpdateColumnGroup, smartDeleteColumnGroup,
+  smartGetDoc, smartGetTree, smartDocMembers, smartCreateEntry, smartCreateWidget, smartAiRun, handleBillingError,
 } from '../../api/index.js'
 
 const route = useRoute()
+const router = useRouter()
 const tableId = Number(route.params.tableId)
+provide('smartTableId', ref(tableId))
+const me = JSON.parse(localStorage.getItem('grt_user') || 'null')
 
 const ROW_HEIGHTS = { default: '默认', medium: '中等', tall: '高', extraTall: '超高' }
 
@@ -298,13 +431,21 @@ const grouped = ref(false)
 const views = ref([])
 const view = ref(null)
 const perms = ref({ can_create: true, can_edit: true, can_delete: true })
+// V3 内容权限（grid 接口下发）：行级只读标记 row.__readonly + 字段三态 fieldRights + 视图管理开关
+const contentPerm = ref({ managed: true, level: 'FULL', viewManage: true, schemaEdit: true, fieldRights: {} })
+const doc = ref(null)
+const entry = ref(null)        // 本表对应的文档条目（内容权限按条目配置）
+const docEntries = ref([])
+const dashboards = computed(() => docEntries.value.filter(e => e.type === 'dashboard'))
+const smartTables = computed(() => docEntries.value.filter(e => e.ref_table_id && ['sheet', 'form'].includes(e.type))
+  .map(e => ({ id: e.ref_table_id, label: e.name })))
 const columnGroups = ref([])
+provide('smartColumnGroups', columnGroups)   // 统一字段选择面板（FieldPickList）按编组展示字段
 const collapsedGroups = ref(new Set())
 const selection = ref([])
 const page = ref(1)
 const pageSize = 200
 const activePanel = ref(null)
-const settingsVisible = ref(false)
 const findVisible = ref(false)
 const filterScope = ref('shared')
 const undoStack = createUndoStack()
@@ -372,11 +513,16 @@ const refContext = computed(() => {
 provide('smartRefContext', refContext)
 
 const cfg = computed(() => view.value?.config || {})
+const viewType = computed(() => view.value?.type || 'grid')
 const dataRows = computed(() => rows.value.filter(r => r.__rowType !== 'group'))
-const gridHeight = computed(() => window.innerHeight - 220)
+// 表格最大高度：撑到页面底部（留 8px）；需要分页时给紧凑分页条留 36px。
+// 数据不满一屏时表格按内容收缩（SmartGrid 用 max-height），统计行/分页条跟着上移
+const showPager = computed(() => viewType.value === 'grid' && !grouped.value && total.value > pageSize)
+const gridHeight = computed(() => window.innerHeight - (showPager.value ? 212 : 176))
 const gridRef = ref(null)
 
-const filterCount = computed(() => (cfg.value.filters?.conditions || []).filter(c => c.fieldId).length)
+// 计数只算生效的条件（固定到工具栏但还没填值的不算）
+const filterCount = computed(() => (cfg.value.filters?.conditions || []).filter(c => c.fieldId && (['isEmpty', 'isNotEmpty'].includes(c.operator) || !isCondValueEmpty(c.value))).length)
 const fillCount = computed(() => (cfg.value.fillRules || []).filter(isRuleComplete).length)
 const pinnedConditions = computed(() => (cfg.value.filters?.conditions || []).filter(c => c.pinned && c.fieldId))
 const panelConditions = computed(() => cfg.value.filters?.conditions || [])
@@ -385,14 +531,18 @@ const panelConditions = computed(() => cfg.value.filters?.conditions || [])
 async function loadAll() {
   loading.value = true
   try {
-    const [meta, vs, gs] = await Promise.all([
-      getTable(tableId), smartListViews(tableId), smartListColumnGroups(tableId),
+    const [meta, vs, gs, d] = await Promise.all([
+      getTable(tableId), smartListViews(tableId), smartListColumnGroups(tableId), smartGetDoc(),
     ])
     fields.value = meta.fields
     perms.value = meta.my_perms || perms.value
     views.value = vs.views
     columnGroups.value = gs.groups
-    members.value = (await listMembers().catch(() => [])) || []
+    doc.value = d
+    loadDocEntries()
+    // 成员目录：文档成员（user_id + 用户名），普通成员也可读（原 listMembers 仅管理员可用）
+    members.value = (await smartDocMembers(d.id).catch(() => null))?.members
+      || ((await listMembers().catch(() => [])) || []).map(m => ({ id: m.user_id, name: m.username }))
     const qv = Number(route.query.view)
     await loadGrid(qv || undefined)
     loadRelationRows()
@@ -402,8 +552,8 @@ async function loadAll() {
   }
 }
 
-async function loadGrid(viewId) {
-  loading.value = true
+async function loadGrid(viewId, { silent = false } = {}) {
+  if (!silent) loading.value = true
   try {
     const g = await smartGrid(tableId, { view_id: viewId, page: page.value, page_size: pageSize })
     rows.value = g.items
@@ -411,10 +561,54 @@ async function loadGrid(viewId) {
     aggregations.value = g.aggregations || {}
     grouped.value = !!g.grouped
     view.value = g.view
+    if (g.my_perms) perms.value = g.my_perms
+    if (g.content_perm) contentPerm.value = g.content_perm
     if (g.view) filterScope.value = g.view.config?.filtersScope === 'personal' ? 'personal' : 'shared'
+    if (hasUnknownAiOptions()) await reloadMeta()   // AI 生成时自动新建了选项：刷新字段元数据，否则单元格显示裸 optionId
+    scheduleAiPoll()
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
+}
+
+async function loadDocEntries() {
+  if (!doc.value) return
+  const t = await smartGetTree(doc.value.id).catch(() => ({ entries: [] }))
+  docEntries.value = t.entries
+  entry.value = t.entries.find(e => e.ref_table_id === tableId) || null
+}
+
+// 单元格可编辑：行级编辑范围外（__readonly）或字段无编辑权时只读
+function canEditCell(row, field) {
+  if (!row || row.__readonly) return false
+  return contentPerm.value.fieldRights?.[field?.field_name]?.edit !== false
+}
+
+// 同一批未知 id 只刷新一次元数据（选项已在库里丢失的历史数据刷新也找不回，避免每次轮询都重拉）
+let lastUnknownSig = ''
+function hasUnknownAiOptions() {
+  const sel = fields.value.filter(f => f.field_type === 'ai' && ['singleSelect', 'multiSelect'].includes(f.options?.outputType))
+  if (!sel.length) return false
+  const unknown = new Set()
+  for (const f of sel) {
+    const ids = new Set((f.options?.options || []).map(o => o.id))
+    for (const r of rows.value) {
+      const v = r[f.field_name]
+      for (const id of (Array.isArray(v) ? v : (v == null || v === '' ? [] : [v]))) if (!ids.has(id)) unknown.add(`${f.field_name}:${id}`)
+    }
+  }
+  const sig = [...unknown].sort().join('|')
+  if (!sig || sig === lastUnknownSig) return false
+  lastUnknownSig = sig
+  return true
+}
+
+// AI 字段生成中：静默轮询网格直到无 pending/running 单元格
+let aiPollTimer = null
+function scheduleAiPoll() {
+  clearTimeout(aiPollTimer)
+  const busy = rows.value.some(r => r.__ai && Object.values(r.__ai).some(x => x.status === 'pending' || x.status === 'running'))
+  if (busy) aiPollTimer = setTimeout(() => loadGrid(view.value?.id, { silent: true }), 2500)
 }
 
 // 关联字段：加载目标表记录做标签目录
@@ -437,9 +631,16 @@ function switchView(v) { page.value = 1; loadGrid(v.id) }
 
 async function onViewAction(cmd, v) {
   if (cmd === 'add') {
-    const r = await smartCreateView(tableId, { name: `表格视图 ${views.value.length + 1}`, config: {} })
-    views.value.push(r.view)
-    switchView(r.view)
+    const type = v || 'grid'
+    const base = { grid: '表格视图', kanban: '看板', form: '表单' }[type]
+    const sameType = views.value.filter(x => (x.type || 'grid') === type).length
+    try {
+      const r = await smartCreateView(tableId, { type, name: sameType ? `${base} ${sameType + 1}` : base, config: {} })
+      views.value.push(r.view)
+      switchView(r.view)
+    } catch (e) {
+      ElMessage.error(e.message || '新建视图失败')
+    }
   } else if (cmd === 'rename') {
     const { value } = await ElMessageBox.prompt('视图名称', '重命名', { inputValue: v.name })
     if (value) { await smartUpdateView(v.id, { name: value }); views.value = (await smartListViews(tableId)).views }
@@ -483,6 +684,9 @@ function patchConfig(patch, { reload = true } = {}) {
 }
 
 function togglePanel(name) { activePanel.value = activePanel.value === name ? null : name }
+// 受控面板开关：打开某面板即关闭其他面板；关闭只在当前面板是它时生效
+function setPanel(name, v) { activePanel.value = v ? name : (activePanel.value === name ? null : activePanel.value) }
+const currentRowHeight = computed(() => (typeof cfg.value.rowHeight === 'number' ? null : (cfg.value.rowHeight || 'default')))
 
 // 受控 popover 的外点关闭（点击面板与工具栏以外区域时收起）
 function onDocClick(e) {
@@ -490,7 +694,8 @@ function onDocClick(e) {
   // 点击目标在本次事件处理中已被移出 DOM（如点面板里的"删除行"先删了自身所在行），
   // detached 节点 closest 必为 null，不能算作外点
   if (!document.contains(e.target)) return
-  if (e.target.closest('.el-popover') || e.target.closest('.toolbar')) return
+  // 面板内的下拉（字段/运算符/更多菜单）teleport 到 body，同样视为面板内部
+  if (e.target.closest('.el-popover') || e.target.closest('.el-popper') || e.target.closest('.toolbar')) return
   activePanel.value = null
 }
 
@@ -516,10 +721,32 @@ function opsOf(c) { const f = fields.value.find(x => x.field_name === c.fieldId)
 function fieldOfName(fn) { return resolvedFields.value.find(f => f.field_name === fn) }
 // 单字段筛选浮层（pin 胶囊 / 列头「筛选」共用）：upsert 或移除该字段的条件，其余条件不动
 function applyFieldCondition(fieldName, cond) {
-  const conds = panelConditions.value.filter(c => c.fieldId !== fieldName)
+  const existing = panelConditions.value.find(c => c.fieldId === fieldName)
+  let conds
   if (cond) {
-    const existing = panelConditions.value.find(c => c.fieldId === fieldName)
-    conds.push({ ...cond, id: existing?.id || `c_${Date.now()}`, pinned: existing?.pinned || false })
+    const next = { ...cond, id: existing?.id || `c_${Date.now()}`, pinned: existing?.pinned || false }
+    // 原位替换（保持条件顺序），没有则追加
+    conds = existing ? panelConditions.value.map(c => (c.fieldId === fieldName ? next : c)) : [...panelConditions.value, next]
+  } else {
+    conds = panelConditions.value.filter(c => c.fieldId !== fieldName)
+  }
+  onFiltersChange(conds, cfg.value.filters?.conjunction || 'and')
+}
+// 📌 固定到工具栏 / 取消固定：没有条件时新建一个未填值的固定条件（不生效，供快速筛选）；
+// 取消固定时若条件还没填值则一并移除
+function setFieldPinned(fieldName, pinned) {
+  const existing = panelConditions.value.find(c => c.fieldId === fieldName)
+  const f = fields.value.find(x => x.field_name === fieldName)
+  const empty = (v) => v == null || v === '' || (Array.isArray(v) && !v.length)
+  let conds
+  if (existing) {
+    const incomplete = !['isEmpty', 'isNotEmpty'].includes(existing.operator) && empty(existing.value)
+    conds = !pinned && incomplete
+      ? panelConditions.value.filter(c => c.fieldId !== fieldName)
+      : panelConditions.value.map(c => (c.fieldId === fieldName ? { ...c, pinned } : c))
+  } else {
+    if (!pinned || !f) return
+    conds = [...panelConditions.value, { id: `c_${Date.now()}`, fieldId: fieldName, operator: filterOpsOf(f)[0] || 'contains', value: undefined, pinned: true }]
   }
   onFiltersChange(conds, cfg.value.filters?.conjunction || 'and')
 }
@@ -584,7 +811,7 @@ async function onAddOption({ row, field, label }) {
   try {
     await alterTable(tableId, [{ op: 'update_field', field_name: f.field_name, options: { ...f.options, options: opts } }])
     f.options = { ...f.options, options: opts }
-    const value = f.field_type === 'multiSelect'
+    const value = (f.field_type === 'ai' ? f.options?.outputType : f.field_type) === 'multiSelect'
       ? [...(Array.isArray(row[f.field_name]) ? row[f.field_name] : []), nid]
       : nid
     await onCellCommit({ row, field: f, value })
@@ -655,12 +882,33 @@ function onCellMenu({ row, field, cmd }) {
   onCtxAction(cmd)
 }
 const detail = reactive({ visible: false, record: null })
+// 详情记录按 id 跟随最新数据（表格重查后行对象会被替换）
+const detailRecord = computed(() => dataRows.value.find(r => r.id === detail.record?.id) || detail.record)
 const detailIdx = computed(() => dataRows.value.findIndex(r => r.id === detail.record?.id))
+function openDetail(r) {
+  detail.record = dataRows.value.find(x => x.id === r.id) || r
+  detail.visible = true
+}
+// 详情面板 ⋯：生成记录副本 / 删除记录（删除后切到下一条，没有则收起）
+async function onDetailAction(cmd, rec) {
+  if (cmd === 'duplicate') {
+    await smartDuplicateRecord(tableId, rec.id)
+    loadGrid(view.value?.id)
+  } else if (cmd === 'delete') {
+    await ElMessageBox.confirm('删除这条记录？', '删除', { type: 'warning' })
+    const i = detailIdx.value
+    const next = dataRows.value[i + 1] || dataRows.value[i - 1] || null
+    await smartDeleteRecord(tableId, rec.id)
+    if (next) detail.record = next
+    else detail.visible = false
+    loadGrid(view.value?.id)
+  }
+}
 
 async function onCtxAction(cmd) {
   const { row, field } = ctx
   if (cmd === 'expand') {
-    detail.record = row; detail.visible = true
+    openDetail(row)
   } else if (cmd === 'only' || cmd === 'exclude') {
     const op = cmd === 'only' ? 'eq' : 'neq'
     const c = { id: `c_${Date.now()}`, fieldId: field.field_name, operator: op, value: row[field.field_name] }
@@ -683,14 +931,19 @@ function navDetail(step) {
 }
 
 // ---------- 字段操作 ----------
-const fieldDialog = reactive({ visible: false, field: null, insertCtx: null, preset: null, addAgain: false })
+const fieldDialog = reactive({ visible: false, field: null, insertCtx: null, preset: null, addAgain: false, at: null })   // at：双击表头的鼠标位置，编辑框在此弹出
 const allTables = ref([])
 
-function openFieldConfig(f, insertCtx = null) {
+function openFieldConfig(f, insertCtx = null, at = null) {
+  if (f?.field_type === 'ai') {   // AI 字段：场景市场面板编辑
+    Object.assign(aiPanel, { visible: true, field: f, label: f.label, x: window.innerWidth - 40, y: 90 })
+    return
+  }
   fieldDialog.field = f
   fieldDialog.insertCtx = insertCtx
   fieldDialog.preset = null
   fieldDialog.addAgain = false
+  fieldDialog.at = at
   fieldDialog.visible = true
 }
 
@@ -721,14 +974,14 @@ const DATA_TYPE_MAP = {
   currency: 'decimal', date: 'datetime', checkbox: 'bool', url: 'json', phone: 'varchar', email: 'varchar',
   member: 'json', progress: 'decimal', image: 'image', file: 'json', autoNumber: 'serial', relation: 'json',
   lookup: 'json', formula: 'varchar', createdBy: 'varchar', lastModifiedBy: 'varchar',
-  createdTime: 'datetime', lastModifiedTime: 'datetime',
+  createdTime: 'datetime', lastModifiedTime: 'datetime', ai: 'json',
 }
 const WIDGET_MAP = {
   text: 'input', singleSelect: 'select', multiSelect: 'select', number: 'number', percent: 'number',
   currency: 'number', date: 'datetime-picker', checkbox: 'switch', url: 'input', phone: 'input',
   email: 'input', member: 'input', progress: 'number', image: 'image-uploader', file: 'input',
   autoNumber: 'serial', relation: 'input', lookup: 'input', formula: 'input', createdBy: 'input',
-  lastModifiedBy: 'input', createdTime: 'datetime-picker', lastModifiedTime: 'datetime-picker',
+  lastModifiedBy: 'input', createdTime: 'datetime-picker', lastModifiedTime: 'datetime-picker', ai: 'input',
 }
 
 function buildFieldPayload(field_type, label, config) {
@@ -773,6 +1026,8 @@ async function onFieldSave({ label, field_type, config }) {
     await reloadMeta()
     // 插入上下文定位（编组菜单/列头菜单「插入字段」；AddFieldPop 无上下文保持末尾）
     if (fieldDialog.insertCtx) await placeNewField(payload.field_name, fieldDialog.insertCtx)
+    // 表单「添加新字段到表单」：同步建表列 + 加入表单题目（双向绑定，§12.1）
+    if (pendingFormAdd) { pendingFormAdd = false; formRef.value?.addItem(payload.field_name) }
     loadGrid(view.value?.id)
     // AddFieldPop 的「Tab 再添加一列」：保存完成后重新打开类型网格
     if (fieldDialog.addAgain) { fieldDialog.addAgain = false; openAddFieldPop(lastAddFieldPos.x, lastAddFieldPos.y) }
@@ -803,7 +1058,12 @@ const fieldFilter = reactive({ visible: false, x: 0, y: 0, field: null })
 function openFieldFilter(field, x, y) {
   fieldMenu.visible = false
   Object.assign(fieldFilter, { visible: true, field,
-    x: Math.min(x, window.innerWidth - 320), y: Math.min(y, window.innerHeight - 360) })
+    x: Math.max(8, Math.min(x, window.innerWidth - 492)), y: Math.max(8, Math.min(y, window.innerHeight - 560)) })
+}
+// 列头漏斗点击：面板贴在该列右侧、与表头顶部对齐（参照 表头-过滤按钮点击-多选.png）
+function openFieldFilterAt(field, rect) {
+  const x = rect.right + 492 <= window.innerWidth ? rect.right + 2 : rect.left - 482
+  openFieldFilter(field, x, rect.top)
 }
 
 // 整列填色：为「所有内容 / 字段名称」创建整列规则（无运算符），并打开填色面板选色
@@ -847,6 +1107,197 @@ async function fieldAct(cmd) {
   else if (cmd === 'autoFit') { fieldMenu.visible = false; autoFitFields([f.field_name]) }
   else if (cmd === 'duplicate') { fieldMenu.visible = false; await smartDuplicateField(tableId, f.field_name); reloadMeta(); loadGrid(view.value?.id) }
   else if (cmd === 'delete') { fieldMenu.visible = false; await deleteField(f) }
+  else if (cmd === 'perm') { fieldMenu.visible = false; openPermPanel(entry.value?.id) }
+  else if (cmd === 'kanban') { fieldMenu.visible = false; await createKanban(f) }
+  else if (cmd === 'aiTags') { fieldMenu.visible = false; Object.assign(aiTags, { visible: true, field: f }) }
+  else if (cmd === 'reminder') { fieldMenu.visible = false; Object.assign(reminder, { visible: true, field: f }) }
+}
+
+// ================= V3：协作与智能 =================
+const menuIsSelect = computed(() => ['singleSelect', 'multiSelect'].includes(fieldMenu.field?.field_type))
+const menuIsSingleSelect = computed(() => fieldMenu.field?.field_type === 'singleSelect')
+const VIZ_CHARTS = [
+  { type: 'bar', icon: 'chart-bar', label: '添加柱状图', desc: '按选项统计行数' },
+  { type: 'pie', icon: 'pie', label: '添加饼图', desc: '按选项统计占比' },
+]
+
+// ---------- 内容权限 ----------
+const permPanel = reactive({ visible: false, focus: null })
+function openPermPanel(focusEntryId = null) {
+  automation.visible = false
+  Object.assign(permPanel, { visible: !permPanel.visible || !!focusEntryId, focus: focusEntryId })
+}
+
+// ---------- 自动化 ----------
+const automation = reactive({ visible: false, draft: null })
+const reminder = reactive({ visible: false, field: null })
+function openAutomation(draft = null) {
+  permPanel.visible = false
+  Object.assign(automation, { visible: true, draft })
+}
+// 表单「设置自动化提醒」：预置「添加新记录时 → 发送消息」
+function formAutomationDraft() {
+  const primary = fields.value[0]
+  return {
+    name: '表单提交提醒', enabled: true,
+    trigger: { type: 'recordCreated', rowConditions: [], filter: { match: 'all', conditions: [] } },
+    actions: [{ id: `a${Date.now().toString(36)}`, type: 'sendMessage', channel: 'docMessage', to: me?.id ? [me.id] : [],
+                toFields: [], webhookUrl: '', title: '收到新的表单提交',
+                content: [{ t: 'text', v: '表单收到新提交：' },
+                          ...(primary ? [{ t: 'var', var: { kind: 'step', step: 1, key: 'field', field: primary.field_name },
+                                           label: `第1步添加新记录的 ${primary.label}` }] : [])],
+                buttons: [{ label: '查看记录' }] }],
+  }
+}
+
+// ---------- 表单 ----------
+const formRef = ref(null)
+let pendingFormAdd = false
+async function generateForm() {
+  const n = views.value.filter(v => v.type === 'form').length
+  try {
+    const r = await smartCreateView(tableId, { type: 'form', name: n ? `表单 ${n + 1}` : '表单' })
+    views.value.push(r.view)
+    switchView(r.view)
+    ElMessage.success('已按表格字段生成表单')
+  } catch (e) {
+    ElMessage.error(e.message || '生成表单失败')
+  }
+}
+async function onFormSave(form) {
+  if (!view.value) return
+  const config = { ...(view.value.config || {}), form }
+  delete config.filtersScope
+  try {
+    const r = await smartUpdateView(view.value.id, { config })
+    view.value = { ...view.value, config: { ...view.value.config, form: r.view.config.form } }
+  } catch (e) {
+    ElMessage.error(e.message || '表单保存失败')
+  }
+}
+function onFormAddField(e) { pendingFormAdd = true; onAddFieldAt(e) }
+async function onFormOptions(field, options) {
+  const f = fields.value.find(x => x.field_name === field.field_name)
+  if (!f) return
+  try {
+    await alterTable(tableId, [{ op: 'update_field', field_name: f.field_name, options: { ...f.options, options } }])
+    await reloadMeta()
+  } catch (e) {
+    ElMessage.error(e.message || '选项保存失败')
+  }
+}
+
+// ---------- 看板 ----------
+async function createKanban(f) {
+  try {
+    const r = await smartCreateView(tableId, { type: 'kanban', name: `${f.label}看板`, config: { kanban: { groupField: f.field_name } } })
+    views.value.push(r.view)
+    switchView(r.view)
+  } catch (e) {
+    ElMessage.error(e.message || '新建看板失败')
+  }
+}
+function onKanbanMove(row, field, value) { onCellCommit({ row, field, value }).then(() => loadGrid(view.value?.id)) }
+function onKanbanAdd(optionId) {
+  const fn = cfg.value.kanban?.groupField
+  addRow(fn && optionId ? { [fn]: optionId } : {})
+}
+
+// ---------- 数据可视化：生成图表到仪表盘 ----------
+async function ensureDashboard(d, name) {
+  if (d) return d
+  const r = await smartCreateEntry(doc.value.id, { type: 'dashboard', name })
+  await loadDocEntries()
+  return r.entry
+}
+async function addVizChart(chartType, d) {
+  const f = fieldMenu.field
+  fieldMenu.visible = false
+  if (!f) return
+  try {
+    const dash = await ensureDashboard(d, `${entry.value?.name || '表格'}仪表盘`)
+    await smartCreateWidget(dash.id, {
+      title: `${f.label}${chartType === 'pie' ? '占比' : '统计'}`, chart_type: chartType,
+      config: { sourceTableId: tableId, dimension: f.field_name, metric: { agg: 'count', field: null },
+                splitMulti: true, sort: { by: 'value', direction: 'desc' } },
+    })
+    await ElMessageBox.confirm(`已将「${f.label}」${chartType === 'pie' ? '饼图' : '柱状图'}添加到「${dash.name}」，是否前往查看？`, '已添加图表',
+      { confirmButtonText: '前往查看', cancelButtonText: '留在此页', type: 'success' })
+    router.push(`/smart/dashboard/${dash.id}`)
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '添加图表失败')
+  }
+}
+async function addMoreCharts(d) {
+  const f = fieldMenu.field
+  fieldMenu.visible = false
+  if (!f) return
+  try {
+    const dash = await ensureDashboard(d, `${entry.value?.name || '表格'}仪表盘`)
+    router.push({ path: `/smart/dashboard/${dash.id}`, query: { addChart: 1, table: tableId, dim: f.field_name, title: `${f.label}统计` } })
+  } catch (e) {
+    ElMessage.error(e.message || '打开仪表盘失败')
+  }
+}
+
+// ---------- AI 字段 ----------
+const aiPanel = reactive({ visible: false, x: 0, y: 0, field: null, label: '' })
+const aiFormulaDlg = reactive({ visible: false })
+const aiTags = reactive({ visible: false, field: null })
+function onAiFromAddField({ label, x, y }) {
+  addFieldPop.visible = false
+  Object.assign(aiPanel, { visible: true, field: null, label, x: x + 480, y })
+}
+// run：first5 = 生成前 5 行 / all = 生成全部 / none = 仅保存配置；编辑态 null = 仅保存
+async function onAiSave({ label, config, run }) {
+  const editing = aiPanel.field
+  aiPanel.visible = false
+  try {
+    let fn
+    if (editing) {
+      await alterTable(tableId, [{ op: 'update_field', field_name: editing.field_name, label, options: config, field_type: 'ai' }])
+      fn = editing.field_name
+    } else {
+      const payload = buildFieldPayload('ai', label, config)
+      await alterTable(tableId, [{ op: 'add_field', field: payload }])
+      fn = payload.field_name
+    }
+    await reloadMeta()
+    if (run === 'first5' || run === 'all') {
+      // 前 5 行 = 当前视图（排序/筛选/分组后）看到的前 5 条数据行，而不是按记录 id 的前 5 条
+      const first5 = dataRows.value.filter(r => !r.__rowType && r.id != null).slice(0, 5).map(r => r.id)
+      const r = await smartAiRun(tableId, fn, run === 'first5' ? { record_ids: first5 } : { scope: 'all' })
+      ElMessage.success(r.queued ? `AI 正在生成 ${r.queued} 行…` : '已保存 AI 字段')
+    } else {
+      ElMessage.success(editing ? '已保存 AI 字段设置' : '已保存 AI 字段配置，可在列头 ✦ 按钮中随时生成')
+    }
+    loadGrid(view.value?.id)
+  } catch (e) {
+    if (!handleBillingError(e)) ElMessage.error(e.message || '保存 AI 字段失败')
+  }
+}
+// AI 列重新生成：all 全部 / empty 仅空白行 / failed 失败行 / rows 指定行（选中单元格的「重新生成此行」）
+async function runAiField(f, scope = 'all', recordIds = null) {
+  if (!f) return
+  try {
+    const r = await smartAiRun(tableId, f.field_name, scope === 'rows' ? { record_ids: recordIds } : { scope })
+    ElMessage.success(r.queued ? `AI 正在生成 ${r.queued} 行…` : (scope === 'failed' ? '没有生成失败的行' : '没有需要生成的行'))
+    loadGrid(view.value?.id, { silent: true })
+  } catch (e) {
+    if (!handleBillingError(e)) ElMessage.error(e.message || '生成失败')
+  }
+}
+async function onAiFormulaApply({ formula, returnType, label }) {
+  aiFormulaDlg.visible = false
+  try {
+    const payload = buildFieldPayload('formula', label || '公式', { formula, returnType })
+    await alterTable(tableId, [{ op: 'add_field', field: payload }])
+    await reloadMeta()
+    loadGrid(view.value?.id)
+    ElMessage.success('已添加公式列')
+  } catch (e) {
+    ElMessage.error(e.message || '添加公式列失败')
+  }
 }
 
 // ---------- 统计行：按列设置统计方式 ----------
@@ -899,13 +1350,14 @@ async function copyStats() {
 }
 
 // ---------- 列编组（设计文档 §6.3：新建/修改弹窗 + 移入移出；字段最多属于一个编组） ----------
-const groupDialog = reactive({ visible: false, id: null, name: '', members: [] })
-function openGroupDialog(field, group = null) {
+const groupDialog = reactive({ visible: false, id: null, name: '', members: [], at: null })
+function openGroupDialog(field, group = null, at = null) {
   fieldMenu.visible = false
   Object.assign(groupDialog, group
-    ? { visible: true, id: group.id, name: group.name, members: [...(group.field_names || [])] }
-    : { visible: true, id: null, name: '', members: field ? [field.field_name] : [] })
+    ? { visible: true, id: group.id, name: group.name, members: [...(group.field_names || [])], at }
+    : { visible: true, id: null, name: '', members: field ? [field.field_name] : [], at })
 }
+useNonModalOutsideClose(() => groupDialog.visible, () => { groupDialog.visible = false })
 async function saveGroupDialog() {
   const members = groupDialog.members
   if (!members.length) { ElMessage.warning('请选择包含字段'); return }
@@ -1078,14 +1530,21 @@ function toggleGroup(key) {
   collapsedGroups.value = next
 }
 
-onMounted(() => {
-  loadAll()
+onMounted(async () => {
+  await loadAll()
+  // 通知链接 ?record=<id>：直接展开该记录详情（自动化消息「查看记录」）
+  const rid = Number(route.query.record)
+  if (rid) {
+    const r = dataRows.value.find(x => x.id === rid)
+    if (r) { detail.record = r; detail.visible = true }
+  }
   listTables().then(r => { allTables.value = Array.isArray(r) ? r : (r.tables || []) }).catch(() => {})
   window.addEventListener('keydown', onKeydown)
   document.addEventListener('click', onDocClick)
   document.addEventListener('contextmenu', onDocClick)
 })
 onUnmounted(() => {
+  clearTimeout(aiPollTimer)
   window.removeEventListener('keydown', onKeydown)
   document.removeEventListener('click', onDocClick)
   document.removeEventListener('contextmenu', onDocClick)
@@ -1094,7 +1553,10 @@ onUnmounted(() => {
 
 <style scoped>
 .st-page { display: flex; flex-direction: column; height: 100%; background: #fff; }
-.toolbar { display: flex; align-items: center; gap: 2px; padding: 6px 12px; border-bottom: 1px solid var(--st-border); }
+/* 表格区 + 右侧详情面板并排：面板占位，表格区收窄 */
+.st-body { display: flex; flex: 1; min-height: 0; }
+.st-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--st-border); }
 /* 幽灵按钮（对齐参照）：图标+文字 13px，hover 浅灰；生效条件=浅蓝胶囊+计数 */
 .tb-btn {
   display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px;
@@ -1105,8 +1567,19 @@ onUnmounted(() => {
 .tb-btn:hover { background: var(--st-bg-hover); }
 .tb-btn:disabled { color: var(--st-disabled); cursor: not-allowed; background: transparent; }
 .tb-btn:disabled .st-icon { color: var(--st-disabled); }
-.tb-btn.on { background: var(--st-primary-weak); color: var(--st-primary); }
-.tb-btn.on .st-icon { color: var(--st-primary); }
+/* 生效态：筛选/分组/排序/填色 = 浅灰底深色字 */
+.tb-btn.on, .tb-btn.open { background: #E8E9EB; color: var(--st-text-1); }
+.tb-btn.on .st-icon, .tb-btn.open .st-icon { color: var(--st-text-1); }
+.tb-scope { color: var(--st-text-2); margin-left: 4px; }   /* 灰底按钮上的次要说明：中灰（原浅蓝随按钮改灰底一起换掉） */
+/* 行高菜单 */
+.rh-menu { display: flex; flex-direction: column; margin: -14px -16px -12px; }
+.rh-item { display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 16px 0 12px; margin: 0 6px; border-radius: 6px; cursor: pointer; font-size: 15px; color: var(--st-text-1); }
+.rh-item:hover { background: var(--st-bg-hover); }
+.rh-check { width: 16px; color: var(--st-primary); font-size: 15px; }
+.rh-ico { color: var(--st-text-1); }
+.rh-custom { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--st-border); margin-top: 4px; padding: 12px 18px; font-size: 15px; color: var(--st-text-1); }
+.rh-num { width: 56px; }
+.rh-num :deep(.el-input__inner) { text-align: center; }
 .tb-btn.tb-add { color: var(--st-primary); font-weight: 500; }
 .tb-btn.tb-add .st-icon { color: var(--st-primary); }
 .tb-sep { width: 1px; height: 16px; background: var(--st-border); margin: 0 6px; flex: none; }
@@ -1125,8 +1598,11 @@ onUnmounted(() => {
 .chip .st-icon { color: var(--st-text-3); }
 .chip:hover { background: var(--st-bg-active); }
 .chip-edit { display: flex; gap: 8px; align-items: center; }
-.batch-bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: var(--st-primary-weak); font-size: 13px; }
-.pager { padding: 8px; display: flex; justify-content: center; }
+.tb-selected { font-size: 13px; color: var(--st-text-2); white-space: nowrap; padding: 0 4px; }
+.tb-btn.tb-danger { color: var(--el-color-danger); }
+.tb-btn.tb-danger:hover { background: var(--el-color-danger-light-9); }
+/* 分页条：紧凑（36px），紧跟表格 */
+.pager { height: 36px; padding: 0; display: flex; align-items: center; justify-content: center; }
 .fm-mask { position: fixed; inset: 0; z-index: 3000; }
 .fm { position: fixed; background: #fff; border-radius: 8px; box-shadow: var(--st-shadow-pop); padding: 4px; min-width: 170px; }
 .mi {
@@ -1144,7 +1620,19 @@ onUnmounted(() => {
   display: none; position: absolute; left: calc(100% - 2px); top: -4px; z-index: 1;
   background: #fff; border-radius: 8px; box-shadow: var(--st-shadow-pop); padding: 4px; min-width: 140px;
 }
-.mi.has-sub:hover .fm-sub { display: block; }
+.mi.has-sub:hover > .fm-sub { display: block; }
+.mi.disabled { color: var(--st-disabled); cursor: not-allowed; }
+.mi.disabled .st-icon { color: var(--st-disabled); }
+/* V3「根据此列…」分节 + 数据可视化飞出（双行项：标题 + 灰色说明） */
+.fm-group-t { font-size: 12px; color: var(--st-text-3); padding: 6px 12px 2px; }
+.fm-free { margin-left: 6px; }
+.fm-ai { color: var(--st-ai) !important; }
+.fm-viz { min-width: 260px; }
+.fm-sub-t { font-size: 12px; color: var(--st-text-3); padding: 6px 12px 2px; }
+.mi-2 { align-items: flex-start; }
+.mi-2 > .st-icon { margin-top: 2px; }
+.mi-s { font-size: 12px; color: var(--st-text-3); margin-top: 2px; }
+.tb-ico.on { background: var(--st-primary-weak); color: var(--st-primary); }
 .sub-check { display: inline-block; width: 16px; color: var(--st-primary); }
 .gd-form { display: flex; flex-direction: column; gap: 12px; }
 /* 统计行菜单：勾选位 + 方式名 + 右对齐值（对齐设计稿 PixPin_2026-10-15_16-56-53） */
@@ -1162,5 +1650,5 @@ onUnmounted(() => {
 .fb-item { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 28px; border-radius: 6px; cursor: pointer; color: var(--st-text-2); }
 .fb-item:hover { background: var(--st-bg-hover); color: var(--st-text-1); }
 /* 列头单字段筛选浮层容器 */
-.ffp-wrap { padding: 12px; min-width: 280px; }
+.ffp-wrap { width: 480px; box-sizing: border-box; padding: 18px 20px 16px; border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .14); }
 </style>

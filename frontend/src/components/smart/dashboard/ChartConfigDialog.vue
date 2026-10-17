@@ -58,7 +58,8 @@ import * as echarts from 'echarts'
 import { getTable, listTables, smartChartPreview } from '../../../api/index.js'
 import { renderChart } from './chartRender.js'
 
-const props = defineProps({ visible: Boolean, widget: Object, entryId: Number })
+// preset：新建时的预填（表头「数据可视化 → 添加更多图表」带入数据源表与类别字段）
+const props = defineProps({ visible: Boolean, widget: Object, entryId: Number, preset: Object })
 const emit = defineEmits(['close', 'save'])
 
 const CHART_TYPES = [
@@ -89,6 +90,12 @@ async function onOpen() {
     form.sub_type = props.widget.sub_type || ''
     form.config = JSON.parse(JSON.stringify(props.widget.config || form.config))
     if (form.config.sourceTableId) await onSourceChange(form.config.sourceTableId, true)
+  } else if (props.preset?.config?.sourceTableId) {
+    form.chart_type = props.preset.chart_type || 'bar'
+    form.sub_type = ''
+    form.config = { ...JSON.parse(JSON.stringify(form.config)), ...props.preset.config,
+                    metric: props.preset.config.metric || { agg: 'count', field: null } }
+    await onSourceChange(form.config.sourceTableId, true)
   }
 }
 
@@ -122,7 +129,7 @@ async function loadPreview() {
 }
 
 function save() {
-  emit('save', { title: props.widget?.title || '图表', chart_type: form.chart_type, sub_type: form.sub_type, config: form.config })
+  emit('save', { title: props.widget?.title || props.preset?.title || '图表', chart_type: form.chart_type, sub_type: form.sub_type, config: form.config })
 }
 </script>
 

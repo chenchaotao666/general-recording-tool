@@ -15,7 +15,7 @@
         </div>
         <template v-if="row.group ? !collapsed.has(row.group.id) : true">
           <div v-for="f in row.fields" :key="f.field_name" class="d-row" :class="{ member: !!row.group }">
-            <div class="d-label"><StIcon :name="f.field_type" :size="14" class="d-icon" />{{ f.label }}</div>
+            <div class="d-label"><StIcon :name="fieldIconName(f)" :size="14" class="d-icon" />{{ f.label }}</div>
             <div class="d-value">
               <SmartCell v-if="regOf(f).readonly" :field="f" :record="record" />
               <component v-else :is="editorFor(f)" :field="f" :record="record"
@@ -29,6 +29,7 @@
 </template>
 
 <script setup>
+import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
 import { computed, ref } from 'vue'
 import SmartCell from '../grid/SmartCell.vue'
 import SmartCellEditor from '../grid/SmartCellEditor.vue'

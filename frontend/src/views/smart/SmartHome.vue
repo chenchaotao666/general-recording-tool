@@ -4,6 +4,9 @@
     <div class="nav">
       <div class="nav-head">
         <span class="doc-name">{{ doc?.name || '智能表' }}</span>
+        <el-tooltip content="内容权限" placement="bottom">
+          <span class="nav-perm" @click="permVisible = !permVisible"><StIcon name="lock" :size="15" /></span>
+        </el-tooltip>
       </div>
       <el-input v-model="kw" size="small" placeholder="搜索" clearable class="nav-search" prefix-icon="Search" />
       <el-tree
@@ -12,7 +15,7 @@
         @node-click="onNodeClick">
         <template #default="{ data }">
           <span class="tree-node">
-            <StIcon :name="data.type === 'folder' ? 'folder' : data.type === 'dashboard' ? 'dashboard' : 'view-grid'"
+            <StIcon :name="{ folder: 'folder', dashboard: 'dashboard', form: 'form' }[data.type] || 'view-grid'"
                     :size="14" class="t-icon" />
             <span class="t-name">{{ data.name }}</span>
             <el-dropdown trigger="click" @command="(cmd) => onNodeAction(cmd, data)">
@@ -33,6 +36,7 @@
         <div class="new-title">新建</div>
         <div class="new-item" @click="createEntry('sheet')"><StIcon name="view-grid" :size="14" />工作表</div>
         <div class="new-item" @click="createEntry('dashboard')"><StIcon name="dashboard" :size="14" />仪表盘</div>
+        <div class="new-item" @click="createEntry('form')"><StIcon name="form" :size="14" />收集表单</div>
         <div class="new-item" @click="createEntry('folder')"><StIcon name="folder" :size="14" />文件夹</div>
         <div class="new-item" @click="importVisible = true"><StIcon name="import" :size="14" />导入表格</div>
       </div>
@@ -81,6 +85,8 @@
       </template>
     </el-dialog>
 
+    <PermissionPanel :visible="permVisible" :doc-id="doc?.id" :members="members" @close="permVisible = false" />
+
     <!-- 移入文件夹 -->
     <el-dialog v-model="move.visible" title="移入文件夹" width="360px">
       <el-select v-model="move.target" clearable placeholder="选择目标文件夹（留空=根级）" style="width: 100%">
@@ -100,14 +106,17 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   smartGetDoc, smartGetTree, smartCreateEntry, smartUpdateEntry, smartDeleteEntry,
-  smartImportExcel, uploadExcel, excelPreview,
+  smartImportExcel, uploadExcel, excelPreview, smartDocMembers,
 } from '../../api/index.js'
 import StIcon from '../../components/smart/icons/StIcon.vue'
+import PermissionPanel from '../../components/smart/perms/PermissionPanel.vue'
 
 const router = useRouter()
 const doc = ref(null)
 const entries = ref([])
 const kw = ref('')
+const permVisible = ref(false)
+const members = ref([])
 
 const folders = computed(() => entries.value.filter(e => e.type === 'folder'))
 const tree = computed(() => {
@@ -127,23 +136,24 @@ const recentSheets = computed(() => entries.value.filter(e => e.type === 'sheet'
 async function load() {
   doc.value = await smartGetDoc()
   entries.value = (await smartGetTree(doc.value.id)).entries
+  if (!members.value.length) members.value = (await smartDocMembers(doc.value.id).catch(() => ({ members: [] }))).members
 }
 
 function onNodeClick(data) {
   if (data.type !== 'folder') openEntry(data)
 }
 function openEntry(e) {
-  if (e.type === 'sheet') router.push(`/smart/table/${e.ref_table_id}`)
+  if (e.type === 'sheet' || e.type === 'form') router.push(`/smart/table/${e.ref_table_id}`)
   else if (e.type === 'dashboard') router.push(`/smart/dashboard/${e.id}`)
 }
 
 async function createEntry(type) {
-  const defaults = { sheet: '工作表', dashboard: '仪表盘', folder: '文件夹' }
+  const defaults = { sheet: '工作表', dashboard: '仪表盘', folder: '文件夹', form: '收集表单' }
   const { value } = await ElMessageBox.prompt('名称', `新建${defaults[type]}`, { inputValue: defaults[type] })
   if (value == null) return
   const r = await smartCreateEntry(doc.value.id, { type, name: value || defaults[type] })
   await load()
-  if (type === 'sheet') router.push(`/smart/table/${r.table_id}`)
+  if (type === 'sheet' || type === 'form') router.push(`/smart/table/${r.table_id}`)
   else if (type === 'dashboard') router.push(`/smart/dashboard/${r.entry.id}`)
 }
 
@@ -225,7 +235,9 @@ onMounted(load)
 <style scoped>
 .smart-home { display: flex; height: 100%; background: #fff; }
 .nav { width: 240px; border-right: 1px solid var(--st-border); display: flex; flex-direction: column; padding: 12px; gap: 8px; overflow: auto; }
-.nav-head { font-weight: 700; font-size: 15px; }
+.nav-head { font-weight: 700; font-size: 15px; display: flex; align-items: center; justify-content: space-between; }
+.nav-perm { display: inline-flex; padding: 4px; border-radius: 6px; cursor: pointer; color: var(--st-text-2); font-weight: 400; }
+.nav-perm:hover { background: var(--st-bg-hover); color: var(--st-text-1); }
 .nav-search { margin-bottom: 4px; }
 .tree-node { display: flex; align-items: center; gap: 6px; width: 100%; }
 .t-icon { color: var(--st-text-2); flex: none; }

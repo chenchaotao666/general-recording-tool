@@ -279,6 +279,9 @@ def coerce_payload(fields: list[MetaField], data: dict, partial: bool = False):
         f = by_name[key]
         if (f.options or {}).get("formula"):
             continue  # 公式字段以服务端计算为准
+        if getattr(f, "field_type", None) == "ai":
+            cleaned[key] = v   # AI 字段：值已由 ai_field_service.coerce_output 按输出类型规整（普通提交在上游被拦截）
+            continue
         ok, cv, err = coerce_value(v, f.data_type, f.nullable, f.options)
         if ok:
             cleaned[key] = cv
@@ -366,14 +369,47 @@ def _numify(ctx: dict) -> dict:
     return {k: (float(v) if isinstance(v, Decimal) else v) for k, v in ctx.items()}
 
 
+def formula_context(fields: list, ctx: dict) -> dict:
+    """公式求值上下文（智能表）：选项 ID → 选项文本（公式里按「是」「在产」比较）、日期文本 → 日期、
+    链接 → 文本。只用于求值，不回写存储值。"""
+    from .formula_funcs import FormulaError, to_date
+    out = dict(ctx)
+    for f in fields:
+        name = f.field_name
+        if name not in out:
+            continue
+        v = out[name]
+        ft = getattr(f, "field_type", None) or ""
+        if v is None:
+            continue
+        if ft in ("singleSelect", "multiSelect"):
+            labels = {str(o.get("id")): o.get("label") for o in (f.options or {}).get("options") or [] if isinstance(o, dict)}
+            out[name] = [labels.get(str(x), x) for x in v] if isinstance(v, list) else labels.get(str(v), v)
+        elif f.data_type in ("date", "datetime") or ft in ("createdTime", "lastModifiedTime"):
+            if isinstance(v, str):
+                try:
+                    out[name] = to_date(v, "", 1)
+                except FormulaError:
+                    pass
+        elif ft == "url" and isinstance(v, dict):
+            out[name] = v.get("text") or v.get("url")
+    return out
+
+
 def _eval_formula(expr_src: str, ctx: dict, allow_fields: set[str] | None = None):
     """求值一条公式；配置错误（语法/字段不存在）返回 None，不阻断保存。"""
     from . import expr as expr_mod
     try:
         node = expr_mod.parse(expr_src, allow_fields)
-        return expr_mod.evaluate(node, _numify(ctx))
+        val = expr_mod.evaluate(node, _numify(ctx))
     except expr_mod.ExprError:
         return None
+    if isinstance(val, (list, tuple, dict)):   # 列表结果（FILTER/UNIQUE/整列…）落库为文本
+        from .formula_funcs import to_text
+        return to_text(val)
+    if isinstance(val, float) and val.is_integer() and abs(val) < 1e15:   # 70.0 → 70（展示更干净）
+        return int(val)
+    return val
 
 
 def _apply_row_formulas(columns: list[dict], row: dict) -> None:
@@ -424,17 +460,18 @@ def apply_computed(fields: list[MetaField], cleaned: dict, base: dict | None = N
     formula_fields = [f for f in fields if isinstance((f.options or {}).get("formula"), str)]
     if formula_fields:
         allow = {f.field_name for f in fields}
+        ectx = formula_context(fields, ctx)
         for _ in range(len(formula_fields) + 1):
             changed = False
             for f in formula_fields:
-                val = _eval_formula(f.options["formula"], ctx, allow)
-                if ctx.get(f.field_name) != val:
-                    ctx[f.field_name] = val
+                val = _eval_formula(f.options["formula"], ectx, allow)
+                if ectx.get(f.field_name) != val:
+                    ectx[f.field_name] = val
                     changed = True
             if not changed:
                 break
         for f in formula_fields:
-            cleaned[f.field_name] = ctx.get(f.field_name)
+            cleaned[f.field_name] = ectx.get(f.field_name)
 
 
 def get_record(db: Session, table_id: int, record_id: int, viewer=None) -> dict:

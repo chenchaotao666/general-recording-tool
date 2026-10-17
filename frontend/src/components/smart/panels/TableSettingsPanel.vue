@@ -1,53 +1,61 @@
 <template>
-  <!-- 表格设置面板（设计稿 PixPin_2026-10-15_22-57-20）：
-       字段行 = 类型图标 + 名称 + 眼睛(显隐) + ⋯；编组为可折叠节（▾ 组名，成员带竖向层级线）。
+  <!-- 表格设置面板（参照 docs/智慧表格/表格上方按钮/表格设置.png）：
+       字段行 = 56px，类型图标 + 名称 + 眼睛(显隐) + ⋯；编组为可折叠节（▾ 组名，成员带竖向层级线）。
        列顺序即表格显示顺序，整行可拖（落点指示同记事本目录：上/下沿蓝线、组头中部虚线框=移入编组）。
-       成员拖出编组范围即退出编组；组内最后成员拖出后编组自动解散（父级处理）。 -->
-  <el-drawer v-model="visibleModel" title="表格设置" size="380px" class="tbl-settings-drawer">
+       长字段列表独立滚动，新增字段固定在下方；成员拖出编组范围即退出编组（父级处理）。 -->
+  <el-popover trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="420" popper-class="st-tbpanel st-ts-pop">
+    <template #reference><slot /></template>
+    <div class="tbp-title ts-title">表格设置</div>
     <div class="settings">
-      <template v-for="row in flatRows" :key="row.key">
-        <!-- 编组组头：可折叠、可整组拖动（成员作为整体移动）；拖拽落点（字段中部虚线框 = 移入该组） -->
-        <div v-if="row.isGroup" class="group-head tree-item" :class="dndIndicator(row)"
-             draggable="true" @dragstart="dndStartGroup(row.group, $event)"
-             @dragover="dndOver(row, $event)" @drop="dndDrop(row, $event)" @dragend="dndEnd"
-             @click="toggleGroup(row.group.id)">
-          <span class="g-caret"><StIcon :name="collapsed.has(row.group.id) ? 'chevron-right' : 'chevron-down'" :size="13" /></span>
-          <span class="g-name">{{ row.group.name }}</span>
-          <span class="g-count">{{ row.fields.length }} 列</span>
-        </div>
-        <!-- 字段行（编组成员缩进 + 竖向层级线）：整行可拖 -->
-        <div v-else class="field-row tree-item" :class="[{ member: row.member, off: isHidden(row.field) }, dndIndicator(row)]"
-             draggable="true" @dragstart="dndStart(row.field, $event)"
-             @dragover="dndOver(row, $event)" @drop="dndDrop(row, $event)" @dragend="dndEnd">
-          <DndHandle />
-          <FieldTypeIcon :field="row.field" />
-          <span class="f-name">{{ row.field.label }}</span>
-          <span class="f-eye" :title="isHidden(row.field) ? '显示' : '隐藏'"
-                @click.stop="$emit('toggle-visible', row.field, isHidden(row.field))">
-            <StIcon :name="isHidden(row.field) ? 'eye-off' : 'eye'" :size="15" />
-          </span>
-          <el-dropdown trigger="click" @command="(cmd) => $emit('field-action', cmd, row.field)">
-            <span class="f-more" @click.stop><StIcon name="more-h" :size="15" /></span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="edit">修改字段</el-dropdown-item>
-                <el-dropdown-item command="duplicate">创建副本</el-dropdown-item>
-                <el-dropdown-item command="newGroup">新建编组</el-dropdown-item>
-                <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
-      </template>
-      <div class="add-field" @click="(e) => $emit('add-field', e)">＋ 新增字段</div>
+      <div class="settings-list">
+        <template v-for="row in flatRows" :key="row.key">
+          <div v-if="row.divider" class="ts-divider" />
+          <!-- 编组组头：可折叠、可整组拖动（成员作为整体移动）；拖拽落点（字段中部虚线框 = 移入该组） -->
+          <div v-else-if="row.isGroup" class="group-head tree-item" :class="dndIndicator(row)"
+               draggable="true" @dragstart="dndStartGroup(row.group, $event)"
+               @dragover="dndOver(row, $event)" @drop="dndDrop(row, $event)" @dragend="dndEnd"
+               @click="toggleGroup(row.group.id)">
+            <span class="ts-drag"><StIcon name="drag" :size="14" /></span>
+            <span class="g-caret"><StIcon :name="collapsed.has(row.group.id) ? 'chevron-right' : 'chevron-down'" :size="16" /></span>
+            <span class="g-name">{{ row.group.name }}</span>
+            <span class="f-eye" :title="groupHidden(row) ? '显示' : '隐藏'" @click.stop="toggleGroupVisible(row)">
+              <StIcon :name="groupHidden(row) ? 'eye-off' : 'eye'" :size="20" :stroke-width="1.2" />
+            </span>
+            <span class="f-more f-more-ph" />
+          </div>
+          <!-- 字段行（编组成员缩进 + 竖向层级线）：整行可拖 -->
+          <div v-else class="field-row tree-item" :class="[{ member: row.member, off: isHidden(row.field) }, dndIndicator(row)]"
+               draggable="true" @dragstart="dndStart(row.field, $event)"
+               @dragover="dndOver(row, $event)" @drop="dndDrop(row, $event)" @dragend="dndEnd">
+            <span class="ts-drag"><StIcon name="drag" :size="14" /></span>
+            <StIcon :name="fieldIconName(row.field)" :size="16" class="ts-ico" />
+            <span class="f-name">{{ row.field.label }}</span>
+            <span class="f-eye" :title="isHidden(row.field) ? '显示' : '隐藏'"
+                  @click.stop="$emit('toggle-visible', row.field, isHidden(row.field))">
+              <StIcon :name="isHidden(row.field) ? 'eye-off' : 'eye'" :size="20" :stroke-width="1.2" />
+            </span>
+            <el-dropdown trigger="click" @command="(cmd) => $emit('field-action', cmd, row.field)">
+              <span class="f-more" @click.stop><StIcon name="more-h" :size="18" /></span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="edit">修改字段</el-dropdown-item>
+                  <el-dropdown-item command="duplicate">创建副本</el-dropdown-item>
+                  <el-dropdown-item command="newGroup">新建编组</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+        </template>
+      </div>
+      <div class="add-field" @click="(e) => $emit('add-field', e)"><StIcon name="plus" :size="16" />新增字段</div>
     </div>
-  </el-drawer>
+  </el-popover>
 </template>
 
 <script setup>
+import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
 import { computed, ref } from 'vue'
-import DndHandle from '../../DndHandle.vue'
-import FieldTypeIcon from '../grid/FieldTypeIcon.vue'
 import StIcon from '../icons/StIcon.vue'
 
 const props = defineProps({
@@ -97,13 +105,29 @@ const displayNodes = computed(() => {
   return nodes
 })
 
-// 扁平行序列：组头行 + 成员字段行/散列字段行（折叠组不出成员行）
-const flatRows = computed(() => displayNodes.value.flatMap(n =>
-  n.isGroup
-    ? [{ key: n.key, isGroup: true, group: n.group, fields: n.fields },
-       ...(collapsed.value.has(n.group.id) ? []
-           : n.fields.map(f => ({ key: f.field_name, isGroup: false, field: f, member: true })))]
-    : [{ key: n.field.field_name, isGroup: false, field: n.field }]))
+// 扁平行序列：组头行 + 成员字段行/散列字段行（折叠组不出成员行）；
+// 冻结列之后插一条分隔线（参照稿：冻结区与滚动区分隔）
+const flatRows = computed(() => {
+  const rows = displayNodes.value.flatMap(n =>
+    n.isGroup
+      ? [{ key: n.key, isGroup: true, group: n.group, fields: n.fields },
+         ...(collapsed.value.has(n.group.id) ? []
+             : n.fields.map(f => ({ key: f.field_name, isGroup: false, field: f, member: true })))]
+      : [{ key: n.field.field_name, isGroup: false, field: n.field }])
+  const frozen = props.view?.config?.frozenFieldId
+  if (!frozen) return rows
+  let at = rows.findIndex(r => (!r.isGroup && r.field.field_name === frozen) || (r.isGroup && r.fields.some(f => f.field_name === frozen)))
+  if (at < 0) return rows
+  // 冻结列在编组内：分隔线放在该编组最后一个成员之后
+  if (rows[at].isGroup || rows[at].member) while (rows[at + 1]?.member) at++
+  if (at < rows.length - 1) rows.splice(at + 1, 0, { key: '__divider', divider: true })
+  return rows
+})
+const groupHidden = (row) => row.fields.length > 0 && row.fields.every(isHidden)
+function toggleGroupVisible(row) {
+  const hidden = groupHidden(row)
+  for (const f of row.fields) if (isHidden(f) === hidden) emit('toggle-visible', f, hidden)
+}
 
 const isHidden = (f) => (props.view?.config?.fieldVisibility || {})[f.field_name] === false
 
@@ -220,31 +244,42 @@ function dndIndicator(row) {
 </script>
 
 <style scoped>
-.settings { display: flex; flex-direction: column; gap: 1px; }
-.field-row { display: flex; align-items: center; gap: 8px; padding: 7px 4px; border-radius: 6px; }
-.field-row:hover { background: var(--el-fill-color-light); }
-.field-row.member { margin-left: 20px; padding-left: 10px; border-left: 1px solid var(--el-border-color); border-radius: 0 6px 6px 0; }
-.field-row.off .f-name, .field-row.off .ft-icon { opacity: .45; }
-.f-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
-.f-eye { cursor: pointer; color: var(--el-text-color-secondary); display: inline-flex; padding: 2px; }
-.f-eye:hover { color: var(--el-color-primary); }
-.f-more { cursor: pointer; padding: 0 6px; color: var(--el-text-color-secondary); }
-.f-more:hover { color: var(--el-color-primary); }
-/* 编组组头：可折叠节标题 */
-.group-head {
-  display: flex; align-items: center; gap: 6px; padding: 7px 4px; border-radius: 6px;
-  cursor: pointer; user-select: none;
-}
-.group-head:hover { background: var(--el-fill-color-light); }
-.g-caret { width: 14px; color: var(--el-text-color-secondary); font-size: 12px; }
-.g-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
-.g-count { color: var(--el-text-color-placeholder); font-size: 12px; }
-/* 底部新增字段：纯文本行 */
-.add-field { padding: 10px 4px; cursor: pointer; color: var(--el-text-color-regular); font-size: 14px; }
-.add-field:hover { color: var(--el-color-primary); }
+.ts-title { margin-bottom: 12px; }
+.settings { display: flex; flex-direction: column; margin: 0 -10px; padding: 0 10px; }
+/* 列表左移 16px，行内留 18px 左内边距放拖动手柄（参照稿：悬停行左侧 ⋮⋮），图标仍与标题/新增字段对齐；
+   手柄须在行内——放在行外会被列表 overflow 裁掉 */
+.settings-list { display: flex; flex-direction: column; min-height: 0; max-height: calc(100vh - 220px); overflow: auto; margin-left: -16px; }
+.field-row { position: relative; display: flex; align-items: center; flex: none; gap: 8px; height: 42px; padding: 0 4px 0 18px; border-radius: 6px; cursor: grab; }
+.field-row:hover, .group-head:hover { background: var(--st-bg-hover); }
+.field-row.member { margin-left: 26px; padding-left: 22px; border-radius: 0 6px 6px 0; }
+.field-row.member::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid #DCDEE0; }
+.ts-drag { position: absolute; left: 2px; top: 50%; transform: translateY(-50%); color: var(--st-text-3); display: none; pointer-events: none; }
+.field-row:hover .ts-drag, .group-head:hover .ts-drag { display: inline-flex; }
+.field-row.member .ts-drag { left: 5px; }
+/* 字段图标/名称与右侧详情面板同一套：图标 16px 灰（--st-text-2）、名称 15px 深色、间距 8px */
+.ts-ico { color: var(--st-text-2); flex: none; }
+.field-row.off .f-name, .field-row.off .ts-ico { opacity: .4; }
+.f-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; color: var(--st-text-1); }
+/* 显隐眼睛：与字段类型图标同色（--st-text-2）；20px 配 1.2 描边，实际线宽 1.5px 与 16px 字段图标一致 */
+.f-eye { cursor: pointer; color: var(--st-text-2); display: inline-flex; align-items: center; justify-content: center;
+         flex: none; width: 32px; height: 32px; border-radius: 6px; }
+.f-eye:hover { color: var(--st-primary); background: var(--st-bg-active); }
+.f-more { cursor: pointer; color: var(--st-text-1); display: inline-flex; align-items: center; justify-content: center;
+          flex: none; width: 32px; height: 32px; border-radius: 6px; }
+.f-more:hover { color: var(--st-primary); background: var(--st-bg-active); }
+.f-more-ph { cursor: default; }
+.f-more-ph:hover { background: transparent; }
+/* 编组组头：可折叠节标题（∨ 组名），与字段行同为 56px */
+.group-head { position: relative; display: flex; align-items: center; flex: none; gap: 8px; height: 42px; padding: 0 4px 0 18px; border-radius: 6px; cursor: pointer; user-select: none; }
+.g-caret { display: inline-flex; color: var(--st-text-1); }
+.g-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; color: var(--st-text-1); }
+.ts-divider { height: 1px; background: var(--st-border); margin: 8px 0; flex: none; }
+/* 底部新增字段：不随长字段列表滚动 */
+.add-field { display: flex; align-items: center; flex: none; gap: 8px; height: 42px; margin-top: 4px; padding: 0 2px;
+             cursor: pointer; color: var(--st-text-1); font-size: 15px; border-radius: 6px; }
+.add-field:hover { background: var(--st-bg-hover); }
 </style>
 
-<!-- 非 scoped：抽屉经 el-overlay teleport 到 body，scoped/:deep 够不到标题节点 -->
 <style>
-.tbl-settings-drawer .el-drawer__header { margin-bottom: 8px; padding-bottom: 0; }
+.st-ts-pop.el-popover.el-popper { padding: 22px 20px 12px; }
 </style>

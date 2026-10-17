@@ -60,4 +60,38 @@ export const UI_ICONS = {
   report: '<path d="M4.8 2.8h4.4l3 2.8v7.6a.8.8 0 01-.8.8H4.8a.8.8 0 01-.8-.8V3.6a.8.8 0 01.8-.8z"/><path d="M9.2 2.8v2.8h3"/><path d="M10 10.4h2.4M11.2 9.2v2.4"/>',
   doc: '<path d="M4.8 2.8h4.4l3 2.8v7.6a.8.8 0 01-.8.8H4.8a.8.8 0 01-.8-.8V3.6a.8.8 0 01.8-.8z"/><path d="M9.2 2.8v2.8h3"/><path d="M6 8.6h4M6 11h4"/>',
   link: '<path d="M6.5 9.5l3-3"/><path d="M8.7 5.3l1.4-1.4a2.5 2.5 0 013.5 3.5L12.2 8.8"/><path d="M7.3 10.7l-1.4 1.4a2.5 2.5 0 01-3.5-3.5l1.4-1.4"/>',
+  // V3：协作与智能
+  automation: '<circle cx="8" cy="8" r="5.6"/><path d="M8 4.8V8l2.2 1.4"/><path d="M12.6 2.6l1.2 1.2M2.2 3.8l1.2-1.2"/>',
+  'form-add': '<rect x="2.6" y="2.6" width="10.8" height="10.8" rx="1.6"/><path d="M5.4 8l1.8 1.8 3.4-3.6"/>',
+  kanban: '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M6.2 2.5v11M9.8 2.5v11"/><path d="M3.8 5h1.2M7.4 5h1.2M11 5h1.2"/>',
+  info: '<circle cx="8" cy="8" r="6"/><path d="M8 7.2v4M8 4.9v.1"/>',
+  warn: '<circle cx="8" cy="8" r="6.2" fill="currentColor" stroke="none"/><path d="M8 4.6v4.2M8 10.9v.2" stroke="#fff" stroke-width="1.6"/>',
+  log: '<rect x="3" y="2.5" width="10" height="11" rx="1.4"/><path d="M5.6 5.6h4.8M5.6 8h4.8M5.6 10.4h2.8"/>',
+  back: '<path d="M10 3.5L5.5 8l4.5 4.5"/>',
+  emoji: '<circle cx="8" cy="8" r="5.8"/><path d="M5.8 9.6a2.6 2.6 0 004.4 0"/><circle cx="6" cy="6.6" r=".6" fill="currentColor"/><circle cx="10" cy="6.6" r=".6" fill="currentColor"/>',
+  restore: '<path d="M3.2 8a4.8 4.8 0 104.8-4.8 4.9 4.9 0 00-3.6 1.6"/><path d="M4.2 2.4v2.6h2.6"/>',
+  'chevrons-down': '<path d="M5 4l3 3 3-3M5 8.6l3 3 3-3"/>',
+  image: '<rect x="2.5" y="3" width="11" height="10" rx="1.4"/><circle cx="6" cy="6.4" r="1.1"/><path d="M13.5 10.6l-3.2-3.2-5.8 5.6"/>',
+  star: '<path d="M8 2.2l1.8 3.7 4 .6-2.9 2.8.7 4L8 11.4l-3.6 1.9.7-4-2.9-2.8 4-.6z"/>',
+  wand: '<path d="M3 13l7.4-7.4M9.2 4.4l2.4 2.4"/><path d="M11.8 1.8v1.8M13.8 4.2H12M12.9 2.7l-1.1 1.1"/>',
+  'row-add': '<rect x="2" y="3" width="8" height="2.4" rx=".6"/><rect x="2" y="7" width="8" height="2.4" rx=".6"/><circle cx="12" cy="11.5" r="2.6"/><path d="M12 10.3v2.4M10.8 11.5h2.4"/>',
+  'row-del': '<rect x="2" y="3" width="8" height="2.4" rx=".6"/><rect x="2" y="7" width="8" height="2.4" rx=".6"/><circle cx="12" cy="11.5" r="2.6"/><path d="M10.8 11.5h2.4"/>',
+  'table-solid': '<rect x="2" y="2.5" width="12" height="11" rx="1.6" fill="currentColor" stroke="none"/><path d="M2 6.2h12M2 9.8h12M6.4 6.2v7.3" stroke="#fff" stroke-width="1.2"/>',
+  pie: '<path d="M8 2.6v5.4h5.4A5.4 5.4 0 118 2.6z"/><path d="M10 1.8a4.6 4.6 0 014.2 4.2H10z"/>',
+  'chart-more': '<path d="M3 13V8M7 13V4M11 13V9"/><circle cx="12.6" cy="4" r="1.6"/>',
+  magic: '<path d="M8 2v2.2M8 11.8V14M2 8h2.2M11.8 8H14M3.8 3.8l1.6 1.6M10.6 10.6l1.6 1.6M3.8 12.2l1.6-1.6M10.6 5.4l1.6-1.6"/>',
+  // 行高档位（↕ + 行密度示意）
+  'rh-default': '<path d="M3 3.5v9M3 3.5L1.8 4.7M3 3.5l1.2 1.2M3 12.5l-1.2-1.2M3 12.5l1.2-1.2"/><path d="M7 4h7M7 8h7M7 12h7"/>',
+  'rh-medium': '<path d="M3 3.5v9M3 3.5L1.8 4.7M3 3.5l1.2 1.2M3 12.5l-1.2-1.2M3 12.5l1.2-1.2"/><rect x="7" y="3" width="7" height="4" rx=".8"/><rect x="7" y="9" width="7" height="4" rx=".8"/>',
+  'rh-tall': '<path d="M3 3.5v9M3 3.5L1.8 4.7M3 3.5l1.2 1.2M3 12.5l-1.2-1.2M3 12.5l1.2-1.2"/><rect x="7" y="3" width="7" height="10" rx="1"/><path d="M7 6.5h7"/>',
+  'rh-extraTall': '<path d="M3 3.5v9M3 3.5L1.8 4.7M3 3.5l1.2 1.2M3 12.5l-1.2-1.2M3 12.5l1.2-1.2"/><rect x="7" y="3" width="7" height="10" rx="1"/>',
+  // 公式编辑器
+  bulb: '<path d="M5.6 10.4A4.4 4.4 0 118 11.6v1.2H8"/><path d="M5.6 10.4c.7.6 1 1.3 1 2.1v.3h2.8v-.3c0-.8.3-1.5 1-2.1"/><path d="M6.6 14.6h2.8"/>',
+  brush: '<rect x="2.5" y="2.5" width="9" height="4" rx="1"/><path d="M11.5 4.5h1.6v3.2H7.8v2"/><rect x="6.6" y="9.7" width="2.4" height="3.8" rx=".6"/>',
+  // AI 字段面板
+  'arrow-right': '<path d="M3 8h10M9 4l4 4-4 4"/>',
+  'panel-close': '<path d="M3 3v10M6 8h7.5M10.5 5l3 3-3 3"/>',   // |→ 收起右侧面板
+  'thumb-up': '<path d="M5 7v6.5H2.8V7z"/><path d="M5 7l2.6-4.6c.9 0 1.6.7 1.5 1.6L8.8 6.5h3.6c.8 0 1.4.8 1.2 1.6l-1.1 4.4c-.2.6-.7 1-1.3 1H5"/>',
+  'thumb-down': '<path d="M5 9V2.5H2.8V9z"/><path d="M5 9l2.6 4.6c.9 0 1.6-.7 1.5-1.6L8.8 9.5h3.6c.8 0 1.4-.8 1.2-1.6l-1.1-4.4c-.2-.6-.7-1-1.3-1H5"/>',
+  stop: '<rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" stroke="none"/>',
 }

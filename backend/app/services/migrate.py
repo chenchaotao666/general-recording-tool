@@ -65,6 +65,11 @@ _NEW_COLUMNS = [
     ("mindmaps", "parent_id", "INTEGER"),
     ("mindmaps", "sort", "INTEGER DEFAULT 0"),
     ("mindmaps", "pinned", "BOOLEAN DEFAULT 0"),
+    # 智能表 V3：最后编辑主体（user/ai/automation）
+    ("records", "updated_by_type", "VARCHAR(16) DEFAULT 'user'"),
+    # 智能表 V3：AI 单元格状态表的配额计量列（早期建的表缺这两列，网格查询会 500）
+    ("smart_ai_runs", "tenant_id", "INTEGER"),
+    ("smart_ai_runs", "billable", "BOOLEAN DEFAULT 0"),
 ]
 
 
@@ -142,11 +147,11 @@ _PLAN_SEEDS = [
     ("free", "免费版", "individual", 0, 0, 10, True, {
         "max_tables": 3, "max_rows": 5000, "max_storage_mb": 512, "max_seats": 1,
         "quota_grace_days": 7, "sub_grace_days": 7,
-        "feature_print_templates": 1}),
+        "feature_print_templates": 1, "smart_ai_calls_monthly": 200}),
     ("individual_basic", "个人基础版", "individual", 990, 9900, 11, True, {
         "max_tables": 20, "max_rows": 50000, "max_storage_mb": 5120, "max_seats": 1,
         "quota_grace_days": 7, "sub_grace_days": 7,
-        "feature_print_templates": 1, "trash_retention_days": 7}),
+        "feature_print_templates": 1, "trash_retention_days": 7, "smart_ai_calls_monthly": 2000}),
     ("individual_standard", "个人标准版", "individual", 2390, 23900, 12, True, {
         "max_tables": 100, "max_rows": 500000, "max_storage_mb": 20480, "max_seats": 1,
         "quota_grace_days": 7, "sub_grace_days": 7,

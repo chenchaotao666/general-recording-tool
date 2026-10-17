@@ -15,10 +15,10 @@
     <!-- 未匹配到选项的原始值兜底（改类型/引用源被删场景） -->
     <span v-for="(v, i) in unmatchedValues" :key="`raw-${i}`" class="opt-tag raw"><span class="opt-label">{{ v }}</span></span>
     <!-- 下拉按钮：单个三角，点击切换展开/收起（方向随状态翻转） -->
-    <span class="chev" title="展开/收起选项" @click.stop="onChevClick"><StIcon :name="closed ? 'caret-down' : 'caret-up'" :size="10" /></span>
+    <span class="st-dd chev" :class="{ up: !closed, open: !closed }" title="展开/收起选项" @click.stop="onChevClick" />
   </span>
   <teleport to="body">
-    <div v-if="rect && !closed" ref="panelRef" class="sel-panel" :style="panelStyle" @mousedown.stop>
+    <div v-if="rect && !closed" v-show="!panelOut" ref="panelRef" class="sel-panel" :style="panelStyle" @mousedown.stop>
       <input ref="kwRef" v-model="kw" class="sel-search" placeholder="查找或添加选项"
              @keydown.enter.prevent="onEnter" @keydown.esc.stop.prevent="onEsc" />
       <div class="sel-kind">{{ isMulti ? '多选' : '单选' }}</div>
@@ -36,10 +36,11 @@
 </template>
 
 <script setup>
-import { computed, inject, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 import { optionColor } from '../../../smart/registry/fieldRegistry.js'
 import { filterLinkageOptions } from '../../../smart/utils/refOptions.js'
+import { afterFrame, isDisplayCell, visibleCellRect } from '../../../smart/utils/vxeCell.js'
 
 const props = defineProps({
   field: { type: Object, required: true },
@@ -155,17 +156,51 @@ const anchorRef = ref(null)
 const panelRef = ref(null)
 const kwRef = ref(null)
 const rect = ref(null)
+// 面板定位：默认在锚点下方；下方放不下且上方空间更大时翻到上方；高度不超过所在侧可用空间（列表区滚动），
+// 左右不超出屏幕——保证选项面板始终完整可见（参照 PixPin_2026-10-17_17-05-34 底部被任务栏遮挡）
+const panelNat = ref(0)   // 面板自然高度（不受可用空间限制时）
+const panelW = ref(0)
 const panelStyle = computed(() => {
   const r = rect.value
   if (!r) return {}
-  return { left: `${r.left}px`, top: `${r.bottom + 2}px`, minWidth: `${Math.max(r.width, 200)}px` }
+  const vh = window.innerHeight, vw = window.innerWidth, gap = 2, margin = 8
+  const below = vh - r.bottom - gap - margin
+  const above = r.top - gap - margin
+  const nat = panelNat.value || 320
+  const up = nat > below && above > below
+  const avail = Math.max(120, up ? above : below)
+  const h = Math.min(nat, avail)
+  const w = Math.max(panelW.value, Math.max(r.width, 200))
+  const left = Math.max(margin, Math.min(r.left, vw - w - margin))
+  return { left: `${left}px`, top: `${up ? r.top - gap - h : r.bottom + gap}px`,
+           minWidth: `${Math.max(r.width, 200)}px`, maxHeight: `${avail}px` }
 })
+watch(() => visibleOptions.value.length, () => nextTick(measurePanel))   // 搜索过滤后高度变化，重新定位
+function measurePanel() {
+  const el = panelRef.value
+  if (!el) return
+  panelNat.value = el.scrollHeight
+  panelW.value = el.offsetWidth
+}
 
 // 面板锚定锚点框（锚点随标签换行增高，面板要跟到底边）：ResizeObserver 跟踪锚点尺寸
 let anchorRO = null
 function updateRect() {
   const r = anchorRef.value?.getBoundingClientRect()
   if (r) rect.value = r
+  nextTick(measurePanel)
+}
+// 表格滚动：面板跟随锚点；单元格滚出可视区时隐藏面板
+const panelOut = ref(false)
+let scrollRaf = 0
+function onAnyScroll(e) {
+  if (e?.target && panelRef.value?.contains?.(e.target)) return   // 面板内列表自身滚动
+  cancelAnimationFrame(scrollRaf)
+  scrollRaf = requestAnimationFrame(() => {
+    // 宿主不是表格单元格（详情面板）时以锚点自身判定，visibleCellRect 对非表格元素只返回其位置
+    panelOut.value = !visibleCellRect(anchorRef.value?.closest('td') || anchorRef.value)
+    updateRect()
+  })
 }
 
 function onDocMousedown(e) {
@@ -174,22 +209,27 @@ function onDocMousedown(e) {
   if (!inPanel && !inAnchor) close()
 }
 
-onMounted(() => nextTick(() => {
-  const td = anchorRef.value?.closest('td') || anchorRef.value?.parentElement
-  // vxe 冻结列的单元格渲染三份（main/fixed-left/fixed-right wrapper）；非显示副本惰性，
-  // 不开面板不聚焦，避免多实例互抢焦点（td 的 fixed--hidden 类挂载时不存在，按 wrapper 判断）
-  const inFixed = !!td?.closest?.('.vxe-table--fixed-left-wrapper, .vxe-table--fixed-right-wrapper')
-  if (inFixed !== props.frozen) return
+onMounted(async () => {
+  await nextTick()
+  await afterFrame()
+  if (!anchorRef.value) return   // 等待期间已卸载
+  // vxe 冻结列的单元格渲染多份；非显示副本惰性，不开面板不聚焦，避免多实例互抢焦点。
+  // 不在单元格内（右侧详情面板）则无副本问题，直接展开
+  const td = anchorRef.value.closest('td')
+  if (td && !isDisplayCell(td)) return
   if (props.closed) return   // 单击选中态：只显示锚点，不展开面板、不监听外部点击
   updateRect()
   anchorRO = new ResizeObserver(updateRect)
   anchorRO.observe(anchorRef.value)
   document.addEventListener('mousedown', onDocMousedown, true)
+  document.addEventListener('scroll', onAnyScroll, true)
   nextTick(() => kwRef.value?.focus({ preventScroll: true }))
-}))
+})
 onUnmounted(() => {
   anchorRO?.disconnect()
   document.removeEventListener('mousedown', onDocMousedown, true)
+  document.removeEventListener('scroll', onAnyScroll, true)
+  cancelAnimationFrame(scrollRaf)
 })
 </script>
 
@@ -201,17 +241,16 @@ onUnmounted(() => {
      单行内容垂直居中（与查看态一致不跳），多行溢出时自动回落顶对齐 */
   display: flex; align-items: center; gap: 4px; flex-wrap: wrap; align-content: safe center;
   width: 100%; min-height: 100%; box-sizing: border-box;
-  background: #fff; border: 2px solid var(--el-color-primary); border-radius: 2px;
+  background: #fff; border: 2px solid var(--st-primary); border-radius: 2px;
   padding: 3px 26px 3px 6px;   /* 右侧 26px 给 ▼/▲ 留位 */
   position: relative; z-index: 2; align-self: flex-start;
   box-shadow: 0 4px 16px rgba(0, 0, 0, .12);
   user-select: none; cursor: pointer;   /* 选项文字不可选中；整框是开合热区 */
 }
-/* 选中态的宿主单元格还带着 8px padding 和 wrapper 的 -2px 光学上移：
-   左边距 -8px 左移，宽度 +16px 补回左右两侧（负右边距只会拉动后续元素，不会加宽自身），
-   高度 +16px 补回上下 padding，使边框盒与单元格外沿严格对齐；编辑态 padding 已归零，无需补偿 */
-.sel-anchor.closed { margin: -6px 0 0 -8px; width: calc(100% + 16px); min-height: calc(100% + 16px); }
-.sel-anchor .chev { position: absolute; top: 5px; right: 5px; margin-left: 0; }
+/* 选中态与编辑态一样：宿主单元格内边距与光学上移已由 SmartGrid 归零，锚点框直接撑满单元格
+   （原先用固定负边距补偿 8px padding，行高变大后单元格 padding 不同，框会超出单元格） */
+.sel-anchor.closed { margin: 0; width: 100%; min-height: 100%; }
+.sel-anchor .chev { position: absolute; top: 4px; right: 4px; margin-left: 0; }
 .opt-tag { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; max-width: 100%; box-sizing: border-box; }
 /* 单个标签超宽时省略号截断，✕ 始终保留 */
 .opt-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -219,14 +258,9 @@ onUnmounted(() => {
 .tag-x { margin-left: 4px; cursor: pointer; opacity: .6; flex: none; }
 .tag-x:hover { opacity: 1; }
 /* 下拉按钮（设计稿 PixPin_2026-10-15_00-56-40）：浅灰圆角小方块 + 单三角，点击切换展开/收起 */
-.chev {
-  margin-left: auto; flex: none; cursor: pointer;
-  width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
-  background: var(--el-fill-color); color: var(--el-text-color-secondary);
-  border-radius: 4px; font-size: 8px; line-height: 1;
-}
-.chev:hover { background: var(--el-fill-color-dark); color: var(--el-text-color-primary); }
+.chev { margin-left: auto; }   /* 外观/hover 由全局 .st-dd 统一 */
 .sel-panel {
+  display: flex; flex-direction: column;   /* 受 max-height 限制时由列表区收缩滚动 */
   position: fixed; z-index: 3000; background: #fff; border-radius: 6px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, .12); border: 1px solid var(--el-border-color-lighter);
   padding: 8px; box-sizing: border-box; max-width: 320px;
@@ -240,15 +274,15 @@ onUnmounted(() => {
 }
 .sel-search::placeholder { color: var(--el-text-color-placeholder); }
 .sel-kind { font-size: 12px; color: var(--el-text-color-secondary); padding: 8px 2px 4px; }
-.sel-list { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; }
+.sel-list { max-height: 240px; min-height: 0; flex: 0 1 auto; overflow-y: auto; display: flex; flex-direction: column; }
 .sel-item {
   display: flex; align-items: center; gap: 6px; padding: 3px 4px;   /* 行高与单元格标签一致（标签 20px + 上下 3px） */
   cursor: pointer; border-radius: 4px;
 }
 .sel-item:hover { background: var(--el-fill-color-lighter); }
-.sel-item .check { width: 16px; color: var(--el-color-primary); font-size: 12px; flex: none; }
+.sel-item .check { width: 16px; color: var(--st-primary); font-size: 12px; flex: none; }
 /* 面板挂 body 后拿不到 vxe 单元格的 22px 行高，标签会比单元格里矮一截——补齐一致 */
 .sel-panel .opt-tag { line-height: 22px; }
-.sel-item.create { color: var(--el-color-primary); font-size: 13px; padding-left: 22px; }
+.sel-item.create { color: var(--st-primary); font-size: 13px; padding-left: 22px; }
 .sel-empty { color: var(--el-text-color-secondary); font-size: 12px; padding: 8px 2px; }
 </style>

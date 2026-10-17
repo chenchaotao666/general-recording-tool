@@ -1,7 +1,7 @@
 <template>
   <!-- 裸页（不带侧边菜单壳）：登录、登录后的选择公司、公开分享/表单/审批 -->
   <router-view v-if="$route.path === '/login' || $route.path === '/select-tenant'
-    || $route.path.startsWith('/share/') || $route.path.startsWith('/form/') || $route.path.startsWith('/approve/')" />
+    || $route.path.startsWith('/share/') || $route.path.startsWith('/form/') || $route.path.startsWith('/approve/') || $route.path.startsWith('/sf/')" />
   <el-container v-else class="layout" :class="{ focus: focusMode }">
     <el-aside :width="navCollapsed ? '64px' : '180px'" class="aside">
       <div class="logo" :title="navCollapsed ? '通用记录工具' : ''">{{ navCollapsed ? '记' : '通用记录工具' }}</div>

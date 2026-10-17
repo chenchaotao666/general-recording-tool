@@ -3,7 +3,7 @@
   <div class="view-tabs">
     <div v-for="v in views" :key="v.id" class="view-tab" :class="{ active: v.id === currentId }"
          @click="$emit('switch', v)">
-      <StIcon name="view-grid" :size="13" class="vt-icon" />{{ v.name }}
+      <StIcon :name="TYPE_ICON[v.type] || 'view-grid'" :size="13" class="vt-icon" />{{ v.name }}
       <el-dropdown v-if="v.id === currentId" trigger="click" @command="(cmd) => $emit('action', cmd, v)">
         <span class="vt-more" @click.stop><StIcon name="more-v" :size="13" /></span>
         <template #dropdown>
@@ -17,7 +17,17 @@
       </el-dropdown>
     </div>
     <span class="vt-sep" />
-    <span class="vt-add" title="新建视图" @click="$emit('action', 'add')"><StIcon name="plus" :size="13" /></span>
+    <!-- ＋：新建表格视图 / 看板 / 表单（§12.1：表单与表格视图并列于页签，可建多个） -->
+    <el-dropdown trigger="click" @command="(t) => $emit('action', 'add', t)">
+      <span class="vt-add" title="新建视图"><StIcon name="plus" :size="13" /></span>
+      <template #dropdown>
+        <el-dropdown-menu>
+          <el-dropdown-item command="grid"><StIcon name="view-grid" :size="14" class="vt-dd-i" />表格视图</el-dropdown-item>
+          <el-dropdown-item command="kanban"><StIcon name="kanban" :size="14" class="vt-dd-i" />看板视图</el-dropdown-item>
+          <el-dropdown-item command="form"><StIcon name="form" :size="14" class="vt-dd-i" />表单</el-dropdown-item>
+        </el-dropdown-menu>
+      </template>
+    </el-dropdown>
   </div>
 </template>
 
@@ -25,6 +35,7 @@
 import StIcon from './icons/StIcon.vue'
 
 defineProps({ views: { type: Array, default: () => [] }, currentId: Number })
+const TYPE_ICON = { grid: 'view-grid', form: 'form', kanban: 'kanban' }
 defineEmits(['switch', 'action'])
 </script>
 
@@ -43,4 +54,5 @@ defineEmits(['switch', 'action'])
 .vt-sep { width: 1px; height: 16px; background: var(--st-border); margin: 0 6px 6px; }
 .vt-add { display: inline-flex; padding: 4px; margin-bottom: 6px; cursor: pointer; color: var(--st-text-2); border-radius: 4px; }
 .vt-add:hover { background: var(--st-bg-hover); }
+.vt-dd-i { margin-right: 6px; color: var(--st-text-2); }
 </style>

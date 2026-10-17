@@ -448,3 +448,60 @@ export const smartCreateWidget = (entryId, payload) => http.post(`/smart/dashboa
 export const smartUpdateWidget = (wid, payload) => http.patch(`/smart/widgets/${wid}`, payload)
 export const smartDeleteWidget = (wid) => http.delete(`/smart/widgets/${wid}`)
 export const smartChartPreview = (payload) => http.post('/smart/charts/preview', payload)
+
+// ---------- 智能表 V3：内容权限 ----------
+export const smartDocMembers = (docId) => http.get(`/smart/docs/${docId}/members`)
+export const smartPermDictionary = () => http.get('/smart/perm-dictionary')
+export const smartPermOverview = (docId) => http.get(`/smart/docs/${docId}/permissions`)
+export const smartEntryPermission = (eid) => http.get(`/smart/entries/${eid}/permission`)
+export const smartPutBasePerm = (eid, profile) => http.put(`/smart/entries/${eid}/permission/base`, { profile })
+export const smartPutBasePermBatch = (items) => http.put('/smart/entries/permission/base:batch', { items })
+export const smartCreatePermGroup = (docId, payload) => http.post(`/smart/docs/${docId}/perm-groups`, payload)
+export const smartUpdatePermGroup = (gid, payload) => http.patch(`/smart/perm-groups/${gid}`, payload)
+export const smartDeletePermGroup = (gid) => http.delete(`/smart/perm-groups/${gid}`)
+export const smartGroupGrants = (gid) => http.get(`/smart/perm-groups/${gid}/grants`)
+export const smartPutGroupGrant = (gid, eid, profile) => http.put(`/smart/perm-groups/${gid}/grants/${eid}`, { profile })
+export const smartDeleteGroupGrant = (gid, eid) => http.delete(`/smart/perm-groups/${gid}/grants/${eid}`)
+export const smartMyPermission = (tid) => http.get(`/smart/tables/${tid}/my-permission`)
+
+// ---------- 智能表 V3：自动化 ----------
+export const smartListAutomations = (tid) => http.get(`/smart/tables/${tid}/automations`)
+export const smartCreateAutomation = (tid, payload) => http.post(`/smart/tables/${tid}/automations`, payload)
+export const smartUpdateAutomation = (aid, payload) => http.patch(`/smart/automations/${aid}`, payload)
+export const smartDeleteAutomation = (aid) => http.delete(`/smart/automations/${aid}`)
+export const smartAutomationRuns = (aid) => http.get(`/smart/automations/${aid}/runs`)
+export const smartRunAutomation = (aid, payload) => http.post(`/smart/automations/${aid}/run`, payload || {})
+
+// ---------- 智能表 V3：表单 ----------
+export const smartGetForm = (vid) => http.get(`/smart/views/${vid}/form`)
+export const smartSubmitForm = (vid, data) => http.post(`/smart/views/${vid}/submit`, { data })
+export const smartGetFormLink = (vid) => http.get(`/smart/views/${vid}/share-link`)
+export const smartCreateFormLink = (vid, payload) => http.post(`/smart/views/${vid}/share-link`, payload || {})
+export const smartDeleteFormLink = (vid) => http.delete(`/smart/views/${vid}/share-link`)
+// 公开表单（免登录）：不带 token 头也可访问
+export const smartPublicForm = (token, password) => http.get(`/smart-public/forms/${token}`, { params: password ? { password } : {} })
+export const smartPublicSubmit = (token, data, password) => http.post(`/smart-public/forms/${token}/submit`, { data, password })
+export const smartPublicUpload = (token, file, kind = 'image', password) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  return http.post(`/smart-public/forms/${token}/upload`, fd, { params: { kind, ...(password ? { password } : {}) } })
+}
+
+// ---------- 智能表 V3：AI ----------
+export const smartAiScenes = () => http.get('/smart/ai/scenes')
+export const smartAiQuota = () => http.get('/smart/ai/quota')
+export const smartAiRun = (tid, fieldName, payload) => http.post(`/smart/tables/${tid}/fields/${fieldName}/ai-run`, payload || {})
+// AI 字段配置生成 + 真实数据效果预览（不落库）；config 可带 { signal } 以便「停止」
+export const smartAiConfigure = (tid, payload, config) => http.post(`/smart/tables/${tid}/ai/configure`, payload, config)
+export const smartAiPreview = (tid, payload) => http.post(`/smart/tables/${tid}/ai/preview`, payload)
+export const smartAiGenerateFormula = (tid, prompt) => http.post('/smart/ai/generate-formula', { table_id: tid, prompt })
+export const smartAiMatchTags = (tid, fieldName, payload) => http.post(`/smart/tables/${tid}/fields/${fieldName}/ai-match-tags`, payload)
+export const smartUploadFile = (tid, file) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  return http.post(`/smart/tables/${tid}/files`, fd)
+}
+
+// ---------- 智能表：公式编辑器 ----------
+export const smartFormulaFunctions = () => http.get('/smart/formula/functions')
+export const smartFormulaPreview = (tid, payload) => http.post(`/smart/tables/${tid}/formula/preview`, payload)

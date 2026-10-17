@@ -1,138 +1,166 @@
 <template>
-  <!-- 单字段筛选浮层（对齐参照 筛选-固定到工具栏.png / 表头-筛选.png）：
-       运算符 + （枚举/人员：搜索 + 已选择 N 项/清空 + 勾选列表；其余：ConditionValue）。
-       即时生效：每次变更 emit 完整条件（值空时 emit null = 移除该字段条件）。
-       pin 胶囊与列头「筛选」共用；调用方负责定位容器（el-popover 或 fixed 浮层） -->
+  <!-- 单字段筛选面板（参照 docs/智慧表格/表头工具栏/表头-过滤按钮点击-多选.png / -文本.png）：
+       头部「筛选 + 作用范围胶囊」+ 右侧 📌 固定到工具栏 / ⋯ 更多；
+       下方圆角卡：运算符（文字下拉「包含 ▾」）+ 🔍 → 枚举/人员：搜索框 + 已选择 N 项/清空 + 勾选清单；其余类型：值输入框。
+       即时生效；列头漏斗与工具栏固定条件胶囊共用。值为空时：已固定的条件保留为「未填值」（不生效），未固定的移除 -->
   <div class="ffp" @click.stop @mousedown.stop>
     <div class="ffp-head">
       <b>筛选</b>
       <span class="ffp-scope">{{ scopeText }}</span>
+      <span class="ffp-flex" />
+      <el-tooltip :content="pinned ? '取消固定' : '固定到工具栏'" placement="top" :show-after="300">
+        <span class="ffp-icon" :class="{ on: pinned }" @click="$emit('pin', !pinned)"><StIcon name="pin" :size="16" /></span>
+      </el-tooltip>
+      <span class="ffp-more-wrap">
+        <span class="ffp-icon" :class="{ on: moreOpen }" @click="moreOpen = !moreOpen"><StIcon name="more-h" :size="16" /></span>
+        <div v-if="moreOpen" class="ffp-menu" @mouseleave="moreOpen = false">
+          <div class="ffp-mi" @click="moreOpen = false; $emit('open-panel')"><StIcon name="filter" :size="14" />打开筛选面板</div>
+          <div class="ffp-mi danger" :class="{ off: !hasCondition }" @click="hasCondition && remove()"><StIcon name="trash" :size="14" />删除条件</div>
+        </div>
+      </span>
     </div>
-    <el-select :teleported="false" v-model="op" size="small" class="ffp-op" @change="onOpChange">
-      <el-option v-for="o in ops" :key="o" :value="o" :label="OP_LABELS[o]" />
-    </el-select>
 
-    <template v-if="needsValue">
-      <!-- 枚举/人员：勾选清单 -->
-      <template v-if="isEnum || isMember">
-        <el-input v-model="kw" size="small" :placeholder="isMember ? '搜索成员' : '搜索'" clearable class="ffp-search" />
-        <div class="ffp-count">
-          <span>已选择 {{ selected.length }} {{ isMember ? '人' : '项' }}</span>
-          <span class="ffp-clear" :class="{ dim: !selected.length }" @click="setSelected([])">清空</span>
+    <div class="ffp-card">
+      <div class="ffp-oprow">
+        <span class="ffp-op-wrap">
+          <span class="ffp-op" @click="opOpen = !opOpen">{{ opLabel(field, op) }}<StIcon name="chevron-down" :size="13" /></span>
+          <div v-if="opOpen" class="ffp-menu ffp-op-menu" @mouseleave="opOpen = false">
+            <div v-for="o in ops" :key="o" class="ffp-mi" :class="{ cur: o === op }" @click="pickOp(o)">
+              {{ opLabel(field, o) }}<StIcon v-if="o === op" name="check" :size="13" class="ffp-mi-ck" />
+            </div>
+          </div>
+        </span>
+        <span v-if="needsValue && (isEnum || isMember)" class="ffp-icon sq" title="搜索" @click="focusSearch"><StIcon name="search" :size="15" /></span>
+      </div>
+
+      <template v-if="needsValue">
+        <!-- 枚举/人员：搜索 + 勾选清单 -->
+        <template v-if="isEnum || isMember">
+          <div class="ffp-sep" />
+          <FilterOptionList ref="listRef" :options="listOptions" :selected="selected" :kind="isMember ? 'member' : 'enum'"
+                            search-mode="always" @toggle="toggle" @clear="setSelected([])" />
+        </template>
+        <!-- 文本类：灰底输入框 + ✕ 清除 -->
+        <div v-else-if="isTextLike" class="ffp-text">
+          <input ref="textRef" v-model="textVal" class="ffp-input" placeholder="请输入" @input="onText" />
+          <span v-if="textVal" class="ffp-x" @click="clearText"><StIcon name="close" :size="14" /></span>
         </div>
-        <div class="ffp-list">
-          <label v-for="o in filteredOptions" :key="o.id" class="ffp-item">
-            <el-checkbox :model-value="selected.includes(o.id)" size="small" @change="toggle(o.id)" />
-            <span v-if="isEnum" class="ffp-tag"
-                  :style="{ background: optionColor(o.color).value, color: optionColor(o.color).text }">{{ o.label }}</span>
-            <span v-else class="ffp-name">{{ o.label }}</span>
-          </label>
-          <div v-if="!filteredOptions.length" class="ffp-empty">无匹配{{ isMember ? '成员' : '选项' }}</div>
-        </div>
+        <!-- 数字/日期等：通用值编辑器 -->
+        <div v-else class="ffp-generic"><ConditionValue :field="field" :operator="op" :value="value" @update="onValue" /></div>
       </template>
-      <!-- 其他类型：通用值编辑器 -->
-      <ConditionValue v-else :field="field" :operator="op" :value="value" @update="onValue" />
-    </template>
-
-    <div v-if="hasCondition" class="ffp-foot">
-      <span class="ffp-del" @click="remove">删除条件</span>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
 import ConditionValue from './ConditionValue.vue'
-import { filterOpsOf, OP_LABELS, NO_VALUE_OPS, optionColor } from '../../../smart/registry/fieldRegistry.js'
+import { isCondValueEmpty } from '../../../smart/utils/format.js'
+import FilterOptionList from './FilterOptionList.vue'
+import StIcon from '../icons/StIcon.vue'
+import { filterOpsOf, NO_VALUE_OPS, opLabel } from '../../../smart/registry/fieldRegistry.js'
 
 const props = defineProps({
   field: { type: Object, required: true },
   condition: { type: Object, default: null },   // 该字段的现有条件（无则 null）
   scopeText: { type: String, default: '' },
+  pinned: { type: Boolean, default: false },
 })
-const emit = defineEmits(['change'])
+const emit = defineEmits(['change', 'pin', 'open-panel'])
 const members = inject('smartMembers', { value: [] })
 
+// AI 字段按输出类型筛选
+const ftype = computed(() => (props.field.field_type === 'ai' ? (props.field.options?.outputType || 'text') : props.field.field_type))
 const ops = computed(() => filterOpsOf(props.field))
-const isEnum = computed(() => ['singleSelect', 'multiSelect'].includes(props.field.field_type))
-const isMember = computed(() => ['member', 'createdBy', 'lastModifiedBy'].includes(props.field.field_type))
+const isEnum = computed(() => ['singleSelect', 'multiSelect'].includes(ftype.value))
+const isMember = computed(() => ['member', 'createdBy', 'lastModifiedBy'].includes(ftype.value))
+const isTextLike = computed(() => ['text', 'url', 'email', 'phone', 'barcode', 'location', 'autoNumber', 'formula', 'lookup'].includes(ftype.value)
+  && !['isEmpty', 'isNotEmpty'].includes(op.value))
 
 const op = ref('contains')
 const value = ref(undefined)
-const selected = ref([])   // 枚举/人员勾选集
-const kw = ref('')
+const textVal = ref('')
+const selected = ref([])
+const opOpen = ref(false)
+const moreOpen = ref(false)
+const listRef = ref(null)
+const textRef = ref(null)
 
 watch(() => [props.field, props.condition], () => {
-  kw.value = ''
   op.value = props.condition?.operator || ops.value[0] || 'contains'
   const v = props.condition?.value
-  if (isEnum.value || isMember.value) {
-    selected.value = Array.isArray(v) ? [...v] : (v != null ? [v] : [])
-  } else {
-    value.value = v
-  }
+  if (isEnum.value || isMember.value) selected.value = Array.isArray(v) ? [...v] : (v != null ? [v] : [])
+  else { value.value = v; textVal.value = v == null ? '' : String(v) }
 }, { immediate: true, deep: true })
+
+onMounted(() => nextTick(() => (listRef.value ? listRef.value.focusSearch() : textRef.value?.focus())))
 
 const needsValue = computed(() => !NO_VALUE_OPS.includes(op.value))
 const hasCondition = computed(() => !!props.condition)
 
 const listOptions = computed(() => {
   if (isEnum.value) return (props.field.options?.options || []).map(o => ({ id: o.id, label: o.label, color: o.color }))
-  if (isMember.value) return (members.value || []).map(m => ({ id: m.id, label: m.name }))
+  // 人员：首项「我（根据查看者动态变化）」，与工具栏筛选面板一致
+  if (isMember.value) return [{ id: '$viewer', label: '我', viewer: true }, ...(members.value || []).map(m => ({ id: m.id, label: m.name }))]
   return []
 })
-const filteredOptions = computed(() => {
-  const k = kw.value.trim().toLowerCase()
-  return k ? listOptions.value.filter(o => String(o.label).toLowerCase().includes(k)) : listOptions.value
-})
 
-function toggle(id) {
-  setSelected(selected.value.includes(id) ? selected.value.filter(x => x !== id) : [...selected.value, id])
+function focusSearch() { listRef.value?.focusSearch() }
+function pickOp(o) { op.value = o; opOpen.value = false; commit(); nextTick(() => (listRef.value ? listRef.value.focusSearch() : textRef.value?.focus())) }
+function toggle(id) { setSelected(selected.value.includes(id) ? selected.value.filter(x => x !== id) : [...selected.value, id]) }
+function setSelected(v) { selected.value = v; commit() }
+function onValue(v) { value.value = v; commit() }
+let textTimer = null
+function onText() {
+  clearTimeout(textTimer)
+  textTimer = setTimeout(() => { value.value = textVal.value; commit() }, 300)   // 输入防抖，避免每个字都重查
 }
-function setSelected(v) {
-  selected.value = v
-  commit()
-}
-function onValue(v) {
-  value.value = v
-  commit()
-}
-function onOpChange() {
-  commit()
-}
-function isEmpty(v) {
-  return v == null || v === '' || (Array.isArray(v) && !v.length)
-}
+function clearText() { textVal.value = ''; value.value = ''; commit(); textRef.value?.focus() }
+const isEmpty = isCondValueEmpty   // 含日期模式「具体日期」未选日期
+
 function commit() {
-  // 值空（需取值时）→ 该字段无有效条件
-  if (needsValue.value) {
-    const v = (isEnum.value || isMember.value) ? selected.value : value.value
-    if (isEmpty(v)) { emit('change', null); return }
-    emit('change', { fieldId: props.field.field_name, operator: op.value, value: isEmpty(v) ? undefined : v })
-    return
-  }
-  emit('change', { fieldId: props.field.field_name, operator: op.value, value: undefined })
+  const v = needsValue.value ? ((isEnum.value || isMember.value) ? selected.value : value.value) : undefined
+  const cond = { fieldId: props.field.field_name, operator: op.value, value: isEmpty(v) ? undefined : v }
+  // 值空：已固定的保留为未填值条件（不生效），未固定的移除
+  if (needsValue.value && isEmpty(v) && !props.pinned) { emit('change', null); return }
+  emit('change', cond)
 }
-function remove() { emit('change', null) }
+function remove() { moreOpen.value = false; emit('change', null, { unpin: true }) }
 </script>
 
 <style scoped>
-.ffp { display: flex; flex-direction: column; gap: 8px; min-width: 240px; }
-.ffp-head { display: flex; align-items: center; gap: 8px; }
-.ffp-head b { font-size: 14px; }
-.ffp-scope { font-size: 11px; color: var(--st-text-3); background: var(--st-bg-hover); border-radius: 999px; padding: 2px 8px; }
-.ffp-op { width: 130px; }
-.ffp-search :deep(.el-input__wrapper) { box-shadow: none; background: var(--st-bg-hover); }
-.ffp-count { display: flex; justify-content: space-between; font-size: 12px; color: var(--st-text-3); }
-.ffp-clear { cursor: pointer; color: var(--st-text-2); }
-.ffp-clear:hover { color: var(--st-primary); }
-.ffp-clear.dim { color: var(--st-disabled); cursor: default; }
-.ffp-list { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow: auto; }
-.ffp-item { display: flex; align-items: center; gap: 8px; padding: 4px 2px; cursor: pointer; border-radius: 4px; }
-.ffp-item:hover { background: var(--st-bg-hover); }
-.ffp-tag { border-radius: 4px; padding: 1px 8px; font-size: 12px; }
-.ffp-name { font-size: 13px; }
-.ffp-empty { font-size: 12px; color: var(--st-text-4); text-align: center; padding: 8px 0; }
-.ffp-foot { border-top: 1px solid var(--st-border); padding-top: 6px; }
-.ffp-del { font-size: 12px; color: var(--el-color-danger); cursor: pointer; }
+.ffp { width: 100%; display: flex; flex-direction: column; gap: 12px; --el-color-primary: var(--st-primary); }
+.ffp-head { display: flex; align-items: center; gap: 10px; }
+.ffp-head b { font-size: 17px; color: var(--st-text-1); }
+.ffp-scope { font-size: 14px; color: var(--st-text-2); border: 1px solid #E3E5E8; border-radius: 999px; padding: 2px 12px; background: #fff; }
+.ffp-flex { flex: 1; }
+.ffp-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 6px; color: var(--st-text-2); cursor: pointer; }
+.ffp-icon:hover, .ffp-icon.on { background: #F2F3F5; color: var(--st-text-1); }
+.ffp-icon.on :deep(svg) { color: var(--st-text-1); }
+.ffp-icon.sq { width: 30px; height: 30px; background: #F2F3F5; }
+.ffp-icon.sq:hover { background: #E6E8EA; }
+.ffp-more-wrap, .ffp-op-wrap { position: relative; }
+.ffp-menu { position: absolute; right: 0; top: 34px; z-index: 5; background: #fff; border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, .14); padding: 6px; min-width: 150px; }
+.ffp-op-menu { left: 0; right: auto; top: 30px; min-width: 140px; max-height: 280px; overflow-y: auto; }
+.ffp-mi { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 6px; font-size: 14px; color: var(--st-text-1); cursor: pointer; white-space: nowrap; }
+.ffp-mi:hover { background: #F2F3F5; }
+.ffp-mi.cur { color: var(--st-primary); }
+.ffp-mi-ck { margin-left: auto; }
+.ffp-mi.danger { color: var(--el-color-danger); }
+.ffp-mi.off { opacity: .4; cursor: default; }
+.ffp-card { border: 1px solid #EBECEE; border-radius: 12px; padding: 12px 14px 10px; display: flex; flex-direction: column; gap: 10px; }
+.ffp-oprow { display: flex; align-items: center; justify-content: space-between; min-height: 30px; }
+.ffp-op { display: inline-flex; align-items: center; gap: 3px; font-size: 15px; color: var(--st-text-2); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+.ffp-op:hover { background: #F2F3F5; color: var(--st-text-1); }
+.ffp-sep { height: 1px; background: #EBECEE; margin: 0 -2px; }
+.ffp-input { width: 100%; box-sizing: border-box; height: 44px; border: 1px solid transparent; border-radius: 8px; background: #F2F3F5; padding: 0 14px;
+             font-size: 16px; color: var(--st-text-1); outline: none; }
+.ffp-input::placeholder { color: #B5B9C0; }
+.ffp-input:focus { border-color: var(--st-primary); background: #F2F3F5; }
+.ffp-text { position: relative; }
+.ffp-text .ffp-input { padding-right: 38px; }
+.ffp-x { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); display: inline-flex; color: var(--st-text-2); cursor: pointer; padding: 2px; border-radius: 4px; }
+.ffp-x:hover { background: #E3E5E8; }
+.ffp-generic :deep(.el-input__wrapper), .ffp-generic :deep(.el-input-number), .ffp-generic :deep(.el-date-editor) { width: 100%; }
+.ffp-generic :deep(.el-input__wrapper) { min-height: 40px; background: #F2F3F5; box-shadow: none; border-radius: 8px; }
 </style>

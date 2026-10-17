@@ -32,8 +32,8 @@
       </el-card>
     </div>
 
-    <ChartConfigDialog :visible="cfgVisible" :widget="editing" :entry-id="entryId"
-                       @close="cfgVisible = false" @save="onSave" />
+    <ChartConfigDialog :visible="cfgVisible" :widget="editing" :entry-id="entryId" :preset="preset"
+                       @close="cfgVisible = false; preset = null" @save="onSave" />
   </div>
 </template>
 
@@ -58,6 +58,7 @@ const fieldsMap = ref(new Map())
 
 const cfgVisible = ref(false)
 const editing = ref(null)
+const preset = ref(null)
 
 async function load() {
   widgets.value = (await smartListWidgets(entryId)).widgets
@@ -108,7 +109,16 @@ async function removeWidget(w) {
   load()
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  // 表头「数据可视化 → 添加更多图表…」：?addChart=1&table=<tid>&dim=<field>&title=<标题>
+  if (route.query.addChart && route.query.table) {
+    editing.value = null
+    preset.value = { chart_type: 'bar', title: route.query.title || '图表',
+                     config: { sourceTableId: Number(route.query.table), dimension: route.query.dim || null, splitMulti: true } }
+    cfgVisible.value = true
+  }
+})
 </script>
 
 <style scoped>

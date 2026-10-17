@@ -8,6 +8,8 @@ const CALENDAR = '<rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d
 const PERSON = '<circle cx="8" cy="5.5" r="2.5"/><path d="M3.5 13.5a4.5 4.5 0 019 0"/>'
 
 export const FIELD_TYPE_ICONS = {
+  // V3：AI 字段（四角星）
+  ai: '<path d="M8 1.8l1.3 4L13.4 7l-4.1 1.3L8 12.4l-1.3-4.1L2.6 7l4.1-1.2z"/><path d="M12.6 11.2l.5 1.4 1.4.5-1.4.5-.5 1.4-.5-1.4-1.4-.5 1.4-.5z"/>',
   // 基础
   text: `<rect x="2" y="2" width="12" height="12" rx="2"/>${T('A', 9.5, 5, 11.8)}`,
   singleSelect: '<circle cx="8" cy="8" r="6"/><path d="M5.3 8.2l1.8 1.8 3.6-4.2"/>',
@@ -29,7 +31,8 @@ export const FIELD_TYPE_ICONS = {
   member: PERSON,
   groupChat: '<circle cx="6" cy="5.5" r="2.3"/><path d="M1.8 13.2a4.2 4.2 0 018.4 0"/><path d="M10.6 3.4a2.3 2.3 0 010 4.2M11.4 9.6a4.2 4.2 0 012.8 3.6"/>',
   // 媒体
-  image: '<rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="5.6" cy="6.4" r="1"/><path d="M3 12l3.3-3.3 2.4 2.4 1.6-1.6L13 12"/>',
+  // 与 uiIcons.image 同形（StIcon 先查 UI 表，表头显示的是它；两表须一致，否则 SVG 直出处与表头不同）
+  image: '<rect x="2.5" y="3" width="11" height="10" rx="1.4"/><circle cx="6" cy="6.4" r="1.1"/><path d="M13.5 10.6l-3.2-3.2-5.8 5.6"/>',
   file: '<path d="M2.5 4.6A1.6 1.6 0 014.1 3h2.4l1.6 2h3.8a1.6 1.6 0 011.6 1.6v4.8a1.6 1.6 0 01-1.6 1.6H4.1a1.6 1.6 0 01-1.6-1.6z"/>',
   // 关联
   relation: '<rect x="2" y="5.2" width="5" height="5.6" rx="1"/><rect x="9" y="5.2" width="5" height="5.6" rx="1"/><path d="M7 8h2"/>',
@@ -41,6 +44,12 @@ export const FIELD_TYPE_ICONS = {
   lastModifiedBy: PERSON,
   createdTime: CALENDAR,
   lastModifiedTime: CALENDAR,
+}
+
+// 字段图标名（全站统一以表头为准）：AI 字段按输出类型显示（文本/单选/…），其余按字段类型
+export function fieldIconName(field) {
+  if (!field) return 'text'
+  return field.field_type === 'ai' ? (field.options?.outputType || 'text') : (field.field_type || 'text')
 }
 
 export function fieldTypeIconSvg(fieldType, size = 14) {

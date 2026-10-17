@@ -1,8 +1,11 @@
 <template>
   <!-- 展示态单元格：按 field_type 分发渲染（存原始值/ID，渲染层格式化，设计文档 §3.1 原则 2/3） -->
   <span class="smart-cell" :class="`cell-${ft}`" :style="cellStyle">
+    <!-- AI 字段计算状态（V3）：生成中 / 失败（悬停看原因）；完成后按输出类型渲染 -->
+    <span v-if="aiState && aiState.status !== 'error'" class="ai-state">正在生成…</span>
+    <span v-else-if="aiState" class="ai-state err" :title="aiState.error || ''">生成失败 · {{ aiState.error || '原因未知' }}</span>
     <!-- 单选/多选：彩色标签胶囊；一行放不下时只渲染放得下的，末尾 +N 表示隐藏个数 -->
-    <template v-if="ft === 'singleSelect' || ft === 'multiSelect'">
+    <template v-else-if="ft === 'singleSelect' || ft === 'multiSelect'">
       <span ref="enumBox" class="enum-box" :class="{ 'has-more': hiddenCount > 0 }">
         <span v-for="t in visibleTags" :key="t.key" class="opt-tag" :class="{ raw: t.raw }"
               :style="t.raw ? {} : { background: optionColor(t.color).value, color: optionColor(t.color).text }">{{ t.label }}</span>
@@ -24,21 +27,24 @@
     </template>
     <!-- 系统人员字段 -->
     <template v-else-if="ft === 'createdBy' || ft === 'lastModifiedBy'">
-      <span v-if="sysUser" class="member-chip"><span class="avatar">{{ sysUser[0] }}</span>{{ sysUser }}</span>
+      <span v-if="sysUser" class="member-chip">
+        <span class="avatar" :class="{ 'avatar-ai': sysActor }">{{ sysActor === 'ai' ? '✦' : sysUser[0] }}</span>{{ sysUser }}
+      </span>
     </template>
     <!-- 链接 -->
     <a v-else-if="ft === 'url' && value" class="link" :href="value.url" target="_blank" rel="noopener"
-       @click.stop>{{ value.text || value.url }}</a>
+       @click.stop><StIcon v-if="cfg.displayStyle !== 'text'" name="link" :size="13" class="link-ico" />{{ value.text || value.url }}</a>
     <!-- 图片：缩略图 -->
     <span v-else-if="ft === 'image'" class="imgs">
-      <el-image v-for="(img, i) in imageList.slice(0, 3)" :key="i" :src="img.url || img"
-                :preview-src-list="imageList.map(x => x.url || x)" :initial-index="i"
+      <el-image v-for="(img, i) in imageList.slice(0, 3)" :key="i" :src="imgSrc(img)"
+                :preview-src-list="imageList.map(imgSrc)" :initial-index="i"
                 fit="cover" class="thumb" @click.stop />
       <span v-if="imageList.length > 3" class="more">+{{ imageList.length - 3 }}</span>
     </span>
     <!-- 文件：chip 列表 -->
     <span v-else-if="ft === 'file'" class="files">
-      <span v-for="(f, i) in fileList" :key="i" class="file-chip">📄 {{ f.name || f }}</span>
+      <a v-for="(f, i) in fileList" :key="i" class="file-chip" :href="fileHref(f)" target="_blank" rel="noopener"
+         @click.stop>📄 {{ f.name || f }}</a>
     </span>
     <!-- 关联：记录徽标 -->
     <span v-else-if="ft === 'relation'" class="rels">
@@ -61,7 +67,9 @@
 
 <script setup>
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { optionColor } from '../../../smart/registry/fieldRegistry.js'
+import StIcon from '../icons/StIcon.vue'
+import { optionColor, progressColor } from '../../../smart/registry/fieldRegistry.js'
+import { imageUrl } from '../../../api/index.js'
 import { formatCurrency, formatDate, formatNumber } from '../../../smart/utils/format.js'
 
 const props = defineProps({
@@ -75,7 +83,10 @@ const memberDir = inject('smartMemberDir', { value: new Map() })
 // 关联记录标签目录：SmartTablePage 加载目标表记录后注入 {tableId: Map(recordId → label)}
 const relationDir = inject('smartRelationDir', { value: new Map() })
 
-const ft = computed(() => props.field.field_type || 'text')
+// AI 字段按输出类型渲染（标签/复选框/数字/文本）
+const ft = computed(() => props.field.field_type === 'ai'
+  ? (props.field.options?.outputType || 'text') : (props.field.field_type || 'text'))
+const aiState = computed(() => props.field.field_type === 'ai' ? props.record.__ai?.[props.field.field_name] || null : null)
 const cfg = computed(() => props.field.options || {})
 const value = computed(() => props.record[props.field.field_name])
 const isDate = computed(() => ['date', 'createdTime', 'lastModifiedTime'].includes(ft.value))
@@ -149,28 +160,43 @@ const unmatchedValues = computed(() => {
 const progressStyle = computed(() => {
   const range = cfg.value.range || { min: 0, max: 100 }
   const pct = Math.min(1, Math.max(0, ((Number(value.value) || 0) - range.min) / (range.max - range.min)))
-  return { width: `${pct * 100}%`, background: cfg.value.color || '#52C41A' }
+  // 渐变/分段色按整条进度条铺开（填充部分只露出对应比例），而不是压缩进填充宽度
+  return { width: `${pct * 100}%`, background: progressColor(cfg.value.color), backgroundSize: pct > 0 ? `${100 / pct}% 100%` : undefined }
 })
 const progressText = computed(() => {
   if (value.value == null) return ''
+  const prec = cfg.value.precision
+  const fix = (n) => (prec === 'default' || prec == null ? String(+n.toFixed(4)) : n.toFixed(prec))
   if (cfg.value.numberFormat === 'percent') {
     const range = cfg.value.range || { min: 0, max: 100 }
-    return `${Math.round(((Number(value.value) - range.min) / (range.max - range.min)) * 100)}%`
+    return `${fix(((Number(value.value) - range.min) / (range.max - range.min)) * 100)}%`
   }
-  return String(value.value)
+  return fix(Number(value.value))
 })
 
 const members = computed(() => {
   const ids = Array.isArray(value.value) ? value.value : (value.value ? [value.value] : [])
   return ids.map(id => memberDir.value.get(Number(id)) || { id, name: `#${id}` })
 })
+// 最后编辑人为非人主体（V3 留痕）：__ai__ → AI 生成，__automation__ → 自动化
+const sysActor = computed(() => ({ __ai__: 'ai', __automation__: 'automation' })[value.value] || null)
 const sysUser = computed(() => {
   const id = value.value
   if (id == null) return ''
+  if (sysActor.value) return sysActor.value === 'ai' ? 'AI 生成' : '自动化'
   return memberDir.value.get(Number(id))?.name || `#${id}`
 })
 
 const imageList = computed(() => Array.isArray(value.value) ? value.value : [])
+// 图片值存图片库 id（历史数据可能是完整 URL）
+function imgSrc(img) {
+  const v = img?.url || img
+  return typeof v === 'string' && (v.startsWith('http') || v.startsWith('/') || v.startsWith('data:')) ? v : imageUrl(v)
+}
+function fileHref(f) {
+  if (!f?.id || !/^[0-9a-f]{32}$/.test(f.id)) return undefined
+  return `/api/smart/files/${f.id}?token=${localStorage.getItem('grt_token')}&tenant_id=${localStorage.getItem('grt_tenant_id') || ''}`
+}
 const fileList = computed(() => Array.isArray(value.value) ? value.value : [])
 const relationLabels = computed(() => {
   const ids = Array.isArray(value.value) ? value.value : (value.value ? [value.value] : [])
@@ -209,12 +235,22 @@ const lookupText = computed(() => {
 .member-chip { display: inline-flex; align-items: center; gap: 4px; }
 /* 方形圆角头像（对齐参照 单元格输入-人员.png） */
 .avatar { width: 20px; height: 20px; border-radius: 4px; background: var(--el-color-primary-light-5); color: #fff; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
-.link { color: var(--el-color-primary); text-decoration: none; }
+.link { color: var(--el-color-primary); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.link-ico { flex: none; }
 .imgs { display: flex; gap: 4px; }
 .thumb { width: 28px; height: 28px; border-radius: 4px; }
 .more { font-size: 12px; color: var(--el-text-color-secondary); }
+.file-chip { text-decoration: none; color: inherit; }
 .file-chip, .rel-chip { background: var(--el-fill-color-light); border-radius: 4px; padding: 1px 6px; font-size: 12px; white-space: nowrap; }
 .checkbox { width: 18px; height: 18px; border: 1px solid var(--el-border-color); border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; color: #fff; }
 .checkbox.checked { background: var(--st-success); border-color: var(--st-success); }
 .cell-currency, .cell-number, .cell-percent, .cell-progress { justify-content: flex-end; }
+/* AI 字段状态 */
+/* AI 生成中（参照 AI-分类-使用后选择-单元格内容生成中.png）：灰字 + 流光扫过 */
+.ai-state { display: inline-block; font-size: 13px; color: transparent; white-space: nowrap;
+            background: linear-gradient(90deg, #B5B9C0 0%, #B5B9C0 35%, #E6E8EB 50%, #B5B9C0 65%, #B5B9C0 100%);
+            background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; animation: ai-shine 1.6s linear infinite; }
+.ai-state.err { color: var(--el-color-danger); background: none; animation: none; cursor: help; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+@keyframes ai-shine { from { background-position: 110% 0; } to { background-position: -110% 0; } }
+.avatar.avatar-ai { background: linear-gradient(135deg, #7F3FF1, #4C8DFF); color: #fff; }
 </style>

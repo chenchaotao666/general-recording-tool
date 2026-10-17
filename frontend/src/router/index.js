@@ -21,6 +21,8 @@ const router = createRouter({
     { path: '/share/:token', component: () => import('../views/ShareView.vue') },
     // 公开表单（工作流表单触发器），免登录
     { path: '/form/:wfId/:secret', component: () => import('../views/PublicForm.vue') },
+    // 智能表公开表单（分享链接），免登录
+    { path: '/sf/:token', component: () => import('../views/smart/PublicSmartForm.vue'), meta: { public: true } },
     // 免登审批（签名链接），免登录
     { path: '/approve/:token', component: () => import('../views/PublicApprove.vue') },
     { path: '/', redirect: '/home' },
@@ -76,7 +78,7 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const user = JSON.parse(localStorage.getItem('grt_user') || 'null')
-  if (to.path === '/login' || to.path.startsWith('/share/') || to.path.startsWith('/form/')
+  if (to.path === '/login' || to.path.startsWith('/share/') || to.path.startsWith('/form/') || to.path.startsWith('/sf/')
     || to.path.startsWith('/approve/')) return true
   if (!localStorage.getItem('grt_token')) return '/login'
   // 多空间账号：每个浏览器会话进入主界面前先选公司（选择动作会写 sessionStorage 标记）

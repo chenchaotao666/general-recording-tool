@@ -1,50 +1,41 @@
 <template>
-  <!-- 填色面板（§5.5）：规则行 = 字段 + 运算符 + 值 → 颜色；条件不完整不生效不计数。
-       草稿模式：面板内自由编辑，点「确定」才落库 -->
-  <el-popover trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="460">
+  <!-- 填色面板（§5.5，对齐参照 docs/智慧表格/表格上方按钮/填色.png）：
+       规则行 = ⋮⋮ + 字段 + 目标/条件（字段名称 / 所有内容 / 筛选运算符）+ [值] → 色块 ▾ + ⊖；
+       色板：9 色 × 3 深浅 + 整行填色。条件不完整不生效不计数；即时生效 -->
+  <el-popover trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="760" popper-class="st-tbpanel">
     <template #reference><slot /></template>
-    <div class="panel">
-      <div class="panel-head"><b>填色</b></div>
-      <div v-for="(r, i) in draft" :key="r.id || i" class="rule-row">
-        <el-select :teleported="false" :model-value="r.fieldId" size="small" class="r-field" placeholder="字段"
-                   @change="(v) => update(i, { fieldId: v, fillTarget: null, operator: defaultOp(v), value: undefined })">
-          <el-option v-for="f in fields" :key="f.field_name" :value="f.field_name" :label="f.label" />
-        </el-select>
-        <!-- 填色目标统一下拉（设计稿 PixPin_2026-10-16_00-26-12）：
-             所有内容 / 字段名称 + 「筛选」分组运算符；选中运算符且需要取值时出现值编辑器 -->
-        <el-select :teleported="false" :model-value="targetOf(r)" size="small"
-                   :class="needsValue(r) ? 'r-op' : 'r-target'" placeholder="条件"
+    <div class="flp">
+      <div class="flp-head"><span class="tbp-title">填色</span></div>
+      <div v-for="(r, i) in draft" :key="r.id" class="flp-row" :class="dropClass(i)"
+           @dragover.prevent="overIdx = i" @drop.prevent="dropRow(i)">
+        <span class="tbp-drag" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = null"><StIcon name="drag" :size="15" /></span>
+        <TbFieldSelect :model-value="r.fieldId" :fields="fields" placeholder="字段" class="flp-field"
+                       @update:model-value="(v) => update(i, { fieldId: v, fillTarget: 'all', operator: null, value: undefined })" />
+        <el-select :teleported="false" :model-value="targetOf(r)" :class="needsValue(r) ? 'flp-op' : 'flp-target'" placeholder="条件"
                    @change="(v) => onTargetChange(i, v)">
-          <el-option value="__all" label="所有内容" />
           <el-option value="__header" label="字段名称" />
-          <el-option-group v-if="opsOf(r).length" label="筛选">
-            <el-option v-for="op in opsOf(r)" :key="op" :value="op" :label="OP_LABELS[op]" />
+          <el-option value="__all" label="所有内容" />
+          <el-option-group v-if="opsOf(r).length" label="满足条件时">
+            <el-option v-for="op in opsOf(r)" :key="op" :value="op" :label="opLabel(fieldOf(r), op)" />
           </el-option-group>
         </el-select>
-        <ConditionValue v-if="needsValue(r)" :field="fieldOf(r)"
-                        :operator="r.operator" :value="r.value" @update="(v) => update(i, { value: v })" />
-        <span class="arrow">→</span>
-        <!-- 颜色设置（设计稿 PixPin_2026-10-15_20-24-52 / 20-26-47）：色块 + ▾，
-             弹出 9 色 × 3 深浅档预设色板 + 整行填色勾选 -->
-        <div class="r-color" @click.stop="togglePalette(i)">
-          <span class="rc-swatch" :style="{ background: r.color || 'transparent' }" />
-          <StIcon name="caret-down" :size="11" class="rc-caret" />
-          <div v-if="paletteIdx === i" class="rc-pop" @click.stop @mousedown.stop>
-            <div v-for="(row, ri) in FILL_PALETTE" :key="ri" class="rc-row">
-              <span v-for="c in row" :key="c" class="rc-cell" :class="{ on: r.color === c }"
-                    :style="{ background: c }" @click="pickColor(i, c)" />
+        <div v-if="needsValue(r)" class="flp-val">
+          <ConditionValue :field="fieldOf(r)" :operator="r.operator" :value="r.value" @update="(v) => update(i, { value: v })" />
+        </div>
+        <span class="flp-arrow">→</span>
+        <div class="flp-color" :class="{ open: paletteIdx === i }" @click.stop="togglePalette(i)">
+          <span class="flp-swatch" :style="{ background: r.color || '#fff' }" />
+          <StIcon :name="paletteIdx === i ? 'caret-up' : 'caret-down'" :size="11" class="flp-caret" />
+          <div v-if="paletteIdx === i" class="flp-pal" @click.stop @mousedown.stop>
+            <div v-for="(row, ri) in FILL_PALETTE" :key="ri" class="flp-pal-row">
+              <span v-for="c in row" :key="c" class="flp-cell" :class="{ on: r.color === c }" :style="{ background: c }" @click="pickColor(i, c)" />
             </div>
-            <el-checkbox size="small" :model-value="!!r.wholeRow"
-                         @change="(v) => update(i, { wholeRow: v })">整行填色</el-checkbox>
+            <label class="flp-whole"><el-checkbox :model-value="!!r.wholeRow" @change="(v) => update(i, { wholeRow: v })" />整行填色</label>
           </div>
         </div>
-        <span class="r-del" title="删除" @click.stop="remove(i)"><StIcon name="minus-circle" :size="16" /></span>
+        <span class="tbp-del" title="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
       </div>
-      <el-button link type="primary" size="small" @click="add">＋ 添加条件</el-button>
-      <div class="panel-foot">
-        <el-button size="small" @click="cancel">取消</el-button>
-        <el-button size="small" type="primary" @click="confirm">确定</el-button>
-      </div>
+      <button class="tbp-add flp-add" @click="add"><StIcon name="plus" :size="15" />添加条件</button>
     </div>
   </el-popover>
 </template>
@@ -52,8 +43,9 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import ConditionValue from './ConditionValue.vue'
+import TbFieldSelect from './TbFieldSelect.vue'
 import StIcon from '../icons/StIcon.vue'
-import { filterOpsOf, OP_LABELS, NO_VALUE_OPS, FILL_PALETTE } from '../../../smart/registry/fieldRegistry.js'
+import { filterOpsOf, opLabel, NO_VALUE_OPS, FILL_PALETTE } from '../../../smart/registry/fieldRegistry.js'
 
 const props = defineProps({
   visible: Boolean,
@@ -63,79 +55,98 @@ const props = defineProps({
 const emit = defineEmits(['update:visible', 'change'])
 const visibleModel = computed({ get: () => props.visible, set: (v) => emit('update:visible', v) })
 
-// 草稿：打开时从 props 复制，确定才 emit（一次落库，避免防抖保存吞掉不完整行）
 const draft = ref([])
+const paletteIdx = ref(null)   // 色板：同一时间只开一行
 watch(() => props.visible, (v) => {
-  if (v) draft.value = props.rules.map((r) => ({ ...r }))
-})
+  if (v) draft.value = props.rules.map((r) => ({ ...r, id: r.id || `f_${Math.random().toString(36).slice(2, 8)}` }))
+  else paletteIdx.value = null
+}, { immediate: true })
 
-function fieldOf(r) { return props.fields.find(f => f.field_name === r.fieldId) }
-function opsOf(r) { return fieldOf(r) ? filterOpsOf(fieldOf(r)) : [] }
-function defaultOp(fieldName) {
-  const f = props.fields.find(x => x.field_name === fieldName)
-  return f ? filterOpsOf(f)[0] : null
-}
-// 统一下拉（所有内容/字段名称/运算符）的取值与切换
+const fieldOf = (r) => props.fields.find(f => f.field_name === r.fieldId)
+const opsOf = (r) => (fieldOf(r) ? filterOpsOf(fieldOf(r)) : [])
 const targetOf = (r) => (r.fillTarget ? `__${r.fillTarget}` : (opsOf(r).includes(r.operator) ? r.operator : null))
 const needsValue = (r) => !r.fillTarget && r.operator && !NO_VALUE_OPS.includes(r.operator)
+
+// 即时生效：只提交选了字段的规则（是否完整由渲染层判定生效）
+let timer = null
+function commit() {
+  clearTimeout(timer)
+  timer = setTimeout(() => emit('change', draft.value.filter(r => r.fieldId).map((r, k) => ({ ...r, order: k }))), 250)
+}
+function update(i, patch) { draft.value = draft.value.map((r, j) => (j === i ? { ...r, ...patch } : r)); commit() }
 function onTargetChange(i, v) {
   if (v === '__all' || v === '__header') update(i, { fillTarget: v.slice(2), operator: null, value: undefined })
   else update(i, { fillTarget: null, operator: v, value: undefined })
 }
-function update(i, patch) { draft.value = draft.value.map((r, j) => (j === i ? { ...r, ...patch } : r)) }
 function add() {
-  draft.value = [...draft.value, { id: `f_${Date.now()}`, fieldId: null, operator: null, value: undefined, color: '#fef9e0', wholeRow: false, order: draft.value.length }]
+  draft.value = [...draft.value, { id: `f_${Date.now()}`, fieldId: null, fillTarget: 'all', operator: null, value: undefined,
+                                   color: FILL_PALETTE[0][5], wholeRow: false }]
 }
-function remove(i) { draft.value = draft.value.filter((_, j) => j !== i) }
+function remove(i) { draft.value = draft.value.filter((_, j) => j !== i); commit() }
 
-// 色板弹层：单例（同时只开一行的色板），外点关闭
-const paletteIdx = ref(null)
+const dragIdx = ref(null)
+const overIdx = ref(null)
+function dropClass(i) {
+  if (dragIdx.value === null || overIdx.value !== i || dragIdx.value === i) return ''
+  return dragIdx.value > i ? 'drop-before' : 'drop-after'
+}
+function dropRow(i) {
+  const from = dragIdx.value
+  dragIdx.value = overIdx.value = null
+  if (from === null || from === i) return
+  const arr = [...draft.value]
+  const [m] = arr.splice(from, 1)
+  arr.splice(i, 0, m)
+  draft.value = arr
+  commit()
+}
+
+// 色板外点关闭
 function togglePalette(i) { paletteIdx.value = paletteIdx.value === i ? null : i }
-function pickColor(i, c) { update(i, { color: c }); paletteIdx.value = null }
+function pickColor(i, c) { update(i, { color: c }) }
 watch(paletteIdx, (v) => {
   if (v == null) return
   const close = (e) => {
-    if (e.target.closest?.('.rc-pop')) return
+    if (e.target.closest?.('.flp-pal') || e.target.closest?.('.flp-color')) return
     paletteIdx.value = null
     document.removeEventListener('mousedown', close)
   }
   setTimeout(() => document.addEventListener('mousedown', close), 0)
 })
-watch(() => props.visible, (v) => { if (!v) paletteIdx.value = null })
-
-function cancel() { emit('update:visible', false) }
-function confirm() {
-  emit('change', draft.value.filter((r) => r.fieldId))
-  emit('update:visible', false)
-}
 </script>
 
 <style scoped>
-.panel { display: flex; flex-direction: column; gap: 8px; }
-.panel-head { display: flex; justify-content: space-between; align-items: center; }
-.panel-foot { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #ebeef5; padding-top: 8px; }
-.rule-row { display: flex; align-items: center; gap: 6px; }
-.r-field { width: 120px; }
-.r-op { width: 90px; }
-.r-target { flex: 1; }   /* 整列规则的目标选择占满运算符+取值区 */
-.arrow { color: var(--el-text-color-placeholder); }
-.r-del { cursor: pointer; color: var(--st-text-3); display: inline-flex; }
-.r-del:hover { color: var(--st-primary); }
-/* 颜色设置：色块按钮（色块 + ▾）与预设色板弹层 */
-.r-color {
-  display: flex; align-items: center; gap: 4px; position: relative; cursor: pointer;
-  border: 1px solid var(--el-border-color); border-radius: 4px; padding: 4px 6px;
-}
-.r-color:hover { border-color: var(--el-color-primary); }
-.rc-swatch { width: 30px; height: 16px; border-radius: 2px; border: 1px solid var(--el-border-color-lighter); }
-.rc-caret { color: var(--st-text-3); display: inline-flex; }
-.rc-pop {
-  position: absolute; right: 0; top: calc(100% + 6px); z-index: 10;
-  background: #fff; border-radius: 8px; box-shadow: var(--el-box-shadow);
-  padding: 10px; display: flex; flex-direction: column; gap: 8px;
-}
-.rc-row { display: flex; gap: 6px; }
-.rc-cell { width: 22px; height: 22px; border-radius: 4px; cursor: pointer; box-sizing: border-box; }
-.rc-cell:hover { transform: scale(1.1); }
-.rc-cell.on { outline: 2px solid var(--el-color-primary); outline-offset: 1px; }
+.flp { display: flex; flex-direction: column; gap: 6px; }
+.flp-head { margin-bottom: 6px; }
+.flp-row { display: flex; align-items: center; gap: 10px; border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
+.flp-row.drop-before { border-top-color: var(--st-primary); }
+.flp-row.drop-after { border-bottom-color: var(--st-primary); }
+.flp-field { width: 180px; flex: none; }
+.flp-target { flex: 1; min-width: 0; }
+.flp-op { width: 112px; flex: none; }
+/* 值列吃掉剩余宽度；里面的编辑器（日期/数字/标签选择）一律撑满本列、不得溢出盖住「→」和色块 */
+.flp-val { flex: 1; min-width: 0; display: flex; align-items: center; }
+.flp-val > * { flex: 1; min-width: 0; }
+.flp-val :deep(.el-date-editor.el-input) { height: 36px; }
+.flp-val :deep(.el-date-editor .el-input__wrapper) { height: 100%; box-sizing: border-box; }
+.flp-val :deep(.el-date-editor.el-input), .flp-val :deep(.el-date-editor),
+.flp-val :deep(.el-input-number), .flp-val :deep(.val-editor), .flp-val :deep(.el-input) { width: 100% !important; min-width: 0; }
+.flp-val :deep(.enum-val) { width: 100%; box-sizing: border-box; }
+.flp-target :deep(.el-select__wrapper), .flp-op :deep(.el-select__wrapper) { min-height: 36px; border-radius: 6px; font-size: 14px; }
+.flp-val :deep(.el-input__wrapper), .flp-val :deep(.el-select__wrapper) { min-height: 36px; }
+.flp-val :deep(.enum-val) { min-height: 36px; }
+.flp-arrow { color: var(--st-text-2); flex: none; font-size: 15px; }
+.flp-color { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px 0 5px;
+             border: 1px solid var(--st-border); border-radius: 6px; cursor: pointer; flex: none; background: #fff; }
+.flp-color:hover, .flp-color.open { border-color: #C9CCD1; }
+.flp-swatch { width: 64px; height: 26px; border-radius: 4px; }
+.flp-caret { color: var(--st-text-3); }
+.flp-pal { position: absolute; right: -30px; top: calc(100% + 8px); z-index: 20; background: #fff; border-radius: 10px;
+           box-shadow: 0 6px 24px rgba(0, 0, 0, .14); padding: 18px 20px 14px; cursor: default; }
+.flp-pal-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.flp-cell { width: 24px; height: 24px; border-radius: 3px; cursor: pointer; box-sizing: border-box; }
+.flp-cell.on { box-shadow: 0 0 0 1px #fff inset, 0 0 0 2px var(--st-primary); }
+.flp-cell:hover { transform: scale(1.08); }
+.flp-whole { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 14px; color: var(--st-text-2); cursor: pointer; }
+.flp-add { margin-left: 27px; }
 </style>

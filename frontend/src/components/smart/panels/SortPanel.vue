@@ -1,37 +1,30 @@
 <template>
-  <!-- 排序面板（§5.3）：多级排序规则 + 方向按钮组（类型自适应文案）+ 自动排序开关 -->
-  <el-popover trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="380">
+  <!-- 排序面板（§5.3，对齐参照 docs/智慧表格/表格上方按钮/排序.png）：
+       标题 + 自动排序开关 → 规则行（⋮⋮ 拖拽 + 字段下拉 + 方向两段切换 + ⊖）→「＋ 添加排序字段」。即时生效 -->
+  <el-popover trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="500" popper-class="st-tbpanel">
     <template #reference><slot /></template>
-    <div class="panel">
-      <div class="panel-head">
-        <b>排序</b>
-        <span class="auto-sort">
-          <span class="as-label">自动排序</span>
-          <el-switch :model-value="autoSort" size="small" @change="$emit('auto-sort', $event)" />
-        </span>
+    <div class="sp">
+      <div class="sp-head">
+        <span class="tbp-title">排序</span>
+        <span class="sp-auto">自动排序<el-switch :model-value="autoSort" @change="$emit('auto-sort', $event)" /></span>
       </div>
-      <div v-for="(s, i) in sorts" :key="i" class="rule-row" :class="dropClass(i)"
-           draggable="true" @dragstart="dragIdx = i" @dragover.prevent="overIdx = i"
-           @drop.prevent="dropRow(i)" @dragend="dragIdx = overIdx = null">
-        <span class="drag"><StIcon name="drag" :size="14" /></span>
-        <el-select :teleported="false" :model-value="s.fieldId" size="small" class="r-field"
-                   @change="(v) => update(i, { fieldId: v })">
-          <el-option v-for="f in fields" :key="f.field_name" :value="f.field_name" :label="f.label" />
-        </el-select>
-        <el-radio-group :model-value="s.direction" size="small" @change="(v) => update(i, { direction: v })">
-          <el-radio-button value="asc">{{ labelsOf(s)[0] }}</el-radio-button>
-          <el-radio-button value="desc">{{ labelsOf(s)[1] }}</el-radio-button>
-        </el-radio-group>
-        <span class="r-del" title="删除" @click.stop="remove(i)"><StIcon name="minus-circle" :size="16" /></span>
+      <div v-for="(s, i) in draft" :key="s._k" class="sp-row" :class="dropClass(i)"
+           @dragover.prevent="overIdx = i" @drop.prevent="dropRow(i)">
+        <span class="tbp-drag" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = null"><StIcon name="drag" :size="15" /></span>
+        <TbFieldSelect :model-value="s.fieldId" :fields="fields" class="sp-field" @update:model-value="(v) => update(i, { fieldId: v })" />
+        <DirToggle :model-value="s.direction" :labels="labelsOf(s)" @update:model-value="(v) => update(i, { direction: v })" />
+        <span class="tbp-del" title="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
       </div>
-      <el-button link type="primary" size="small" @click="add">＋ 添加排序字段</el-button>
+      <button class="tbp-add sp-add" :disabled="draft.length >= 5" @click="add"><StIcon name="plus" :size="15" />添加排序字段</button>
     </div>
   </el-popover>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
+import TbFieldSelect from './TbFieldSelect.vue'
+import DirToggle from './DirToggle.vue'
 import { sortDirectionLabels } from '../../../smart/registry/fieldRegistry.js'
 
 const props = defineProps({
@@ -43,14 +36,22 @@ const props = defineProps({
 const emit = defineEmits(['update:visible', 'change', 'auto-sort'])
 const visibleModel = computed({ get: () => props.visible, set: (v) => emit('update:visible', v) })
 
-function labelsOf(s) {
-  return sortDirectionLabels(props.fields.find(f => f.field_name === s.fieldId))
-}
-function update(i, patch) { emit('change', props.sorts.map((s, j) => (j === i ? { ...s, ...patch } : s))) }
-function add() { emit('change', [...props.sorts, { fieldId: props.fields[0]?.field_name, direction: 'asc' }]) }
-function remove(i) { emit('change', props.sorts.filter((_, j) => j !== i)) }
+// 本地草稿（保留尚未选字段的行）；每次变更只提交完整规则
+let seq = 0
+const draft = ref([])
+watch(() => props.visible, (v) => { if (v) draft.value = props.sorts.map(s => ({ ...s, _k: ++seq })) }, { immediate: true })
+function commit() { emit('change', draft.value.filter(s => s.fieldId).map(({ _k, ...s }) => s)) }
 
-// 拖拽排序：排序规则有优先级，顺序即语义（同 GroupPanel 交互）
+const labelsOf = (s) => sortDirectionLabels(props.fields.find(f => f.field_name === s.fieldId))
+function update(i, patch) { draft.value = draft.value.map((s, j) => (j === i ? { ...s, ...patch } : s)); commit() }
+function add() {
+  const used = new Set(draft.value.map(s => s.fieldId))
+  draft.value = [...draft.value, { fieldId: props.fields.find(f => !used.has(f.field_name))?.field_name || null, direction: 'asc', _k: ++seq }]
+  commit()
+}
+function remove(i) { draft.value = draft.value.filter((_, j) => j !== i); commit() }
+
+// 拖拽：规则顺序即优先级
 const dragIdx = ref(null)
 const overIdx = ref(null)
 function dropClass(i) {
@@ -61,23 +62,21 @@ function dropRow(i) {
   const from = dragIdx.value
   dragIdx.value = overIdx.value = null
   if (from === null || from === i) return
-  const arr = [...props.sorts]
-  const [moved] = arr.splice(from, 1)
-  arr.splice(i, 0, moved)
-  emit('change', arr)
+  const arr = [...draft.value]
+  const [m] = arr.splice(from, 1)
+  arr.splice(i, 0, m)
+  draft.value = arr
+  commit()
 }
 </script>
 
 <style scoped>
-.panel { display: flex; flex-direction: column; gap: 8px; }
-.panel-head { display: flex; justify-content: space-between; align-items: center; }
-.auto-sort { display: inline-flex; align-items: center; gap: 6px; }
-.as-label { font-size: 13px; color: var(--st-text-2); }
-.rule-row { display: flex; align-items: center; gap: 6px; border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
-.rule-row.drop-before { border-top-color: var(--st-primary); }
-.rule-row.drop-after { border-bottom-color: var(--st-primary); }
-.drag { color: var(--st-text-4); cursor: grab; display: inline-flex; }
-.r-field { width: 140px; }
-.r-del { cursor: pointer; color: var(--st-text-3); display: inline-flex; }
-.r-del:hover { color: var(--st-primary); }
+.sp { display: flex; flex-direction: column; gap: 6px; }
+.sp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.sp-auto { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; color: var(--st-text-1); }
+.sp-row { display: flex; align-items: center; gap: 12px; border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
+.sp-row.drop-before { border-top-color: var(--st-primary); }
+.sp-row.drop-after { border-bottom-color: var(--st-primary); }
+.sp-field { flex: 1; min-width: 0; }
+.sp-add { margin-left: 27px; }
 </style>

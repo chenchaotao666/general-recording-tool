@@ -8,6 +8,7 @@
   --st-text-1: #1F2329;
   --st-text-2: #646A73;
   --st-text-3: #8F959E;
+  --st-head-text: #8F959E;        /* 表头文字/图标（字段名 / 编组名统一：13px 粗体浅灰） */
   --st-text-4: #BBBFC4;
   --st-disabled: #C4C6CC;
   --st-bg-hover: #F2F3F5;
@@ -35,3 +36,49 @@
   --el-color-primary-light-9: #EAF1FD;
   --el-color-primary-dark-2: var(--st-primary-hover);
 }
+
+/* 表格内统一的下拉触发器（按 docs/PixPin_2026-10-16_23-28-40 / 23-28-58 实测取值）：
+   常态 = #7A8089 实心小三角（7×5）、无底；hover（或展开中 .open）= 24×24 #E6E8E8 圆角方块，三角颜色不变。
+   列头菜单 / 编组菜单 / 统计方式 / 分组统计 / 单选多选单元格均用它，保证同一套交互 */
+.st-dd {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 24px; height: 24px; border-radius: 4px; box-sizing: border-box;
+  color: #7A8089; cursor: pointer;
+}
+.st-dd::before {
+  content: ''; width: 0; height: 0;
+  border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 5px solid currentColor;
+}
+.st-dd.up::before { border-top: 0; border-bottom: 5px solid currentColor; }
+.st-dd:hover, .st-dd.open { background: #E6E8E8; }
+.st-dd.sm { width: 20px; height: 20px; }
+
+/* 单字段筛选面板（工具栏固定条件胶囊的 el-popover）：与列头漏斗弹出的面板同尺寸同留白 */
+.el-popover.st-ffp-pop { padding: 18px 20px 16px; border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .14); }
+
+/* 双击表头弹出的非模态对话框（anchoredDialogAttrs）：左上角固定在双击位置，超高时内部滚动 */
+.el-dialog.st-at-dialog { position: fixed; margin: 0 !important; overflow-y: auto; box-shadow: 0 8px 32px rgba(0, 0, 0, .18); }
+
+/* 智能表格滚动条：12px 热区 + 平时 6px 细滑块；鼠标移到滚动条区域或拖动时变粗到 10px 并加深（好抓好拖）。
+   Chrome 不会因 :hover 重绘自定义滚动条，加粗由 smart/utils/scrollbarHover.js 打 .sb-hot 并强制重绘实现。
+   半透明灰滑块、透明轨道、无箭头，配色同首页 .sec-body。滑块粗细用透明边框 + background-clip 控制，热区宽度不变不抖动。
+   作用范围：智能表各页面根节点 + 挂到 body 的工具栏面板/详情浮层。
+   Chrome/Edge 走 ::-webkit-scrollbar（不能同时设 scrollbar-width/color，Chrome 121+ 设了标准属性会忽略 webkit 伪元素）；
+   Firefox 只认标准属性，单独放在 @supports 里 */
+:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay) ::-webkit-scrollbar,
+:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay)::-webkit-scrollbar { width: 12px; height: 12px; }
+:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay) ::-webkit-scrollbar-thumb,
+:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay)::-webkit-scrollbar-thumb {
+  background-color: rgba(31, 45, 61, .2); border-radius: 6px; border: 3px solid transparent; background-clip: padding-box; }
+.sb-hot::-webkit-scrollbar-thumb {
+  border-width: 1px; background-color: rgba(31, 45, 61, .38); }
+:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay) ::-webkit-scrollbar-track,
+:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay) ::-webkit-scrollbar-corner { background: transparent; }
+:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay) ::-webkit-scrollbar-button { display: none; }
+@supports (-moz-appearance: none) {
+  :is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay),
+  :is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay) * {
+    scrollbar-width: thin; scrollbar-color: rgba(31, 45, 61, .25) transparent; }
+}
+/* vxe-table 用独立滚动层显示滚动条，默认预留 18px：收窄到与上面的滚动条热区同宽 */
+.smart-vxe { --vxe-ui-table-view-scrollbar-width: 12px; --vxe-ui-table-view-scrollbar-height: 12px; }

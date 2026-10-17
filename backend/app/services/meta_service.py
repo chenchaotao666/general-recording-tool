@@ -389,6 +389,11 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
                 msg = f"字段「{f.label}」类型 {old_type} → {new_type}（转换 {n} 条存量数据"
                 msg += f"，{cleared} 条无法转换已置空）" if cleared else "）"
                 changes.append(msg)
+        # AI 单选/多选：生成过程中 AI 会自动新建选项，前端拿着旧选项表保存时不能把仍被单元格
+        # 引用的选项冲掉（否则单元格只剩裸 optionId）——补回「提交里缺失但仍在用」的旧选项
+        if new_field_type == "ai" and op.get("options") is not None and is_json \
+                and (op["options"].get("outputType") in ("singleSelect", "multiSelect")):
+            op["options"] = _keep_used_ai_options(db, mt.id, name, f.options or {}, op["options"])
         for attr in ("label", "nullable", "widget", "options", "default_value", "sort_order", "field_type"):
             if op.get(attr) is not None:
                 setattr(f, attr, op[attr])
@@ -411,6 +416,26 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
 # ---------- 智能表：字段改类型为单选/多选时的存量收编 ----------
 
 _OPTION_COLORS = ["blue", "green", "orange", "red", "purple", "cyan"]
+
+
+def _keep_used_ai_options(db: Session, table_id: int, field_name: str, old_cfg: dict, new_cfg: dict) -> dict:
+    from ..models import Record
+    removed = set(new_cfg.get("removedOptionIds") or [])   # 用户在面板里明确删掉的选项：不补回
+    new_cfg = {k: v for k, v in new_cfg.items() if k != "removedOptionIds"}
+    old_opts = [o for o in old_cfg.get("options") or [] if isinstance(o, dict) and o.get("id")]
+    new_opts = [o for o in new_cfg.get("options") or [] if isinstance(o, dict)]
+    have = {o.get("id") for o in new_opts}
+    missing = [o for o in old_opts if o["id"] not in have and o["id"] not in removed]
+    if not missing:
+        return new_cfg
+    used: set = set()
+    for (data,) in db.query(Record.data).filter_by(table_id=table_id).all():
+        v = (data or {}).get(field_name)
+        used.update(v if isinstance(v, list) else [v])
+    keep = [o for o in missing if o["id"] in used]
+    if not keep:
+        return new_cfg
+    return {**new_cfg, "options": new_opts + [{**o, "order": len(new_opts) + i} for i, o in enumerate(keep)]}
 
 
 def _convert_to_select_options(db: Session, table_id: int, field_name: str,

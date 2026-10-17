@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import MetaTable, MetaView, MetaViewPref
 from ..services.meta_service import get_meta_fields
-from ..services import view_config
+from ..services import perm_service, view_config
 from ..utils.access import TableAccess, get_table_access, require_table
 from ..utils.context import Context, get_current_context
 
@@ -33,7 +33,15 @@ def _access_for_view(db: Session, v: MetaView, ctx: Context, perm: str) -> Table
     if not getattr(access, {"view": "can_view", "edit": "can_edit", "delete": "can_delete",
                             "create": "can_create"}[perm]):
         raise HTTPException(404, "数据表不存在")
+    if perm == "edit":
+        _require_view_manage(db, access)
     return access
+
+
+def _require_view_manage(db: Session, access: TableAccess) -> None:
+    """视图增删改需内容权限「可以新建、删除、修改视图」（§13.1 viewManage）。"""
+    if not perm_service.effective_for_access(db, access).view_manage:
+        raise HTTPException(403, "没有新建、删除、修改视图的权限")
 
 
 @router.get("/tables/{table_id}/views")
@@ -47,10 +55,22 @@ def list_views(table_id: int, db: Session = Depends(get_db),
 @router.post("/tables/{table_id}/views")
 def create_view(table_id: int, payload: dict, db: Session = Depends(get_db),
                 access: TableAccess = Depends(require_table("edit"))):
+    _require_view_manage(db, access)
     fields = get_meta_fields(db, table_id)
-    config = view_config.validate_view_config(payload.get("config"), fields)
-    v = MetaView(table_id=table_id, name=str(payload.get("name") or "表格视图").strip()[:100] or "表格视图",
-                 type="grid", config=config, is_default=False, created_by=access.ctx.user.id)
+    vtype = payload.get("type") or "grid"
+    if vtype not in view_config.VIEW_TYPES:
+        raise HTTPException(400, f"视图类型不支持：{vtype}")
+    raw = dict(payload.get("config") or {})
+    default_name = {"grid": "表格视图", "form": "表单", "kanban": "看板"}[vtype]
+    name = str(payload.get("name") or default_name).strip()[:100] or default_name
+    if vtype == "form" and "form" not in raw:
+        raw["form"] = {"title": name, "items": view_config.default_form_items(fields)}
+    if vtype == "kanban" and "kanban" not in raw:
+        sel = next((f for f in fields if f.field_type == "singleSelect"), None)
+        raw["kanban"] = {"groupField": sel.field_name if sel else None}
+    config = view_config.validate_view_config(raw, fields)
+    v = MetaView(table_id=table_id, name=name, type=vtype, config=config, is_default=False,
+                 created_by=access.ctx.user.id)
     db.add(v)
     db.commit()
     db.refresh(v)

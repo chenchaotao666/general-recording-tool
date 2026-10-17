@@ -1,31 +1,21 @@
 <template>
-  <!-- 分组面板（§5.2）：多级分组字段列表 + 方向（类型自适应文案）。
-       草稿模式：面板内自由编辑，点「确定」才落库 -->
-  <el-popover trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="380">
+  <!-- 分组面板（§5.2，对齐参照 docs/智慧表格/表格上方按钮/分组.png）：
+       规则行（⋮⋮ 拖拽 + 字段下拉 + 方向两段切换 + ⊖）→「＋ 添加分组字段」（最多 3 级，满额置灰）。即时生效 -->
+  <el-popover trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="500" popper-class="st-tbpanel">
     <template #reference><slot /></template>
-    <div class="panel">
-      <div class="panel-head"><b>分组</b></div>
-      <div v-for="(g, i) in draft" :key="i" class="rule-row" :class="dropClass(i)"
-           draggable="true" @dragstart="dragIdx = i" @dragover.prevent="overIdx = i"
-           @drop.prevent="dropRow(i)" @dragend="dragIdx = overIdx = null">
-        <span class="drag"><StIcon name="drag" :size="14" /></span>
-        <el-select :teleported="false" :model-value="g.fieldId" size="small" class="r-field" placeholder="选择分组字段"
-                   @change="(v) => update(i, { fieldId: v })">
-          <el-option v-for="f in fields" :key="f.field_name" :value="f.field_name" :label="f.label" />
-        </el-select>
-        <el-radio-group :model-value="g.direction" size="small" @change="(v) => update(i, { direction: v })">
-          <el-radio-button value="asc">{{ labelsOf(g)[0] }}</el-radio-button>
-          <el-radio-button value="desc">{{ labelsOf(g)[1] }}</el-radio-button>
-        </el-radio-group>
-        <span class="r-del" title="删除" @click.stop="remove(i)"><StIcon name="minus-circle" :size="16" /></span>
+    <div class="gp">
+      <div class="gp-head"><span class="tbp-title">分组</span></div>
+      <div v-for="(g, i) in draft" :key="g._k" class="gp-row" :class="dropClass(i)"
+           @dragover.prevent="overIdx = i" @drop.prevent="dropRow(i)">
+        <span class="tbp-drag" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = null"><StIcon name="drag" :size="15" /></span>
+        <TbFieldSelect :model-value="g.fieldId" :fields="fields" placeholder="选择分组字段" class="gp-field"
+                       @update:model-value="(v) => update(i, { fieldId: v })" />
+        <DirToggle :model-value="g.direction" :labels="labelsOf(g)" @update:model-value="(v) => update(i, { direction: v })" />
+        <span class="tbp-del" title="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
       </div>
-      <el-button link type="primary" size="small" :disabled="draft.length >= 3" @click="add">
-        ＋ 添加分组字段{{ draft.length >= 3 ? '（最多 3 级）' : '' }}
-      </el-button>
-      <div class="panel-foot">
-        <el-button size="small" @click="cancel">取消</el-button>
-        <el-button size="small" type="primary" @click="confirm">确定</el-button>
-      </div>
+      <el-tooltip :disabled="draft.length < 3" content="最多支持 3 级分组" placement="top">
+        <span class="gp-add-wrap"><button class="tbp-add" :disabled="draft.length >= 3" @click="add"><StIcon name="plus" :size="15" />添加分组字段</button></span>
+      </el-tooltip>
     </div>
   </el-popover>
 </template>
@@ -33,6 +23,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
+import TbFieldSelect from './TbFieldSelect.vue'
+import DirToggle from './DirToggle.vue'
 import { sortDirectionLabels } from '../../../smart/registry/fieldRegistry.js'
 
 const props = defineProps({
@@ -43,20 +35,16 @@ const props = defineProps({
 const emit = defineEmits(['update:visible', 'change'])
 const visibleModel = computed({ get: () => props.visible, set: (v) => emit('update:visible', v) })
 
-// 草稿：打开时从 props 复制，确定才 emit（一次落库，避免防抖保存吞掉不完整行）
+let seq = 0
 const draft = ref([])
-watch(() => props.visible, (v) => {
-  if (v) draft.value = props.groups.map((g) => ({ ...g }))
-})
+watch(() => props.visible, (v) => { if (v) draft.value = props.groups.map(g => ({ ...g, _k: ++seq })) }, { immediate: true })
+function commit() { emit('change', draft.value.filter(g => g.fieldId).map(({ _k, ...g }) => g)) }
 
-function labelsOf(g) {
-  return sortDirectionLabels(props.fields.find(f => f.field_name === g.fieldId))
-}
-function update(i, patch) { draft.value = draft.value.map((g, j) => (j === i ? { ...g, ...patch } : g)) }
-function add() { draft.value = [...draft.value, { fieldId: null, direction: 'asc' }] }
-function remove(i) { draft.value = draft.value.filter((_, j) => j !== i) }
+const labelsOf = (g) => sortDirectionLabels(props.fields.find(f => f.field_name === g.fieldId))
+function update(i, patch) { draft.value = draft.value.map((g, j) => (j === i ? { ...g, ...patch } : g)); commit() }
+function add() { draft.value = [...draft.value, { fieldId: null, direction: 'asc', _k: ++seq }] }
+function remove(i) { draft.value = draft.value.filter((_, j) => j !== i); commit() }
 
-// 拖拽排序（拖拽柄不再只是装饰）：拖到上半区=前插，下半区=后插
 const dragIdx = ref(null)
 const overIdx = ref(null)
 function dropClass(i) {
@@ -68,27 +56,19 @@ function dropRow(i) {
   dragIdx.value = overIdx.value = null
   if (from === null || from === i) return
   const arr = [...draft.value]
-  const [moved] = arr.splice(from, 1)
-  arr.splice(i, 0, moved)   // from>i=插到该行前；from<i=插到该行后（移除后原行已前移一位）
+  const [m] = arr.splice(from, 1)
+  arr.splice(i, 0, m)
   draft.value = arr
-}
-
-function cancel() { emit('update:visible', false) }
-function confirm() {
-  emit('change', draft.value.filter((g) => g.fieldId))
-  emit('update:visible', false)
+  commit()
 }
 </script>
 
 <style scoped>
-.panel { display: flex; flex-direction: column; gap: 8px; }
-.panel-head { display: flex; justify-content: space-between; align-items: center; }
-.panel-foot { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #ebeef5; padding-top: 8px; }
-.rule-row { display: flex; align-items: center; gap: 6px; border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
-.rule-row.drop-before { border-top-color: var(--st-primary); }
-.rule-row.drop-after { border-bottom-color: var(--st-primary); }
-.drag { color: var(--st-text-4); cursor: grab; display: inline-flex; }
-.r-field { width: 150px; }
-.r-del { cursor: pointer; color: var(--st-text-3); display: inline-flex; }
-.r-del:hover { color: var(--st-primary); }
+.gp { display: flex; flex-direction: column; gap: 6px; }
+.gp-head { margin-bottom: 6px; }
+.gp-row { display: flex; align-items: center; gap: 12px; border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
+.gp-row.drop-before { border-top-color: var(--st-primary); }
+.gp-row.drop-after { border-bottom-color: var(--st-primary); }
+.gp-field { flex: 1; min-width: 0; }
+.gp-add-wrap { margin-left: 27px; align-self: flex-start; display: inline-flex; }
 </style>

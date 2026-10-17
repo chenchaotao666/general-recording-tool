@@ -28,7 +28,14 @@ AGGREGATIONS = {"count", "sum", "avg", "max", "min"} | GENERIC_AGGS
 
 # V1 视图 config 允许的键（白名单，防注入脏数据）
 CONFIG_KEYS = {"filters", "sorts", "groups", "fillRules", "rowHeight", "fieldVisibility",
-               "fieldOrder", "colWidths", "frozenFieldId", "aggregations", "autoSort"}
+               "fieldOrder", "colWidths", "frozenFieldId", "aggregations", "autoSort",
+               "form", "kanban",   # V3：表单视图题目配置 / 看板分组字段
+               "recordTitleField"}   # 记录详情面板标题所用字段（「切换记录标题」）
+
+VIEW_TYPES = {"grid", "form", "kanban"}
+# 表单不采集的字段：系统字段（创建人/时间等由服务端写入）
+FORM_EXCLUDED_TYPES = {"createdBy", "lastModifiedBy", "createdTime", "lastModifiedTime"}
+FORM_WIDGETS = {"dropdown", "inline"}
 
 # 填色/筛选共用的无值运算符
 _NO_VALUE_OPS = {"isEmpty", "isNotEmpty", "empty", "not_empty", "today"}
@@ -87,6 +94,8 @@ def validate_view_config(config: dict | None, fields: list) -> dict:
     rh = cfg.get("rowHeight", "default")
     if isinstance(rh, str) and rh not in ROW_HEIGHTS:
         raise HTTPException(400, f"行高档位不支持：{rh}")
+    if not isinstance(rh, str) and not (isinstance(rh, int) and not isinstance(rh, bool) and 1 <= rh <= 20):
+        raise HTTPException(400, "自定义行高需为 1~20 行")
 
     if cfg.get("frozenFieldId") is not None and cfg["frozenFieldId"] not in names:
         raise HTTPException(400, f"冻结列引用了不存在的字段：{cfg['frozenFieldId']}")
@@ -102,7 +111,65 @@ def validate_view_config(config: dict | None, fields: list) -> dict:
         reg = FIELD_TYPES.get(getattr(by_name[fn], "field_type", None) or "")
         if reg and agg not in reg["aggregations"]:
             raise HTTPException(400, f"字段「{by_name[fn].label}」不支持聚合方式：{agg}")
+
+    # 记录标题字段：字段被删除等失效情况静默清除（回落默认标题），不报错
+    if "recordTitleField" in cfg and cfg["recordTitleField"] not in names:
+        cfg.pop("recordTitleField")
+
+    if "form" in cfg:
+        cfg["form"] = validate_form(cfg["form"], fields)
+    kb = cfg.get("kanban")
+    if kb is not None:
+        if not isinstance(kb, dict):
+            raise HTTPException(400, "看板配置格式无效")
+        if kb.get("groupField") and kb["groupField"] not in names:
+            raise HTTPException(400, "看板分组字段不存在")
+        cfg["kanban"] = {"groupField": kb.get("groupField"),
+                         "cardFields": [x for x in (kb.get("cardFields") or []) if x in names][:8],
+                         "hideEmpty": bool(kb.get("hideEmpty"))}
     return cfg
+
+
+def default_form_items(fields: list) -> list[dict]:
+    """「生成表单」：表格字段全量映射为题目（系统字段除外，§12.1）。"""
+    return [{"fieldId": f.field_name, "required": False}
+            for f in fields if (f.field_type or "") not in FORM_EXCLUDED_TYPES]
+
+
+def validate_form(form, fields: list) -> dict:
+    """表单题目配置（§12.2 FormItem）白名单清洗。"""
+    if not isinstance(form, dict):
+        raise HTTPException(400, "表单配置格式无效")
+    names = {f.field_name for f in fields}
+    items, seen = [], set()
+    for it in form.get("items") or []:
+        fn = it.get("fieldId") if isinstance(it, dict) else None
+        if fn not in names or fn in seen:
+            continue
+        seen.add(fn)
+        vis = it.get("visibility") if isinstance(it.get("visibility"), dict) else None
+        if vis:
+            conds = [{"fieldId": c["fieldId"], "operator": c.get("operator") or "eq", "value": c.get("value")}
+                     for c in (vis.get("conditions") or []) if isinstance(c, dict) and c.get("fieldId") in names]
+            vis = {"match": "any" if vis.get("match") == "any" else "all", "conditions": conds[:10]} if conds else None
+        items.append({
+            "fieldId": fn,
+            "title": str(it.get("title") or "")[:200] or None,
+            "description": str(it.get("description") or "")[:1000] or None,
+            "widget": it.get("widget") if it.get("widget") in FORM_WIDGETS else None,
+            "required": bool(it.get("required")),
+            "visibility": vis,
+        })
+    submit = form.get("submit") if isinstance(form.get("submit"), dict) else {}
+    return {
+        "title": str(form.get("title") or "")[:200],
+        "description": str(form.get("description") or "")[:2000],
+        "cover": form.get("cover") if isinstance(form.get("cover"), str) else None,
+        "items": items,
+        "submit": {"successText": str(submit.get("successText") or "提交成功，感谢你的填写！")[:200],
+                   "allowAnonymous": submit.get("allowAnonymous", True) is not False,
+                   "allowMultiple": submit.get("allowMultiple", True) is not False},
+    }
 
 
 def merge_pref(view_config: dict, pref_config: dict | None) -> dict:
@@ -114,8 +181,9 @@ def merge_pref(view_config: dict, pref_config: dict | None) -> dict:
     return merged
 
 
-def conditions_to_rules(filters_cfg: dict | None) -> list[dict]:
-    """视图筛选 DSL → dyn_engine/pyquery 规则数组（顶层 AND）。"""
+def conditions_to_rules(filters_cfg: dict | None, viewer_id: int | None = None) -> list[dict]:
+    """视图筛选 DSL → dyn_engine/pyquery 规则数组（顶层 AND）。
+    人员类条件值中的 "$viewer"（筛选面板「我 (根据查看者动态变化)」）替换为当前查看者 id。"""
     conds = (filters_cfg or {}).get("conditions") or []
     rules = []
     for c in conds:
@@ -124,7 +192,12 @@ def conditions_to_rules(filters_cfg: dict | None) -> list[dict]:
             raise HTTPException(400, f"不支持的筛选运算符：{c.get('operator')}")
         rule = {"field": c["fieldId"], "op": op}
         if op not in ("empty", "not_empty"):
-            rule["value"] = c.get("value")
+            v = c.get("value")
+            if isinstance(v, list) and "$viewer" in v:
+                v = [viewer_id if x == "$viewer" else x for x in v if x != "$viewer" or viewer_id is not None]
+            elif v == "$viewer":
+                v = viewer_id
+            rule["value"] = v
         rules.append(rule)
     return rules
 

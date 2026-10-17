@@ -76,6 +76,9 @@ def reload_jobs() -> None:
                     run_scheduled, trigger, args=[wf.id],
                     id=f"wf_{wf.id}", replace_existing=True, misfire_grace_time=300,
                 )
+        # 智能表自动化：定时重复触发（设计文档 §11.4）
+        from .automation_engine import register_jobs
+        register_jobs(scheduler, db)
     finally:
         db.close()
     _register_workflow_poller()   # remove_all_jobs 会清掉 poller，每次重载后补回
