@@ -130,7 +130,43 @@ r = client.post(f"/api/smart/tables/{t2}/search-replace", json={"find": "P002", 
 assert r.json()["replaced"] >= 1
 g = client.get(f"/api/smart/tables/{t2}/grid").json()
 assert any(x.get("__rowType") != "group" and x.get(f2["text"]) == "Q002" for x in g["items"])
-print("查找替换通过")
+
+# 文本公式可查找但不可替换；匹配与实际替换统一为大小写不敏感。
+ftext = add_field(t2, "formula", "文本公式", {"formula": f"[{f2['text']}]", "returnType": "text"})
+case_ids = []
+for _ in range(2):
+    r = client.post(f"/api/smart/tables/{t2}/records", json={"data": {f2["text"]: "MixedCaseToken"}})
+    assert r.status_code == 200 and r.json()["record"][ftext] == "MixedCaseToken", r.text
+    case_ids.append(r.json()["record"]["id"])
+r = client.post(f"/api/smart/tables/{t2}/search-replace", json={"find": "mixedcasetoken"})
+case_matches = [m for m in r.json()["matches"] if m["recordId"] in case_ids]
+assert any(m["field"] == f2["text"] and m["replaceable"] for m in case_matches), r.text
+formula_match = next(m for m in case_matches if m["field"] == ftext)
+assert formula_match["fieldType"] == "formula" and not formula_match["replaceable"]
+assert formula_match["blockedReason"] == "type"
+
+# 单个替换只写指定文本单元格，并返回撤销所需的实际前后值。
+r = client.post(f"/api/smart/tables/{t2}/search-replace", json={
+    "find": "mixedcasetoken", "replace": "SingleReplaced", "replace_current": True,
+    "record_id": case_ids[0], "field": f2["text"]})
+assert r.status_code == 200 and r.json()["replacedCells"] == 1, r.text
+assert r.json()["changes"] == [{"recordId": case_ids[0], "field": f2["text"],
+                                "before": "MixedCaseToken", "after": "SingleReplaced"}]
+r = client.post(f"/api/smart/tables/{t2}/search-replace", json={
+    "find": "mixedcasetoken", "replace": "Forbidden", "replace_current": True,
+    "record_id": case_ids[1], "field": ftext})
+assert r.status_code == 403, r.text
+
+# 全部替换跳过公式命中，返回部分失败数量；文本仍按大小写不敏感完成替换。
+r = client.post(f"/api/smart/tables/{t2}/search-replace", json={
+    "find": "mixedcasetoken", "replace": "AllReplaced", "replace_all": True})
+assert r.status_code == 200 and r.json()["replacedCells"] == 1, r.text
+assert r.json()["skipped"] >= 1 and all(c["field"] != ftext for c in r.json()["changes"]), r.text
+g = client.get(f"/api/smart/tables/{t2}/grid").json()
+case_rows = [x for x in g["items"] if x.get("id") in case_ids]
+assert any(x.get(f2["text"]) == "SingleReplaced" for x in case_rows)
+assert any(x.get(f2["text"]) == "AllReplaced" for x in case_rows)
+print("查找替换（只读命中/单个/全部/大小写/部分跳过）通过")
 
 # ---------- 记录副本 + 字段副本 ----------
 rid_any = next(x["id"] for x in g["items"] if x.get("__rowType") != "group")

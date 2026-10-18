@@ -114,6 +114,7 @@ import { isDisplayCell, visibleCellRect } from '../../../smart/utils/vxeCell.js'
 import StIcon from '../icons/StIcon.vue'
 import { BLOCKED_CONFIGURABLE, BLOCKED_EDIT_TEXT, regOf, sortDirectionLabels, STAT_LABELS, formatStatValue, optionColor } from '../../../smart/registry/fieldRegistry.js'
 import { evalFillRules, evalRowFill, headerFillColor } from '../../../smart/utils/format.js'
+import { currentFindKey, findCellKey, findMatchKeys } from '../../../smart/utils/findReplace.js'
 
 const props = defineProps({
   fields: { type: Array, default: () => [] },
@@ -130,6 +131,8 @@ const props = defineProps({
   canEditCell: { type: Function, default: null },
   menuField: { type: String, default: null },   // 列头菜单当前打开的字段（三角保持展开态）
   activeRowId: { type: [Number, String], default: null },   // 右侧详情面板打开的记录（行高亮 + 展开按钮常显）
+  searchMatches: { type: Array, default: () => [] },
+  searchCurrentIndex: { type: Number, default: -1 },
 })
 const emit = defineEmits(['cell-commit', 'add-row', 'cell-menu', 'field-menu', 'toggle-group',
                           'selection-change', 'open-config', 'footer-menu', 'add-option', 'group-menu', 'add-row-in-group', 'ai-run',
@@ -439,8 +442,17 @@ const rowFills = computed(() => {
   return m
 })
 
+const searchMatchKeys = computed(() => findMatchKeys(props.searchMatches))
+const searchActiveKey = computed(() => currentFindKey(props.searchMatches, props.searchCurrentIndex))
+watch([searchMatchKeys, searchActiveKey], () => gridRef.value?.refreshColumn?.())
+
 function cellClass({ row, column }) {
   const cls = []
+  if (!row.__rowType) {
+    const key = findCellKey(row.id, column.field)
+    if (searchMatchKeys.value.has(key)) cls.push('cell-search-match')
+    if (searchActiveKey.value === key) cls.push('cell-search-active')
+  }
   if (!row.__rowType && row.__indent > 0 && column.field === visibleFields.value[0]?.field_name) {
     cls.push('cell-indent')
   }
@@ -593,6 +605,7 @@ function groupValueNodes(row) {
 // 填色在 td 级着底色（整格铺满，企微式）
 function cellFillStyle({ row, column }) {
   if (!row || row.__rowType) return null
+  if (searchMatchKeys.value.has(findCellKey(row.id, column.field))) return { backgroundColor: '#FFFCEB' }
   const f = props.fields.find(x => x.field_name === column.field)
   if (!f) return null
   const fill = evalFillRules(fillRules.value, f, row[f.field_name]) || rowFills.value.get(row.__key) || null
@@ -777,9 +790,33 @@ onBeforeUnmount(() => {
 document.addEventListener('keydown', onDocKeydown)
 document.addEventListener('mousedown', onDocMouseDown)
 
+// 定位到指定记录：新增行默认选中首个可见列；查找定位可指定字段且只滚动、不弹出选中/编辑浮层。
+// 记录不在当前行序列（被筛选掉 / 在折叠分组里）时返回 false；隐藏字段退化为只定位记录。
+async function focusRecord(id, fieldName = null, { select = true } = {}) {
+  await nextTick()   // 等 rows → gridRows → vxe data 刷新
+  const row = gridRows.value.find(r => !r.__rowType && r.id === id)
+  if (!row) return false
+  const f = fieldName
+    ? visibleFields.value.find(x => x.field_name === fieldName)
+    : visibleFields.value[0]
+  clearColSelection()
+  editingCell.value = null
+  if (select) {
+    const target = f || visibleFields.value[0]
+    if (target) selectedCell.value = { key: row.__key, fieldName: target.field_name }
+  } else {
+    selectedCell.value = null
+  }
+  const col = f ? gridRef.value?.getColumnByField?.(f.field_name) : null
+  await gridRef.value?.scrollToRow?.(row, col || undefined)
+  gridRef.value?.refreshColumn?.()   // cell-class-name 只在渲染周期重算：手动触发选中框/搜索高亮重绘
+  return true
+}
+
 defineExpose({
   clearEditing: () => { editingCell.value = null; selectedCell.value = null; selectedCol.value = null; selectedGroupId.value = null },
   clearSelection: () => gridRef.value?.clearCheckboxRow?.(),
+  focusRecord,
 })
 </script>
 
@@ -992,6 +1029,14 @@ defineExpose({
 :deep(.footer-stat .fs-hint) { display: inline-flex; align-items: center; gap: 2px; }
 :deep(.filter-dot) { color: var(--st-primary); }
 :deep(.sort-mark) { color: var(--st-primary); }
+/* 查找命中：浅黄底由 cellFillStyle 内联下发（优先于视图填色）；当前项用金黄描边，放在选中样式之后覆盖蓝框。 */
+.smart-vxe :deep(.vxe-body--column.cell-search-match.col-selected)::before { display: none; }
+.smart-vxe :deep(.vxe-body--column.cell-search-active),
+.smart-vxe :deep(.row-last .vxe-body--column.cell-search-active) {
+  position: relative; z-index: 4; box-shadow: 0 0 0 2px #FCBA02 inset;
+}
+.smart-vxe :deep(.row-last .vxe-body--column.cell-search-active)::after { border-color: #FCBA02; }
+.smart-vxe :deep(.vxe-body--column.cell-search-active.cell-editing .vxe-cell) { box-shadow: 0 0 0 2px #FCBA02 inset; }
 /* 不可编辑提示气泡（teleport 到 body） */
 :global(.st-blocked-hint) { position: fixed; z-index: 2200; display: inline-flex; align-items: center; gap: 14px; height: 40px; padding: 0 16px;
   background: #fff; border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, .12); font-size: 14px; color: #1F2329; white-space: nowrap; }

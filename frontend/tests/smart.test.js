@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { formatCurrency, formatDate, formatNumber, evalFillRules, matchCondition, isRuleComplete, createUndoStack } from '../src/smart/utils/format.js'
 import { FIELD_REGISTRY, conditionToRule, sortDirectionLabels } from '../src/smart/registry/fieldRegistry.js'
 import { filterLinkageOptions, resolveRefOptions } from '../src/smart/utils/refOptions.js'
+import { presetFromFilters } from '../src/smart/utils/newRowPreset.js'
 
 describe('format', () => {
   it('数字千位符与精度', () => {
@@ -127,5 +128,45 @@ describe('引用选项与选项联动（refOptions）', () => {
     // any：单位A 命中行 1/3，priority=opt_l 命中行 2 → 三者并集
     expect(filterLinkageOptions(options, lk('any'), record, remoteRows, 'priority')
       .map(o => o.id)).toEqual(['opt_h', 'opt_l', 'opt_m'])
+  })
+})
+
+describe('添加一行：按筛选条件预设初始值（newRowPreset）', () => {
+  const fields = [
+    { field_name: 'f_t', field_type: 'text' },
+    { field_name: 'f_s', field_type: 'singleSelect', options: { options: [{ id: 'o1' }, { id: 'o2' }] } },
+    { field_name: 'f_m', field_type: 'multiSelect', options: { options: [{ id: 'm1' }, { id: 'm2' }] } },
+    { field_name: 'f_n', field_type: 'number' },
+    { field_name: 'f_d', field_type: 'date' },
+    { field_name: 'f_u', field_type: 'member', options: { multiple: true } },
+    { field_name: 'f_c', field_type: 'checkbox' },
+    { field_name: 'f_x', field_type: 'formula' },
+  ]
+  const now = new Date(2026, 9, 18)   // 2026-10-18（周日）
+  const run = (conditions, conjunction = 'and') => presetFromFilters({ conditions, conjunction, fields, viewerId: 7, now })
+
+  it('AND：各类型取满足条件的值', () => {
+    expect(run([
+      { fieldId: 'f_t', operator: 'contains', value: 'abc' },
+      { fieldId: 'f_s', operator: 'eq', value: ['o2'] },
+      { fieldId: 'f_m', operator: 'contains', value: ['m1', 'm2'] },
+      { fieldId: 'f_u', operator: 'contains', value: ['$viewer'] },
+      { fieldId: 'f_c', operator: 'eq', value: true },
+    ])).toEqual({ f_t: 'abc', f_s: 'o2', f_m: ['m1'], f_u: [7], f_c: true })
+  })
+  it('数字区间与日期模式', () => {
+    expect(run([{ fieldId: 'f_n', operator: 'gt', value: 5 }, { fieldId: 'f_n', operator: 'lt', value: 10 }])).toEqual({ f_n: 6 })
+    expect(run([{ fieldId: 'f_d', operator: 'eq', value: { mode: 'thisWeek' } }])).toEqual({ f_d: '2026-10-12 00:00:00' })
+    expect(run([{ fieldId: 'f_d', operator: 'gt', value: { mode: 'today' } }])).toEqual({ f_d: '2026-10-19 00:00:00' })
+  })
+  it('不等于/不包含：挑条件之外的值；为空：不预设', () => {
+    expect(run([{ fieldId: 'f_s', operator: 'neq', value: ['o1'] }])).toEqual({ f_s: 'o2' })
+    expect(run([{ fieldId: 'f_t', operator: 'neq', value: '新记录' }])).toEqual({ f_t: '新记录1' })
+    expect(run([{ fieldId: 'f_t', operator: 'isEmpty' }])).toEqual({})
+  })
+  it('只读字段跳过；OR：已天然命中则不预设，否则取第一个可满足的条件', () => {
+    expect(run([{ fieldId: 'f_x', operator: 'eq', value: '1' }])).toEqual({})
+    expect(run([{ fieldId: 'f_n', operator: 'eq', value: 3 }, { fieldId: 'f_t', operator: 'isEmpty' }], 'or')).toEqual({})
+    expect(run([{ fieldId: 'f_x', operator: 'eq', value: '1' }, { fieldId: 'f_n', operator: 'gte', value: 3 }], 'or')).toEqual({ f_n: 3 })
   })
 })

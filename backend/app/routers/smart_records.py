@@ -6,11 +6,12 @@ lookup 字段读时计算；系统字段（创建人/时间等）从记录系统
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+import re
 
 from ..database import get_db
 from ..models import MetaField, MetaTable, MetaView, MetaViewPref, Record
 from ..services import dyn_engine, json_store, lookup_service, perm_service, smart_events, view_config
-from ..services.field_registry import FIELD_TYPES
+from ..services.field_registry import FIELD_TYPES, READONLY_TYPES
 from ..services.meta_service import get_meta_fields
 from ..services.pyquery import match_filters, sort_records_multi
 from ..services.smart_cond import match_conditions
@@ -78,10 +79,12 @@ def _require_row_editable(eff, rec: dict, fields) -> None:
 
 @router.get("/tables/{table_id}/grid")
 def grid_query(table_id: int, view_id: int | None = None, page: int = 1, page_size: int = 200,
+               focus_id: int | None = None,
                db: Session = Depends(get_db),
                access: TableAccess = Depends(require_table("view"))):
     """一次请求给齐网格渲染所需：生效视图配置 + 字段 + 记录行序列 + 聚合 + 我的权限。
-    有分组时返回扁平的 [分组标题行, ...数据行] 序列（上限 5000 行，不分页）。"""
+    有分组时返回扁平的 [分组标题行, ...数据行] 序列（上限 5000 行，不分页）。
+    focus_id：未分组时改为返回该记录（筛选+排序后）所在的页（新增一行后定位用），实际页码见返回的 page。"""
     mt = access.table
     if mt.storage_mode != "json":
         raise HTTPException(400, "智能表网格仅支持 JSON 存储模式的表")
@@ -123,6 +126,10 @@ def grid_query(table_id: int, view_id: int | None = None, page: int = 1, page_si
         recs = sort_records_multi(recs, effective.get("sorts"), fields_by_name)
         page = max(page, 1)
         page_size = min(max(page_size, 1), dyn_engine.MAX_PAGE_SIZE)
+        if focus_id is not None:
+            idx = next((i for i, r in enumerate(recs) if r.get("id") == focus_id), None)
+            if idx is not None:
+                page = idx // page_size + 1
         rows = [{k: dyn_engine.serialize_value(v) for k, v in r.items()}
                 for r in recs[(page - 1) * page_size: page * page_size]]
 
@@ -138,7 +145,7 @@ def grid_query(table_id: int, view_id: int | None = None, page: int = 1, page_si
     ai_field_service.attach_status(db, table_id, fields, data_rows)
 
     return {
-        "items": rows, "total": total, "aggregations": aggs, "grouped": bool(groups),
+        "items": rows, "total": total, "aggregations": aggs, "grouped": bool(groups), "page": page,
         "view": {"id": view.id, "name": view.name, "type": view.type, "config": effective,
                  "is_default": bool(view.is_default)} if view else None,
         "fields": [
@@ -332,42 +339,100 @@ def duplicate_record(table_id: int, record_id: int, db: Session = Depends(get_db
 
 @router.post("/tables/{table_id}/search-replace")
 def search_replace(table_id: int, payload: dict, db: Session = Depends(get_db),
-                   access: TableAccess = Depends(require_table("edit"))):
-    """查找：返回匹配单元格坐标；replace=true 时执行替换（全部或指定记录）。仅文本类字段。"""
-    find = str(payload.get("find") or "")
-    replace = str(payload.get("replace") or "")
-    do_replace = bool(payload.get("replace_all"))
+                   access: TableAccess = Depends(require_table("view"))):
+    """全表查找文本单元格；支持全部替换或替换指定单元格，只读结果仅返回不写入。"""
+    find = "" if payload.get("find") is None else str(payload.get("find"))
+    replace = "" if payload.get("replace") is None else str(payload.get("replace"))
+    replace_all = bool(payload.get("replace_all"))
+    replace_current = bool(payload.get("replace_current"))
     if not find:
         raise HTTPException(400, "查找内容不能为空")
+    if replace_all and replace_current:
+        raise HTTPException(400, "替换方式不能同时指定")
+    do_replace = replace_all or replace_current
+    record_id = None
+    field_name = payload.get("field")
+    if replace_current:
+        try:
+            record_id = int(payload.get("record_id", payload.get("recordId")))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "替换记录不能为空")
+        if not field_name:
+            raise HTTPException(400, "替换字段不能为空")
+
     fields = get_meta_fields(db, table_id)
     eff = _effective(db, access)
+    table_editable = access.can_edit and perm_service.LEVEL_RANK[eff.level] >= 2
+    if do_replace and not table_editable:
+        raise HTTPException(403, "没有编辑该表格的权限")
     rights = eff.field_rights_map(fields)
     text_types = {"text", "url", "phone", "email", None, ""}
-    text_fields = [f for f in fields
-                   if (f.field_type in text_types) and f.data_type in ("varchar", "text")
-                   and rights[f.field_name]["view"] and (not do_replace or rights[f.field_name]["edit"])]
+    # 搜索覆盖所有可查看的文本结果（包括公式等只读字段）；是否可写逐项单独标记。
+    search_fields = [f for f in fields
+                     if f.data_type in ("varchar", "text") and rights[f.field_name]["view"]]
     recs = json_store.all_dicts(db, table_id, fields, normalized=False)
+    editable_ids = set()
     if not eff.managed:
-        visible = {r["id"] for r in json_store.all_dicts(db, table_id, fields, normalized=True)
-                   if (eff.row_editable(r, fields) if do_replace else eff.row_viewable(r, fields))}
+        permission_recs = json_store.all_dicts(db, table_id, fields, normalized=True)
+        visible = {r["id"] for r in permission_recs if eff.row_viewable(r, fields)}
+        editable_ids = {r["id"] for r in permission_recs if eff.row_editable(r, fields)}
         recs = [r for r in recs if r["id"] in visible]
+
+    pattern = re.compile(re.escape(find), re.IGNORECASE)
     matches = []
     for r in recs:
-        for f in text_fields:
+        row_editable = eff.managed or r["id"] in editable_ids
+        for f in search_fields:
             v = r.get(f.field_name)
-            if isinstance(v, str) and find.casefold() in v.casefold():
-                matches.append({"recordId": r["id"], "field": f.field_name,
-                                "fieldLabel": f.label, "value": v})
-    if do_replace and matches:
+            if not isinstance(v, str) or not pattern.search(v):
+                continue
+            field_type = f.field_type or "text"
+            replaceable = (table_editable and row_editable and field_type in text_types
+                           and rights[f.field_name]["edit"])
+            blocked_reason = None
+            if field_type in READONLY_TYPES or field_type not in text_types:
+                blocked_reason = "type"
+            elif not replaceable:
+                blocked_reason = "permission"
+            matches.append({"recordId": r["id"], "field": f.field_name,
+                            "fieldLabel": f.label, "fieldType": field_type, "value": v,
+                            "replaceable": replaceable, "blockedReason": blocked_reason})
+
+    targets = []
+    skipped = 0
+    if replace_current:
+        targets = [m for m in matches
+                   if m["recordId"] == record_id and m["field"] == field_name]
+        if not targets:
+            raise HTTPException(404, "匹配内容不存在或已发生变化")
+        if not targets[0]["replaceable"]:
+            raise HTTPException(403, "当前内容不可替换")
+    elif replace_all:
+        targets = [m for m in matches if m["replaceable"]]
+        skipped = len(matches) - len(targets)
+
+    changes = []
+    if do_replace and targets:
         by_rec: dict[int, dict] = {}
-        for m in matches:
-            by_rec.setdefault(m["recordId"], {})[m["field"]] = m["value"].replace(find, replace)
+        for m in targets:
+            # lambda 让替换内容中的反斜杠和 \\1 等按普通文本处理。
+            new_value = pattern.sub(lambda _: replace, m["value"])
+            if new_value != m["value"]:
+                by_rec.setdefault(m["recordId"], {})[m["field"]] = new_value
         for rid, data in by_rec.items():
             before = json_store.get_record(db, table_id, rid, fields)
             after = json_store.update_record(db, access.table, fields, rid, data,
                                              user=access.ctx.user.username, editor_id=access.ctx.user.id)
             smart_events.record_updated(db, access.table, before, after, list(data), actor_id=access.ctx.user.id)
-    return {"matches": matches, "replaced": len({m['recordId'] for m in matches}) if do_replace else 0}
+            for name in data:
+                old_value = before.get(name)
+                new_value = after.get(name)
+                if old_value != new_value:
+                    changes.append({"recordId": rid, "field": name,
+                                    "before": old_value, "after": new_value})
+    replaced_records = {c["recordId"] for c in changes}
+    return {"matches": matches, "changes": changes, "replaced": len(replaced_records),
+            "replacedCells": len(changes), "skipped": skipped}
 
 
 # ---------- 字段级操作：创建副本（设计文档 §6.2） ----------

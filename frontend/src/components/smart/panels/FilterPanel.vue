@@ -39,9 +39,12 @@
       </div>
 
       <div v-for="(c, i) in draft" :key="c.id" class="fp-card">
-        <div class="fp-card-head" @click="!isOpen(c) && toggleOpen(c)">
+        <!-- 折叠态只显示字段名，单击整行展开/收起；展开后字段名才变为可切换字段的下拉 -->
+        <div class="fp-card-head" @click="toggleOpen(c)">
+          <span v-if="!isOpen(c)" class="fp-field static"><StIcon :name="fieldIconName(fieldOf(c))" :size="18" />
+            <span class="fp-field-name">{{ fieldOf(c)?.label || '选择字段' }}</span></span>
           <!-- 切换字段：统一「选择字段」面板（编组可折叠，参照 PixPin_2026-10-18_01-05-36） -->
-          <el-popover :visible="fieldPickId === c.id" @update:visible="(v) => (fieldPickId = v ? c.id : null)" trigger="click"
+          <el-popover v-else :visible="fieldPickId === c.id" @update:visible="(v) => (fieldPickId = v ? c.id : null)" trigger="click"
                       placement="bottom-start" :width="324" :teleported="false" :show-arrow="false"
                       :popper-options="FIXED_POPPER" popper-class="st-tbpanel st-pick-pop">
             <template #reference>
@@ -147,7 +150,7 @@ watch(() => props.visible, (v) => {
   nextTick(updateMaxH)
   draft.value = props.conditions.map((c) => ({ ...c, id: c.id || `c_${Math.random().toString(36).slice(2, 8)}` }))
   draftConj.value = props.conjunction || 'and'
-  openIds.value = new Set(draft.value.map((c) => c.id))
+  openIds.value = new Set()   // 已有条件默认折叠
 }, { immediate: true })
 
 const fieldOf = (c) => props.fields.find(f => f.field_name === c.fieldId)
@@ -266,8 +269,10 @@ function onMore(cmd) {
 .fp-link { color: var(--st-primary); cursor: pointer; display: inline-flex; align-items: center; gap: 2px; font-size: 14px; }
 /* 条件卡片（参照 PixPin_2026-10-18_00-27-29 取色）：卡片与内框同为 #FAFBFB 底、#EDEFEF 细边，内框四周缩进 6px */
 .fp-card { border: 1px solid #EDEFEF; border-radius: 8px; background: #FAFBFB; }
-.fp-card-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 14px 20px; cursor: default; }
+.fp-card-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 14px 20px; cursor: pointer; }
 .fp-field { display: inline-flex; align-items: center; gap: 6px; font-size: 16px; color: var(--st-text-1); cursor: pointer; }
+.fp-field.static { flex: none; max-width: 50%; min-width: 0; }
+.fp-field-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fp-caret { color: var(--st-text-2); }
 .fp-sum { flex: 1; min-width: 0; font-size: 13px; color: var(--st-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fp-acts { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }

@@ -12,7 +12,7 @@
     <template v-else>
     <!-- 工具栏（对齐参照 上方Tab页签.png：添加一行=蓝字圆⊕；条件按钮生效时浅蓝胶囊+计数） -->
     <div class="toolbar">
-      <button class="tb-btn tb-add" :disabled="!perms.can_create" @click="addRow">
+      <button class="tb-btn tb-add" :disabled="!perms.can_create" @click="addRow()">
         <StIcon name="plus-circle" :size="15" />添加一行
       </button>
       <span class="tb-sep" />
@@ -109,7 +109,7 @@
         <span class="tb-sep" />
         <button class="tb-ico" title="撤销" :disabled="!undoStack.canUndo" @click="doUndo"><StIcon name="undo" :size="16" /></button>
         <button class="tb-ico" title="重做" :disabled="!undoStack.canRedo" @click="doRedo"><StIcon name="redo" :size="16" /></button>
-        <button class="tb-ico" title="查找替换" @click="findVisible = true"><StIcon name="search" :size="16" /></button>
+        <button class="tb-ico" title="查找替换" @click="openFind($event)"><StIcon name="search" :size="16" /></button>
       </div>
     </div>
 
@@ -132,6 +132,7 @@
       :height="gridHeight" :readonly="!perms.can_edit" :can-edit-cell="canEditCell"
       :menu-field="fieldMenu.visible ? fieldMenu.field?.field_name : null"
       :active-row-id="detail.visible ? detailRecord?.id : null"
+      :search-matches="findHighlight.matches" :search-current-index="findHighlight.currentIndex"
       @expand-row="(r) => openDetail(r)"
       @cell-commit="onCellCommit" @add-row="addRow" @cell-menu="onCellMenu" @field-menu="onFieldMenu" @ai-run="runAiField" @field-edit="(f, at) => openFieldConfig(f, null, at)"
       @group-edit="(g, at) => openGroupDialog(null, g, at)"
@@ -165,8 +166,9 @@
                        :tables="allTables" :source-fields-of="loadFieldsOf"
                        @close="fieldDialog.visible = false" @save="onFieldSave"
                        @ai-tags="(f) => { fieldDialog.visible = false; Object.assign(aiTags, { visible: true, field: f }) }" />
-    <FindReplaceDialog :visible="findVisible" :table-id="tableId"
-                       @close="findVisible = false" @replaced="loadGrid" />
+    <FindReplaceDialog ref="findDialogRef" :visible="findVisible" :table-id="tableId" :at="findAt"
+                       @close="closeFind" @highlight="findHighlight = $event"
+                       @locate="locateFindMatch" @replaced="onFindReplaced" />
 
     <!-- 新建/修改编组弹窗（设计文档 §6.1：编组名称 + 包含字段，默认含当前列） -->
     <!-- 非模态（同字段编辑框）：双击编组表头时在鼠标位置弹出，点外部收起 -->
@@ -403,6 +405,7 @@ import { FIELD_REGISTRY, filterOpsOf, OP_LABELS, OPTION_COLORS, sortDirectionLab
 import { anchoredDialogAttrs, useNonModalOutsideClose } from '../../smart/utils/anchorDialog.js'
 import { isRuleComplete, isCondValueEmpty, createUndoStack } from '../../smart/utils/format.js'
 import { resolveRefOptions } from '../../smart/utils/refOptions.js'
+import { presetFromFilters } from '../../smart/utils/newRowPreset.js'
 import {
   alterTable, getTable, listMembers, listTables,
   smartGrid, smartListViews, smartCreateView, smartUpdateView, smartDeleteView,
@@ -447,6 +450,10 @@ const page = ref(1)
 const pageSize = 200
 const activePanel = ref(null)
 const findVisible = ref(false)
+const findDialogRef = ref(null)
+const findAt = ref(null)
+const findHighlight = ref({ matches: [], currentIndex: -1 })
+let findLocateSeq = 0
 const filterScope = ref('shared')
 const undoStack = createUndoStack()
 
@@ -552,10 +559,13 @@ async function loadAll() {
   }
 }
 
-async function loadGrid(viewId, { silent = false } = {}) {
+// focusId：返回该记录（筛选+排序后）所在的页，用于新增一行后翻到它
+async function loadGrid(viewId, { silent = false, focusId = null } = {}) {
   if (!silent) loading.value = true
   try {
-    const g = await smartGrid(tableId, { view_id: viewId, page: page.value, page_size: pageSize })
+    const g = await smartGrid(tableId, { view_id: viewId, page: page.value, page_size: pageSize,
+                                         ...(focusId != null ? { focus_id: focusId } : {}) })
+    if (g.page) page.value = g.page
     rows.value = g.items
     total.value = g.total
     aggregations.value = g.aggregations || {}
@@ -569,6 +579,63 @@ async function loadGrid(viewId, { silent = false } = {}) {
   } finally {
     if (!silent) loading.value = false
   }
+}
+
+function openFind(event) {
+  const rect = event?.currentTarget?.getBoundingClientRect?.()
+  if (rect) findAt.value = { x: rect.right - 404, y: rect.bottom + 4 }
+  findVisible.value = true
+}
+
+function closeFind() {
+  findLocateSeq += 1
+  findVisible.value = false
+  findHighlight.value = { matches: [], currentIndex: -1 }
+}
+
+async function locateFindMatch(match) {
+  if (!match || !findVisible.value) return
+  const seq = ++findLocateSeq
+  let shown = await gridRef.value?.focusRecord?.(match.recordId, match.field, { select: false })
+  if (seq !== findLocateSeq || !findVisible.value) return
+  if (shown) return
+  await loadGrid(view.value?.id, { focusId: match.recordId })
+  if (seq !== findLocateSeq || !findVisible.value) return
+  shown = await gridRef.value?.focusRecord?.(match.recordId, match.field, { select: false })
+  if (shown === false) ElMessage.info('该结果不在当前视图显示范围内，暂未定位')
+}
+
+async function applyFindChanges(changes, valueKey) {
+  const byRecord = new Map()
+  for (const change of changes) {
+    const rid = Number(change.recordId)
+    if (!Number.isFinite(rid) || !change.field) continue
+    if (!byRecord.has(rid)) byRecord.set(rid, {})
+    byRecord.get(rid)[change.field] = change[valueKey]
+  }
+  for (const [rid, data] of byRecord) {
+    await smartUpdateRecord(tableId, rid, { data })
+  }
+  await loadGrid(view.value?.id)
+}
+
+async function onFindReplaced(payload) {
+  const changes = Array.isArray(payload?.changes) ? payload.changes : []
+  if (!changes.length) return
+  const label = payload?.label || '查找替换'
+  undoStack.push({
+    label,
+    undo: async () => {
+      await applyFindChanges(changes, 'before')
+      await findDialogRef.value?.refresh?.()
+    },
+    redo: async () => {
+      await applyFindChanges(changes, 'after')
+      await findDialogRef.value?.refresh?.()
+    },
+  })
+  // 保持当前视图；直接把 loadGrid 绑给 replaced 会丢 viewId 并跳回默认视图。
+  await loadGrid(view.value?.id)
 }
 
 async function loadDocEntries() {
@@ -821,15 +888,27 @@ async function onAddOption({ row, field, label }) {
   }
 }
 
-async function addRow(preset = {}) {
+// 添加一行：按当前筛选条件预设初始值（让新记录能命中筛选而显示出来），groupPreset（组内「+」的分组值）优先；
+// 新记录按视图排序落位，翻到所在页并滚动选中它的第一个可见列
+async function addRow(groupPreset = {}) {
+  const preset = {
+    ...presetFromFilters({
+      conditions: panelConditions.value, conjunction: cfg.value.filters?.conjunction || 'and',
+      fields: resolvedFields.value, viewerId: me?.id ?? null, members: members.value, relationRows: relationRows.value,
+    }),
+    ...groupPreset,
+  }
   const r = await smartCreateRecord(tableId, { data: preset })
+  const newId = r.record.id
   undoStack.push({
     label: '添加行',
-    undo: async () => { await smartDeleteRecord(tableId, r.record.id); loadGrid(view.value?.id) },
+    undo: async () => { await smartDeleteRecord(tableId, newId); loadGrid(view.value?.id) },
     redo: async () => { await smartCreateRecord(tableId, { data: preset }); loadGrid(view.value?.id) },
   })
-  ElMessage.success('已添加一行')
-  loadGrid(view.value?.id)
+  await loadGrid(view.value?.id, { focusId: newId })
+  const shown = await gridRef.value?.focusRecord?.(newId)
+  if (shown === false) ElMessage.info('已添加一行，但它不符合当前筛选条件，暂未显示')
+  else ElMessage.success('已添加一行')
 }
 
 // 组内「+」行：带上该组全部分组条件的预设值（多级分组逐层下发）
@@ -869,7 +948,7 @@ async function doUndo() { await undoStack.undo() }
 async function doRedo() { await undoStack.redo() }
 
 function onKeydown(e) {
-  if (e.key === 'Escape') { activePanel.value = null; return }
+  if (e.key === 'Escape') { activePanel.value = null; if (findVisible.value) closeFind(); return }
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); doUndo() }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); doRedo() }
