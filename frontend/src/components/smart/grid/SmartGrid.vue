@@ -813,7 +813,20 @@ async function focusRecord(id, fieldName = null, { select = true } = {}) {
   return true
 }
 
+function firstFindMatchIndex(matches) {
+  const indices = new Map(matches.map((match, index) => [findCellKey(match.recordId, match.field), index]))
+  for (const row of gridRows.value) {
+    if (row.__rowType) continue
+    for (const field of visibleFields.value) {
+      const index = indices.get(findCellKey(row.id, field.field_name))
+      if (index !== undefined) return index
+    }
+  }
+  return -1
+}
+
 defineExpose({
+  firstFindMatchIndex,
   clearEditing: () => { editingCell.value = null; selectedCell.value = null; selectedCol.value = null; selectedGroupId.value = null },
   clearSelection: () => gridRef.value?.clearCheckboxRow?.(),
   focusRecord,

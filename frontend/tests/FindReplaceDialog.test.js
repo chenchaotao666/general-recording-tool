@@ -13,7 +13,7 @@ vi.mock('element-plus', () => ({
 
 const DialogStub = defineComponent({
   props: { modelValue: { type: Boolean, default: false } },
-  template: '<div v-if="modelValue" class="dialog-stub"><slot /><slot name="footer" /></div>',
+  template: '<div v-if="modelValue" class="dialog-stub el-dialog"><slot /><slot name="footer" /></div>',
 })
 
 const textMatch = (overrides = {}) => ({
@@ -25,9 +25,9 @@ const formulaMatch = (overrides = {}) => ({
   replaceable: false, blockedReason: 'type', ...overrides,
 })
 
-function mountDialog() {
+function mountDialog(props = {}) {
   return mount(FindReplaceDialog, {
-    props: { visible: true, tableId: 7 },
+    props: { visible: true, tableId: 7, ...props },
     global: { stubs: { 'el-dialog': DialogStub } },
   })
 }
@@ -153,4 +153,56 @@ test('网格查找 key 与当前项计算稳定', () => {
   expect(findMatchKeys(matches)).toEqual(new Set(['1::f_1', '2::f_2']))
   expect(currentFindKey(matches, 1)).toBe('2::f_2')
   expect(currentFindKey(matches, -1)).toBe('')
+})
+
+
+test('first search prefers the current page; repeated find advances and refresh still fetches', async () => {
+  const matches = [textMatch(), textMatch({ recordId: 8 }), textMatch({ recordId: 9 })]
+  smartSearchReplace.mockResolvedValue({ matches })
+  const wrapper = mountDialog({ firstMatchIndex: () => 1 })
+  await wrapper.get('.fr-expand').trigger('click')
+  await wrapper.get('.fr-find-input').setValue('first')
+  await button(wrapper, '\u67e5\u627e').trigger('click')
+  await flushPromises()
+  expect(wrapper.emitted('locate').at(-1)[0]).toEqual(matches[1])
+  await button(wrapper, '\u67e5\u627e').trigger('click')
+  expect(wrapper.emitted('locate').at(-1)[0]).toEqual(matches[2])
+  await button(wrapper, '\u67e5\u627e').trigger('click')
+  expect(wrapper.emitted('locate').at(-1)[0]).toEqual(matches[0])
+  expect(smartSearchReplace).toHaveBeenCalledTimes(1)
+  await wrapper.vm.refresh()
+  expect(smartSearchReplace).toHaveBeenCalledTimes(2)
+  await wrapper.get('.fr-find-input').setValue('second')
+  await button(wrapper, '\u67e5\u627e').trigger('click')
+  await flushPromises()
+  expect(smartSearchReplace).toHaveBeenLastCalledWith(7, { find: 'second' })
+  expect(wrapper.emitted('locate').at(-1)[0]).toEqual(matches[1])
+  wrapper.unmount()
+})
+
+test('search falls back to first result when current page has no match', async () => {
+  smartSearchReplace.mockResolvedValue({ matches: [textMatch()] })
+  const wrapper = mountDialog({ firstMatchIndex: () => -1 })
+  await runFind(wrapper)
+  expect(wrapper.emitted('highlight').at(-1)[0].currentIndex).toBe(0)
+  wrapper.unmount()
+})
+
+
+test('dragging the title moves the panel and stops on pointer release', async () => {
+  const wrapper = mountDialog()
+  const head = wrapper.get('.fr-head')
+  head.element.setPointerCapture = vi.fn()
+  wrapper.get('.el-dialog').element.getBoundingClientRect = () => ({ left: 100, top: 100, width: 400, height: 300 })
+  await head.trigger('pointerdown', { button: 0, pointerId: 1, clientX: 120, clientY: 120 })
+  await head.trigger('pointermove', { pointerId: 1, clientX: 200, clientY: 170 })
+  expect(wrapper.get('.el-dialog').element.style.left).toBe('180px')
+  expect(wrapper.get('.el-dialog').element.style.top).toBe('150px')
+  await head.trigger('pointerup', { pointerId: 1 })
+  await head.trigger('pointermove', { pointerId: 1, clientX: 300, clientY: 270 })
+  expect(wrapper.get('.el-dialog').element.style.left).toBe('180px')
+  await wrapper.setProps({ visible: false })
+  await wrapper.setProps({ visible: true })
+  expect(wrapper.get('.el-dialog').element.style.left).toBe('')
+  wrapper.unmount()
 })
