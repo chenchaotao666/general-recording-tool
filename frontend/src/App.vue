@@ -49,19 +49,6 @@
             <el-icon><Collection /></el-icon><span>用户组</span>
           </el-menu-item>
         </el-menu-item-group>
-        <!-- 多人协作管理仅企业空间需要（个人空间隐藏，设计文档 §0：个人版隐藏协作权限子系统） -->
-        <el-menu-item-group v-if="(user?.role === 'admin' && isEnterprise) || showAudit">
-          <template #title>管理</template>
-          <el-menu-item v-if="user?.role === 'admin' && isEnterprise" index="/members">
-            <el-icon><UserFilled /></el-icon><span>组织与成员</span>
-          </el-menu-item>
-          <el-menu-item v-if="user?.role === 'admin' && isEnterprise" index="/system/roles">
-            <el-icon><Avatar /></el-icon><span>角色管理</span>
-          </el-menu-item>
-          <el-menu-item v-if="showAudit" index="/audit">
-            <el-icon><Document /></el-icon><span>审计日志</span>
-          </el-menu-item>
-        </el-menu-item-group>
         <el-menu-item-group v-if="user?.is_platform_admin">
           <template #title>平台</template>
           <el-menu-item index="/platform/tenants">
@@ -78,9 +65,6 @@
           <template #title>账户</template>
           <el-menu-item v-if="hasMenu('menu_billing')" index="/billing">
             <el-icon><Wallet /></el-icon><span>套餐与用量</span>
-          </el-menu-item>
-          <el-menu-item v-if="user?.role === 'admin' && user?.tenant" index="/settings/basic">
-            <el-icon><OfficeBuilding /></el-icon><span>基础设置</span>
           </el-menu-item>
           <el-menu-item v-if="user?.is_platform_admin" index="/settings">
             <el-icon><Setting /></el-icon><span>集成设置</span>
@@ -102,16 +86,17 @@
           <el-badge :value="unread || ''" :max="99" class="bell-badge">
             <el-icon class="bell-icon" title="通知" @click="router.push('/notifications')"><Bell /></el-icon>
           </el-badge>
-          <el-select
-            v-if="user?.tenants?.length > 1"
-            :model-value="user.tenant?.id"
-            size="small"
-            class="tenant-switcher"
-            @change="switchWorkspace"
-          >
-            <el-option v-for="t in user.tenants" :key="t.id" :value="t.id" :label="t.name" />
-          </el-select>
-          <el-tag v-else-if="user?.tenant" size="small" effect="plain">{{ user.tenant.name }}</el-tag>
+          <el-dropdown trigger="click" @command="enterpriseCommand" @visible-change="refreshEnterprises">
+            <el-button text class="enterprise-trigger"><el-icon><OfficeBuilding /></el-icon><span>{{ user?.tenant?.type === 'personal' ? '个人空间' : user?.tenant?.name || '我的企业' }}</span><span>⌄</span></el-button>
+            <template #dropdown><el-dropdown-menu>
+              <el-dropdown-item v-for="t in user?.tenants || []" :key="t.id" :command="t.id" :disabled="t.id === user?.tenant?.id">
+                {{ t.id === user?.tenant?.id ? '✓ ' : '' }}{{ t.type === 'personal' ? '个人空间' : t.name }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="isEnterprise" divided command="current">我的企业 · 邀请同事</el-dropdown-item>
+              <el-dropdown-item divided command="create">＋ 新建企业</el-dropdown-item>
+              <el-dropdown-item command="join">加入企业</el-dropdown-item>
+            </el-dropdown-menu></template>
+          </el-dropdown>
           <el-tag v-if="planTag" :type="planTag.type" size="small">{{ planTag.text }}</el-tag>
           <el-dropdown>
             <span class="user-name">{{ user?.username || '用户' }}（{{ roleLabel }}）</span>
@@ -135,6 +120,7 @@
         title="订阅已过期，当前为只读状态；数据完整保留，续费后自动恢复"
       />
 
+      <EnterpriseDialog v-model="enterpriseVisible" :mode="enterpriseMode" @enter="enterEnterprise" @updated="enterpriseUpdated" />
       <!-- 修改密码（即时校验 + 强度提示） -->
       <el-dialog v-model="pwdVisible" title="修改密码" width="400px" destroy-on-close>
         <el-form ref="pwdFormRef" :model="pwdForm" :rules="pwdRules" label-width="80px" @submit.prevent>
@@ -173,9 +159,10 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElLoading, ElMessage } from 'element-plus'
-import { Avatar, Bell, Brush, Collection, Connection, DataAnalysis, Document, Expand, Fold, FullScreen, Grid, HomeFilled, Notebook, OfficeBuilding, Postcard, PriceTag, ScaleToOriginal, Setting, Share, Tickets, Upload, User, UserFilled, Wallet } from '@element-plus/icons-vue'
-import { changePassword as changePasswordApi, getCurrentTenant, switchTenant, unreadCount } from './api'
+import { Bell, Brush, Collection, Connection, DataAnalysis, Expand, Fold, FullScreen, Grid, HomeFilled, Notebook, OfficeBuilding, Postcard, PriceTag, ScaleToOriginal, Setting, Share, Tickets, Upload, User, Wallet } from '@element-plus/icons-vue'
+import { changePassword as changePasswordApi, getCurrentTenant, listMyTenants, switchTenant, unreadCount } from './api'
 import AssistantPanel from './components/AssistantPanel.vue'
+import EnterpriseDialog from './components/EnterpriseDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -217,9 +204,8 @@ const hasMenu = (code) => user.value?.role === 'admin'
   || !Array.isArray(user.value?.perms) || user.value.perms.includes(code)
 
 // 当前空间是否企业版（登录/切换空间 payload 里带 tenant.type，切换后页面会重载）
-const isEnterprise = computed(() => user.value?.tenant?.type === 'enterprise')
-const showAudit = computed(() => user.value?.role === 'admin' && user.value?.tenant && tenantInfo.value?.entitlements?.feature_audit)
-const roleLabel = computed(() => ({ admin: '管理员', vip: 'VIP', user: '普通用户' }[user.value?.role] || user.value?.role || '普通用户'))
+const isEnterprise = computed(() => ['enterprise', 'private'].includes(user.value?.tenant?.type))
+const roleLabel = computed(() => user.value?.role === 'admin' ? '管理员' : '成员')
 const planTag = computed(() => {
   const t = tenantInfo.value
   if (!t) return null
@@ -237,6 +223,33 @@ function logout() {
   router.push('/login')
 }
 
+const enterpriseVisible = ref(false)
+const enterpriseMode = ref('create')
+function enterpriseCommand(command) {
+  if (typeof command === 'number') return switchWorkspace(command)
+  enterpriseMode.value = command
+  enterpriseVisible.value = true
+}
+async function refreshEnterprises(open) {
+  if (!open || !user.value) return
+  try {
+    user.value.tenants = await listMyTenants()
+    localStorage.setItem('grt_user', JSON.stringify(user.value))
+  } catch (e) { ElMessage.error(e.message) }
+}
+function enterEnterprise(payload) {
+  localStorage.setItem('grt_user', JSON.stringify(payload))
+  localStorage.setItem('grt_tenant_id', payload.tenant.id)
+  sessionStorage.setItem('grt_tenant_picked', '1')
+  location.assign('/home')
+}
+function enterpriseUpdated(info) {
+  if (user.value?.tenant) user.value.tenant.name = info.name
+  const item = user.value?.tenants?.find(t => t.id === info.id)
+  if (item) item.name = info.name
+  localStorage.setItem('grt_user', JSON.stringify(user.value))
+  pollTenant()
+}
 async function switchWorkspace(tenantId) {
   let overlay = null
   try {
@@ -245,7 +258,8 @@ async function switchWorkspace(tenantId) {
     localStorage.setItem('grt_tenant_id', payload.tenant?.id || tenantId)
     // 整页 reload 前给过渡提示（reload 本身不可省：各页状态需要彻底重置）
     overlay = ElLoading.service({ text: `正在切换到「${payload.tenant?.name || '新空间'}」…`, background: 'rgba(255,255,255,.85)' })
-    location.reload()
+    sessionStorage.setItem('grt_tenant_picked', '1')
+    location.assign('/home')
   } catch (e) {
     overlay?.close()
     ElMessage.error(e.message)

@@ -9,8 +9,10 @@ from .config import settings
 from .database import Base, SessionLocal, engine
 from .routers import assistant, audit, auth, billing, departments, dyn, excel, friends, groups, home, images, mcp, members, mindmaps, notes, notify, platform, print_templates, rbac, reports, scopes, settings as settings_router, share_links, shares, smart_ai, smart_automation, smart_docs, smart_dashboard, smart_forms, smart_perms, smart_records, smart_views, tables, tenants, users, vision, whiteboards, workflows
 from .services import scheduler
+from .routers import enterprises
 from .services.migrate import run_migrations
 from .utils.auth import get_current_user, hash_password
+from .utils.context import require_platform_admin
 
 
 @asynccontextmanager
@@ -78,7 +80,7 @@ app.include_router(smart_forms.public_router)  # 智能表公开表单：分享�
 protected = [Depends(get_current_user)]
 app.include_router(users.router, dependencies=protected)
 app.include_router(images.router, dependencies=protected)
-app.include_router(rbac.router, dependencies=protected)
+app.include_router(rbac.router, dependencies=protected + [Depends(require_platform_admin)])  # 存量角色仅供平台维护
 app.include_router(groups.router, dependencies=protected)
 app.include_router(excel.router, dependencies=protected)
 app.include_router(tables.router, dependencies=protected)
@@ -101,11 +103,10 @@ app.include_router(friends.router, dependencies=protected)
 app.include_router(shares.router, dependencies=protected)
 app.include_router(settings_router.router, dependencies=protected)
 app.include_router(tenants.router, dependencies=protected)
+app.include_router(enterprises.router, dependencies=protected)
 app.include_router(members.router, dependencies=protected)
 app.include_router(platform.router, dependencies=protected)
-app.include_router(audit.router, dependencies=protected)
-app.include_router(departments.router, dependencies=protected)
-app.include_router(scopes.router, dependencies=protected)
+# 旧组织树、角色数据范围和审计查询页面已下线；保留底层记录及存量授权数据。
 app.include_router(billing.router, dependencies=protected)
 app.include_router(smart_docs.router, dependencies=protected)
 app.include_router(smart_views.router, dependencies=protected)

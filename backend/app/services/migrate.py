@@ -144,6 +144,10 @@ def _seed_rbac(conn) -> None:
 # ---------- 套餐种子（定价文档 §3/§4 的初始默认值；平台超管后台可改，此处不覆盖已有配置） ----------
 # (code, name, audience, price_monthly分, price_yearly分, sort, is_public, {entitlement_key: value(None=不限)})
 _PLAN_SEEDS = [
+    ("light_enterprise", "轻企业免费版", "enterprise", 0, 0, 19, False, {
+        "max_tables": 3, "max_rows": 5000, "max_storage_mb": 512, "max_seats": 20,
+        "quota_grace_days": 7, "sub_grace_days": 7,
+        "feature_print_templates": 1, "smart_ai_calls_monthly": 200}),
     ("free", "免费版", "individual", 0, 0, 10, True, {
         "max_tables": 3, "max_rows": 5000, "max_storage_mb": 512, "max_seats": 1,
         "quota_grace_days": 7, "sub_grace_days": 7,
@@ -426,6 +430,42 @@ def _migrate_v6_drop_vip_role(conn) -> None:
     print(f"[migrate] v6: vip 角色已删除（{n} 个成员回落为 user）", flush=True)
 
 
+def _migrate_v7_tenant_ids(conn) -> None:
+    """企业 ID 永不复用；同时跳过存量孤立引用，保留原数据供后续核查。"""
+    if conn.dialect.name != "sqlite":
+        return
+    inspector = inspect(conn)
+    high_water = conn.execute(text("SELECT COALESCE(MAX(id), 0) FROM tenants")).scalar()
+    quote = conn.dialect.identifier_preparer.quote
+    for table in inspector.get_table_names():
+        if any(c["name"] == "tenant_id" for c in inspector.get_columns(table)):
+            value = conn.execute(text(f"SELECT MAX(tenant_id) FROM {quote(table)}")).scalar()
+            high_water = max(high_water, value or 0)
+    ddl = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='tenants'")).scalar()
+    if "AUTOINCREMENT" not in ddl.upper():
+        conn.execute(text("""
+            CREATE TABLE tenants_v7 (
+                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(128) NOT NULL,
+                type VARCHAR(16),
+                owner_user_id INTEGER,
+                created_at DATETIME,
+                FOREIGN KEY(owner_user_id) REFERENCES users (id)
+            )
+        """))
+        conn.execute(text("INSERT INTO tenants_v7 (id, name, type, owner_user_id, created_at) "
+                          "SELECT id, name, type, owner_user_id, created_at FROM tenants"))
+        conn.execute(text("DROP TABLE tenants"))
+        conn.execute(text("ALTER TABLE tenants_v7 RENAME TO tenants"))
+    # 即便新库已有 AUTOINCREMENT，也要避开导入/清理遗留的 tenant_id。
+    seq = conn.execute(text("SELECT seq FROM sqlite_sequence WHERE name='tenants'")).scalar()
+    high_water = max(high_water, seq or 0)
+    if seq is None:
+        conn.execute(text("INSERT INTO sqlite_sequence(name, seq) VALUES ('tenants', :n)"), {"n": high_water})
+    else:
+        conn.execute(text("UPDATE sqlite_sequence SET seq=:n WHERE name='tenants'"), {"n": high_water})
+
+
 # (版本, 迁移函数)——已执行的版本记录在 schema_migrations，跳过
 _MIGRATIONS = [
     ("v2_tenants", _migrate_v2_tenants),
@@ -434,6 +474,7 @@ _MIGRATIONS = [
     ("v5_members_autoinc", _migrate_v5_members_autoinc),
     ("v5b_invite_notification_cleanup", _migrate_v5b_invite_notification_cleanup),
     ("v6_drop_vip_role", _migrate_v6_drop_vip_role),
+    ("v7_tenant_ids", _migrate_v7_tenant_ids),
 ]
 
 

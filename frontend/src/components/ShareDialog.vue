@@ -17,7 +17,7 @@
           <el-form-item v-if="shareForm.target_type === 'user'">
             <el-select
               v-model="shareForm.user_id" filterable remote :remote-method="searchShareable"
-              :loading="searching" placeholder="搜索好友/同组用户" style="width: 200px"
+              :loading="searching" placeholder="搜索企业同事 / 好友" style="width: 200px"
             >
               <el-option v-for="u in userOptions" :key="u.id" :label="u.username" :value="u.id" />
             </el-select>
@@ -37,7 +37,7 @@
           </el-form-item>
         </el-form>
         <div style="color: #909399; font-size: 12px; margin-bottom: 10px">
-          只能分享给好友或同组用户（左侧「好友」页可添加好友）；直发分享需对方接受后生效
+          可分享给企业同事、好友或同组用户；直发分享需对方接受后生效
         </div>
         <el-table :data="shares" size="small" border>
           <el-table-column label="对象" width="160">

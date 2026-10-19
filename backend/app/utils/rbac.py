@@ -6,6 +6,7 @@
 from sqlalchemy.orm import Session
 
 from ..models import Permission, Role, RolePermission, TenantMember, TenantRolePerm, User
+from ..services.tenancy import is_light_enterprise
 
 
 def tenant_role(db: Session, user: User, tenant_id: int | None) -> str | None:
@@ -37,6 +38,8 @@ def has_perm(db: Session, role_code: str | None, code: str,
         return True
     if not role_code:
         return False
+    if is_light_enterprise(db, tenant_id) and (code == "share" or code.startswith("menu_")):
+        return True
     role = resolve_role(db, role_code, tenant_id)
     perm = db.query(Permission).filter_by(code=code).first()
     if not role or not perm:
@@ -58,6 +61,8 @@ def role_perms(db: Session, role_code: str | None,
         return [c for (c,) in db.query(Permission.code).all()]
     if not role_code:
         return []
+    if is_light_enterprise(db, tenant_id):
+        return [c for (c,) in db.query(Permission.code).all() if c == "share" or c.startswith("menu_")]
     role = resolve_role(db, role_code, tenant_id)
     if not role:
         return []

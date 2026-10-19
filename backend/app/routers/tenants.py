@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import UsageCounter, User
+from ..models import UsageCounter, User, TenantMember
 from ..services.dyn_engine import log_audit
 from ..services.tenancy import my_tenants
 from ..utils.auth import get_current_user
@@ -26,6 +26,8 @@ def list_mine(db: Session = Depends(get_db), user: User = Depends(get_current_us
 @router.post("/switch")
 def switch(body: SwitchIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """切换工作空间：返回新租户下的 user payload，前端重存 grt_user / grt_tenant_id。"""
+    if not db.query(TenantMember).filter_by(tenant_id=body.tenant_id, user_id=user.id, status="active").first():
+        raise HTTPException(403, "不是该企业的成员")
     payload = _user_payload(db, user, tenant_id=body.tenant_id)
     if not payload["tenant"] or payload["tenant"]["id"] != body.tenant_id:
         raise HTTPException(403, "不是该工作空间的成员")

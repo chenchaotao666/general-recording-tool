@@ -21,6 +21,7 @@ from ..utils.access import TableAccess, get_table_access, require_table
 from ..utils.context import Context, get_current_context
 from ..utils.rbac import has_perm, tenant_role
 from .friends import is_friend, same_group
+from ..services.tenancy import is_light_enterprise, is_colleague
 
 router = APIRouter(prefix="/api/tables", tags=["tables"])
 
@@ -100,12 +101,18 @@ def list_tables(db: Session = Depends(get_db), ctx: Context = Depends(get_curren
             TableShare.status == "accepted",
         )
     ]
-    conds = [MetaTable.owner_id == user.id, MetaTable.id.in_(shared_ids or [-1])]
+    conds = [(MetaTable.owner_id == user.id) & (MetaTable.tenant_id == ctx.tenant.id), MetaTable.id.in_(shared_ids or [-1])]
     # 企业/私有化租户成员：本租户全部表默认可见（个人租户不放开，保持 owner+分享 现状）
-    if ctx.membership is not None and ctx.tenant.type in ("enterprise", "private"):
+    light = is_light_enterprise(db, ctx.tenant.id)
+    if ctx.is_tenant_admin or (ctx.membership is not None and ctx.tenant.type in ("enterprise", "private")):
         conds.append(MetaTable.tenant_id == ctx.tenant.id)
     q = db.query(MetaTable).filter(or_(*conds))
+    if light:
+        q = q.filter(MetaTable.tenant_id == ctx.tenant.id)
     rows = q.order_by(MetaTable.id.desc()).all()
+    if light:
+        from ..utils.access import _resolve_grant
+        rows = [t for t in rows if _resolve_grant(db, t.id, user, ctx) is not None]
     # P2 角色×表权限：can_view=False 的表对企业成员隐藏（表主/显式分享不受限，与 access 层口径一致）
     if (ctx.membership is not None and not ctx.is_tenant_admin
             and ctx.tenant.type in ("enterprise", "private")):
@@ -302,8 +309,9 @@ def put_share(table_id: int, payload: TableShareIn, db: Session = Depends(get_db
         if target.id == mt.owner_id:
             raise HTTPException(400, "不能分享给表主人")
         # 直发对象约束（admin 豁免）：只能分享给好友或同组用户
-        if not is_admin and not (is_friend(db, user.id, target.id) or same_group(db, user.id, target.id)):
-            raise HTTPException(403, "只能分享给好友或同组用户")
+        if not is_admin and not (is_friend(db, user.id, target.id) or same_group(db, user.id, target.id)
+                                 or (is_colleague(db, mt.tenant_id, user.id) and is_colleague(db, mt.tenant_id, target.id))):
+            raise HTTPException(403, "只能分享给企业同事、好友或同组用户")
         share = db.query(TableShare).filter_by(table_id=table_id, user_id=target.id).first()
         if not share:
             share = TableShare(table_id=table_id, user_id=target.id, shared_by=user.id, status="pending")

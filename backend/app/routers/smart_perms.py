@@ -177,6 +177,9 @@ def _field_meta(db: Session, e: SmartDocEntry) -> list[dict]:
 def entry_permission(entry_id: int, db: Session = Depends(get_db),
                      ctx: Context = Depends(get_current_context)):
     e = _get_entry(db, entry_id, ctx)
+    from ..services.tenancy import is_light_enterprise
+    if e.ref_table_id and is_light_enterprise(db, ctx.tenant.id):
+        get_table_access(db, e.ref_table_id, ctx.user, ctx)
     row = db.query(SmartEntryPermission).filter_by(entry_id=e.id).first()
     grants = (db.query(SmartGroupGrant).filter_by(entry_id=e.id).all())
     total = db.query(Record).filter_by(table_id=e.ref_table_id).count() if e.ref_table_id else 0
@@ -326,6 +329,9 @@ def put_grant(gid: int, entry_id: int, payload: dict, db: Session = Depends(get_
     if e.doc_id != g.doc_id:
         raise HTTPException(400, "条目不属于该文档")
     _require_entry_manager(db, e, ctx)
+    from ..services.tenancy import is_light_enterprise
+    if is_light_enterprise(db, ctx.tenant.id) and not db.query(SmartEntryPermission).filter_by(entry_id=e.id).first():
+        db.add(SmartEntryPermission(entry_id=e.id, base_profile=ps.level_profile("NONE"), updated_by=ctx.user.id))
     prof = ps.normalize_profile(payload.get("profile"), e.type)
     gr = db.query(SmartGroupGrant).filter_by(group_id=g.id, entry_id=e.id).first()
     if gr is None:

@@ -6,7 +6,6 @@ import Reports from '../views/Reports.vue'
 import Settings from '../views/Settings.vue'
 import Login from '../views/Login.vue'
 import UsersManage from '../views/UsersManage.vue'
-import RolesManage from '../views/RolesManage.vue'
 import GroupsManage from '../views/GroupsManage.vue'
 import Friends from '../views/Friends.vue'
 import TenantSelect from '../views/TenantSelect.vue'
@@ -15,6 +14,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: Login },
+    ...['/settings/basic', '/members', '/audit', '/system/roles'].map(path => ({ path, redirect: '/home' })),
     // 登录后选择公司（多工作空间账号）
     { path: '/select-tenant', component: TenantSelect },
     // 公开链接分享，免登录（懒加载隔离 echarts 体积）
@@ -63,13 +63,9 @@ const router = createRouter({
     { path: '/reports/:id/layout', component: () => import('../views/ReportLayoutDesigner.vue'), meta: { title: '报表设计器' } },
     { path: '/settings', component: Settings, meta: { platformAdmin: true, title: '集成设置' } },
     // 系统设置-基础设置：租户 admin 维护公司名称
-    { path: '/settings/basic', component: () => import('../views/BasicSettings.vue'), meta: { admin: true, title: '基础设置' } },
     { path: '/billing', component: () => import('../views/Billing.vue') , meta: { perm: 'menu_billing', title: '套餐与用量' } },
     { path: '/billing/upgrade', component: () => import('../views/Upgrade.vue'), meta: { admin: true, title: '升级套餐' } },
-    { path: '/members', component: () => import('../views/Members.vue'), meta: { admin: true, title: '组织与成员' } },
-    { path: '/audit', component: () => import('../views/AuditLogs.vue'), meta: { admin: true, title: '审计日志' } },
     { path: '/system/users', component: UsersManage, meta: { platformAdmin: true, title: '用户管理' } },
-    { path: '/system/roles', component: RolesManage, meta: { admin: true, title: '角色管理' } },   // 租户 admin 管本租户自定义角色；全局角色只读
     { path: '/platform/tenants', component: () => import('../views/PlatformTenants.vue'), meta: { platformAdmin: true, title: '平台租户' } },
     { path: '/platform/plans', component: () => import('../views/PlatformPlans.vue'), meta: { platformAdmin: true, title: '套餐配置' } },
     { path: '/system/groups', component: GroupsManage, meta: { perm: 'menu_groups', title: '用户组' } },   // 普通成员也可建组（只能加好友为成员）

@@ -45,6 +45,7 @@ def search_users(
     scope: str = Query(default="shareable"),   # shareable=好友+同组（选分享对象）；all=全站（加好友）
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    ctx: Context = Depends(get_current_context),
 ):
     """用户搜索：shareable=好友+同组（选分享对象）；all=全站（仅平台超管，加好友下拉用）。"""
     is_platform = bool(user.is_platform_admin)
@@ -63,7 +64,8 @@ def search_users(
             .filter(GroupMember.group_id.in_(my_groups or [-1]), GroupMember.user_id != user.id)
             .all()
         ] if my_groups else []
-        query = query.filter(User.id.in_(friend_ids + mate_ids or [-1]))
+        colleague_ids = [m.user_id for m in db.query(TenantMember).filter_by(tenant_id=ctx.tenant.id, status="active")]
+        query = query.filter(User.id.in_(friend_ids + mate_ids + colleague_ids or [-1]))
     elif scope != "all" and scope != "shareable":
         raise HTTPException(400, "scope 必须是 shareable 或 all")
     q = q.strip()

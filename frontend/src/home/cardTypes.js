@@ -37,13 +37,10 @@ export const MENU_ENTRIES = [
   { path: '/friends', title: '好友', icon: User, desc: '好友与分享' },
   { path: '/system/groups', title: '用户组', icon: UserFilled, desc: '用户组管理' },
   { path: '/billing', title: '套餐与用量', icon: Wallet, desc: '当前套餐与配额用量' },
-  { path: '/members', title: '成员', icon: UserFilled, desc: '工作空间成员（管理员）', adminOnly: true },
-  { path: '/audit', title: '审计日志', icon: Key, desc: '操作审计（管理员）', adminOnly: true },
   { path: '/settings', title: '设置', icon: Setting, desc: '实例设置（平台超管）', platformOnly: true },
   { path: '/platform/tenants', title: '平台租户', icon: User, desc: '租户与订阅（平台超管）', platformOnly: true },
   { path: '/platform/plans', title: '套餐配置', icon: Key, desc: '套餐与定价（平台超管）', platformOnly: true },
   { path: '/system/users', title: '用户管理', icon: User, desc: '系统用户（平台超管）', platformOnly: true },
-  { path: '/system/roles', title: '角色管理', icon: Avatar, desc: '角色与权限（平台超管）', platformOnly: true },
 ]
 
 export function menuEntriesFor(user) {

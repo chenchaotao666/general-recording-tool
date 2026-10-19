@@ -343,6 +343,22 @@ class Tenant(Base):
     owner_user_id = Column(Integer, ForeignKey("users.id"), index=True)
     created_at = Column(DateTime, default=datetime.now)
 
+    # 企业编号不复用，防止删除企业后的历史引用串到新企业。
+    __table_args__ = {"sqlite_autoincrement": True}
+
+
+class EnterpriseProfile(Base):
+    """轻企业资料；独立新表兼容已有租户，不改动存量企业的授权策略。"""
+    __tablename__ = "enterprise_profiles"
+
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), primary_key=True)
+    category = Column(String(32), default="企业")
+    industry = Column(String(64), default="")
+    size = Column(String(32), default="")
+    invite_code = Column(String(64), unique=True, index=True, nullable=False)
+    invite_expires_at = Column(DateTime, nullable=False)
+    lightweight = Column(Boolean, default=True, nullable=False)
+
 
 class TenantMember(Base):
     """租户成员关系：role 在此处（同一人可在 A 租户是 admin、B 租户是 user）"""

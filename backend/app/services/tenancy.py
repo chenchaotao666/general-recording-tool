@@ -4,7 +4,16 @@ from datetime import datetime
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from ..models import Plan, Subscription, Tenant, TenantMember, UsageCounter, User
+from ..models import EnterpriseProfile, Plan, Subscription, Tenant, TenantMember, UsageCounter, User
+
+
+def is_light_enterprise(db: Session, tenant_id: int | None) -> bool:
+    profile = db.get(EnterpriseProfile, tenant_id) if tenant_id else None
+    return bool(profile and profile.lightweight)
+
+
+def is_colleague(db: Session, tenant_id: int, user_id: int) -> bool:
+    return db.query(TenantMember).filter_by(tenant_id=tenant_id, user_id=user_id, status="active").first() is not None
 
 
 def create_tenant(db: Session, owner: User, name: str, type: str = "personal",

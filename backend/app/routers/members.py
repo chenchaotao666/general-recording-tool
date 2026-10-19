@@ -119,7 +119,6 @@ class OrgIn(BaseModel):
     manager_id: int | None = None
 
 
-@router.put("/{member_id}/org")
 def set_org(member_id: int, body: OrgIn, db: Session = Depends(get_db),
             ctx: Context = Depends(require_tenant_admin)):
     """挂靠组织：所属部门（本租户 enabled 部门）+ 直属上级（本租户成员，防环限深 10 层）。
@@ -159,7 +158,6 @@ def set_org(member_id: int, body: OrgIn, db: Session = Depends(get_db),
     return _out(db, m)
 
 
-@router.put("/{member_id}/role")
 def set_role(member_id: int, body: RoleIn, db: Session = Depends(get_db),
              ctx: Context = Depends(require_tenant_admin)):
     m = db.get(TenantMember, member_id)

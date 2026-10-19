@@ -16,6 +16,7 @@ from ..database import get_db
 from ..models import GroupMember, MetaTable, RoleTablePerm, TableShare, Tenant, TenantMember, User
 from .context import Context, get_current_context
 from .rbac import resolve_role, tenant_role
+from ..services.tenancy import is_light_enterprise
 
 PERM_ATTR = {"view": "can_view", "create": "can_create", "edit": "can_edit", "delete": "can_delete"}
 
@@ -80,10 +81,21 @@ def _resolve_grant(db: Session, table_id: int, user: User, ctx: Context | None =
             any(s.can_delete for s in shares),
             ctx, via="share",
         )
+    # 轻企业智能表：显式配置的全员/指定成员权限也是分享授权来源。
+    if is_light_enterprise(db, mt.tenant_id):
+        from ..models import SmartEntryPermission
+        from ..services import perm_service as ps
+        member = db.query(TenantMember).filter_by(tenant_id=mt.tenant_id, user_id=user.id, status="active").first()
+        entry = ps.entry_of_table(db, mt.id) if member else None
+        if entry and db.query(SmartEntryPermission).filter_by(entry_id=entry.id).first():
+            eff = ps.effective_for_entry(db, entry, user.id, False)
+            if eff.level != "NONE":
+                return TableAccess(mt, False, False, True, eff.can_add_record,
+                                   eff.level in ("EDIT", "FULL"), eff.can_delete_record, ctx, via="share")
     # 企业/私有化租户成员默认可见本租户全部表（P1 决策）；记录级由 scope 过滤。个人租户不进此分支。
     if mt.tenant_id is not None:
         tenant = db.get(Tenant, mt.tenant_id)
-        if tenant and tenant.type in ("enterprise", "private"):
+        if tenant and tenant.type in ("enterprise", "private") and not is_light_enterprise(db, mt.tenant_id):
             is_member = (ctx is not None and ctx.tenant.id == mt.tenant_id and ctx.membership is not None)                 or (ctx is None and db.query(TenantMember).filter_by(
                     tenant_id=mt.tenant_id, user_id=user.id, status="active").first())
             if is_member:

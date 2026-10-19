@@ -247,7 +247,11 @@ def user_groups(db: Session, doc_id: int, user_id: int) -> list[SmartPermGroup]:
 
 def base_profile_of(db: Session, entry: SmartDocEntry) -> dict:
     row = db.query(SmartEntryPermission).filter_by(entry_id=entry.id).first()
-    return normalize_profile(row.base_profile if row else {"level": "FULL"}, entry.type)
+    from ..models import SmartDoc
+    from .tenancy import is_light_enterprise
+    doc = db.get(SmartDoc, entry.doc_id)
+    default = "NONE" if entry.ref_table_id and doc and is_light_enterprise(db, doc.tenant_id) else "FULL"
+    return normalize_profile(row.base_profile if row else {"level": default}, entry.type)
 
 
 def effective_for_entry(db: Session, entry: SmartDocEntry | None, user_id: int, is_manager: bool,

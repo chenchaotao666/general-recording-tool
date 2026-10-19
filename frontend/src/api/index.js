@@ -56,6 +56,12 @@ export const switchTenant = (tenantId) => http.post('/tenants/switch', { tenant_
 export const getCurrentTenant = () => http.get('/tenants/current')
 export const updateCurrentTenant = (p) => http.put('/tenants/current', p)
 export const upgradeToEnterprise = () => http.post('/tenants/upgrade-to-enterprise')
+export const createEnterprise = (data) => http.post('/enterprises', data)
+export const getEnterprise = () => http.get('/enterprises/current')
+export const updateEnterprise = (data) => http.put('/enterprises/current', data)
+export const createEnterpriseInvitation = () => http.post('/enterprises/invitation')
+export const previewEnterprise = (code) => http.post('/enterprises/preview', { code })
+export const joinEnterprise = (code) => http.post('/enterprises/join', { code })
 
 // 成员管理（当前工作空间）
 export const listMembers = () => http.get('/members')

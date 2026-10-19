@@ -219,7 +219,7 @@ async function pay() {
     await payOrder(order.value.id)
     payVisible.value = false
     ElMessage.success('支付成功，套餐已生效')
-    // 个人空间刚升级为企业：引导设置公司名称（也可稍后在 系统设置 > 基础设置 修改）
+    // 个人空间刚升级为企业：引导设置公司名称（也可稍后在右上角企业信息中修改）
     if (selected.value?.audience === 'enterprise' && isPersonal.value) {
       try {
         const { value } = await ElMessageBox.prompt(
@@ -233,7 +233,7 @@ async function pay() {
           if (user.tenant && user.tenant.id === r.tenant.id) user.tenant.name = r.tenant.name
           localStorage.setItem('grt_user', JSON.stringify(user))
         }
-      } catch { /* 取消：稍后在基础设置里改 */ }
+      } catch { /* 取消：稍后在企业信息里改 */ }
     }
     router.push('/billing')
   } catch (e) {

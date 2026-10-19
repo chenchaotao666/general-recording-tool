@@ -82,6 +82,10 @@ def get_tree(doc_id: int, db: Session = Depends(get_db), ctx: Context = Depends(
     _get_doc(db, doc_id, ctx)
     rows = (db.query(SmartDocEntry).filter_by(doc_id=doc_id)
             .order_by(SmartDocEntry.order_no, SmartDocEntry.id).all())
+    from ..services.tenancy import is_light_enterprise
+    if is_light_enterprise(db, ctx.tenant.id):
+        from ..utils.access import _resolve_grant
+        rows = [e for e in rows if not e.ref_table_id or _resolve_grant(db, e.ref_table_id, ctx.user, ctx)]
     return {"doc_id": doc_id, "entries": [_entry_out(e) for e in rows]}
 
 
@@ -225,6 +229,11 @@ def update_entry(entry_id: int, payload: dict, db: Session = Depends(get_db),
                  ctx: Context = Depends(get_current_context)):
     """重命名 / 移入文件夹（防环）。"""
     e = _get_entry(db, entry_id, ctx)
+    from ..services.tenancy import is_light_enterprise
+    if e.ref_table_id and is_light_enterprise(db, ctx.tenant.id):
+        access = get_table_access(db, e.ref_table_id, ctx.user, ctx)
+        if not (access.is_owner or access.is_admin):
+            raise HTTPException(403, "仅创建者或企业管理员可调整表格名称和位置")
     if "name" in payload:
         nm = str(payload["name"] or "").strip()
         if not nm:
