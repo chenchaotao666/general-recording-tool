@@ -20,6 +20,7 @@ export const UI_ICONS = {
   'minus-circle': '<circle cx="8" cy="8" r="6.2"/><path d="M5 8h6"/>',
   pencil: '<path d="M9.7 3.2l3 3L6 13H3v-3z"/><path d="M8.6 4.4l3 3"/>',
   freeze: '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M2.5 6.2h11M6.2 6.2v7.3"/><path d="M4.3 8.6v3.4M2.6 10.3h3.4"/>',
+  unfreeze: '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M7.5 6.2h6M6.2 8v5.5M2 2l12 12"/>',
   eye: '<path d="M2.5 8S4.7 4.4 8 4.4 13.5 8 13.5 8 11.3 11.6 8 11.6 2.5 8 2.5 8z"/><circle cx="8" cy="8" r="1.8"/>',
   'eye-off': '<path d="M3 3l10 10"/><path d="M6.7 4.6A6.4 6.4 0 018 4.4c3.3 0 5.5 3.6 5.5 3.6a10.8 10.8 0 01-1.9 2.2M4.7 5.7A10 10 0 002.5 8s2.2 3.6 5.5 3.6c.8 0 1.5-.2 2.1-.5"/>',
   copy: '<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 00-1-1h-6a1 1 0 00-1 1v6a1 1 0 001 1h2"/>',

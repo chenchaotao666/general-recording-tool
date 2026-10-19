@@ -27,7 +27,7 @@ def _complete(cond: dict) -> bool:
     if isinstance(v, dict) and v.get("mode") == "exact":
         return bool(v.get("date"))   # 日期模式「具体日期」未选日期：不完整
     return not (v is None or v == "" or (isinstance(v, list) and not v))
-from ..utils.access import TableAccess, require_table
+from ..utils.access import TableAccess, require_table, get_table_access
 
 router = APIRouter(prefix="/api/smart", tags=["smart-records"])
 
@@ -75,6 +75,33 @@ def _effective(db: Session, access: TableAccess) -> perm_service.Effective:
 def _require_row_editable(eff, rec: dict, fields) -> None:
     if not eff.row_editable(rec, fields):
         raise HTTPException(403, "没有编辑这条记录的权限")
+
+
+def _search_relation_labels(db, fields, access):
+    labels = {}
+    for field in fields:
+        target = (field.options or {}).get("targetTableId")
+        if field.field_type != "relation" or not target or target in labels:
+            continue
+        labels[target] = {}
+        try:
+            target_access = get_table_access(db, target, access.ctx.user, access.ctx)
+            if not target_access.can_view:
+                continue
+            eff = _effective(db, target_access)
+        except HTTPException as exc:
+            if exc.status_code in (403, 404):
+                continue
+            raise
+        target_fields = get_meta_fields(db, target)
+        rights = eff.field_rights_map(target_fields)
+        readable = [f for f in target_fields if rights[f.field_name]["view"]]
+        label_field = next((f for f in readable if f.field_type == "text"), readable[0] if readable else None)
+        if label_field:
+            for row in json_store.all_dicts(db, target, target_fields, normalized=True):
+                if eff.managed or eff.row_viewable(row, target_fields):
+                    labels[target][str(row["id"])] = smart_format.display(db, label_field, row.get(label_field.field_name))
+    return labels
 
 
 @router.get("/tables/{table_id}/grid")
@@ -367,12 +394,8 @@ def search_replace(table_id: int, payload: dict, db: Session = Depends(get_db),
         raise HTTPException(403, "没有编辑该表格的权限")
     rights = eff.field_rights_map(fields)
     text_types = {"text", "url", "phone", "email", None, ""}
-    select_types = {"singleSelect", "multiSelect"}
-    # 搜索覆盖所有可查看的文本结果（包括公式等只读字段）；单选/多选存 optionId，按显示标签匹配。
-    # 是否可写逐项单独标记：选项内容本次只纳入查找，不做文本替换。
-    search_fields = [f for f in fields
-                     if (f.data_type in ("varchar", "text") or f.field_type in select_types)
-                     and rights[f.field_name]["view"]]
+    # 所有有查看权限的字段都参与查找；能否替换另行判断。
+    search_fields = [f for f in fields if rights[f.field_name]["view"]]
     recs = json_store.all_dicts(db, table_id, fields, normalized=False)
     editable_ids = set()
     if not eff.managed:
@@ -381,6 +404,25 @@ def search_replace(table_id: int, payload: dict, db: Session = Depends(get_db),
         editable_ids = {r["id"] for r in permission_recs if eff.row_editable(r, fields)}
         recs = [r for r in recs if r["id"] in visible]
 
+    # Use the grid's effective ordering so navigation wraps to the top of page one.
+    _, effective = _load_effective_view(db, table_id, payload.get("view_id"), access.ctx.user.id)
+    visible_fields = {f.field_name: f for f in fields if rights[f.field_name]["view"]}
+    order_rows = json_store.all_dicts(db, table_id, fields, normalized=True)
+    groups = [g for g in (effective.get("groups") or []) if g.get("fieldId") in visible_fields]
+    if groups:
+        order_rows = view_config.flatten_grouped(
+            order_rows, groups, visible_fields, effective.get("sorts"), effective.get("aggregations"))
+        order_rows = [r for r in order_rows if not r.get("__rowType")]
+    else:
+        order_rows = sort_records_multi(order_rows, effective.get("sorts"), visible_fields)
+    row_rank = {r["id"]: i for i, r in enumerate(order_rows)}
+    recs.sort(key=lambda r: row_rank.get(r["id"], len(row_rank)))
+    field_rank = {name: i for i, name in enumerate(effective.get("fieldOrder") or [])}
+    search_fields.sort(key=lambda f: field_rank.get(f.field_name, len(field_rank)))
+
+    _inject_system_and_lookup(db, search_fields, recs)
+    relation_labels = _search_relation_labels(db, search_fields, access)
+    display_cache = {}
     pattern = re.compile(re.escape(find), re.IGNORECASE)
     matches = []
     for r in recs:
@@ -388,19 +430,22 @@ def search_replace(table_id: int, payload: dict, db: Session = Depends(get_db),
         for f in search_fields:
             field_type = f.field_type or "text"
             raw_value = r.get(f.field_name)
-            v = (smart_format.display(db, f, raw_value)
-                 if field_type in select_types else raw_value)
-            if not isinstance(v, str) or not pattern.search(v):
+            v = smart_format.search_text(db, f, raw_value, display_cache)
+            if field_type == "relation" and raw_value is not None:
+                labels = relation_labels.get((f.options or {}).get("targetTableId"), {})
+                ids = raw_value if isinstance(raw_value, list) else [raw_value]
+                v = "、".join(labels.get(str(rid)) or f"#{rid}" for rid in ids)
+            if not pattern.search(v):
                 continue
             replaceable = (table_editable and row_editable and field_type in text_types
-                           and rights[f.field_name]["edit"])
+                           and isinstance(raw_value, str) and rights[f.field_name]["edit"])
             blocked_reason = None
-            if field_type in READONLY_TYPES or field_type not in text_types:
+            if field_type in READONLY_TYPES or field_type not in text_types or not isinstance(raw_value, str):
                 blocked_reason = "type"
             elif not replaceable:
                 blocked_reason = "permission"
             matches.append({"recordId": r["id"], "field": f.field_name,
-                            "fieldLabel": f.label, "fieldType": field_type, "value": v,
+                            "fieldLabel": f.label, "fieldType": field_type, "value": raw_value if replaceable else v,
                             "replaceable": replaceable, "blockedReason": blocked_reason})
 
     targets = []

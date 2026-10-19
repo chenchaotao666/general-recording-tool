@@ -166,8 +166,8 @@
                        :tables="allTables" :source-fields-of="loadFieldsOf"
                        @close="fieldDialog.visible = false" @save="onFieldSave"
                        @ai-tags="(f) => { fieldDialog.visible = false; Object.assign(aiTags, { visible: true, field: f }) }" />
-    <FindReplaceDialog ref="findDialogRef" :visible="findVisible" :table-id="tableId" :at="findAt"
-                       :first-match-index="matches => gridRef?.firstFindMatchIndex?.(matches)"
+    <FindReplaceDialog ref="findDialogRef" :visible="findVisible" :table-id="tableId" :view-id="view?.id" :at="findAt"
+                       :order-matches="matches => gridRef?.orderSearchMatches?.(matches) ?? matches"
                        @close="closeFind" @highlight="findHighlight = $event"
                        @locate="locateFindMatch" @replaced="onFindReplaced" />
 
@@ -267,19 +267,19 @@
           <div class="mi" @click="fieldAct('reminder')"><StIcon name="play-circle" :size="15" />内容变更时提醒</div>
           <!-- 底部图标快捷栏（对齐参照 表头-工具栏.png：副本/列宽/冻结/隐藏/删除，黑底 tooltip） -->
           <div class="fm-bar">
-            <el-tooltip content="创建副本" placement="top" :show-after="150">
+            <el-tooltip content="创建副本" placement="top" :show-after="150" :z-index="3100">
               <span class="fb-item" @click="fieldAct('duplicate')"><StIcon name="copy" :size="16" /></span>
             </el-tooltip>
-            <el-tooltip content="自动调整列宽" placement="top" :show-after="150">
+            <el-tooltip content="自动调整列宽" placement="top" :show-after="150" :z-index="3100">
               <span class="fb-item" @click="fieldAct('autoFit')"><StIcon name="autofit" :size="16" /></span>
             </el-tooltip>
-            <el-tooltip content="冻结至此列" placement="top" :show-after="150">
-              <span class="fb-item" @click="fieldAct('freeze')"><StIcon name="freeze" :size="16" /></span>
+            <el-tooltip :content="menuFieldFrozen ? '取消冻结' : '冻结至此列'" placement="top" :show-after="150" :z-index="3100">
+              <span class="fb-item" @click="fieldAct('freeze')"><StIcon :name="menuFieldFrozen ? 'unfreeze' : 'freeze'" :size="16" /></span>
             </el-tooltip>
-            <el-tooltip content="隐藏" placement="top" :show-after="150">
+            <el-tooltip content="隐藏" placement="top" :show-after="150" :z-index="3100">
               <span class="fb-item" @click="fieldAct('hide')"><StIcon name="eye-off" :size="16" /></span>
             </el-tooltip>
-            <el-tooltip content="删除" placement="top" :show-after="150">
+            <el-tooltip content="删除" placement="top" :show-after="150" :z-index="3100">
               <span class="fb-item" @click="fieldAct('delete')"><StIcon name="trash" :size="16" /></span>
             </el-tooltip>
           </div>
@@ -406,6 +406,7 @@ import { FIELD_REGISTRY, filterOpsOf, OP_LABELS, OPTION_COLORS, sortDirectionLab
 import { anchoredDialogAttrs, useNonModalOutsideClose } from '../../smart/utils/anchorDialog.js'
 import { isRuleComplete, isCondValueEmpty, createUndoStack } from '../../smart/utils/format.js'
 import { resolveRefOptions } from '../../smart/utils/refOptions.js'
+import { buildColumnLayout } from '../../smart/utils/columnLayout.js'
 import { presetFromFilters } from '../../smart/utils/newRowPreset.js'
 import {
   alterTable, getTable, listMembers, listTables,
@@ -1182,7 +1183,7 @@ async function fieldAct(cmd) {
     const sorts = (cfg.value.sorts || []).filter(s => s.fieldId !== f.field_name)
     sorts.push({ fieldId: f.field_name, direction: cmd === 'sortDesc' ? 'desc' : 'asc' })
     patchConfig({ sorts })
-  } else if (cmd === 'freeze') { fieldMenu.visible = false; patchConfig({ frozenFieldId: f.field_name }, { reload: false }) }
+  } else if (cmd === 'freeze') { fieldMenu.visible = false; patchConfig({ frozenFieldId: menuFieldFrozen.value ? null : f.field_name }, { reload: false }) }
   else if (cmd === 'hide') { fieldMenu.visible = false; patchConfig({ fieldVisibility: { ...(cfg.value.fieldVisibility || {}), [f.field_name]: false } }, { reload: false }) }
   else if (cmd === 'autoFit') { fieldMenu.visible = false; autoFitFields([f.field_name]) }
   else if (cmd === 'duplicate') { fieldMenu.visible = false; await smartDuplicateField(tableId, f.field_name); reloadMeta(); loadGrid(view.value?.id) }
@@ -1194,6 +1195,14 @@ async function fieldAct(cmd) {
 }
 
 // ================= V3：协作与智能 =================
+const menuFieldFrozen = computed(() => {
+  const order = new Map((cfg.value.fieldOrder || []).map((name, i) => [name, i]))
+  const visible = fields.value.filter(f => cfg.value.fieldVisibility?.[f.field_name] !== false)
+    .sort((a, b) => (order.get(a.field_name) ?? 999) - (order.get(b.field_name) ?? 999))
+  return buildColumnLayout(visible, columnGroups.value, cfg.value.frozenFieldId)
+    .some(n => n.fixed === 'left' && (n.isGroup ? n.fields : [n.field])
+      .some(f => f.field_name === fieldMenu.field?.field_name))
+})
 const menuIsSelect = computed(() => ['singleSelect', 'multiSelect'].includes(fieldMenu.field?.field_type))
 const menuIsSingleSelect = computed(() => fieldMenu.field?.field_type === 'singleSelect')
 const VIZ_CHARTS = [

@@ -3,7 +3,7 @@ import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { smartSearchReplace } from '../src/api/index.js'
-import { currentFindKey, findCellKey, findMatchKeys } from '../src/smart/utils/findReplace.js'
+import { currentFindKey, findCellKey, findMatchKeys, orderFindMatches } from '../src/smart/utils/findReplace.js'
 import FindReplaceDialog from '../src/components/smart/panels/FindReplaceDialog.vue'
 
 vi.mock('../src/api/index.js', () => ({ smartSearchReplace: vi.fn() }))
@@ -27,6 +27,7 @@ const formulaMatch = (overrides = {}) => ({
 
 function mountDialog(props = {}) {
   return mount(FindReplaceDialog, {
+    attachTo: document.body,
     props: { visible: true, tableId: 7, ...props },
     global: { stubs: { 'el-dialog': DialogStub } },
   })
@@ -159,12 +160,17 @@ test('网格查找 key 与当前项计算稳定', () => {
 test('first search prefers the current page; repeated find advances and refresh still fetches', async () => {
   const matches = [textMatch(), textMatch({ recordId: 8 }), textMatch({ recordId: 9 })]
   smartSearchReplace.mockResolvedValue({ matches })
-  const wrapper = mountDialog({ firstMatchIndex: () => 1 })
+  const wrapper = mountDialog({ orderMatches: results => orderFindMatches(results, [{ id: 8 }, { id: 9 }], [{ field_name: 'f_1' }]) })
   await wrapper.get('.fr-expand').trigger('click')
   await wrapper.get('.fr-find-input').setValue('first')
   await button(wrapper, '\u67e5\u627e').trigger('click')
   await flushPromises()
   expect(wrapper.emitted('locate').at(-1)[0]).toEqual(matches[1])
+  expect(wrapper.find('.fr-count').text()).toBe('1/3')
+  await wrapper.get('[aria-label="\u4e0b\u4e00\u4e2a"]').trigger('click')
+  expect(wrapper.find('.fr-count').text()).toBe('2/3')
+  expect(wrapper.emitted('locate').at(-1)[0]).toEqual(matches[2])
+  await wrapper.get('[aria-label="\u4e0a\u4e00\u4e2a"]').trigger('click')
   await button(wrapper, '\u67e5\u627e').trigger('click')
   expect(wrapper.emitted('locate').at(-1)[0]).toEqual(matches[2])
   await button(wrapper, '\u67e5\u627e').trigger('click')
@@ -182,7 +188,7 @@ test('first search prefers the current page; repeated find advances and refresh 
 
 test('search falls back to first result when current page has no match', async () => {
   smartSearchReplace.mockResolvedValue({ matches: [textMatch()] })
-  const wrapper = mountDialog({ firstMatchIndex: () => -1 })
+  const wrapper = mountDialog({ orderMatches: results => orderFindMatches(results, [{ id: 99 }], [{ field_name: 'f_1' }]) })
   await runFind(wrapper)
   expect(wrapper.emitted('highlight').at(-1)[0].currentIndex).toBe(0)
   wrapper.unmount()
@@ -205,4 +211,47 @@ test('dragging the title moves the panel and stops on pointer release', async ()
   await wrapper.setProps({ visible: true })
   expect(wrapper.get('.el-dialog').element.style.left).toBe('')
   wrapper.unmount()
+})
+
+
+test('matches follow displayed rows and columns before off-page or hidden results', () => {
+  const matches = [
+    textMatch({ recordId: 99 }), textMatch({ recordId: 2, field: 'b' }),
+    textMatch({ recordId: 1, field: 'a' }), textMatch({ recordId: 2, field: 'a' }),
+    textMatch({ recordId: 1, field: 'hidden' }), textMatch({ recordId: 1, field: 'b' }),
+  ]
+  const ordered = orderFindMatches(matches,
+    [{ id: 99, __rowType: 'group' }, { id: 1 }, { id: 2 }],
+    [{ field_name: 'b' }, { field_name: 'a' }])
+  expect(ordered).toEqual([matches[5], matches[2], matches[1], matches[3], matches[0], matches[4]])
+  expect(matches[0].recordId).toBe(99)
+})
+
+
+test('Enter keeps input focus while searching and advances again after the response', async () => {
+  let resolveSearch
+  smartSearchReplace.mockReturnValue(new Promise(resolve => { resolveSearch = resolve }))
+  const wrapper = mountDialog({ viewId: 12 })
+  const input = wrapper.get('.fr-find-input')
+  await input.setValue('needle')
+  input.element.focus()
+  await input.trigger('keydown', { key: 'Enter' })
+  expect(document.activeElement).toBe(input.element)
+  expect(input.element.disabled).toBe(false)
+  expect(input.element.readOnly).toBe(true)
+  resolveSearch({ matches: [textMatch(), textMatch({ recordId: 2 })] })
+  await flushPromises()
+  expect(smartSearchReplace).toHaveBeenCalledWith(7, { find: 'needle', view_id: 12 })
+  expect(document.activeElement).toBe(input.element)
+  expect(input.element.readOnly).toBe(false)
+  await input.trigger('keydown', { key: 'Enter' })
+  expect(wrapper.find('.fr-count').text()).toBe('2/2')
+  expect(smartSearchReplace).toHaveBeenCalledTimes(1)
+  wrapper.unmount()
+})
+
+test('starting on page two continues to page three then wraps to the top of page one', () => {
+  const matches = [6, 5, 4, 3, 2, 1].map(recordId => textMatch({ recordId }))
+  expect(orderFindMatches(matches, [{ id: 4 }, { id: 3 }], [{ field_name: 'f_1' }])
+    .map(m => m.recordId)).toEqual([4, 3, 2, 1, 6, 5])
 })

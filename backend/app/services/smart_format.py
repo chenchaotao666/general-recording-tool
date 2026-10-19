@@ -4,6 +4,9 @@
 """
 from __future__ import annotations
 
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
+
 from sqlalchemy.orm import Session
 
 from ..models import User
@@ -71,3 +74,56 @@ def record_text(db: Session, fields: list, record: dict, only: list[str] | None 
         if v:
             lines.append(f"{f.label}：{v}")
     return "\n".join(lines)
+
+
+def search_text(db: Session, field, value, cache: dict | None = None) -> str:
+    """Search both readable labels and formatted numeric/date values shown in cells."""
+    text = display(db, field, value, cache)
+    if value is None or value == "" or value == []:
+        return text
+    cfg = field.options or {}
+    ft = getattr(field, "field_type", None) or "text"
+    if ft == "ai":
+        ft = cfg.get("outputType", "text")
+    formatted = text
+    if ft in ("date", "createdTime", "lastModifiedTime"):
+        try:
+            d = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            date_format = cfg.get("format", "yyyy-MM-dd")
+            dates = {
+                "yyyy-MM-dd": f"{d.year:04}-{d.month:02}-{d.day:02}",
+                "yyyy/MM/dd": f"{d.year}/{d.month}/{d.day}",
+                "yyyy年M月d日": f"{d.year}年{d.month}月{d.day}日",
+            }
+            base = date_format.removesuffix(" HH:mm")
+            formatted = dates.get(base, text[:16 if cfg.get("includeTime") else 10])
+            if date_format.endswith(" HH:mm"):
+                formatted += f" {d.hour:02}:{d.minute:02}"
+        except (ValueError, TypeError):
+            pass
+    elif ft in ("number", "currency", "percent", "progress"):
+        try:
+            number = Decimal(str(value))
+            precision = cfg.get("precision", 2 if ft == "currency" else "default")
+            if ft == "progress" and cfg.get("numberFormat") == "percent":
+                limits = cfg.get("range") or {"min": 0, "max": 100}
+                number = (number - Decimal(str(limits["min"]))) / (Decimal(str(limits["max"])) - Decimal(str(limits["min"]))) * 100
+            separator = "," if cfg.get("thousandSeparator", ft == "currency") else ""
+            if precision is not None and precision != "default":
+                formatted = format(number, f"{separator}.{int(precision)}f")
+            else:
+                formatted = format(number, f"{separator}f")
+            if ft == "currency":
+                formatted = str(cfg.get("currencySymbol") or "￥") + formatted
+            elif ft == "percent" or (ft == "progress" and cfg.get("numberFormat") == "percent"):
+                formatted += "%"
+        except (ValueError, TypeError, InvalidOperation, ZeroDivisionError):
+            pass
+    elif ft == "url" and isinstance(value, dict):
+        formatted = str(value.get("url") or "")
+    elif ft == "image":
+        values = value if isinstance(value, list) else [value]
+        formatted = "、".join(str(v.get("name") or v.get("id") or "") if isinstance(v, dict) else str(v) for v in values)
+    elif ft == "checkbox" and value in (True, 1, "1", "true"):
+        formatted = "✓"
+    return text if formatted == text else f"{formatted}\n{text}"

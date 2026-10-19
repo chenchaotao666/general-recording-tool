@@ -39,7 +39,7 @@
       @checkbox-change="onCheckChange"
     >
       <vxe-column type="checkbox" width="36" fixed="left" align="center" header-align="center" class-name="col-ck" header-class-name="col-ck" />
-      <vxe-column width="52" fixed="left" title="#" align="center" header-align="center" class-name="col-no" header-class-name="col-no">
+      <vxe-column width="52" fixed="left" title="#" :params="{ rowNumber: true }" align="center" header-align="center" class-name="col-no" header-class-name="col-no">
         <template #default="{ row }">
           <span v-if="row.__rowType === 'group'" class="group-toggle" @click.stop="$emit('toggle-group', row.key)">
             {{ collapsedGroups.has(row.key) ? '▸' : '▾' }}
@@ -54,7 +54,7 @@
 
       <!-- 编组（两级表头）+ 散列字段列（key 带 colSig：列序变化时重挂载以触发 vxe 重注册） -->
       <template v-for="node in headerTree" :key="`${node.key}:${colSig}`">
-        <vxe-colgroup v-if="node.isGroup" :title="node.name" header-align="center" :params="{ group: node.group }">
+        <vxe-colgroup v-if="node.isGroup" :title="node.name" :fixed="node.fixed" header-align="center" :params="{ group: node.group }">
           <template #header>
             <span class="colgroup-title" :title="node.name">
               <span class="cg-name">{{ node.name }}</span>
@@ -63,7 +63,7 @@
           </template>
           <vxe-column v-for="f in node.fields" :key="f.field_name" :field="f.field_name"
                       :width="colWidths[f.field_name] || 160"
-                      :fixed="isFrozen(f.field_name) ? 'left' : undefined">
+                      :fixed="node.fixed">
             <template #header><FieldHeader :field="f" :view="view" :lines="1" :readonly="readonly" :menu-open="menuField === f.field_name"
                          @filter="(r) => $emit('field-filter', f, r)" @menu="(e) => $emit('field-menu', f, e)" /></template>
             <template #default="{ row }"><CellSlot :row="row" :field="f" /></template>
@@ -71,7 +71,7 @@
           </vxe-column>
         </vxe-colgroup>
         <vxe-column v-else :field="node.field.field_name" :width="colWidths[node.field.field_name] || 160"
-                    :fixed="isFrozen(node.field.field_name) ? 'left' : undefined">
+                    :fixed="node.fixed">
           <template #header><FieldHeader :field="node.field" :view="view" :lines="hasColGroups ? 3 : 2" :readonly="readonly" :menu-open="menuField === node.field.field_name"
                        @filter="(r) => $emit('field-filter', node.field, r)" @menu="(e) => $emit('field-menu', node.field, e)" /></template>
           <template #default="{ row }"><CellSlot :row="row" :field="node.field" /></template>
@@ -114,7 +114,8 @@ import { isDisplayCell, visibleCellRect } from '../../../smart/utils/vxeCell.js'
 import StIcon from '../icons/StIcon.vue'
 import { BLOCKED_CONFIGURABLE, BLOCKED_EDIT_TEXT, regOf, sortDirectionLabels, STAT_LABELS, formatStatValue, optionColor } from '../../../smart/registry/fieldRegistry.js'
 import { evalFillRules, evalRowFill, headerFillColor } from '../../../smart/utils/format.js'
-import { currentFindKey, findCellKey, findMatchKeys } from '../../../smart/utils/findReplace.js'
+import { buildColumnLayout } from '../../../smart/utils/columnLayout.js'
+import { currentFindKey, findCellKey, findMatchKeys, orderFindMatches } from '../../../smart/utils/findReplace.js'
 
 const props = defineProps({
   fields: { type: Array, default: () => [] },
@@ -167,26 +168,12 @@ const visibleFields = computed(() => {
 
 // 列序签名：vxe 的列注册（assembleColumn）只在列组件挂载时按 DOM 位次进行——
 // v-for 同 key 重排不会重注册，列序变更不生效。把签名并入 key，顺序一变整列重挂载强制重注册
-const colSig = computed(() => visibleFields.value.map(f => f.field_name).join(','))
-
-// 两级表头：编组节点 + 散列字段（保持相对顺序，编组内字段聚合到组下）
-const headerTree = computed(() => {
-  const groups = props.columnGroups.filter(g => (g.field_names || []).length)
-  const inGroup = new Set(groups.flatMap(g => g.field_names))
-  const nodes = []
-  const emittedGroups = new Set()
-  for (const f of visibleFields.value) {
-    const g = groups.find(x => x.field_names.includes(f.field_name))
-    if (!g) {
-      nodes.push({ key: f.field_name, isGroup: false, field: f })
-    } else if (!emittedGroups.has(g.id)) {
-      emittedGroups.add(g.id)
-      nodes.push({ key: `g_${g.id}`, isGroup: true, name: g.name, group: g,
-                   fields: visibleFields.value.filter(x => g.field_names.includes(x.field_name)) })
-    }
-  }
-  return nodes
-})
+const headerTree = computed(() => buildColumnLayout(
+  visibleFields.value, props.columnGroups, viewConfig.value.frozenFieldId))
+const displayedFields = computed(() => headerTree.value.flatMap(n => n.isGroup ? n.fields : [n.field]))
+const colSig = computed(() => JSON.stringify(headerTree.value.map(n => [
+  n.key, n.fixed, n.isGroup ? n.fields.map(f => f.field_name) : n.field.field_name,
+])))
 
 // 表头行高（参照 表头样式.png）：无编组单层 56px（字段名可放 2 行）；
 // 有编组每层 44px——编组内字段 1 行，散列字段纵跨两层 88px 可放 3 行。放不下才省略
@@ -219,14 +206,16 @@ const selectedGroupId = ref(null)   // 编组 id
 const selectedColNames = computed(() => {
   if (selectedCol.value) return [selectedCol.value]
   if (selectedGroupId.value == null) return []
-  return headerTree.value.find(n => n.isGroup && n.group.id === selectedGroupId.value)?.fields.map(f => f.field_name) || []
+  return headerTree.value.filter(n => n.isGroup && n.group.id === selectedGroupId.value)
+    .flatMap(n => n.fields.map(f => f.field_name))
 })
 // 选中范围内的列：返回其需要画的左/右边框（整组只在首列画左边、末列画右边），不在范围内返回 null
 function selEdges(fieldName) {
   const names = selectedColNames.value
   const i = fieldName ? names.indexOf(fieldName) : -1
   if (i < 0) return null
-  return [...(i === 0 ? ['sel-l'] : []), ...(i === names.length - 1 ? ['sel-r'] : [])]
+  return [...(i === 0 || isFrozen(names[i - 1]) !== isFrozen(fieldName) ? ['sel-l'] : []),
+    ...(i === names.length - 1 || isFrozen(names[i + 1]) !== isFrozen(fieldName) ? ['sel-r'] : [])]
 }
 function clearColSelection() {
   if (!selectedCol.value && selectedGroupId.value == null) return
@@ -355,14 +344,8 @@ function onAiBtnRun(scope) {
   else emit('ai-run', b.field, scope)
 }
 
-const isFrozen = (name) => {
-  const fz = viewConfig.value.frozenFieldId
-  if (!fz) return false
-  const list = visibleFields.value.map(f => f.field_name)
-  const idx = list.indexOf(fz)
-  const mine = list.indexOf(name)
-  return idx >= 0 && mine >= 0 && mine <= idx
-}
+const isFrozen = (name) => headerTree.value.some(n => n.fixed === 'left'
+  && (n.isGroup ? n.fields.some(f => f.field_name === name) : n.field.field_name === name))
 
 // 行序列：折叠分组过滤 + 树形缩进标记 + 行号（添加一行入口在统计行左侧「＋」，不再虚拟数据行）；
 // 每个展开组的末尾插一条 group-add 伪行（组内「+」添加，带全部分组条件预设）
@@ -443,6 +426,7 @@ const rowFills = computed(() => {
 })
 
 const searchMatchKeys = computed(() => findMatchKeys(props.searchMatches))
+const searchRowIds = computed(() => new Set(props.searchMatches.map(m => m.recordId)))
 const searchActiveKey = computed(() => currentFindKey(props.searchMatches, props.searchCurrentIndex))
 watch([searchMatchKeys, searchActiveKey], () => gridRef.value?.refreshColumn?.())
 
@@ -451,6 +435,7 @@ function cellClass({ row, column }) {
   if (!row.__rowType) {
     const key = findCellKey(row.id, column.field)
     if (searchMatchKeys.value.has(key)) cls.push('cell-search-match')
+    if (column.params?.rowNumber && searchRowIds.value.has(row.id)) cls.push('cell-search-match')
     if (searchActiveKey.value === key) cls.push('cell-search-active')
   }
   if (!row.__rowType && row.__indent > 0 && column.field === visibleFields.value[0]?.field_name) {
@@ -605,7 +590,8 @@ function groupValueNodes(row) {
 // 填色在 td 级着底色（整格铺满，企微式）
 function cellFillStyle({ row, column }) {
   if (!row || row.__rowType) return null
-  if (searchMatchKeys.value.has(findCellKey(row.id, column.field))) return { backgroundColor: '#FFFCEB' }
+  if (searchMatchKeys.value.has(findCellKey(row.id, column.field))
+      || (column.params?.rowNumber && searchRowIds.value.has(row.id))) return { backgroundColor: '#FFFCEB' }
   const f = props.fields.find(x => x.field_name === column.field)
   if (!f) return null
   const fill = evalFillRules(fillRules.value, f, row[f.field_name]) || rowFills.value.get(row.__key) || null
@@ -808,25 +794,20 @@ async function focusRecord(id, fieldName = null, { select = true } = {}) {
     selectedCell.value = null
   }
   const col = f ? gridRef.value?.getColumnByField?.(f.field_name) : null
-  await gridRef.value?.scrollToRow?.(row, col || undefined)
-  gridRef.value?.refreshColumn?.()   // cell-class-name 只在渲染周期重算：手动触发选中框/搜索高亮重绘
+  await gridRef.value?.refreshColumn?.()
+  await gridRef.value?.scrollToRow?.(row)
+  // 等行和虚拟列布局稳定后横向定位，避免重绘恢复旧滚动位置。
+  await nextTick()
+  if (col) await gridRef.value?.scrollToColumn?.(col, { colAlign: true })
   return true
 }
 
-function firstFindMatchIndex(matches) {
-  const indices = new Map(matches.map((match, index) => [findCellKey(match.recordId, match.field), index]))
-  for (const row of gridRows.value) {
-    if (row.__rowType) continue
-    for (const field of visibleFields.value) {
-      const index = indices.get(findCellKey(row.id, field.field_name))
-      if (index !== undefined) return index
-    }
-  }
-  return -1
+function orderSearchMatches(matches) {
+  return orderFindMatches(matches, gridRows.value, displayedFields.value)
 }
 
 defineExpose({
-  firstFindMatchIndex,
+  orderSearchMatches,
   clearEditing: () => { editingCell.value = null; selectedCell.value = null; selectedCol.value = null; selectedGroupId.value = null },
   clearSelection: () => gridRef.value?.clearCheckboxRow?.(),
   focusRecord,
@@ -1021,6 +1002,15 @@ defineExpose({
 .smart-vxe :deep(.vxe-footer--column.tf-col-selected)::before {
   content: ''; position: absolute; inset: 0; pointer-events: none; background: rgba(46, 107, 230, .08); }
 .smart-vxe :deep(.vxe-header--column.th-col-selected)::before { background: rgba(46, 107, 230, .105); }
+/* 顶边在表格外框内侧单独绘制，避免第一行表头的 inset 阴影被外框盖住。 */
+.smart-vxe :deep(.vxe-header--column.th-col-selected.sel-t) {
+  --cs-t: 0 0 0 0 transparent;
+}
+.smart-vxe :deep(.vxe-header--column.th-col-selected.sel-t)::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: var(--st-primary); z-index: 2; pointer-events: none;
+}
+.smart-vxe :deep(.vxe-header--row:first-child .vxe-header--column.th-col-selected.sel-t)::after { top: 1px; }
 .smart-vxe :deep(.vxe-header--column.th-col-selected:hover) { background-color: #fff; }   /* 不叠表头 hover 灰（表头填色是内联样式，不受影响） */
 /* 编组组头：标题居中，下拉钉在右侧 */
 :deep(.colgroup-title) { display: flex; align-items: center; justify-content: center; position: relative; width: 100%; min-height: 22px; }

@@ -14,7 +14,7 @@
       <div class="fr-find-wrap">
         <input ref="findInputRef" v-model="find" class="fr-input fr-find-input"
                :class="{ 'has-nav': searched }" placeholder="输入查找内容"
-               :disabled="busy" @input="onFindInput" @keydown.enter.prevent="onFindEnter" />
+               :readonly="busy" @input="onFindInput" @keydown.enter.prevent="onFindEnter" />
         <div v-if="searched" class="fr-nav" aria-label="查找结果导航">
           <button type="button" aria-label="上一个" :disabled="!matches.length || busy" @click="findPrev">
             <StIcon name="back" :size="14" />
@@ -72,8 +72,9 @@ import StIcon from '../icons/StIcon.vue'
 const props = defineProps({
   visible: Boolean,
   tableId: Number,
+  viewId: Number,
   at: { type: Object, default: null },
-  firstMatchIndex: { type: Function, default: null },
+  orderMatches: { type: Function, default: null },
 })
 const emit = defineEmits(['close', 'replaced', 'highlight', 'locate'])
 
@@ -174,17 +175,14 @@ function onFindInput() {
 async function refreshMatches(seq, { preservePosition = false, message = null } = {}) {
   const oldIndex = currentIndex.value
   const oldKey = matchKey(currentMatch.value)
-  const res = await smartSearchReplace(props.tableId, { find: find.value })
+  const res = await smartSearchReplace(props.tableId, { find: find.value, ...(props.viewId ? { view_id: props.viewId } : {}) })
   if (seq !== requestSeq || !props.visible) return false
 
-  const nextMatches = Array.isArray(res.matches) ? res.matches : []
+  const results = Array.isArray(res.matches) ? res.matches : []
+  const nextMatches = props.orderMatches ? props.orderMatches(results) : results
   matches.value = nextMatches
   searched.value = true
   let nextIndex = nextMatches.length ? 0 : -1
-  if (!preservePosition && nextMatches.length) {
-    const preferred = props.firstMatchIndex?.(nextMatches)
-    if (Number.isInteger(preferred) && preferred >= 0 && preferred < nextMatches.length) nextIndex = preferred
-  }
   if (preservePosition && nextMatches.length) {
     const sameIndex = oldKey ? nextMatches.findIndex(m => matchKey(m) === oldKey) : -1
     nextIndex = sameIndex >= 0 ? sameIndex : Math.min(Math.max(oldIndex, 0), nextMatches.length - 1)
@@ -306,7 +304,7 @@ defineExpose({ refresh: refreshSearch })
 
 <style scoped>
 .fr-panel { display: flex; flex-direction: column; color: #1F2329; }
-.fr-head { cursor: move; touch-action: none; user-select: none; display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.fr-head { cursor: move; touch-action: none; user-select: none; display: flex; align-items: center; justify-content: space-between; margin: 0 -20px 12px; padding: 12px 20px 0; }
 .fr-title { font-size: 18px; line-height: 26px; font-weight: 500; }
 .fr-close { width: 28px; height: 28px; padding: 0; border: 0; background: transparent; color: #646A73; cursor: pointer; display: grid; place-items: center; }
 .fr-close:hover { color: #1F2329; }
@@ -320,7 +318,7 @@ defineExpose({ refresh: refreshSearch })
 .fr-nav button { width: 16px; height: 24px; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; display: grid; place-items: center; }
 .fr-nav button:disabled { opacity: .4; cursor: not-allowed; }
 .fr-count { min-width: 38px; color: #1F2329; font-size: 14px; text-align: center; }
-.fr-expand { align-self: center; display: flex; align-items: center; gap: 4px; margin-top: 16px; padding: 0; border: 0; background: transparent; color: #1F2329; font-size: 14px; cursor: pointer; }
+.fr-expand { align-self: center; display: flex; align-items: center; gap: 4px; margin-top: 10px; padding: 0; border: 0; background: transparent; color: #1F2329; font-size: 14px; cursor: pointer; }
 .fr-label { margin: 16px 0 8px; font-size: 14px; line-height: 22px; }
 .fr-ops { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 22px; }
 .fr-replace-ops { display: flex; gap: 12px; }
@@ -335,10 +333,11 @@ defineExpose({ refresh: refreshSearch })
 </style>
 
 <style>
-.smart-find-dialog { position: fixed; margin: 0; max-width: calc(100vw - 24px); border-radius: 8px; box-shadow: 0 8px 30px rgba(31, 35, 41, .14); }
+.smart-find-dialog { padding: 0; position: fixed; margin: 0; max-width: calc(100vw - 24px); border-radius: 8px; box-shadow: 0 8px 30px rgba(31, 35, 41, .14); }
 .smart-find-dialog:not(.st-at-dialog) { top: 148px; right: 16px; }
 .smart-find-dialog.st-at-dialog { right: auto; }
-.smart-find-dialog .el-dialog__body { padding: 20px 24px 22px; }
+.smart-find-dialog .el-dialog__header { display: none; }
+.smart-find-dialog .el-dialog__body { padding: 0 20px 12px; }
 .fr-confirm { border-radius: 10px; }
 .fr-confirm .el-dialog__header { padding: 20px 24px 12px; }
 .fr-confirm .el-dialog__title { color: #1F2329; font-size: 18px; font-weight: 600; }
@@ -346,6 +345,6 @@ defineExpose({ refresh: refreshSearch })
 .fr-confirm .el-dialog__footer { padding: 0 24px 20px; }
 @media (max-width: 520px) {
   .smart-find-dialog { right: 12px; }
-  .smart-find-dialog .el-dialog__body { padding-right: 18px; padding-left: 18px; }
+  .smart-find-dialog .el-dialog__body { padding-right: 20px; padding-left: 20px; }
 }
 </style>
