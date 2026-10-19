@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Note, User
 from ..utils.auth import get_current_user
+from ..utils.context import Context, get_current_context
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
 
@@ -155,19 +156,19 @@ class NoteIn(BaseModel):
     sort: int | None = None
 
 
-def _get_own(db: Session, note_id: int, user: User) -> Note:
+def _get_own(db: Session, note_id: int, ctx: Context) -> Note:
     n = db.get(Note, note_id)
-    if not n or n.user_id != user.id:
+    if not n or n.user_id != ctx.user.id or n.tenant_id != ctx.tenant.id:
         raise HTTPException(404, "页面不存在")
     return n
 
 
-def _depth(db: Session, note: Note, user: User) -> int:
+def _depth(db: Session, note: Note, ctx: Context) -> int:
     """页面层级深度（顶级 = 1）。"""
     d, cur = 1, note
     while cur.parent_id and d <= MAX_DEPTH + 1:
         cur = db.get(Note, cur.parent_id)
-        if not cur or cur.user_id != user.id:
+        if not cur or cur.user_id != ctx.user.id or cur.tenant_id != ctx.tenant.id:
             break
         d += 1
     return d
@@ -188,10 +189,10 @@ def _out(n: Note, with_content: bool = False) -> dict:
 
 
 @router.get("/tree")
-def note_tree(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def note_tree(db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
     """全部页面（扁平列表，前端组装树）：置顶在前，其余按同级 sort + 更新时间排序。"""
     rows = (
-        db.query(Note).filter(Note.user_id == user.id)
+        db.query(Note).filter(Note.user_id == ctx.user.id, Note.tenant_id == ctx.tenant.id)
         .order_by(Note.pinned.desc(), Note.sort.asc(), Note.updated_at.desc())
         .all()
     )
@@ -200,12 +201,12 @@ def note_tree(db: Session = Depends(get_db), user: User = Depends(get_current_us
 
 @router.get("/search")
 def search_notes(keyword: str = Query("", max_length=100), db: Session = Depends(get_db),
-                 user: User = Depends(get_current_user)):
+                 ctx: Context = Depends(get_current_context)):
     kw = (keyword or "").strip()
     if not kw:
         return {"notes": []}
     rows = (
-        db.query(Note).filter(Note.user_id == user.id)
+        db.query(Note).filter(Note.user_id == ctx.user.id, Note.tenant_id == ctx.tenant.id)
         .order_by(Note.pinned.desc(), Note.updated_at.desc())
         .all()
     )
@@ -216,15 +217,16 @@ def search_notes(keyword: str = Query("", max_length=100), db: Session = Depends
 
 
 @router.post("")
-def create_note(payload: NoteIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_note(payload: NoteIn, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
     kind = "folder" if payload.kind == "folder" else "page"
     parent = None
     if payload.parent_id:
-        parent = _get_own(db, payload.parent_id, user)
-        if _depth(db, parent, user) >= MAX_DEPTH:
+        parent = _get_own(db, payload.parent_id, ctx)
+        if _depth(db, parent, ctx) >= MAX_DEPTH:
             raise HTTPException(400, f"页面最多嵌套 {MAX_DEPTH} 层")
     n = Note(
-        user_id=user.id,
+        user_id=ctx.user.id,
+        tenant_id=ctx.tenant.id,
         parent_id=parent.id if parent else None,
         kind=kind,
         title=(payload.title or ("未命名文件夹" if kind == "folder" else ""))[:200],
@@ -237,20 +239,20 @@ def create_note(payload: NoteIn, db: Session = Depends(get_db), user: User = Dep
 
 
 @router.get("/{note_id}")
-def get_note(note_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return _out(_get_own(db, note_id, user), with_content=True)
+def get_note(note_id: int, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    return _out(_get_own(db, note_id, ctx), with_content=True)
 
 
 @router.put("/{note_id}")
-def update_note(note_id: int, payload: NoteIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    n = _get_own(db, note_id, user)
+def update_note(note_id: int, payload: NoteIn, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    n = _get_own(db, note_id, ctx)
     if payload.title is not None:
         n.title = payload.title[:200]
     if payload.content is not None:
         n.content_html = _clean_html(payload.content)
         db.flush()  # 拿到 n.id 用于图片归属（理论上已有，防御性）
         from ..services import images
-        images.sync_note_images(db, n.id, n.content_html, uploader_id=user.id)
+        images.sync_note_images(db, n.id, n.content_html, uploader_id=ctx.user.id)
     if payload.pinned is not None:
         n.pinned = payload.pinned
     if payload.sort is not None:
@@ -261,7 +263,7 @@ def update_note(note_id: int, payload: NoteIn, db: Session = Depends(get_db), us
         else:
             if payload.parent_id == n.id:
                 raise HTTPException(400, "不能把页面移到自己下面")
-            parent = _get_own(db, payload.parent_id, user)
+            parent = _get_own(db, payload.parent_id, ctx)
             # 不能移到自己的子孙页下面（成环）
             cur, guard = parent, 0
             while cur and guard <= MAX_DEPTH + 2:
@@ -269,7 +271,7 @@ def update_note(note_id: int, payload: NoteIn, db: Session = Depends(get_db), us
                     raise HTTPException(400, "不能把页面移到自己的子页面下面")
                 cur = db.get(Note, cur.parent_id) if cur.parent_id else None
                 guard += 1
-            if _depth(db, parent, user) >= MAX_DEPTH:
+            if _depth(db, parent, ctx) >= MAX_DEPTH:
                 raise HTTPException(400, f"页面最多嵌套 {MAX_DEPTH} 层")
             n.parent_id = parent.id
     db.commit()
@@ -277,9 +279,10 @@ def update_note(note_id: int, payload: NoteIn, db: Session = Depends(get_db), us
 
 
 @router.delete("/{note_id}")
-def delete_note(note_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    n = _get_own(db, note_id, user)
-    has_child = db.query(Note).filter(Note.parent_id == n.id, Note.user_id == user.id).first()
+def delete_note(note_id: int, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    n = _get_own(db, note_id, ctx)
+    has_child = db.query(Note).filter(Note.parent_id == n.id, Note.user_id == ctx.user.id,
+                                      Note.tenant_id == ctx.tenant.id).first()
     if has_child:
         if n.kind == "folder":
             raise HTTPException(400, "文件夹非空，请先移出或删除其中的内容")

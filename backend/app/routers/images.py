@@ -32,7 +32,8 @@ async def upload_image(files: list[UploadFile], db: Session = Depends(get_db),
 
 
 @router.get("/image/{file_id}")
-def read_image(file_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def read_image(file_id: str, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    user = ctx.user
     row, path = None, None
     try:
         row, path = images.get_image(db, file_id)
@@ -43,7 +44,7 @@ def read_image(file_id: str, db: Session = Depends(get_db), user: User = Depends
         if row.note_id:
             from ..models import Note
             note = db.get(Note, row.note_id)
-            if not note or note.user_id != user.id:
+            if not note or note.user_id != user.id or note.tenant_id != ctx.tenant.id:
                 raise HTTPException(404, "图片不存在")  # 笔记严格私有，他人不可读
         elif not row.table_id:
             raise HTTPException(404, "图片不存在")

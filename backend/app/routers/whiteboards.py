@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import User, Whiteboard
 from ..utils.auth import get_current_user
+from ..utils.context import Context, get_current_context
 
 router = APIRouter(prefix="/api/whiteboards", tags=["whiteboards"])
 
@@ -43,19 +44,19 @@ def _clean_content(raw: str) -> str:
     return raw
 
 
-def _get_own(db: Session, wb_id: int, user: User) -> Whiteboard:
+def _get_own(db: Session, wb_id: int, ctx: Context) -> Whiteboard:
     w = db.get(Whiteboard, wb_id)
-    if not w or w.user_id != user.id:
+    if not w or w.user_id != ctx.user.id or w.tenant_id != ctx.tenant.id:
         raise HTTPException(404, "画板不存在")
     return w
 
 
-def _depth(db: Session, wb: Whiteboard, user: User) -> int:
+def _depth(db: Session, wb: Whiteboard, ctx: Context) -> int:
     """页面层级深度（顶级 = 1）。"""
     d, cur = 1, wb
     while cur.parent_id and d <= MAX_DEPTH + 1:
         cur = db.get(Whiteboard, cur.parent_id)
-        if not cur or cur.user_id != user.id:
+        if not cur or cur.user_id != ctx.user.id or cur.tenant_id != ctx.tenant.id:
             break
         d += 1
     return d
@@ -77,10 +78,10 @@ def _out(w: Whiteboard, with_content: bool = False) -> dict:
 
 
 @router.get("/tree")
-def whiteboard_tree(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def whiteboard_tree(db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
     """全部画板（扁平列表，前端组装树）：置顶在前，其余按同级 sort + 更新时间排序。"""
     rows = (
-        db.query(Whiteboard).filter(Whiteboard.user_id == user.id)
+        db.query(Whiteboard).filter(Whiteboard.user_id == ctx.user.id, Whiteboard.tenant_id == ctx.tenant.id)
         .order_by(Whiteboard.pinned.desc(), Whiteboard.sort.asc(), Whiteboard.updated_at.desc())
         .all()
     )
@@ -89,13 +90,13 @@ def whiteboard_tree(db: Session = Depends(get_db), user: User = Depends(get_curr
 
 @router.get("/search")
 def search_whiteboards(keyword: str = Query("", max_length=100), db: Session = Depends(get_db),
-                       user: User = Depends(get_current_user)):
+                       ctx: Context = Depends(get_current_context)):
     """标题模糊匹配（画布是 JSON，不做正文匹配）。"""
     kw = (keyword or "").strip()
     if not kw:
         return {"whiteboards": []}
     rows = (
-        db.query(Whiteboard).filter(Whiteboard.user_id == user.id)
+        db.query(Whiteboard).filter(Whiteboard.user_id == ctx.user.id, Whiteboard.tenant_id == ctx.tenant.id)
         .order_by(Whiteboard.pinned.desc(), Whiteboard.updated_at.desc())
         .all()
     )
@@ -104,18 +105,19 @@ def search_whiteboards(keyword: str = Query("", max_length=100), db: Session = D
 
 
 @router.post("")
-def create_whiteboard(payload: WhiteboardIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_whiteboard(payload: WhiteboardIn, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
     kind = "folder" if payload.kind == "folder" else "page"
     engine = (payload.engine or "excalidraw").lower()
     if kind == "page" and engine not in ENGINES:
         raise HTTPException(400, f"不支持的画板引擎：{engine}")
     parent = None
     if payload.parent_id:
-        parent = _get_own(db, payload.parent_id, user)
-        if _depth(db, parent, user) >= MAX_DEPTH:
+        parent = _get_own(db, payload.parent_id, ctx)
+        if _depth(db, parent, ctx) >= MAX_DEPTH:
             raise HTTPException(400, f"画板最多嵌套 {MAX_DEPTH} 层")
     w = Whiteboard(
-        user_id=user.id,
+        user_id=ctx.user.id,
+        tenant_id=ctx.tenant.id,
         parent_id=parent.id if parent else None,
         kind=kind,
         title=(payload.title or ("未命名文件夹" if kind == "folder" else ""))[:200],
@@ -150,14 +152,14 @@ def generate_content_api(payload: GenerateIn, db: Session = Depends(get_db),
 
 
 @router.get("/{wb_id}")
-def get_whiteboard(wb_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return _out(_get_own(db, wb_id, user), with_content=True)
+def get_whiteboard(wb_id: int, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    return _out(_get_own(db, wb_id, ctx), with_content=True)
 
 
 @router.put("/{wb_id}")
 def update_whiteboard(wb_id: int, payload: WhiteboardIn, db: Session = Depends(get_db),
-                      user: User = Depends(get_current_user)):
-    w = _get_own(db, wb_id, user)
+                      ctx: Context = Depends(get_current_context)):
+    w = _get_own(db, wb_id, ctx)
     if payload.title is not None:
         w.title = payload.title[:200]
     if payload.content is not None:
@@ -172,7 +174,7 @@ def update_whiteboard(wb_id: int, payload: WhiteboardIn, db: Session = Depends(g
         else:
             if payload.parent_id == w.id:
                 raise HTTPException(400, "不能把画板移到自己下面")
-            parent = _get_own(db, payload.parent_id, user)
+            parent = _get_own(db, payload.parent_id, ctx)
             # 不能移到自己的子孙页下面（成环）
             cur, guard = parent, 0
             while cur and guard <= MAX_DEPTH + 2:
@@ -180,7 +182,7 @@ def update_whiteboard(wb_id: int, payload: WhiteboardIn, db: Session = Depends(g
                     raise HTTPException(400, "不能把画板移到自己的子页面下面")
                 cur = db.get(Whiteboard, cur.parent_id) if cur.parent_id else None
                 guard += 1
-            if _depth(db, parent, user) >= MAX_DEPTH:
+            if _depth(db, parent, ctx) >= MAX_DEPTH:
                 raise HTTPException(400, f"画板最多嵌套 {MAX_DEPTH} 层")
             w.parent_id = parent.id
     db.commit()
@@ -188,9 +190,10 @@ def update_whiteboard(wb_id: int, payload: WhiteboardIn, db: Session = Depends(g
 
 
 @router.delete("/{wb_id}")
-def delete_whiteboard(wb_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    w = _get_own(db, wb_id, user)
-    has_child = db.query(Whiteboard).filter(Whiteboard.parent_id == w.id, Whiteboard.user_id == user.id).first()
+def delete_whiteboard(wb_id: int, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    w = _get_own(db, wb_id, ctx)
+    has_child = db.query(Whiteboard).filter(Whiteboard.parent_id == w.id, Whiteboard.user_id == ctx.user.id,
+                                            Whiteboard.tenant_id == ctx.tenant.id).first()
     if has_child:
         if w.kind == "folder":
             raise HTTPException(400, "文件夹非空，请先移出或删除其中的内容")

@@ -648,7 +648,8 @@ def _seed_demo_data(db: Session, table_id: int, user: User, count: int = DEMO_DA
     return count
 
 
-def install_template(db: Session, user: User, key: str, with_demo_data: bool = False) -> dict:
+def install_template(db: Session, user: User, key: str, with_demo_data: bool = False,
+                     tenant_id: int | None = None) -> dict:
     tpl = next((t for t in TEMPLATES if t["key"] == key), None)
     if not tpl:
         raise WorkflowError("模板不存在")
@@ -657,7 +658,7 @@ def install_template(db: Session, user: User, key: str, with_demo_data: bool = F
 
     from .. import entitlement
     from ..tenancy import default_tenant_id
-    tid = default_tenant_id(db, user)
+    tid = tenant_id or default_tenant_id(db, user)
     entitlement.assert_tenant_writable(db, tid)
 
     notes = []

@@ -544,6 +544,7 @@ class Note(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（仅本人可见，admin 也不例外）
+    tenant_id = Column(Integer, index=True)   # 归属租户：个人空间与各企业相互隔离
     parent_id = Column(Integer, ForeignKey("notes.id"), nullable=True, index=True)  # 父页面，可空=顶级
     kind = Column(String(16), default="page")    # page / folder（文件夹仅作目录分组，无内容）
     title = Column(String(200), default="")
@@ -561,6 +562,7 @@ class Whiteboard(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 归属用户（仅本人可见，admin 也不例外）
+    tenant_id = Column(Integer, index=True)   # 归属租户：个人空间与各企业相互隔离
     parent_id = Column(Integer, ForeignKey("whiteboards.id"), nullable=True, index=True)  # 父页面，可空=顶级
     kind = Column(String(16), default="page")    # page / folder（文件夹仅作目录分组，无内容）
     title = Column(String(200), default="")

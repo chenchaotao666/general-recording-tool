@@ -70,6 +70,9 @@ _NEW_COLUMNS = [
     # 智能表 V3：AI 单元格状态表的配额计量列（早期建的表缺这两列，网格查询会 500）
     ("smart_ai_runs", "tenant_id", "INTEGER"),
     ("smart_ai_runs", "billable", "BOOLEAN DEFAULT 0"),
+    # 记事本/画板：按租户隔离（个人空间与各企业各自一份数据）
+    ("notes", "tenant_id", "INTEGER"),
+    ("whiteboards", "tenant_id", "INTEGER"),
 ]
 
 
@@ -466,6 +469,28 @@ def _migrate_v7_tenant_ids(conn) -> None:
         conn.execute(text("UPDATE sqlite_sequence SET seq=:n WHERE name='tenants'"), {"n": high_water})
 
 
+def _migrate_v8_workspace_data(conn) -> None:
+    """记事本/画板按租户隔离：存量数据回填到归属人的个人租户（无个人租户则取首个 active 租户，
+    与 services.tenancy.default_tenant_id 口径一致）。"""
+    for table in ("notes", "whiteboards"):
+        conn.execute(text(
+            f"UPDATE {table} SET tenant_id = ("
+            "  SELECT tm.tenant_id FROM tenant_members tm"
+            "  JOIN tenants t ON t.id = tm.tenant_id"
+            f"  WHERE tm.user_id = {table}.user_id AND tm.status = 'active' AND t.type = 'personal'"
+            "  ORDER BY tm.id LIMIT 1"
+            ") WHERE tenant_id IS NULL AND user_id IS NOT NULL"
+        ))
+        conn.execute(text(
+            f"UPDATE {table} SET tenant_id = ("
+            "  SELECT tm.tenant_id FROM tenant_members tm"
+            f"  WHERE tm.user_id = {table}.user_id AND tm.status = 'active'"
+            "  ORDER BY tm.id LIMIT 1"
+            ") WHERE tenant_id IS NULL AND user_id IS NOT NULL"
+        ))
+    print("[migrate] v8: notes / whiteboards tenant_id 回填完成", flush=True)
+
+
 # (版本, 迁移函数)——已执行的版本记录在 schema_migrations，跳过
 _MIGRATIONS = [
     ("v2_tenants", _migrate_v2_tenants),
@@ -475,6 +500,7 @@ _MIGRATIONS = [
     ("v5b_invite_notification_cleanup", _migrate_v5b_invite_notification_cleanup),
     ("v6_drop_vip_role", _migrate_v6_drop_vip_role),
     ("v7_tenant_ids", _migrate_v7_tenant_ids),
+    ("v8_workspace_data", _migrate_v8_workspace_data),
 ]
 
 

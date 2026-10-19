@@ -16,6 +16,7 @@ from ..services.workflow.registry import get_node_types
 from ..services.workflow.template import jsonable
 from ..utils.access import check_owner_or_admin
 from ..utils.auth import get_current_user
+from ..utils.context import Context, get_current_context
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 public_router = APIRouter(prefix="/api/workflows", tags=["workflows-public"])
@@ -45,20 +46,22 @@ class InstallIn(BaseModel):
 
 @templates_router.post("/{key}/install")
 def install_workflow_template(key: str, payload: InstallIn | None = None,
-                              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+                              db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
     """一键安装模板：自动建表（或复用同名表）→ 生成工作流（默认停用）→ 跳画布确认。"""
     from ..services.workflow.templates import install_template
     try:
-        return install_template(db, user, key, with_demo_data=(payload or InstallIn()).with_demo_data)
+        return install_template(db, ctx.user, key, with_demo_data=(payload or InstallIn()).with_demo_data,
+                                tenant_id=ctx.tenant.id)
     except WorkflowError as e:
         raise HTTPException(400, str(e))
 
 
-def _get_own(db: Session, wf_id: int, user: User) -> Workflow:
+def _get_own(db: Session, wf_id: int, ctx: Context) -> Workflow:
+    """按当前工作空间取工作流：跨租户的一律 404（不泄露存在性），再校验归属/管理员。"""
     wf = db.get(Workflow, wf_id)
-    if not wf:
+    if not wf or wf.tenant_id != ctx.tenant.id:
         raise HTTPException(404, "工作流不存在")
-    check_owner_or_admin(wf.user_id, user, db, wf.tenant_id)
+    check_owner_or_admin(wf.user_id, ctx.user, db, wf.tenant_id)
     return wf
 
 
@@ -102,14 +105,16 @@ def node_types(user: User = Depends(get_current_user)):
 
 
 @router.get("/pending-approvals")
-def pending_approvals(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """我的待办审批：全部 waiting 状态审批节点中，我是审批人/归属人（admin 全量）的清单。
+def pending_approvals(db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    """我的待办审批：当前工作空间内 waiting 状态审批节点中，我是审批人/归属人（admin 全量）的清单。
     注意必须声明在 GET /{wf_id} 之前，否则 "pending-approvals" 会被当作 wf_id 匹配。"""
+    user = ctx.user
     rows = (
         db.query(WorkflowNodeRun, WorkflowRun, Workflow)
         .join(WorkflowRun, WorkflowNodeRun.run_id == WorkflowRun.id)
         .join(Workflow, WorkflowRun.workflow_id == Workflow.id)
-        .filter(WorkflowNodeRun.node_type == "approval", WorkflowNodeRun.status == "waiting")
+        .filter(WorkflowNodeRun.node_type == "approval", WorkflowNodeRun.status == "waiting",
+                Workflow.tenant_id == ctx.tenant.id)
         .order_by(WorkflowNodeRun.id.desc())
         .limit(100)
         .all()
@@ -118,8 +123,7 @@ def pending_approvals(db: Session = Depends(get_db), user: User = Depends(get_cu
     for nr, run, wf in rows:
         approvers = ((nr.output_json or {}).get("approval") or {}).get("approver_user_ids") or [wf.user_id]
         # 工作流所属租户的 admin 可见全量（跨租户不可见）
-        from ..utils.rbac import tenant_role
-        is_admin = tenant_role(db, user, wf.tenant_id) == "admin"
+        is_admin = ctx.is_tenant_admin
         if not is_admin and user.id not in approvers and user.id != wf.user_id:
             continue
         ap = (nr.output_json or {}).get("approval") or {}
@@ -167,35 +171,36 @@ def ai_node_config(payload: AiNodeConfigIn, db: Session = Depends(get_db), user:
 
 
 @router.post("/{wf_id}/ai-explain")
-def ai_explain(wf_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def ai_explain(wf_id: int, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
     """AI 流程解读：3-5 句大白话说明这个工作流在干什么（接手别人的流程时用）。"""
-    wf = _get_own(db, wf_id, user)
+    wf = _get_own(db, wf_id, ctx)
     from ..services.workflow.ai_assist import explain_workflow
     try:
-        return explain_workflow(db, user, wf)
+        return explain_workflow(db, ctx.user, wf)
     except Exception as e:
         raise HTTPException(400, f"解读失败：{e}")
 
 
 @router.get("")
-def list_workflows(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    rows = db.query(Workflow).filter(Workflow.user_id == user.id).order_by(Workflow.id.desc()).all()
+def list_workflows(db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    rows = (db.query(Workflow)
+            .filter(Workflow.user_id == ctx.user.id, Workflow.tenant_id == ctx.tenant.id)
+            .order_by(Workflow.id.desc()).all())
     return [_out(db, w) for w in rows]
 
 
 @router.post("")
-def create_workflow(payload: WorkflowIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_workflow(payload: WorkflowIn, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
     trigger = dict(payload.trigger or {"type": "manual"})
     if not payload.draft:
         try:
-            engine.validate_definition(db, trigger, payload.nodes, payload.edges, user)
+            engine.validate_definition(db, trigger, payload.nodes, payload.edges, ctx.user)
         except WorkflowError as e:
             raise HTTPException(400, str(e))
     if trigger.get("type") in ("webhook", "form") and not trigger.get("secret"):
         trigger["secret"] = uuid.uuid4().hex
-    from ..services.tenancy import default_tenant_id
     wf = Workflow(
-        user_id=user.id, tenant_id=default_tenant_id(db, user),
+        user_id=ctx.user.id, tenant_id=ctx.tenant.id,
         name=payload.name, description=payload.description,
         enabled=payload.enabled, trigger_json=trigger,
         nodes_json=payload.nodes, edges_json=payload.edges,
@@ -208,17 +213,17 @@ def create_workflow(payload: WorkflowIn, db: Session = Depends(get_db), user: Us
 
 
 @router.get("/{wf_id}")
-def get_workflow(wf_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return _out(db, _get_own(db, wf_id, user))
+def get_workflow(wf_id: int, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    return _out(db, _get_own(db, wf_id, ctx))
 
 
 @router.put("/{wf_id}")
-def update_workflow(wf_id: int, payload: WorkflowIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    wf = _get_own(db, wf_id, user)
+def update_workflow(wf_id: int, payload: WorkflowIn, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    wf = _get_own(db, wf_id, ctx)
     trigger = dict(payload.trigger or {"type": "manual"})
     if not payload.draft:
         try:
-            engine.validate_definition(db, trigger, payload.nodes, payload.edges, user)
+            engine.validate_definition(db, trigger, payload.nodes, payload.edges, ctx.user)
         except WorkflowError as e:
             raise HTTPException(400, str(e))
     if trigger.get("type") in ("webhook", "form") and not trigger.get("secret"):
@@ -232,8 +237,8 @@ def update_workflow(wf_id: int, payload: WorkflowIn, db: Session = Depends(get_d
 
 
 @router.delete("/{wf_id}")
-def delete_workflow(wf_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    wf = _get_own(db, wf_id, user)
+def delete_workflow(wf_id: int, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    wf = _get_own(db, wf_id, ctx)
     db.delete(wf)
     db.commit()
     sched.reload_jobs()
@@ -241,8 +246,8 @@ def delete_workflow(wf_id: int, db: Session = Depends(get_db), user: User = Depe
 
 
 @router.post("/{wf_id}/toggle")
-def toggle_workflow(wf_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    wf = _get_own(db, wf_id, user)
+def toggle_workflow(wf_id: int, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    wf = _get_own(db, wf_id, ctx)
     wf.enabled = not wf.enabled
     db.commit()
     sched.reload_jobs()
@@ -256,19 +261,19 @@ class RunIn(BaseModel):
 
 @router.post("/{wf_id}/run")
 def run_workflow(wf_id: int, payload: RunIn | None = None, db: Session = Depends(get_db),
-                 user: User = Depends(get_current_user)):
+                 ctx: Context = Depends(get_current_context)):
     """立即执行一次（同步，返回执行结果摘要）。"""
-    _get_own(db, wf_id, user)
+    _get_own(db, wf_id, ctx)
     result = engine.run_now(wf_id, trigger="manual", trigger_data={"params": (payload or RunIn()).params})
     return result or {"error": "执行失败"}
 
 
 @router.post("/{wf_id}/test-run")
 def test_run_workflow(wf_id: int, payload: RunIn | None = None, db: Session = Depends(get_db),
-                      user: User = Depends(get_current_user)):
+                      ctx: Context = Depends(get_current_context)):
     """试运行：真实执行并标记 trigger=test，返回 run id 供查询完整节点轨迹。
     带 node_id 时执行到该节点为止（单节点试运行）。"""
-    wf = _get_own(db, wf_id, user)
+    wf = _get_own(db, wf_id, ctx)
     payload = payload or RunIn()
     if payload.node_id and not any(n.get("id") == payload.node_id for n in (wf.nodes_json or [])):
         raise HTTPException(400, f"节点不存在：{payload.node_id}")
@@ -278,8 +283,8 @@ def test_run_workflow(wf_id: int, payload: RunIn | None = None, db: Session = De
 
 
 @router.get("/{wf_id}/runs")
-def list_runs(wf_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    _get_own(db, wf_id, user)
+def list_runs(wf_id: int, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    _get_own(db, wf_id, ctx)
     rows = (
         db.query(WorkflowRun)
         .filter_by(workflow_id=wf_id)
@@ -299,12 +304,12 @@ def list_runs(wf_id: int, db: Session = Depends(get_db), user: User = Depends(ge
 
 
 @router.get("/runs/{run_id}")
-def get_run(run_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def get_run(run_id: int, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
     """执行详情：Run + 全部 NodeRun 轨迹（审批操作也基于这里的 waiting 节点）。"""
     run = db.get(WorkflowRun, run_id)
     if not run:
         raise HTTPException(404, "执行记录不存在")
-    wf = _get_own(db, run.workflow_id, user)
+    wf = _get_own(db, run.workflow_id, ctx)
     node_runs = (
         db.query(WorkflowNodeRun)
         .filter_by(run_id=run_id)

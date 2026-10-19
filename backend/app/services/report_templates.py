@@ -285,7 +285,8 @@ def list_templates(db: Session, user: User) -> list[dict]:
     ]
 
 
-def install_template(db: Session, user: User, key: str, with_demo_data: bool = False) -> dict:
+def install_template(db: Session, user: User, key: str, with_demo_data: bool = False,
+                     tenant_id: int | None = None) -> dict:
     from fastapi import HTTPException
     tpl = next((t for t in TEMPLATES if t["key"] == key), None)
     if not tpl:
@@ -293,7 +294,7 @@ def install_template(db: Session, user: User, key: str, with_demo_data: bool = F
 
     from . import entitlement
     from .tenancy import default_tenant_id
-    tid = default_tenant_id(db, user)
+    tid = tenant_id or default_tenant_id(db, user)
     entitlement.assert_tenant_writable(db, tid)
 
     notes = []
