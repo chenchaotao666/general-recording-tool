@@ -10,7 +10,7 @@ import re
 
 from ..database import get_db
 from ..models import MetaField, MetaTable, MetaView, MetaViewPref, Record
-from ..services import dyn_engine, json_store, lookup_service, perm_service, smart_events, view_config
+from ..services import dyn_engine, json_store, lookup_service, perm_service, smart_events, smart_format, view_config
 from ..services.field_registry import FIELD_TYPES, READONLY_TYPES
 from ..services.meta_service import get_meta_fields
 from ..services.pyquery import match_filters, sort_records_multi
@@ -340,7 +340,7 @@ def duplicate_record(table_id: int, record_id: int, db: Session = Depends(get_db
 @router.post("/tables/{table_id}/search-replace")
 def search_replace(table_id: int, payload: dict, db: Session = Depends(get_db),
                    access: TableAccess = Depends(require_table("view"))):
-    """全表查找文本单元格；支持全部替换或替换指定单元格，只读结果仅返回不写入。"""
+    """全表查找文本及单选/多选的显示内容；文本支持替换，只读结果仅返回不写入。"""
     find = "" if payload.get("find") is None else str(payload.get("find"))
     replace = "" if payload.get("replace") is None else str(payload.get("replace"))
     replace_all = bool(payload.get("replace_all"))
@@ -367,9 +367,12 @@ def search_replace(table_id: int, payload: dict, db: Session = Depends(get_db),
         raise HTTPException(403, "没有编辑该表格的权限")
     rights = eff.field_rights_map(fields)
     text_types = {"text", "url", "phone", "email", None, ""}
-    # 搜索覆盖所有可查看的文本结果（包括公式等只读字段）；是否可写逐项单独标记。
+    select_types = {"singleSelect", "multiSelect"}
+    # 搜索覆盖所有可查看的文本结果（包括公式等只读字段）；单选/多选存 optionId，按显示标签匹配。
+    # 是否可写逐项单独标记：选项内容本次只纳入查找，不做文本替换。
     search_fields = [f for f in fields
-                     if f.data_type in ("varchar", "text") and rights[f.field_name]["view"]]
+                     if (f.data_type in ("varchar", "text") or f.field_type in select_types)
+                     and rights[f.field_name]["view"]]
     recs = json_store.all_dicts(db, table_id, fields, normalized=False)
     editable_ids = set()
     if not eff.managed:
@@ -383,10 +386,12 @@ def search_replace(table_id: int, payload: dict, db: Session = Depends(get_db),
     for r in recs:
         row_editable = eff.managed or r["id"] in editable_ids
         for f in search_fields:
-            v = r.get(f.field_name)
+            field_type = f.field_type or "text"
+            raw_value = r.get(f.field_name)
+            v = (smart_format.display(db, f, raw_value)
+                 if field_type in select_types else raw_value)
             if not isinstance(v, str) or not pattern.search(v):
                 continue
-            field_type = f.field_type or "text"
             replaceable = (table_editable and row_editable and field_type in text_types
                            and rights[f.field_name]["edit"])
             blocked_reason = None

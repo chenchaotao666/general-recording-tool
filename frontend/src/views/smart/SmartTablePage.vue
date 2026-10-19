@@ -167,6 +167,7 @@
                        @close="fieldDialog.visible = false" @save="onFieldSave"
                        @ai-tags="(f) => { fieldDialog.visible = false; Object.assign(aiTags, { visible: true, field: f }) }" />
     <FindReplaceDialog ref="findDialogRef" :visible="findVisible" :table-id="tableId" :at="findAt"
+                       :first-match-index="matches => gridRef?.firstFindMatchIndex?.(matches)"
                        @close="closeFind" @highlight="findHighlight = $event"
                        @locate="locateFindMatch" @replaced="onFindReplaced" />
 

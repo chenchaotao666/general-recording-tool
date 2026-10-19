@@ -4,7 +4,7 @@
              append-to-body destroy-on-close :close-on-press-escape="false"
              v-bind="dialogAttrs" @update:model-value="onDialogModel" @opened="focusFindInput">
     <div class="fr-panel" @keydown.esc.stop.prevent="closePanel">
-      <div class="fr-head">
+      <div class="fr-head" @pointerdown="startDrag" @pointermove="moveDrag" @pointerup="stopDrag" @pointercancel="stopDrag" @lostpointercapture="stopDrag">
         <span class="fr-title">{{ expanded ? '查找替换' : '查找' }}</span>
         <button class="fr-close" type="button" aria-label="关闭" @click="closePanel">
           <StIcon name="close" :size="16" />
@@ -73,10 +73,40 @@ const props = defineProps({
   visible: Boolean,
   tableId: Number,
   at: { type: Object, default: null },
+  firstMatchIndex: { type: Function, default: null },
 })
 const emit = defineEmits(['close', 'replaced', 'highlight', 'locate'])
 
-const dialogAttrs = computed(() => anchoredDialogAttrs(props.at, 400, 380))
+const dragPosition = ref(null)
+let drag = null
+const dialogAttrs = computed(() => {
+  const attrs = anchoredDialogAttrs(props.at, 400, 380)
+  if (dragPosition.value) attrs.style = {
+    ...attrs.style, left: `${dragPosition.value.x}px`, top: `${dragPosition.value.y}px`,
+    right: 'auto', maxHeight: `calc(100vh - ${dragPosition.value.y + 12}px)`,
+  }
+  return attrs
+})
+
+function startDrag(event) {
+  if (event.button !== 0 || event.target.closest('button')) return
+  const rect = event.currentTarget.closest('.el-dialog')?.getBoundingClientRect()
+  if (!rect) return
+  drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, rect }
+  event.currentTarget.setPointerCapture(event.pointerId)
+  event.preventDefault()
+}
+
+function moveDrag(event) {
+  if (!drag || event.pointerId !== drag.pointerId) return
+  const { rect, x, y } = drag
+  dragPosition.value = {
+    x: Math.max(12, Math.min(rect.left + event.clientX - x, window.innerWidth - rect.width - 12)),
+    y: Math.max(12, Math.min(rect.top + event.clientY - y, window.innerHeight - rect.height - 12)),
+  }
+}
+
+function stopDrag() { drag = null }
 const findInputRef = ref(null)
 const expanded = ref(false)
 const find = ref('')
@@ -110,6 +140,8 @@ function focusFindInput() {
 
 function resetState() {
   requestSeq += 1
+  dragPosition.value = null
+  stopDrag()
   expanded.value = false
   find.value = ''
   replace.value = ''
@@ -149,6 +181,10 @@ async function refreshMatches(seq, { preservePosition = false, message = null } 
   matches.value = nextMatches
   searched.value = true
   let nextIndex = nextMatches.length ? 0 : -1
+  if (!preservePosition && nextMatches.length) {
+    const preferred = props.firstMatchIndex?.(nextMatches)
+    if (Number.isInteger(preferred) && preferred >= 0 && preferred < nextMatches.length) nextIndex = preferred
+  }
   if (preservePosition && nextMatches.length) {
     const sameIndex = oldKey ? nextMatches.findIndex(m => matchKey(m) === oldKey) : -1
     nextIndex = sameIndex >= 0 ? sameIndex : Math.min(Math.max(oldIndex, 0), nextMatches.length - 1)
@@ -160,7 +196,12 @@ async function refreshMatches(seq, { preservePosition = false, message = null } 
   return true
 }
 
-async function doFind() {
+function doFind() {
+  if (searched.value && matches.value.length) return findNext()
+  return refreshSearch()
+}
+
+async function refreshSearch() {
   if (!find.value || busy.value) return
   const seq = ++requestSeq
   busy.value = true
@@ -260,12 +301,12 @@ watch(() => props.visible, async open => {
   }
 })
 
-defineExpose({ refresh: doFind })
+defineExpose({ refresh: refreshSearch })
 </script>
 
 <style scoped>
 .fr-panel { display: flex; flex-direction: column; color: #1F2329; }
-.fr-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.fr-head { cursor: move; touch-action: none; user-select: none; display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .fr-title { font-size: 18px; line-height: 26px; font-weight: 500; }
 .fr-close { width: 28px; height: 28px; padding: 0; border: 0; background: transparent; color: #646A73; cursor: pointer; display: grid; place-items: center; }
 .fr-close:hover { color: #1F2329; }

@@ -131,6 +131,25 @@ assert r.json()["replaced"] >= 1
 g = client.get(f"/api/smart/tables/{t2}/grid").json()
 assert any(x.get("__rowType") != "group" and x.get(f2["text"]) == "Q002" for x in g["items"])
 
+# 单选/多选存 optionId，查找应按用户看到的选项标签命中；查找命中的选项单元格不可文本替换。
+fms = add_field(t2, "multiSelect", "多选", {"options": [
+    {"id": "opt_a", "label": "标签A", "color": "blue", "order": 0},
+    {"id": "opt_b", "label": "标签B", "color": "green", "order": 1},
+]})
+row_p001 = next(x for x in g["items"] if x.get("__rowType") != "group" and x.get(f2["text"]) == "P001")
+r = client.patch(f"/api/smart/tables/{t2}/records/{row_p001['id']}", json={"data": {fms: ["opt_a", "opt_b"]}})
+assert r.status_code == 200 and r.json()["record"][fms] == ["opt_a", "opt_b"], r.text
+r = client.post(f"/api/smart/tables/{t2}/search-replace", json={"find": "选项1"})
+single_matches = [m for m in r.json()["matches"] if m["field"] == f2["singleSelect"]]
+assert single_matches and row_p001["id"] in {m["recordId"] for m in single_matches}, r.text
+assert all(m["value"] == "选项1" and not m["replaceable"] and m["blockedReason"] == "type"
+           for m in single_matches), single_matches
+r = client.post(f"/api/smart/tables/{t2}/search-replace", json={"find": "标签B"})
+multi_matches = [m for m in r.json()["matches"] if m["field"] == fms]
+assert multi_matches and row_p001["id"] in {m["recordId"] for m in multi_matches}, r.text
+assert all(m["value"] == "标签A、标签B" and not m["replaceable"] and m["blockedReason"] == "type"
+           for m in multi_matches), multi_matches
+
 # 文本公式可查找但不可替换；匹配与实际替换统一为大小写不敏感。
 ftext = add_field(t2, "formula", "文本公式", {"formula": f"[{f2['text']}]", "returnType": "text"})
 case_ids = []
