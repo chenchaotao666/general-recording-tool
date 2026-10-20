@@ -5,7 +5,7 @@
          @click="$emit('switch', v)">
       <StIcon :name="TYPE_ICON[v.type] || 'view-grid'" :size="13" class="vt-icon" />{{ v.name }}
       <el-dropdown v-if="v.id === currentId" trigger="click" @command="(cmd) => $emit('action', cmd, v)">
-        <span class="vt-more" @click.stop><StIcon name="more-v" :size="13" /></span>
+        <span class="vt-more st-icon-action" @click.stop><StIcon name="more-v" :size="13" /></span>
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item command="rename">重命名</el-dropdown-item>
@@ -19,7 +19,7 @@
     <span class="vt-sep" />
     <!-- ＋：新建表格视图 / 看板 / 表单（§12.1：表单与表格视图并列于页签，可建多个） -->
     <el-dropdown trigger="click" @command="(t) => $emit('action', 'add', t)">
-      <span class="vt-add" title="新建视图"><StIcon name="plus" :size="13" /></span>
+      <span class="vt-add st-icon-action" data-smart-tip="新建视图"><StIcon name="plus" :size="13" /></span>
       <template #dropdown>
         <el-dropdown-menu>
           <el-dropdown-item command="grid"><StIcon name="view-grid" :size="14" class="vt-dd-i" />表格视图</el-dropdown-item>

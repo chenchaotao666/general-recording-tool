@@ -60,6 +60,14 @@ try {
       })
     })
     assert.ok(alignment, `Header/body alignment with frozen ${boundary}`)
+    const utilityAlignment = await page.locator('th.th-utility').evaluateAll(cells => cells.filter(el => getComputedStyle(el).visibility !== 'hidden').map(el => {
+      const content = el.querySelector('.vxe-cell--checkbox') || el.querySelector('.vxe-cell--title')
+      const rect = content.getBoundingClientRect()
+      const title = [...document.querySelectorAll('th.th-span .field-name')].find(node => getComputedStyle(node).visibility !== 'hidden')
+      const titleRect = title.getBoundingClientRect()
+      return Math.abs(rect.top + rect.height / 2 - titleRect.top - titleRect.height / 2)
+    }))
+    assert.ok(utilityAlignment.every(delta => delta < 2), JSON.stringify(utilityAlignment))
     assert.ok(await page.locator('th.th-col-selected.sel-t').evaluateAll(els => els
       .filter(el => getComputedStyle(el).visibility !== 'hidden')
       .every(el => {

@@ -9,10 +9,10 @@
       <span class="ffp-scope">{{ scopeText }}</span>
       <span class="ffp-flex" />
       <el-tooltip :content="pinned ? '取消固定' : '固定到工具栏'" placement="top" :show-after="300">
-        <span class="ffp-icon" :class="{ on: pinned }" @click="$emit('pin', !pinned)"><StIcon name="pin" :size="16" /></span>
+        <span class="ffp-icon st-icon-action" :class="{ on: pinned }" @click="$emit('pin', !pinned)"><StIcon name="pin" :size="16" /></span>
       </el-tooltip>
       <span class="ffp-more-wrap">
-        <span class="ffp-icon" :class="{ on: moreOpen }" @click="moreOpen = !moreOpen"><StIcon name="more-h" :size="16" /></span>
+        <span class="ffp-icon st-icon-action" :class="{ on: moreOpen }" @click="moreOpen = !moreOpen"><StIcon name="more-h" :size="16" /></span>
         <div v-if="moreOpen" class="ffp-menu" @mouseleave="moreOpen = false">
           <div class="ffp-mi" @click="moreOpen = false; $emit('open-panel')"><StIcon name="filter" :size="14" />打开筛选面板</div>
           <div class="ffp-mi danger" :class="{ off: !hasCondition }" @click="hasCondition && remove()"><StIcon name="trash" :size="14" />删除条件</div>
@@ -30,7 +30,7 @@
             </div>
           </div>
         </span>
-        <span v-if="needsValue && (isEnum || isMember)" class="ffp-icon sq" title="搜索" @click="focusSearch"><StIcon name="search" :size="15" /></span>
+        <span v-if="needsValue && (isEnum || isMember)" class="ffp-icon sq st-icon-action" data-smart-tip="搜索" @click="focusSearch"><StIcon name="search" :size="15" /></span>
       </div>
 
       <template v-if="needsValue">
@@ -43,7 +43,7 @@
         <!-- 文本类：灰底输入框 + ✕ 清除 -->
         <div v-else-if="isTextLike" class="ffp-text">
           <input ref="textRef" v-model="textVal" class="ffp-input" placeholder="请输入" @input="onText" />
-          <span v-if="textVal" class="ffp-x" @click="clearText"><StIcon name="close" :size="14" /></span>
+          <span v-if="textVal" class="ffp-x st-icon-action" @click="clearText"><StIcon name="close" :size="14" /></span>
         </div>
         <!-- 数字/日期等：通用值编辑器 -->
         <div v-else class="ffp-generic"><ConditionValue :field="field" :operator="op" :value="value" @update="onValue" /></div>

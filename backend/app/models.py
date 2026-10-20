@@ -192,6 +192,7 @@ class Record(Base):
     owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # 记录归属人（P1 数据范围用）
     data = Column(JSON, nullable=False, default=dict)
     parent_id = Column(BigInteger, index=True)               # 智能表树形子记录：父记录 id（V2）
+    sort_index = Column(BigInteger)                         # 手动记录顺序；旧记录回落 id
     updated_by = Column(Integer, ForeignKey("users.id"))     # 最后编辑人（智能表系统字段，V2）
     updated_by_type = Column(String(16), default="user")      # 最后编辑主体：user / ai / automation（V3 留痕）
     created_at = Column(DateTime, default=datetime.now)

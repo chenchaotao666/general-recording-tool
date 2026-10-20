@@ -13,7 +13,7 @@
                       @update="(v) => emit('update', { ...cond, value: v })" />
     </div>
     <div v-else-if="!field" class="pcr-val pcr-ph">请先选择字段</div>
-    <span class="pcr-del" title="删除条件" @click="emit('remove')"><StIcon name="minus-circle" :size="18" /></span>
+    <span class="pcr-del st-icon-action" data-smart-tip="删除条件" @click="emit('remove')"><StIcon name="minus-circle" :size="18" /></span>
   </div>
 </template>
 

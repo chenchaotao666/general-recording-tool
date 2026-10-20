@@ -5,8 +5,8 @@
   <div class="fv">
     <div class="fv-bar">
       <div class="fv-bar-l">
-        <button class="fv-ico" title="撤销" :disabled="!hist.past.length" @click="undo"><StIcon name="undo" :size="16" /></button>
-        <button class="fv-ico" title="重做" :disabled="!hist.future.length" @click="redo"><StIcon name="redo" :size="16" /></button>
+        <button class="fv-ico st-icon-action" data-smart-tip="撤销" :disabled="!hist.past.length" @click="undo"><StIcon name="undo" :size="16" /></button>
+        <button class="fv-ico st-icon-action" data-smart-tip="重做" :disabled="!hist.future.length" @click="redo"><StIcon name="redo" :size="16" /></button>
         <span class="fv-sep" />
         <button class="fv-tool" @click="emit('open-automation')"><StIcon name="automation" :size="15" />设置自动化提醒</button>
       </div>
@@ -15,56 +15,58 @@
         <span class="fv-tab" :class="{ on: tab === 'fill' }" @click="tab = 'fill'">填写表单</span>
       </div>
       <div class="fv-bar-r">
-        <el-popover v-model:visible="share.visible" trigger="click" placement="bottom-end" :width="380" popper-class="st-pop">
-          <template #reference>
-            <button class="fv-tool" :disabled="!canManage" @click="loadLink"><StIcon name="share" :size="15" />分享</button>
-          </template>
-          <div class="fv-share">
-            <div class="fv-share-t">公开填写</div>
-            <div class="fv-share-d">任何拿到链接的人都可以填写表单，提交的数据进入「{{ tableName }}」。</div>
-            <template v-if="share.link">
-              <div class="fv-share-url"><el-input :model-value="linkUrl" readonly size="small" />
-                <el-button size="small" type="primary" @click="copyLink">复制</el-button></div>
-              <div class="fv-share-row">
-                <el-input v-model="share.password" size="small" placeholder="访问密码（可选，至少 4 位）" show-password />
-                <el-button size="small" @click="saveLink">{{ share.link.has_password ? '更新密码' : '设置密码' }}</el-button>
-              </div>
-              <a class="fv-share-off" @click="closeLink">关闭公开链接</a>
-            </template>
-            <el-button v-else type="primary" size="small" :loading="share.loading" @click="saveLink">开启公开填写链接</el-button>
-          </div>
-        </el-popover>
+        <FormShare :view-id="view.id" :title="form.title" :can-manage="canManage" />
       </div>
     </div>
 
     <!-- ========== 编辑态 ========== -->
     <div v-if="tab === 'edit'" class="fv-main">
       <div class="fv-left">
-        <div class="fv-left-head"><span>可添加字段</span><a class="fv-link-g" :class="{ off: !form.items.length }" @click="removeAll">全部移出</a></div>
+        <div class="fv-left-head"><span>可添加字段</span><div class="fv-left-actions">
+          <button class="fv-link-g" :disabled="!form.items.length" @click="removeAll">全部移出</button>
+          <button class="fv-link-g" :disabled="!availableFields.length" @click="addAll">全部添加</button>
+        </div></div>
+        <div class="fv-field-list">
         <div v-if="!availableFields.length" class="fv-avail-empty">所有字段都已添加至表单</div>
-        <div v-for="f in availableFields" :key="f.field_name" class="fv-avail" title="点击添加到表单" @click="addItem(f.field_name)">
+        <div v-for="f in availableFields" :key="f.field_name" class="fv-avail" :class="{ dragging: dragItem?.fieldId === f.field_name }"
+             :data-field-id="f.field_name" draggable="true" role="button" tabindex="0" data-smart-tip="点击添加，或拖动到右侧指定位置"
+             @dragstart="startFieldDrag($event, f.field_name)" @dragend="endFieldDrag"
+             @keydown.enter.prevent="addItem(f.field_name)" @click="addItem(f.field_name)">
           <StIcon :name="fieldIconName(f)" :size="14" />{{ f.label }}<StIcon name="plus" :size="13" class="fv-avail-plus" />
+        </div>
         </div>
         <div class="fv-add-new" @click="(e) => emit('add-field', e)">
           <StIcon name="plus-circle" :size="16" />添加新字段到表单<StIcon name="chevron-right" :size="13" class="fv-add-caret" />
         </div>
       </div>
-      <div class="fv-canvas" @click="active = null">
-        <div class="fv-paper-wrap">
-          <div class="fv-cover-bar">
-            <img v-if="form.cover" :src="imageUrl(form.cover)" class="fv-cover-img" alt="" />
-            <span class="fv-cover-btn" @click.stop="pickCover"><StIcon name="image" :size="15" />{{ form.cover ? '更换封面' : '添加封面' }}</span>
-            <span v-if="form.cover" class="fv-cover-btn" @click.stop="setForm({ cover: null })">移除封面</span>
-            <input ref="coverRef" type="file" accept="image/*" class="fv-hidden" @change="onCover" />
+      <div ref="canvasRef" class="fv-canvas" @click="active = null" @dragover="dragCanvas"
+           @dragleave="leaveCanvas" @drop.prevent="dropField" @dragend="endFieldDrag">
+        <div class="fv-paper-wrap" :class="{ 'has-cover': form.cover }">
+          <div class="fv-cover-bar" @click.stop>
+            <img v-if="form.cover" :src="coverSrc" class="fv-cover-img" alt="表单封面" />
+            <el-popover v-if="form.cover" v-model:visible="coverMenu" trigger="click" placement="bottom-end"
+                        :width="150" popper-class="st-pop fv-cover-pop">
+              <template #reference>
+                <button class="fv-cover-more st-icon-action" aria-label="封面设置" data-smart-tip="封面设置"><StIcon name="more-h" :size="18" /></button>
+              </template>
+              <div class="fv-cover-menu">
+                <button @click="coverMenu = false; coverPicker = true">更换封面</button>
+                <button @click="coverMenu = false; setForm({ cover: null })">移除封面</button>
+              </div>
+            </el-popover>
+            <button v-else class="fv-cover-btn" @click="coverPicker = true"><StIcon name="image" :size="15" />添加封面</button>
           </div>
           <div class="fv-paper">
             <input :value="form.title" class="fv-title" placeholder="表单标题" @change="(e) => setForm({ title: e.target.value })" />
             <input :value="form.description" class="fv-desc" placeholder="添加描述" @change="(e) => setForm({ description: e.target.value })" />
             <div class="fv-line" />
 
-            <div v-for="(it, i) in itemsWithField" :key="it.fieldId" class="fv-q" :class="{ active: active === it.fieldId, over: dragOver === i }"
-                 @click.stop="active = it.fieldId" @dragover.prevent="dragOver = i" @dragleave="dragOver = null" @drop="onDrop(i)">
-              <span class="fv-drag" draggable="true" title="拖动排序" @dragstart="dragFrom = i" @dragend="dragOver = null">
+            <template v-for="(it, i) in itemsWithField" :key="it.fieldId">
+            <div v-if="dragItem && dropIndex === i" class="fv-drop-placeholder" :style="{ height: `${dragHeight}px` }"
+                 @dragover.prevent.stop="dragPlaceholder($event, i)" @drop.prevent.stop="dropField" />
+            <div class="fv-q" :data-field-id="it.fieldId" :class="{ active: active === it.fieldId, dragging: dragItem?.existing && dragItem.fieldId === it.fieldId }"
+                 @click.stop="active = it.fieldId" @dragover="dragQuestion">
+              <span class="fv-drag st-icon-action" draggable="true" data-smart-tip="拖动排序" @dragstart.stop="startFieldDrag($event, it.fieldId, true)" @dragend.stop="endFieldDrag">
                 <StIcon name="drag" :size="14" /></span>
               <template v-if="active === it.fieldId">
                 <input :value="it.title || it.field.label" class="fv-q-title-in" @click.stop
@@ -74,11 +76,11 @@
                 <!-- 选项编辑（与表格列共享数据源） -->
                 <div v-if="isSelect(it.field) && !isRefOptions(it.field)" class="fv-opts" @click.stop>
                   <div v-for="(o, oi) in it.field.options?.options || []" :key="o.id" class="fv-opt" :class="{ over: optOver === oi }"
-                       @dragover.prevent="optOver = oi" @dragleave="optOver = null" @drop.stop="dropOption(it.field, oi)">
-                    <span class="fv-opt-drag" draggable="true" @dragstart="optFrom = oi"><StIcon name="drag" :size="12" /></span>
-                    <span class="fv-opt-color" :style="{ background: optionColor(o.color).value }" title="切换颜色" @click="cycleColor(it.field, oi)" />
+                       @dragover="dragOption($event, oi)" @dragleave="optOver = null" @drop="onOptionDrop($event, it.field, oi)">
+                    <span class="fv-opt-drag st-icon-action" draggable="true" @dragstart.stop="optFrom = oi" @dragend.stop="optFrom = null; optOver = null"><StIcon name="drag" :size="12" /></span>
+                    <span class="fv-opt-color" :style="{ background: optionColor(o.color).value }" data-smart-tip="切换颜色" @click="cycleColor(it.field, oi)" />
                     <input :value="o.label" class="fv-opt-in" @change="(e) => renameOption(it.field, oi, e.target.value)" />
-                    <span class="fv-opt-rm" title="删除选项" @click="removeOption(it.field, oi)"><StIcon name="minus-circle" :size="16" /></span>
+                    <span class="fv-opt-rm st-icon-action" data-smart-tip="删除选项" @click="removeOption(it.field, oi)"><StIcon name="minus-circle" :size="16" /></span>
                   </div>
                   <a class="fv-opt-add" @click="addOption(it.field)"><StIcon name="plus" :size="14" />添加选项</a>
                   <div class="fv-opt-tip">此处修改将影响表格列</div>
@@ -103,30 +105,40 @@
                   <span class="fv-attr-sp" />
                   <el-checkbox :model-value="!!it.required" :disabled="it.field.readonly" @update:model-value="(v) => patchItem(i, { required: v })">必填</el-checkbox>
                   <span class="fv-attr-sep" />
-                  <el-popover trigger="click" placement="top" :width="520" popper-class="st-pop">
+                  <el-tooltip v-if="i === 0" content="表单的首个问题不支持设置显示条件" placement="top">
+                    <span class="fv-attr-btn disabled" aria-disabled="true"><StIcon name="group" :size="14" />显示条件</span>
+                  </el-tooltip>
+                  <el-popover v-else trigger="click" placement="bottom-start" :width="612" :popper-style="{ maxWidth: 'calc(100vw - 32px)' }" popper-class="st-pop fv-condition-pop">
                     <template #reference>
                       <span class="fv-attr-btn" :class="{ on: it.visibility?.conditions?.length }"><StIcon name="group" :size="14" />显示条件{{ it.visibility?.conditions?.length ? ` ${it.visibility.conditions.length}` : '' }}</span>
                     </template>
                     <div class="fv-vis">
-                      <div class="fv-vis-t">满足以下
+                      <div v-if="!it.visibility?.conditions?.length" class="fv-vis-t">仅在满足以下条件时显示</div>
+                      <div v-else class="fv-vis-t">仅在满足以下
                         <el-select :model-value="it.visibility?.match || 'all'" size="small" class="fv-vis-match" :teleported="false"
                                    @update:model-value="(m) => patchVis(i, { match: m })">
                           <el-option value="all" label="所有" /><el-option value="any" label="任一" />
-                        </el-select>条件时显示此题</div>
+                        </el-select>条件时显示</div>
                       <PermCondRow v-for="(c, ci) in it.visibility?.conditions || []" :key="ci" :cond="c" :fields="otherQuestionFields(it)"
                                    @update="(nc) => setVisCond(i, ci, nc)" @remove="removeVisCond(i, ci)" />
-                      <a class="fv-vis-add" @click="addVisCond(i)"><StIcon name="plus" :size="13" />添加条件</a>
+                      <button class="fv-vis-add" :disabled="(it.visibility?.conditions?.length || 0) >= 10"
+                              @click.stop="addVisCond(i)"><StIcon name="plus" :size="15" />添加显示条件</button>
                     </div>
                   </el-popover>
                   <span class="fv-attr-sep" />
-                  <span class="fv-attr-btn" title="移出表单" @click="removeItem(i)"><StIcon name="minus-circle" :size="16" /></span>
+                  <el-tooltip content="移出" placement="top">
+                    <span class="fv-attr-btn st-icon-action" aria-label="移出表单" @click="removeItem(i)"><StIcon name="minus-circle" :size="16" /></span>
+                  </el-tooltip>
                   <span class="fv-attr-sep" />
-                  <el-dropdown trigger="click" @command="(c) => c === 'edit' && emit('edit-field', it.field)">
-                    <span class="fv-attr-btn"><StIcon name="more-h" :size="16" /></span>
-                    <template #dropdown>
-                      <el-dropdown-menu><el-dropdown-item command="edit">在表格中修改字段</el-dropdown-item></el-dropdown-menu>
-                    </template>
-                  </el-dropdown>
+                  <el-tooltip content="编辑字段" placement="top">
+                    <button class="fv-attr-btn fv-attr-icon st-icon-action" aria-label="编辑字段" :disabled="!canManage"
+                            @click="editField(it.field, $event)"><StIcon name="pencil" :size="16" /></button>
+                  </el-tooltip>
+                  <span class="fv-attr-sep" />
+                  <el-tooltip content="删除字段" placement="top">
+                    <button class="fv-attr-btn fv-attr-icon danger st-icon-action" aria-label="删除字段" :disabled="!canManage"
+                            @click="emit('delete-field', it.field)"><StIcon name="trash" :size="16" /></button>
+                  </el-tooltip>
                 </div>
               </template>
               <template v-else>
@@ -136,7 +148,12 @@
                 <FormControl :item="it" preview />
               </template>
             </div>
-            <div v-if="!itemsWithField.length" class="fv-empty">从左侧添加字段，或点击下方添加新字段</div>
+            </template>
+            <div v-if="itemsWithField.length && dragItem && dropIndex === itemsWithField.length" class="fv-drop-placeholder" :style="{ height: `${dragHeight}px` }"
+                 @dragover.prevent.stop="dragPlaceholder($event, itemsWithField.length)" @drop.prevent.stop="dropField" />
+            <div v-if="!itemsWithField.length" class="fv-empty" :class="{ 'drop-active': dragItem && dropIndex === 0 }">
+              <span>拖动字段到此或<button @click.stop="(e) => emit('add-field', e)">新建字段</button></span>
+            </div>
             <div class="fv-add-wrap"><span class="fv-add-btn" @click.stop="(e) => emit('add-field', e)"><StIcon name="plus-circle" :size="15" />添加新字段</span></div>
           </div>
         </div>
@@ -145,22 +162,27 @@
 
     <!-- ========== 填写态 ========== -->
     <div v-else class="fv-fill">
-      <FormFill ref="fillRef" :def="fillDef" :cover-src="form.cover ? imageUrl(form.cover) : ''" :uploader="upload"
+      <FormFill ref="fillRef" :def="fillDef" :cover-src="coverSrc" :uploader="upload"
                 :members="members" :submitting="submitting" @submit="submit" />
     </div>
+    <FormCoverPicker v-model="coverPicker" :cover="form.cover" @select="cover => setForm({ cover })" />
   </div>
 </template>
 
 <script setup>
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import StIcon from '../icons/StIcon.vue'
 import PermCondRow from '../perms/PermCondRow.vue'
 import FormControl from './FormControl.vue'
 import FormFill from './FormFill.vue'
+import FormShare from './FormShare.vue'
+import FormCoverPicker from './FormCoverPicker.vue'
+import { presetCoverUrl } from './covers.js'
+import { normalizeVisibility } from './formLogic.js'
 import { OPTION_COLORS, optionColor } from '../../../smart/registry/fieldRegistry.js'
-import { imageUrl, smartCreateFormLink, smartDeleteFormLink, smartGetFormLink, smartSubmitForm,
+import { imageUrl, smartSubmitForm,
          smartUploadFile, uploadImageFile } from '../../../api/index.js'
 
 const props = defineProps({
@@ -171,7 +193,7 @@ const props = defineProps({
   members: { type: Array, default: () => [] },
   canManage: { type: Boolean, default: true },
 })
-const emit = defineEmits(['save', 'add-field', 'update-options', 'edit-field', 'open-automation', 'submitted'])
+const emit = defineEmits(['save', 'add-field', 'update-options', 'edit-field', 'delete-field', 'open-automation', 'submitted'])
 
 const SYSTEM = ['createdBy', 'lastModifiedBy', 'createdTime', 'lastModifiedTime']
 const READONLY = ['formula', 'lookup', 'autoNumber', 'ai']
@@ -185,6 +207,7 @@ function loadFromView() {
   const f = props.view?.config?.form || {}
   Object.assign(form, { title: f.title || props.view?.name || '表单', description: f.description || '', cover: f.cover || null,
                         items: JSON.parse(JSON.stringify(f.items || [])), submit: f.submit || {} })
+  form.items = normalizeVisibility(form.items.filter(it => props.fields.some(f => f.field_name === it.fieldId)))
 }
 watch(() => props.view?.id, () => { loadFromView(); hist.past = []; hist.future = [] }, { immediate: true })
 // 外部（如「添加新字段到表单」）更新了视图 config 时同步（本地无待保存改动才同步）
@@ -207,6 +230,7 @@ function commit(mutator) {
   if (hist.past.length > 50) hist.past.shift()
   hist.future = []
   mutator()
+  form.items = normalizeVisibility(form.items)
   scheduleSave()
 }
 function scheduleSave() {
@@ -216,32 +240,148 @@ function scheduleSave() {
     emit('save', { title: form.title, description: form.description, cover: form.cover, items: form.items, submit: form.submit })
   }, 400)
 }
-function restore(snap) { Object.assign(form, JSON.parse(snap)); scheduleSave() }
+function restore(snap) { Object.assign(form, JSON.parse(snap)); form.items = normalizeVisibility(form.items); scheduleSave() }
 function undo() { if (!hist.past.length) return; hist.future.push(snapshot()); restore(hist.past.pop()) }
 function redo() { if (!hist.future.length) return; hist.past.push(snapshot()); restore(hist.future.pop()) }
 
 function setForm(obj) { commit(() => Object.assign(form, obj)) }
-function addItem(fn) { commit(() => form.items.push({ fieldId: fn, required: false })); active.value = fn }
+function editField(field, event) {
+  const rect = event.currentTarget.getBoundingClientRect()
+  emit('edit-field', field, { x: rect.left, y: rect.bottom, top: rect.top, bottom: rect.bottom, placement: 'button' })
+}
+function addItem(fn) {
+  if (!availableFields.value.some(f => f.field_name === fn)) return
+  commit(() => form.items.push({ fieldId: fn, required: false }))
+  revealQuestion(fn)
+}
+function addAll() {
+  const fields = availableFields.value
+  if (!fields.length) return
+  commit(() => form.items.push(...fields.map(f => ({ fieldId: f.field_name, required: false }))))
+  revealQuestion(fields[0].field_name)
+}
 function removeItem(i) { commit(() => form.items.splice(i, 1)); active.value = null }
-function removeAll() { if (form.items.length) commit(() => { form.items = [] }) }
+function removeAll() { if (form.items.length) commit(() => { form.items = [] }); active.value = null }
 function patchItem(i, obj) { commit(() => { form.items[i] = { ...form.items[i], ...obj } }) }
 function rebind(i, fn) { if (fn !== form.items[i].fieldId) { patchItem(i, { fieldId: fn, title: null, visibility: null }); active.value = fn } }
-function patchVis(i, obj) { patchItem(i, { visibility: { match: 'all', conditions: [], ...(form.items[i].visibility || {}), ...obj } }) }
-function addVisCond(i) { patchVis(i, { conditions: [...(form.items[i].visibility?.conditions || []), { fieldId: null, operator: 'eq' }] }) }
+function patchVis(i, obj) { if (i > 0) patchItem(i, { visibility: { match: 'all', conditions: [], ...(form.items[i].visibility || {}), ...obj } }) }
+function addVisCond(i) {
+  const previous = form.items[i - 1]
+  const conditions = form.items[i]?.visibility?.conditions || []
+  if (!previous || conditions.length >= 10) return
+  // 后台会清理没有 fieldId 的条件；直接添加有效默认条件，避免保存回显时消失。
+  patchVis(i, { conditions: [...conditions, { fieldId: previous.fieldId, operator: 'isNotEmpty' }] })
+}
 function setVisCond(i, ci, c) { const l = [...(form.items[i].visibility?.conditions || [])]; l[ci] = c; patchVis(i, { conditions: l }) }
 function removeVisCond(i, ci) { patchVis(i, { conditions: form.items[i].visibility.conditions.filter((_, j) => j !== ci) }) }
-function otherQuestionFields(it) { return itemsWithField.value.filter(x => x.fieldId !== it.fieldId).map(x => x.field) }
+function otherQuestionFields(it) { return itemsWithField.value.slice(0, itemsWithField.value.findIndex(x => x.fieldId === it.fieldId)).map(x => x.field) }
 
 // 题目拖拽排序
-const dragFrom = ref(null)
-const dragOver = ref(null)
-function onDrop(i) {
-  const from = dragFrom.value
-  dragOver.value = null
-  dragFrom.value = null
-  if (from == null || from === i) return
-  commit(() => { const [m] = form.items.splice(from, 1); form.items.splice(i, 0, m) })
+const canvasRef = ref(null)
+const dragItem = ref(null)
+const dropIndex = ref(null)
+const dragHeight = ref(100)
+let scrollFrame = 0
+let dragPoint = null
+async function revealQuestion(fn) {
+  active.value = fn
+  await nextTick()
+  const card = [...(canvasRef.value?.querySelectorAll('.fv-q') || [])].find(el => el.dataset.fieldId === fn)
+  card?.scrollIntoView({ block: 'nearest', behavior: 'auto' })
 }
+function startFieldDrag(event, fieldId, existing = false) {
+  dragItem.value = { fieldId, existing }
+  dropIndex.value = null
+  const card = event.target.closest('.fv-q')
+  dragHeight.value = existing ? Math.min(300, card?.offsetHeight || 174) : 100
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = existing ? 'move' : 'copy'
+    event.dataTransfer.setData('text/plain', fieldId)
+    if (card) event.dataTransfer.setDragImage(card, 24, 24)
+  }
+}
+function endFieldDrag() {
+  dragItem.value = null
+  dropIndex.value = null
+  dragPoint = null
+  cancelAnimationFrame(scrollFrame)
+  scrollFrame = 0
+}
+function trackDrag(event) {
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = dragItem.value.existing ? 'move' : 'copy'
+  dragPoint = { x: event.clientX, y: event.clientY }
+  if (!scrollFrame) scrollFrame = requestAnimationFrame(scrollDrag)
+}
+function scrollDrag() {
+  scrollFrame = 0
+  const canvas = canvasRef.value
+  if (!dragItem.value || !dragPoint || !canvas) return
+  const rect = canvas.getBoundingClientRect()
+  const y = dragPoint.y
+  const speed = y < rect.top + 56 ? -12 : y > rect.bottom - 56 ? 12 : 0
+  if (speed) {
+    canvas.scrollTop += speed
+    const target = document.elementFromPoint(dragPoint.x, y)
+    const card = target?.closest('.fv-q')
+    if (card && canvas.contains(card)) setDropAtCard(card, y)
+  }
+  scrollFrame = requestAnimationFrame(scrollDrag)
+}
+function setDropAtCard(card, y) {
+  const index = itemsWithField.value.findIndex(it => it.fieldId === card.dataset.fieldId)
+  const rect = card.getBoundingClientRect()
+  dropIndex.value = index + (y >= rect.top + rect.height / 2 ? 1 : 0)
+}
+function dragQuestion(event) {
+  if (!dragItem.value) return
+  event.stopPropagation()
+  trackDrag(event)
+  setDropAtCard(event.currentTarget, event.clientY)
+}
+function dragPlaceholder(event, index) {
+  if (!dragItem.value) return
+  trackDrag(event)
+  dropIndex.value = index
+}
+function dragCanvas(event) {
+  if (!dragItem.value) return
+  trackDrag(event)
+  const cards = [...canvasRef.value.querySelectorAll('.fv-q')]
+  dropIndex.value = cards.findIndex(card => event.clientY < card.getBoundingClientRect().top)
+  if (dropIndex.value < 0) dropIndex.value = cards.length
+}
+function leaveCanvas(event) {
+  if (event.relatedTarget && canvasRef.value?.contains(event.relatedTarget)) return
+  const rect = canvasRef.value?.getBoundingClientRect()
+  // 新占位框替换鼠标下的节点时，浏览器也会触发 relatedTarget=null 的 dragleave。
+  if (rect && event.clientX >= rect.left && event.clientX <= rect.right &&
+      event.clientY >= rect.top && event.clientY <= rect.bottom) return
+  dropIndex.value = null
+  dragPoint = null
+  cancelAnimationFrame(scrollFrame)
+  scrollFrame = 0
+}
+function dropField() {
+  const item = dragItem.value
+  const target = dropIndex.value
+  endFieldDrag()
+  if (!item || target == null) return
+  if (item.existing) {
+    const from = form.items.findIndex(it => it.fieldId === item.fieldId)
+    if (from < 0) return
+    const to = target > from ? target - 1 : target
+    if (to !== from) commit(() => {
+      const [question] = form.items.splice(from, 1)
+      form.items.splice(to, 0, question)
+    })
+  } else {
+    if (!availableFields.value.some(f => f.field_name === item.fieldId)) return
+    commit(() => form.items.splice(target, 0, { fieldId: item.fieldId, required: false }))
+  }
+  revealQuestion(item.fieldId)
+}
+onBeforeUnmount(endFieldDrag)
 
 // ---------- 选项编辑（改字段级选项，与表格共享） ----------
 const isSelect = (f) => ['singleSelect', 'multiSelect'].includes(f.field_type)
@@ -279,21 +419,23 @@ function dropOption(f, to) {
   opts.splice(to, 0, m)
   emitOptions(f, opts)
 }
+function dragOption(event, index) {
+  if (optFrom.value == null || dragItem.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  optOver.value = index
+}
+function onOptionDrop(event, field, index) {
+  if (optFrom.value == null || dragItem.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  dropOption(field, index)
+}
 
 // ---------- 封面 ----------
-const coverRef = ref(null)
-function pickCover() { coverRef.value?.click() }
-async function onCover(e) {
-  const file = e.target.files?.[0]
-  e.target.value = ''
-  if (!file) return
-  try {
-    const r = await uploadImageFile(file)
-    setForm({ cover: String(r.files?.[0]?.id) })
-  } catch (err) {
-    ElMessage.error(err.message || '上传失败')
-  }
-}
+const coverPicker = ref(false)
+const coverMenu = ref(false)
+const coverSrc = computed(() => presetCoverUrl(form.cover) || (form.cover ? imageUrl(form.cover) : ''))
 
 // ---------- 填写 ----------
 const submitting = ref(false)
@@ -319,31 +461,6 @@ async function submit(data, reset) {
   }
 }
 
-// ---------- 分享 ----------
-const share = reactive({ visible: false, link: null, password: '', loading: false })
-const linkUrl = computed(() => (share.link ? `${location.origin}/sf/${share.link.token}` : ''))
-async function loadLink() { share.link = (await smartGetFormLink(props.view.id).catch(() => ({ link: null }))).link }
-async function saveLink() {
-  share.loading = true
-  try {
-    share.link = (await smartCreateFormLink(props.view.id, share.password ? { password: share.password } : {})).link
-    share.password = ''
-    ElMessage.success('公开链接已生效')
-  } catch (e) {
-    ElMessage.error(e.message || '操作失败')
-  } finally {
-    share.loading = false
-  }
-}
-async function closeLink() {
-  await smartDeleteFormLink(props.view.id)
-  share.link = null
-  ElMessage.success('已关闭公开链接')
-}
-async function copyLink() {
-  try { await navigator.clipboard.writeText(linkUrl.value); ElMessage.success('链接已复制') } catch { ElMessage.info(linkUrl.value) }
-}
-
 defineExpose({ addItem })
 </script>
 
@@ -363,35 +480,47 @@ defineExpose({ addItem })
 .fv-tab { display: flex; align-items: center; font-size: 14px; color: var(--st-text-1); cursor: pointer; border-bottom: 3px solid transparent; padding-top: 3px; }
 .fv-tab.on { border-bottom-color: var(--st-primary); color: var(--st-text-1); font-weight: 500; }
 .fv-main { flex: 1; display: flex; min-height: 0; }
-.fv-left { width: 270px; flex: none; background: #F9FAFA; border-right: 1px solid var(--st-border); padding: 16px 14px; overflow: auto; }
-.fv-left-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--st-text-1); margin-bottom: 12px; }
-.fv-link-g { color: var(--st-text-2); cursor: pointer; font-size: 12px; }
-.fv-link-g.off { color: var(--st-disabled); cursor: default; }
+.fv-left { width: 260px; box-sizing: border-box; flex: none; display: flex; flex-direction: column; min-height: 0; background: #F9FAFA; border-right: 1px solid var(--st-border); padding: 16px 10px 12px; }
+.fv-left-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex: none; font-size: 13px; color: var(--st-text-1); margin: 0 6px 12px; }
+.fv-left-actions { display: flex; gap: 8px; }
+.fv-link-g { padding: 0; border: 0; background: transparent; color: var(--st-text-2); cursor: pointer; font-size: 12px; white-space: nowrap; }
+.fv-link-g:hover:not(:disabled) { color: var(--st-primary); }
+.fv-link-g:disabled { color: var(--st-disabled); cursor: default; }
+.fv-field-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 6px; }
 .fv-avail-empty { border: 1px dashed #D8DADD; border-radius: 6px; padding: 26px 0; text-align: center; font-size: 12px; color: var(--st-text-2); margin-bottom: 10px; }
-.fv-avail { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid var(--st-border); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; font-size: 13px; cursor: pointer; }
+.fv-avail { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid transparent; border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; font-size: 13px; cursor: grab; user-select: none; }
+.fv-avail:active { cursor: grabbing; }
+.fv-avail.dragging,.fv-q.dragging { opacity: .4; }
 .fv-avail:hover { border-color: var(--st-primary); }
 .fv-avail .st-icon { color: var(--st-text-2); }
 .fv-avail-plus { margin-left: auto; color: var(--st-text-3) !important; }
-.fv-add-new { display: flex; align-items: center; gap: 8px; background: #fff; border-radius: 6px; padding: 10px 12px; font-size: 13px; color: var(--st-primary); cursor: pointer; margin-top: 8px; }
+.fv-add-new { display: flex; flex: none; align-items: center; gap: 8px; background: #fff; border-radius: 6px; padding: 10px 12px; font-size: 13px; color: var(--st-primary); cursor: pointer; margin-top: 12px; }
 .fv-add-new .st-icon { color: var(--st-primary); }
 .fv-add-caret { margin-left: auto; }
 .fv-canvas { flex: 1; overflow: auto; padding: 36px 24px 60px; background: #EFF0F1; }
-.fv-paper-wrap { max-width: 780px; margin: 0 auto; background: #F6F7F7; border-radius: 16px; padding: 0 18px 18px; }
-.fv-cover-bar { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 0; position: relative; }
-.fv-cover-img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 10px; }
-.fv-cover-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--st-text-1); cursor: pointer; }
-.fv-cover-btn:hover { color: var(--st-primary); }
+.fv-paper-wrap { max-width: 780px; margin: 0 auto; background: #F6F7F7; border-radius: 16px; padding: 0 24px 24px; }
+.fv-cover-bar { display: flex; align-items: center; justify-content: center; height: 48px; position: relative; }
+.has-cover .fv-cover-bar { height: 170px; margin: 0 -24px; }
+.fv-cover-img { width: 100%; height: 170px; object-fit: cover; border-radius: 16px 16px 0 0; display: block; }
+.fv-cover-btn { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px; border: 0; border-radius: 4px; background: #E9EBEC; font-size: 13px; color: var(--st-text-1); cursor: pointer; }
+.fv-cover-btn:hover { background: #E0E3E5; }
+.fv-cover-more { position: absolute; right: 16px; top: 16px; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 0; border-radius: 4px; background: #ffffff55; color: #30343B; cursor: pointer; }
+.fv-cover-menu { display: flex; flex-direction: column; gap: 2px; }
+.fv-cover-menu button { height: 32px; text-align: left; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: #30343B; cursor: pointer; }
+.fv-cover-menu button:hover { background: #E6E8E8; }
+.has-cover .fv-paper { position: relative; margin-top: -44px; }
 .fv-hidden { display: none; }
 .fv-paper { background: #fff; border-radius: 10px; padding: 32px 46px 40px; }
 .fv-title { width: 100%; border: none; outline: none; font-size: 20px; font-weight: 700; color: var(--st-text-1); padding: 4px 0; }
 .fv-desc { width: 100%; border: none; outline: none; font-size: 14px; color: var(--st-text-2); padding: 8px 0; }
 .fv-desc::placeholder, .fv-q-desc-in::placeholder { color: var(--st-text-4); }
 .fv-line { height: 1px; background: var(--st-border); margin: 16px 0 18px; }
-.fv-q { position: relative; padding: 16px 40px 18px 46px; margin: 0 -46px; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+.fv-q { position: relative; padding: 16px 34px 18px; margin: 4px -18px; border: 1px solid var(--st-border); border-radius: 4px; cursor: pointer; }
 .fv-q:hover { border-color: var(--st-border); }
-.fv-q.active { border-color: var(--st-primary); cursor: default; padding-bottom: 0; }
-.fv-q.over { border-top: 2px solid var(--st-primary); }
-.fv-drag { position: absolute; left: 18px; top: 18px; color: var(--st-text-3); cursor: grab; display: none; }
+.fv-q.active { border-color: var(--st-primary); box-shadow: 0 0 0 1px var(--st-primary); cursor: default; padding-bottom: 0; }
+.fv-drop-placeholder { box-sizing: border-box; margin: 4px -18px; border: 1px solid var(--st-primary); border-radius: 4px; background: #DCEBFC; }
+.fv-q :deep(.fc.preview .fc-ph) { box-sizing: border-box; min-height: 32px; padding: 6px 8px; line-height: 18px; border-color: #DADDE0; background: #F7F7F7; font-size: 13px; color: var(--st-text-3); }
+.fv-drag { position: absolute; left: 10px; top: 18px; color: var(--st-text-3); cursor: grab; display: inline-flex; }
 .fv-q:hover .fv-drag, .fv-q.active .fv-drag { display: inline-flex; }
 .fv-q-title { font-size: 15px; font-weight: 600; color: var(--st-text-1); margin-bottom: 12px; display: flex; align-items: center; gap: 4px; }
 .fv-req { color: var(--el-color-danger); }
@@ -399,7 +528,7 @@ defineExpose({ addItem })
 .fv-q-desc { font-size: 13px; color: var(--st-text-3); margin: -6px 0 10px; }
 .fv-q-title-in { width: 100%; border: none; outline: none; font-size: 15px; font-weight: 600; padding: 0 0 8px; }
 .fv-q-desc-in { width: 100%; border: none; outline: none; font-size: 14px; color: var(--st-text-2); padding: 4px 0 12px; }
-.fv-opts { max-height: 340px; overflow: auto; padding-bottom: 6px; }
+.fv-opts { max-height: 260px; overflow: auto; padding-bottom: 6px; scrollbar-width: thin; }
 .fv-opt { display: flex; align-items: center; gap: 10px; padding: 4px 6px; border-radius: 4px; }
 .fv-opt.over { border-top: 2px solid var(--st-primary); }
 .fv-opt-drag { color: var(--st-text-4); cursor: grab; display: inline-flex; }
@@ -409,26 +538,32 @@ defineExpose({ addItem })
 .fv-opt-rm:hover { color: var(--el-color-danger); }
 .fv-opt-add { display: inline-flex; align-items: center; gap: 6px; color: var(--st-primary); cursor: pointer; font-size: 15px; padding: 8px 6px; }
 .fv-opt-tip { font-size: 12px; color: var(--st-text-4); padding: 0 6px; }
-.fv-attrs { display: flex; align-items: center; gap: 10px; margin: 16px -40px 0 -46px; padding: 10px 24px 10px 36px; background: #F2F3F4; border-top: 1px solid var(--st-border); border-radius: 0 0 4px 4px; font-size: 13px; }
+.fv-attrs { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 46px; box-sizing: border-box; margin: 16px -34px 0; padding: 8px 24px; background: #ECEDEE; border-top: 1px solid var(--st-border); border-radius: 0 0 3px 3px; font-size: 13px; }
 .fv-attr-l { color: var(--st-text-2); }
-.fv-attr-field { width: 150px; }
-.fv-attr-widget { width: 86px; }
+.fv-attr-field { width: 100px; }
+.fv-attr-widget { width: 66px; }
 .fv-attr-sp { flex: 1; }
 .fv-attr-sep { width: 1px; height: 14px; background: #D5D7DA; }
 .fv-attr-btn { display: inline-flex; align-items: center; gap: 4px; color: var(--st-text-2); cursor: pointer; }
 .fv-attr-btn:hover, .fv-attr-btn.on { color: var(--st-primary); }
-.fv-vis { display: flex; flex-direction: column; gap: 10px; }
-.fv-vis-t { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.fv-attr-btn.disabled, .fv-attr-btn.disabled:hover { color: #B7BCC3; cursor: not-allowed; }
+.fv-attr-btn.on { background: #DDE0E4; border-radius: 3px; }
+.fv-attr-icon { border: 0; background: transparent; padding: 3px; border-radius: 3px; }
+.fv-attr-icon:hover:not(:disabled) { background: #DDE0E4; }
+.fv-attr-icon.danger:hover:not(:disabled) { color: var(--el-color-danger); }
+.fv-attr-icon:disabled { color: var(--st-disabled); cursor: not-allowed; }
+.fv-vis { display: flex; flex-direction: column; gap: 18px; padding: 8px 12px 12px; }
+.fv-vis-t { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; color: var(--st-text-1); }
 .fv-vis-match { width: 80px; }
-.fv-vis-add { display: inline-flex; align-items: center; gap: 4px; color: var(--st-primary); cursor: pointer; font-size: 13px; }
-.fv-empty { text-align: center; color: var(--st-text-4); font-size: 13px; padding: 30px 0; }
+.fv-vis-add { display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; padding: 7px 12px; border: 0; border-radius: 4px; background: #F2F3F5; color: var(--st-text-1); cursor: pointer; font-size: 13px; }
+.fv-vis-add:hover { background: #E8EAED; }
+.fv-vis-add:disabled { color: var(--st-disabled); cursor: not-allowed; }
+.fv-empty { display: flex; align-items: center; justify-content: center; min-height: 90px; box-sizing: border-box; border: 2px dashed #E2E5E8; margin: 4px -18px; color: var(--st-text-2); font-size: 13px; }
+.fv-empty button { border: 0; padding: 0; background: transparent; color: var(--st-primary); cursor: pointer; font: inherit; }
+.fv-empty.drop-active { border: 1px solid var(--st-primary); border-radius: 4px; background: #DCEBFC; }
+.fv-empty.drop-active > span { visibility: hidden; }
 .fv-add-wrap { display: flex; justify-content: center; margin-top: 28px; }
 .fv-add-btn { display: inline-flex; align-items: center; gap: 6px; background: #F2F3F5; border-radius: 6px; padding: 9px 22px; color: var(--st-primary); font-size: 14px; cursor: pointer; }
 .fv-add-btn:hover { background: #E8EAED; }
 .fv-fill { flex: 1; overflow: auto; padding: 36px 24px 60px; background: #EFF0F1; }
-.fv-share { display: flex; flex-direction: column; gap: 10px; }
-.fv-share-t { font-weight: 600; font-size: 14px; }
-.fv-share-d { font-size: 12px; color: var(--st-text-2); }
-.fv-share-url, .fv-share-row { display: flex; gap: 6px; }
-.fv-share-off { font-size: 12px; color: var(--el-color-danger); cursor: pointer; align-self: flex-start; }
 </style>

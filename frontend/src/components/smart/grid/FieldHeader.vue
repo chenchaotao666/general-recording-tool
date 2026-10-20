@@ -2,11 +2,11 @@
   <!-- 列头（参照 docs/智慧表格/表头样式.png）：类型图标 + 字段名 + AI 角标 + 筛选态漏斗 + 下拉菜单（不显示排序标记）。
        字段名有空间就换行完整显示（行数上限 = 表头可用高度能放下的行数），放不下才省略；
        下拉三角在 hover 列头或单击选中列时显示（统一 .st-dd 交互）。点击三角或右键出菜单 -->
-  <span class="field-head" :title="field.label" @contextmenu.prevent.stop="$emit('menu', $event)">
+  <span class="field-head" @contextmenu.prevent.stop="$emit('menu', $event)">
     <StIcon :name="iconName" :size="14" class="field-icon" />
     <!-- AI 角标、筛选漏斗内联在字段名文字流末尾：紧跟最后一个字（字段名换行时也不会被推到最右侧） -->
     <span class="field-name" :style="{ '-webkit-line-clamp': lines }">{{ field.label }}<AiBadge v-if="isAi" class="ai-badge" /><span
-      v-if="filtered" class="filter-dot" title="编辑该列筛选" @click.stop="onFilterClick" @dblclick.stop><StIcon name="filter" :size="15" /></span></span>
+      v-if="filtered" class="filter-dot st-icon-action" aria-label="编辑该列筛选" @click.stop="onFilterClick" @dblclick.stop><StIcon name="filter" :size="15" /></span></span>
     <span class="st-dd head-menu" :class="{ open: menuOpen }" @click.stop="$emit('menu', $event)" @dblclick.stop />
   </span>
 </template>

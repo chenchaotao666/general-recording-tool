@@ -10,7 +10,7 @@
       <div class="aip-main" :class="{ wide: step === 'market' }">
         <!-- 头部 -->
         <div class="aip-head">
-          <span v-if="showBack" class="aip-icon-btn" title="返回" @click="goBack"><StIcon name="back" :size="18" /></span>
+          <span v-if="showBack" class="aip-icon-btn st-icon-action" data-smart-tip="返回" @click="goBack"><StIcon name="back" :size="18" /></span>
           <span class="aip-logo"><StIcon name="sparkle" :size="13" /></span>
           <span class="aip-title">{{ headTitle }}</span>
           <AiBadge v-if="step === 'market'" plain />
@@ -47,7 +47,7 @@
         <div v-if="step !== 'market' && !result" class="aip-bottom">
           <div v-if="running" class="aip-running">
             <span class="aip-spin" /><span>正在配置...</span>
-            <span class="aip-stop" title="停止" @click="stopRun"><StIcon name="stop" :size="18" /></span>
+            <span class="aip-stop st-icon-action" data-smart-tip="停止" @click="stopRun"><StIcon name="stop" :size="18" /></span>
           </div>
           <AiComposer v-else ref="composerRef" :fields="fields"
                       :hint="revising || isCustom ? '' : `请提供要「${scene?.label}」的内容`"
@@ -60,14 +60,14 @@
 
       <!-- ================= 右侧：场景市场 ================= -->
       <div v-if="step === 'market'" class="aip-market">
-        <div class="aip-search"><span class="aip-icon-btn" title="关闭" @click="emit('close')"><StIcon name="back" :size="18" /></span>
+        <div class="aip-search"><span class="aip-icon-btn st-icon-action" data-smart-tip="关闭" @click="emit('close')"><StIcon name="back" :size="18" /></span>
           <input ref="searchRef" v-model="kw" class="aip-search-in" placeholder="搜索场景" /></div>
         <div class="aip-tabs-wrap">
           <div ref="tabsRef" class="aip-tabs">
             <span v-for="c in categories" :key="c.key" class="aip-tab" :class="{ on: tab === c.key }" @click="jumpTo(c.key)">
               <StIcon :name="c.icon || 'star'" :size="14" />{{ c.label }}</span>
           </div>
-          <span class="aip-tabs-more" title="更多分类" @click="scrollTabs"><StIcon name="caret-down" :size="12" class="rot" /></span>
+          <span class="aip-tabs-more st-icon-action" data-smart-tip="更多分类" @click="scrollTabs"><StIcon name="caret-down" :size="12" class="rot" /></span>
         </div>
         <div ref="gridRef" class="aip-grid-wrap" @scroll="onGridScroll">
           <div v-for="sec in sections" :key="sec.key" class="aip-sec-wrap" :data-cat="sec.key">
@@ -93,7 +93,7 @@
     <div v-if="useDlg" class="aip-use-mask" @mousedown.self="useDlg = false">
       <div class="aip-use">
         <div class="aip-use-h"><StIcon name="info" :size="20" class="aip-use-ico" /><span>使用 AI 字段生成内容</span>
-          <span class="aip-icon-btn" @click="useDlg = false"><StIcon name="close" :size="16" /></span></div>
+          <span class="aip-icon-btn st-icon-action" @click="useDlg = false"><StIcon name="close" :size="16" /></span></div>
         <div class="aip-use-d">将使用 AI 生成并替换当前内容，生成全部 {{ totalRows }} 行可能需要较长时间。</div>
         <button class="aip-btn primary block" @click="finishNew('first5')">生成前 5 行</button>
         <button class="aip-btn block" @click="finishNew('all')">生成全部</button>

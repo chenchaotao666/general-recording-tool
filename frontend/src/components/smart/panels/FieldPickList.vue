@@ -12,7 +12,7 @@
         </div>
         <template v-if="!n.group || !collapsed.has(n.group.id)">
           <div v-for="f in n.fields" :key="f.field_name" class="fpl-item" :class="{ sub: !!n.group, on: f.field_name === selected }"
-               :title="f.label" @click="emit('pick', f)">
+               :data-smart-tip="f.label" @click="emit('pick', f)">
             <StIcon :name="fieldIconName(f)" :size="16" class="fpl-ico" /><span class="fpl-name">{{ f.label }}</span>
           </div>
         </template>

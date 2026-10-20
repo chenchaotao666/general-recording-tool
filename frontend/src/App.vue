@@ -3,9 +3,12 @@
   <router-view v-if="$route.path === '/login' || $route.path === '/select-tenant'
     || $route.path.startsWith('/share/') || $route.path.startsWith('/form/') || $route.path.startsWith('/approve/') || $route.path.startsWith('/sf/')" />
   <el-container v-else class="layout" :class="{ focus: focusMode }">
-    <el-aside :width="navCollapsed ? '64px' : '180px'" class="aside">
-      <div class="logo" :title="navCollapsed ? '通用记录工具' : ''">{{ navCollapsed ? '记' : '通用记录工具' }}</div>
-      <el-menu :default-active="$route.path" router :collapse="navCollapsed" :collapse-transition="false">
+    <el-aside :width="navCollapsed ? '82px' : '180px'" class="aside" :class="{ 'nav-compact': navCollapsed }">
+      <router-link to="/home" class="nav-brand" title="万通AI助手" aria-label="万通AI助手首页">
+        <img src="/wantong-logo.svg" alt="" class="nav-brand-mark" />
+        <span v-if="!navCollapsed" class="nav-brand-name">万通AI助手</span>
+      </router-link>
+      <el-menu :default-active="activeNavPath" router :collapse-transition="false" aria-label="主导航">
         <el-menu-item index="/home">
           <el-icon><HomeFilled /></el-icon><span>首页</span>
         </el-menu-item>
@@ -71,9 +74,9 @@
           </el-menu-item>
         </el-menu-item-group>
       </el-menu>
-      <div class="collapse-btn" :title="navCollapsed ? '展开导航' : '收起导航'" @click="toggleNav">
+      <button type="button" class="collapse-btn" :aria-expanded="!navCollapsed" :aria-label="navCollapsed ? '展开导航' : '收起导航'" :title="navCollapsed ? '展开导航' : '收起导航'" @click="toggleNav">
         <el-icon><Expand v-if="navCollapsed" /><Fold v-else /></el-icon>
-      </div>
+      </button>
     </el-aside>
     <el-container>
       <el-header class="topbar">
@@ -168,7 +171,11 @@ const router = useRouter()
 const route = useRoute()
 const unread = ref(0)
 // 侧边导航折叠状态（记住选择）
-const navCollapsed = ref(localStorage.getItem('grt_nav_collapsed') === '1')
+const navCollapsed = ref(localStorage.getItem('grt_nav_collapsed') !== '0')
+const activeNavPath = computed(() => {
+  const sections = ['/system/groups', '/system/users', '/platform/tenants', '/platform/plans', '/home', '/tables', '/smart', '/import', '/notes', '/whiteboard', '/mindmaps', '/reports', '/workflows', '/notifications', '/friends', '/billing', '/settings']
+  return sections.find(path => route.path === path || route.path.startsWith(`${path}/`)) || route.path
+})
 function toggleNav() {
   navCollapsed.value = !navCollapsed.value
   localStorage.setItem('grt_nav_collapsed', navCollapsed.value ? '1' : '0')
@@ -375,18 +382,26 @@ body { margin: 0; font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Micr
 /* 专注模式：隐藏 chrome（侧边导航/顶栏/订阅横幅），页面高度变量归零 */
 .layout.focus { --chrome-h: 0px; }
 .layout.focus .aside, .layout.focus .topbar, .layout.focus .sub-banner { display: none; }
-.aside { border-right: 1px solid #e4e7ed; background: #fafafa; transition: width .15s ease; display: flex; flex-direction: column; }
+.aside { border-right: 1px solid #dce5ef; background: linear-gradient(180deg, #edf5ff 0%, #e8f0fa 100%); transition: width .18s ease; display: flex; flex-direction: column; overflow: hidden; }
 .logo { padding: 18px 20px; font-size: 17px; font-weight: 600; color: #303133; white-space: nowrap; overflow: hidden; flex-shrink: 0; }
-.aside .el-menu { border-right: none; background: transparent; flex: 1; overflow-y: auto; }
-.aside .el-menu--collapse { width: 100%; }
-/* 分组标题更淡更小，与菜单项拉开层级 */
-.aside .el-menu-item-group__title { font-size: 11px; color: #b1b5bd; padding: 10px 20px 2px; }
-.collapse-btn {
-  height: 40px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center; cursor: pointer;
-  color: #909399; border-top: 1px solid #e4e7ed; background: #fafafa;
-}
-.collapse-btn:hover { color: var(--grt-primary); background: #f0f2f5; }
+.nav-brand { display: flex; align-items: center; gap: 9px; height: 64px; padding: 0 14px; box-sizing: border-box; text-decoration: none; flex-shrink: 0; }
+.nav-brand-mark { width: 32px; height: 32px; flex-shrink: 0; filter: drop-shadow(0 3px 5px #235bb51a); }
+.nav-brand-name { color: #24476d; font-size: 15px; font-weight: 650; white-space: nowrap; }
+.aside.nav-compact .nav-brand { justify-content: center; padding: 0; }
+.aside .el-menu { border-right: none; background: transparent; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 5px 8px; scrollbar-width: thin; scrollbar-color: #b8c9dc transparent; }
+.aside .el-menu-item { position: relative; height: 44px; line-height: 18px; padding: 0 12px !important; margin: 2px 0; border-radius: 7px; display: flex; align-items: center; gap: 10px; color: #627a96; }
+.aside .el-menu-item .el-icon { margin: 0; width: 20px; height: 20px; font-size: 20px; color: #8093a9; }
+.aside .el-menu-item > span:not(.menu-unread) { font-size: 13px; line-height: 18px; white-space: nowrap; }
+.aside.nav-compact .el-menu-item { height: 50px; flex-direction: column; justify-content: center; gap: 3px; padding: 4px 0 !important; }
+.aside.nav-compact .el-menu-item > span:not(.menu-unread) { font-size: 12px; line-height: 16px; }
+.aside .el-menu-item:hover { background: #dfeafb; color: #2b70cf; }
+.aside .el-menu-item.is-active { background: #d2e5ff; color: #2378ec; font-weight: 600; }
+.aside .el-menu-item.is-active .el-icon { color: #2c82f5; }
+.aside .el-menu-item:focus-visible, .nav-brand:focus-visible, .collapse-btn:focus-visible { outline: 2px solid #2c82f5; outline-offset: -2px; }
+.aside .el-menu-item-group__title { font-size: 0; line-height: 0; padding: 0; margin: 9px 12px; border-top: 1px solid #d4e0ee; }
+.collapse-btn { width: 100%; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #6f87a2; border: 0; border-top: 1px solid #dce5ef; background: transparent; font-size: 17px; }
+.collapse-btn:hover { color: #2378ec; background: #dfeafb; }
+@media (prefers-reduced-motion: reduce) { .aside { transition: none; } }
 .topbar {
   background: #fff; border-bottom: 1px solid #e4e7ed;
   display: flex; align-items: center; justify-content: space-between; height: 48px;
@@ -400,7 +415,7 @@ body { margin: 0; font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Micr
 .bell-icon:hover { color: var(--grt-primary); }
 /* 侧边菜单的未读数角标 */
 .menu-unread {
-  margin-left: auto; background: #f56c6c; color: #fff; font-size: 11px; line-height: 1;
+  position: absolute; top: 2px; right: 4px; margin: 0; background: #f56c6c; color: #fff; font-size: 11px; line-height: 1;
   border-radius: 9px; padding: 3px 6px; transform: scale(.9);
 }
 .user-name { cursor: pointer; font-size: 14px; color: #606266; outline: none; }

@@ -437,6 +437,7 @@ export const smartFieldDeps = (tid, fieldName) => http.get(`/smart/tables/${tid}
 export const smartGrid = (tid, params) => http.get(`/smart/tables/${tid}/grid`, { params })
 export const smartFieldStats = (tid, params) => http.get(`/smart/tables/${tid}/field-stats`, { params })
 export const smartCreateRecord = (tid, payload) => http.post(`/smart/tables/${tid}/records`, payload)
+export const smartInsertRecords = (tid, rid, payload) => http.post(`/smart/tables/${tid}/records/${rid}/insert`, payload)
 export const smartUpdateRecord = (tid, rid, payload) => http.patch(`/smart/tables/${tid}/records/${rid}`, payload)
 export const smartDeleteRecord = (tid, rid) => http.delete(`/smart/tables/${tid}/records/${rid}`)
 export const smartBatchDelete = (tid, ids) => http.post(`/smart/tables/${tid}/records:batch-delete`, { ids })

@@ -1,5 +1,16 @@
 // 表单显示条件求值（与后端 smart_cond.match_conditions 同语义，提交时服务端复核）
 
+// 题目只能依赖前面的题目；删除、换绑、排序后清理失效引用，保留尚未选字段的编辑行。
+export function normalizeVisibility(items) {
+  const preceding = new Set()
+  return items.map(item => {
+    const conditions = (item.visibility?.conditions || []).filter(c => !c.fieldId || preceding.has(c.fieldId))
+    const visibility = preceding.size && conditions.length ? { ...item.visibility, conditions } : null
+    preceding.add(item.fieldId)
+    return { ...item, visibility }
+  })
+}
+
 const isEmpty = (v) => v == null || v === '' || (Array.isArray(v) && !v.length)
 
 function asList(v) { return Array.isArray(v) ? v.map(String) : (isEmpty(v) ? [] : [String(v)]) }

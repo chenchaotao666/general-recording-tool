@@ -1,0 +1,8 @@
+Built-in form cover photographs (Unsplash CDN). Downloaded 2026-10-20.
+snow.jpg: https://images.unsplash.com/photo-1464822759023-fed622ff2c3b
+desert.jpg: https://images.unsplash.com/photo-1473580044384-7ba9967e16a0
+forest.jpg: https://images.unsplash.com/photo-1448375240586-882707db888b
+lake.jpg: https://images.unsplash.com/photo-1470770841072-f978cf4d019e
+nebula.jpg: https://images.unsplash.com/photo-1462331940025-496dfbfc7564
+earth.jpg: https://images.unsplash.com/photo-1614730321146-b6fa6a46bcb4
+Geometry: original SVG artwork.

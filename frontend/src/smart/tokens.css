@@ -82,3 +82,59 @@
 }
 /* vxe-table 用独立滚动层显示滚动条，默认预留 18px：收窄到与上面的滚动条热区同宽 */
 .smart-vxe { --vxe-ui-table-view-scrollbar-width: 12px; --vxe-ui-table-view-scrollbar-height: 12px; }
+
+/* 提示层会传送到 body；按智能表页面作用域统一，包含组件内置的溢出提示。 */
+body:has(.smart-home, .st-page, .dash-page) .el-popper.is-dark,
+body:has(.smart-home, .st-page, .dash-page) .vxe-table--tooltip-wrapper,
+body:has(.smart-home, .st-page, .dash-page) .vxe-tooltip--wrapper {
+  color: #30343B;
+  background: #fff;
+  border: 1px solid #E1E3E6;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, .12);
+}
+body:has(.smart-home, .st-page, .dash-page) .el-popper.is-dark .el-popper__arrow,
+body:has(.smart-home, .st-page, .dash-page) .vxe-table--tooltip-arrow,
+body:has(.smart-home, .st-page, .dash-page) .vxe-tooltip--arrow { display: none; }
+
+.st-unified-tooltip {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  box-sizing: border-box;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow: hidden;
+  padding: 6px 8px;
+  border: 1px solid #E1E3E6;
+  border-radius: 4px;
+  background: #fff;
+  color: #30343B;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, .12);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 操作图标共用悬停样式；保留原尺寸和布局，文字菜单项、字段类型图标不加独立底色。 */
+:root {
+  --st-icon-hover-bg: #E6E8E8;
+  --st-icon-hover-radius: 4px;
+}
+:is(.st-icon-action, .st-dd, .st-row-expand,
+    .sel-anchor .tag-x, .ev-x, .fc-x, .aic-chip-x, .me-chip-x) {
+  border-radius: var(--st-icon-hover-radius);
+}
+:is(.st-icon-action, .st-dd, .st-row-expand,
+    .sel-anchor .tag-x, .ev-x, .fc-x, .aic-chip-x, .me-chip-x):is(:hover, :focus-visible):not(:disabled):not([aria-disabled="true"]):not(.disabled):not(.off):not(.is-disabled) {
+  background: var(--st-icon-hover-bg) !important;
+  border-radius: var(--st-icon-hover-radius) !important;
+  color: #30343B;
+}
+.st-icon-action:disabled:hover, .st-icon-action[aria-disabled="true"]:hover {
+  background: transparent !important;
+}

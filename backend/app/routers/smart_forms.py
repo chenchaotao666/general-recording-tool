@@ -168,8 +168,11 @@ def create_share_link(vid: int, payload: dict | None = None, db: Session = Depen
         link = SharedLink(token=secrets.token_urlsafe(24), resource_type=RESOURCE, resource_id=v.id,
                           created_by=ctx.user.id)
         db.add(link)
-    link.password_hash = hash_password(str(pw)) if pw else None
-    link.expires_at = datetime.now() + timedelta(days=int(days)) if days else None
+    # Partial updates must not silently remove existing password/expiry protection.
+    if "password" in payload:
+        link.password_hash = hash_password(str(pw)) if pw else None
+    if "expires_in_days" in payload:
+        link.expires_at = datetime.now() + timedelta(days=int(days)) if days else None
     db.commit()
     db.refresh(link)
     return {"link": _link_out(link)}

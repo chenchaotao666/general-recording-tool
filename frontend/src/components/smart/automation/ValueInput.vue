@@ -18,7 +18,7 @@
                       :teleported="false" class="vi-in" @update:model-value="setStatic" />
       <el-input v-else :model-value="staticVal" class="vi-in" placeholder="请输入" @update:model-value="setStatic" />
     </template>
-    <span class="vi-var" title="插入变量" @click="openVars">{x}</span>
+    <span class="vi-var" data-smart-tip="插入变量" @click="openVars">{x}</span>
     <teleport to="body">
       <div v-if="menu.visible" class="vi-mask" @mousedown="menu.visible = false" />
       <VarMenu v-if="menu.visible" :x="menu.x" :y="menu.y" :steps="steps" value-mode @pick="pickVar" />

@@ -6,7 +6,7 @@
     <template #header>
       <div class="mg-head">
         <span class="mg-title">指定成员设置<span class="st-free-tag">限时免费</span></span>
-        <span class="mg-x" @click="emit('close')"><StIcon name="close" :size="18" /></span>
+        <span class="mg-x st-icon-action" @click="emit('close')"><StIcon name="close" :size="18" /></span>
       </div>
     </template>
     <div class="mg-card">
@@ -15,7 +15,7 @@
       <div v-if="memberIds.length" class="mg-list">
         <div v-for="m in chosen" :key="m.id" class="mg-member">
           <span class="mg-av">{{ m.name[0] }}</span><span class="mg-name">{{ m.name }}</span>
-          <span class="mg-rm" title="移除" @click="memberIds = memberIds.filter(x => x !== m.id)"><StIcon name="minus-circle" :size="16" /></span>
+          <span class="mg-rm st-icon-action" data-smart-tip="移除" @click="memberIds = memberIds.filter(x => x !== m.id)"><StIcon name="minus-circle" :size="16" /></span>
         </div>
       </div>
       <el-select v-if="picking || !memberIds.length" ref="pickRef" v-model="memberIds" multiple filterable

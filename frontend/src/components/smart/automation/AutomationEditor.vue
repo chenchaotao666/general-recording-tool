@@ -96,7 +96,7 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <span v-if="modelValue.actions.length > 1" class="ae-del" title="删除此操作" @click="removeAction(i)"><StIcon name="trash" :size="16" /></span>
+          <span v-if="modelValue.actions.length > 1" class="ae-del st-icon-action" data-smart-tip="删除此操作" @click="removeAction(i)"><StIcon name="trash" :size="16" /></span>
         </div>
 
         <!-- 发送消息 -->
@@ -181,7 +181,7 @@
               <span class="ae-eq">=</span>
               <ValueInput :model-value="v.value" :field="fieldsOf(a.tableId).find(f => f.field_name === v.fieldId)"
                           :steps="stepsBefore(i + 2)" @update:model-value="(nv) => setValue(i, vi, { ...v, value: nv })" />
-              <span class="ae-rm" @click="removeValue(i, vi)"><StIcon name="minus-circle" :size="16" /></span>
+              <span class="ae-rm st-icon-action" @click="removeValue(i, vi)"><StIcon name="minus-circle" :size="16" /></span>
             </div>
             <a class="ae-add-cond" @click="addValue(i)"><StIcon name="plus" :size="13" />添加要{{ a.type === 'createRecord' ? '填写' : '修改' }}的字段</a>
           </div>

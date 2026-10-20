@@ -10,10 +10,10 @@
       </div>
       <div v-for="(s, i) in draft" :key="s._k" class="sp-row" :class="dropClass(i)"
            @dragover.prevent="overIdx = i" @drop.prevent="dropRow(i)">
-        <span class="tbp-drag" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = null"><StIcon name="drag" :size="15" /></span>
+        <span class="tbp-drag st-icon-action" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = null"><StIcon name="drag" :size="15" /></span>
         <TbFieldSelect :model-value="s.fieldId" :fields="fields" class="sp-field" @update:model-value="(v) => update(i, { fieldId: v })" />
         <DirToggle :model-value="s.direction" :labels="labelsOf(s)" @update:model-value="(v) => update(i, { direction: v })" />
-        <span class="tbp-del" title="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
+        <span class="tbp-del st-icon-action" data-smart-tip="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
       </div>
       <button class="tbp-add sp-add" :disabled="draft.length >= 5" @click="add"><StIcon name="plus" :size="15" />添加排序字段</button>
     </div>

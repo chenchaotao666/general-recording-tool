@@ -4,8 +4,8 @@
        底部：左侧 AI 入口（使用 AI 生成/计算/判断/匹配标签/生成公式），右侧 确定 / 取消。
        无标题栏；所有入口均非模态，at 存在时锚定在打开位置（anchoredDialogAttrs），点击外部收起 -->
   <el-dialog :model-value="visible" width="470px" :show-close="false" class="st-fcd" append-to-body
-             v-bind="anchoredDialogAttrs(at, 470, 560)" @update:model-value="$emit('close')" destroy-on-close>
-    <div class="fcd">
+             v-bind="anchoredDialogAttrs(at, 470, 560)" @opened="placeEditor" @update:model-value="$emit('close')" destroy-on-close>
+    <div ref="editorBody" class="fcd">
       <input ref="nameRef" v-model="form.label" class="fcd-input fcd-name" placeholder="字段名称" maxlength="100"
              @keydown.enter="save" @keydown.esc="$emit('close')" />
       <el-select v-model="form.field_type" class="fcd-select fcd-type" popper-class="fcd-pop" :disabled="!!field && isSystemLike"
@@ -36,18 +36,18 @@
             <div class="fcd-optbox">
               <div v-for="(o, i) in form.config.options" :key="o.id" class="fcd-opt-row" :class="dropCls(i)"
                    @dragover.prevent="overIdx = i" @drop.prevent="dropOpt(i)">
-                <span class="fcd-del" title="删除选项" @click="form.config.options.splice(i, 1)"><StIcon name="minus-circle" :size="20" /></span>
+                <span class="fcd-del st-icon-action" data-smart-tip="删除选项" @click="form.config.options.splice(i, 1)"><StIcon name="minus-circle" :size="20" /></span>
                 <el-popover trigger="click" placement="bottom-start" :width="208" popper-class="fcd-color-pop" :show-arrow="false">
                   <template #reference>
-                    <span class="fcd-color" :style="{ background: optionColor(o.color).value }" title="选择颜色" />
+                    <span class="fcd-color" :style="{ background: optionColor(o.color).value }" data-smart-tip="选择颜色" />
                   </template>
                   <div class="fcd-palette">
                     <span v-for="c in OPTION_COLORS" :key="c.key" class="fcd-pal" :class="{ on: o.color === c.key }"
-                          :style="{ background: c.value }" :title="c.label" @click="o.color = c.key" />
+                          :style="{ background: c.value }" :data-smart-tip="c.label" @click="o.color = c.key" />
                   </div>
                 </el-popover>
                 <input v-model="o.label" class="fcd-opt-in" />
-                <span class="fcd-drag" draggable="true" title="拖拽调整顺序" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = -1">
+                <span class="fcd-drag st-icon-action" draggable="true" data-smart-tip="拖拽调整顺序" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = -1">
                   <StIcon name="drag" :size="16" /></span>
               </div>
               <div class="fcd-add" @click="addOption"><StIcon name="plus-circle" :size="20" />添加选项</div>
@@ -81,7 +81,7 @@
                 <FieldSel v-model="c.localFieldId" :fields="fields" placeholder="本表的字段" class="fcd-c1" />
                 <el-select v-model="c.operator" class="fcd-select fcd-c2" popper-class="fcd-pop"><el-option value="eq" label="等于" /></el-select>
                 <FieldSel v-model="c.remoteFieldId" :fields="refFields" placeholder="引用表的字段" class="fcd-c3" />
-                <span class="fcd-del" @click="form.config.optionLinkage.conditions.splice(i, 1)"><StIcon name="minus-circle" :size="20" /></span>
+                <span class="fcd-del st-icon-action" @click="form.config.optionLinkage.conditions.splice(i, 1)"><StIcon name="minus-circle" :size="20" /></span>
               </div>
               <div class="fcd-add gray" @click="form.config.optionLinkage.conditions.push({ localFieldId: null, operator: 'eq', remoteFieldId: null })">
                 <StIcon name="plus" :size="16" />添加条件</div>
@@ -213,7 +213,7 @@
               <div class="fcd-seg-preview"><span class="fcd-sub">编号预览</span>{{ segPreview }}</div>
               <div v-for="(s, i) in form.config.segments" :key="i" class="fcd-seg" :class="dropCls(i)"
                    @dragover.prevent="overIdx = i" @drop.prevent="dropSeg(i)">
-                <span class="fcd-del" :class="{ hidden: s.type === 'autoIncrement' }" @click="s.type !== 'autoIncrement' && form.config.segments.splice(i, 1)">
+                <span class="fcd-del st-icon-action" :class="{ hidden: s.type === 'autoIncrement' }" @click="s.type !== 'autoIncrement' && form.config.segments.splice(i, 1)">
                   <StIcon name="minus-circle" :size="20" /></span>
                 <span class="fcd-seg-l">{{ SEG_LABELS[s.type] }}</span>
                 <div class="fcd-seg-ctl">
@@ -226,7 +226,7 @@
                     <el-option v-for="(l, k) in DATE_SEG_FORMATS" :key="k" :value="k" :label="l" />
                   </el-select>
                 </div>
-                <span class="fcd-drag" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = -1"><StIcon name="drag" :size="16" /></span>
+                <span class="fcd-drag st-icon-action" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = -1"><StIcon name="drag" :size="16" /></span>
               </div>
               <el-dropdown trigger="click" @command="addSeg">
                 <div class="fcd-add dark"><StIcon name="plus-circle" :size="20" />添加编号字段</div>
@@ -294,7 +294,7 @@
                 <el-tooltip :content="c.useValue ? '改为引用本表字段' : '改为输入固定值'" placement="top">
                   <span class="fcd-swap" :class="{ off: !c.sourceFieldId }" @click="toggleCondValue(c)">A<sub>⇆</sub></span>
                 </el-tooltip>
-                <span class="fcd-del" @click="form.config.conditions.splice(i, 1)"><StIcon name="minus-circle" :size="20" /></span>
+                <span class="fcd-del st-icon-action" @click="form.config.conditions.splice(i, 1)"><StIcon name="minus-circle" :size="20" /></span>
               </div>
               <div class="fcd-add gray" @click="form.config.conditions.push({ sourceFieldId: null, op: 'eq', rightFieldId: null })">
                 <StIcon name="plus" :size="16" />添加条件</div>
@@ -334,7 +334,7 @@ import AiFormulaDialog from '../ai/AiFormulaDialog.vue'
 import FormulaEditor from '../formula/FormulaEditor.vue'
 import { referencedTableIds, tokenize } from '../../../smart/utils/formula.js'
 import { FIELD_REGISTRY, OPTION_COLORS, PROGRESS_COLORS, optionColor } from '../../../smart/registry/fieldRegistry.js'
-import { anchoredDialogAttrs, useNonModalOutsideClose } from '../../../smart/utils/anchorDialog.js'
+import { anchoredDialogAttrs, useButtonAnchoredDialog, useNonModalOutsideClose } from '../../../smart/utils/anchorDialog.js'
 import { smartListViews } from '../../../api/index.js'
 
 const props = defineProps({
@@ -350,6 +350,8 @@ const props = defineProps({
 })
 const emit = defineEmits(['close', 'save', 'ai-tags', 'ai-field'])
 useNonModalOutsideClose(() => props.visible, () => emit('close'))
+const editorBody = ref(null)
+const placeEditor = useButtonAnchoredDialog(() => editorBody.value, () => props.at, () => props.visible)
 const aiFormula = ref(false)
 const fxEditor = ref(false)
 const nameRef = ref(null)

@@ -18,7 +18,7 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <span class="ad-x" @click="emit('close')"><StIcon name="close" :size="18" /></span>
+          <span class="ad-x st-icon-action" @click="emit('close')"><StIcon name="close" :size="18" /></span>
         </div>
         <div v-loading="loading" class="ad-body">
           <div v-if="!rules.length && !loading" class="ad-empty">
@@ -37,7 +37,7 @@
             </div>
             <el-switch :model-value="r.enabled" size="small" @click.stop @update:model-value="(v) => toggle(r, v)" />
             <el-dropdown trigger="click" @command="(c) => ruleAction(c, r)" @click.stop>
-              <span class="ad-more" @click.stop><StIcon name="more-h" :size="16" /></span>
+              <span class="ad-more st-icon-action" @click.stop><StIcon name="more-h" :size="16" /></span>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="edit">编辑</el-dropdown-item>
@@ -54,12 +54,12 @@
       <!-- 编辑器 / 运行日志 -->
       <template v-else>
         <div class="ad-head ad-head-edit">
-          <span class="ad-back" @click="back"><StIcon name="back" :size="18" /></span>
+          <span class="ad-back st-icon-action" @click="back"><StIcon name="back" :size="18" /></span>
           <input v-if="mode === 'edit'" v-model="draft.name" class="ad-name" maxlength="200" placeholder="自动化名称" />
           <span v-else class="ad-title">运行日志 · {{ draft?.name }}</span>
           <span v-if="mode === 'edit' && draft.id" class="ad-log" @click="openLogs(draft)"><StIcon name="log" :size="16" />运行日志</span>
           <span class="ad-vsep" />
-          <span class="ad-x" @click="emit('close')"><StIcon name="close" :size="18" /></span>
+          <span class="ad-x st-icon-action" @click="emit('close')"><StIcon name="close" :size="18" /></span>
         </div>
         <div class="ad-body ad-body-edit">
           <AutomationEditor v-if="mode === 'edit'" v-model="draft" :table-id="tableId" :table-name="tableName" :fields="fields"

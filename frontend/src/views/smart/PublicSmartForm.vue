@@ -26,6 +26,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import FormFill from '../../components/smart/form/FormFill.vue'
+import { presetCoverUrl } from '../../components/smart/form/covers.js'
 import { smartPublicForm, smartPublicSubmit, smartPublicUpload } from '../../api/index.js'
 import '../../smart/tokens.css'
 
@@ -39,7 +40,7 @@ const password = ref('')
 const submitting = ref(false)
 const done = ref(false)
 const successText = ref('提交成功，感谢你的填写！')
-const coverUrl = computed(() => `/api/smart-public/forms/${token}/cover${password.value ? `?password=${encodeURIComponent(password.value)}` : ''}`)
+const coverUrl = computed(() => presetCoverUrl(def.value?.cover) || `/api/smart-public/forms/${token}/cover${password.value ? `?password=${encodeURIComponent(password.value)}` : ''}`)
 
 async function load() {
   loading.value = true

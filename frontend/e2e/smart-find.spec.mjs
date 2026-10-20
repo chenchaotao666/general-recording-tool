@@ -48,7 +48,7 @@ try {
   await page.locator('.smart-home .t-name').first().click()
   await page.waitForURL(/\/smart\/table\/\d+/)
   await page.locator('.smart-vxe .vxe-body--row').first().waitFor()
-  await page.locator('button[title="\u67e5\u627e\u66ff\u6362"]').click()
+  await page.locator('button[data-smart-tip="\u67e5\u627e\u66ff\u6362"]').click()
   const dialog = page.locator('.el-dialog.smart-find-dialog')
   await dialog.waitFor()
   const head = dialog.locator('.fr-head')

@@ -9,7 +9,7 @@
       <div class="tbfs" :class="{ borderless, open }">
         <StIcon v-if="current" :name="fieldIconName(current)" :size="16" class="tbfs-ico" />
         <span class="tbfs-label" :class="{ ph: !current }">{{ current ? current.label : placeholder }}</span>
-        <span v-if="clearable && current" class="tbfs-clear" title="清除" @click.stop="emit('update:modelValue', null)"><StIcon name="close" :size="12" /></span>
+        <span v-if="clearable && current" class="tbfs-clear st-icon-action" data-smart-tip="清除" @click.stop="emit('update:modelValue', null)"><StIcon name="close" :size="12" /></span>
         <StIcon :name="open ? 'chevron-up' : 'chevron-down'" :size="14" class="tbfs-caret" />
       </div>
     </template>

@@ -1,7 +1,7 @@
 <template>
   <div class="login-page">
     <el-card class="login-card">
-      <div class="logo">通用记录工具</div>
+      <div class="logo"><img src="/wantong-logo.svg" alt="" style="width: 40px; height: 40px; display: block; margin: 0 auto 12px" />万通AI助手</div>
       <!-- el-form rules 即时校验（与全站表单体系一致），错误随输入自动清除 -->
       <el-form ref="formRef" :model="form" :rules="rules" @submit.prevent>
         <el-form-item prop="username">

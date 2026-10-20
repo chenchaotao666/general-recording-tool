@@ -15,7 +15,7 @@
         </div>
         <div class="pd-head-r">
           <el-dropdown v-if="mode === 'group'" trigger="click" @command="(c) => emit('group-action', c, group)">
-            <span class="pd-ico"><StIcon name="more-h" :size="18" /></span>
+            <span class="pd-ico st-icon-action"><StIcon name="more-h" :size="18" /></span>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="edit">修改指定成员</el-dropdown-item>
@@ -23,7 +23,7 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <span class="pd-ico" @click="close"><StIcon name="close" :size="18" /></span>
+          <span class="pd-ico st-icon-action" @click="close"><StIcon name="close" :size="18" /></span>
         </div>
       </div>
     </template>

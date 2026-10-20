@@ -14,7 +14,7 @@
         <span v-if="selected.length" class="fol-clear" @click="$emit('clear')">清空</span>
         <template v-if="searchMode === 'toggle'">
           <span v-if="selected.length" class="fol-vsep" />
-          <span class="fol-act" :class="{ on: searchOpen }" title="搜索" @click="toggleSearch"><StIcon name="search" :size="14" /></span>
+          <span class="fol-act st-icon-action" :class="{ on: searchOpen }" data-smart-tip="搜索" @click="toggleSearch"><StIcon name="search" :size="14" /></span>
         </template>
       </span>
     </div>

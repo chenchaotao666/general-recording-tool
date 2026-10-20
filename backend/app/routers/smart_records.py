@@ -243,6 +243,40 @@ def create_record(table_id: int, payload: dict, db: Session = Depends(get_db),
     return {"record": rec}
 
 
+@router.post("/tables/{table_id}/records/{record_id}/insert")
+def insert_records(table_id: int, record_id: int, payload: dict, db: Session = Depends(get_db),
+                   access: TableAccess = Depends(require_table("create"))):
+    direction = payload.get("direction")
+    count = payload.get("count", 1)
+    if direction not in ("up", "down") or type(count) is not int or not 1 <= count <= 100:
+        raise HTTPException(422, "插入方向须为 up/down，行数须为 1–100 的整数")
+    if access.table.storage_mode != "json":
+        raise HTTPException(400, "仅智能表支持指定位置插入")
+    fields = get_meta_fields(db, table_id)
+    eff = _effective(db, access)
+    if not eff.can_add_record:
+        raise HTTPException(403, "没有添加记录的权限")
+    anchor = db.get(Record, record_id)
+    if not anchor or anchor.table_id != table_id:
+        raise HTTPException(404, "记录不存在")
+    source = _normalized_one(db, table_id, record_id, fields)
+    if not eff.managed and not eff.row_viewable(source, fields):
+        raise HTTPException(404, "记录不存在")
+    _, config = _load_effective_view(db, table_id, payload.get("view_id"), access.ctx.user.id)
+    rights = eff.field_rights_map(fields)
+    group_names = {g.get("fieldId") for g in config.get("groups") or []}
+    preset = {name: value for name, value in (payload.get("data") or {}).items()
+              if name in rights and (rights[name]["firstSubmit"] or rights[name]["edit"])}
+    preset.update({name: value for name, value in (anchor.data or {}).items()
+              if name in group_names and name in rights and rights[name]["view"]
+              and (rights[name]["firstSubmit"] or rights[name]["edit"])})
+    records = json_store.insert_records(db, access.table, fields, anchor, direction, count, preset,
+                                        access.ctx.user.username, access.ctx.user.id)
+    for record in records:
+        smart_events.record_created(db, access.table, record, actor_id=access.ctx.user.id)
+    return {"ids": [r["id"] for r in records]}
+
+
 @router.patch("/tables/{table_id}/records/{record_id}")
 def update_record(table_id: int, record_id: int, payload: dict, db: Session = Depends(get_db),
                   access: TableAccess = Depends(require_table("edit"))):

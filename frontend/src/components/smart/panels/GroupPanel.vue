@@ -7,11 +7,11 @@
       <div class="gp-head"><span class="tbp-title">分组</span></div>
       <div v-for="(g, i) in draft" :key="g._k" class="gp-row" :class="dropClass(i)"
            @dragover.prevent="overIdx = i" @drop.prevent="dropRow(i)">
-        <span class="tbp-drag" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = null"><StIcon name="drag" :size="15" /></span>
+        <span class="tbp-drag st-icon-action" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = null"><StIcon name="drag" :size="15" /></span>
         <TbFieldSelect :model-value="g.fieldId" :fields="fields" placeholder="选择分组字段" class="gp-field"
                        @update:model-value="(v) => update(i, { fieldId: v })" />
         <DirToggle :model-value="g.direction" :labels="labelsOf(g)" @update:model-value="(v) => update(i, { direction: v })" />
-        <span class="tbp-del" title="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
+        <span class="tbp-del st-icon-action" data-smart-tip="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
       </div>
       <el-tooltip :disabled="draft.length < 3" content="最多支持 3 级分组" placement="top">
         <span class="gp-add-wrap"><button class="tbp-add" :disabled="draft.length >= 3" @click="add"><StIcon name="plus" :size="15" />添加分组字段</button></span>

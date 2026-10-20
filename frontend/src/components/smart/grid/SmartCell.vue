@@ -3,7 +3,7 @@
   <span class="smart-cell" :class="`cell-${ft}`" :style="cellStyle">
     <!-- AI 字段计算状态（V3）：生成中 / 失败（悬停看原因）；完成后按输出类型渲染 -->
     <span v-if="aiState && aiState.status !== 'error'" class="ai-state">正在生成…</span>
-    <span v-else-if="aiState" class="ai-state err" :title="aiState.error || ''">生成失败 · {{ aiState.error || '原因未知' }}</span>
+    <span v-else-if="aiState" class="ai-state err" :data-smart-tip="aiState.error || ''">生成失败 · {{ aiState.error || '原因未知' }}</span>
     <!-- 单选/多选：彩色标签胶囊；一行放不下时只渲染放得下的，末尾 +N 表示隐藏个数 -->
     <template v-else-if="ft === 'singleSelect' || ft === 'multiSelect'">
       <span ref="enumBox" class="enum-box" :class="{ 'has-more': hiddenCount > 0 }">

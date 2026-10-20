@@ -2,7 +2,7 @@
   <!-- SmartGrid：智能表网格（vxe-table 封装）。
        flatten 行序列：分组标题行 / 数据行（树形缩进）。添加一行入口在统计行左侧「＋」。
        视图配置（显隐/列序/列宽/冻结/行高/填色）纯前端应用，数据层不动（设计文档 §1.3 原则 1）。 -->
-  <div class="smart-grid" @contextmenu.prevent @mouseover="onRowOver" @mouseleave="scheduleExpandHide">
+  <div class="smart-grid" :class="{ 'is-empty': !gridRows.length }" :style="{ maxWidth: `${gridContentWidth}px` }" @contextmenu.prevent @mouseover="onRowOver" @mouseleave="scheduleExpandHide" @wheel.capture="onGridWheel">
     <!-- :key="t_colSig"：列序/列集变化时整表重挂载。vxe 列注册只在挂载时按 DOM 位次进行，
          增量重挂载会与静态列/编组竞态导致顺序错乱，整表重挂载保证按 headerTree 顺序干净注册 -->
     <vxe-table
@@ -10,7 +10,7 @@
       :key="`t_${colSig}`"
       class="smart-vxe"
       :class="{ 'rh-tall': rowHeightPx > 36 }"
-      :style="{ '--rh-lines': rowLines }"
+      :style="{ '--rh-lines': rowLines, '--header-row-height': `${headerRowHeight}px` }"
       :data="gridRows"
       :max-height="height"
       border
@@ -20,7 +20,7 @@
       :scroll-x="{ enabled: true, gt: 20 }"
       :show-footer="true"
       :footer-method="footerMethod"
-      :footer-cell-config="{ height: 52 }"
+      :footer-cell-config="{ height: 45 }"
       :row-class-name="rowClass"
       :cell-class-name="cellClass"
       :cell-style="cellFillStyle"
@@ -32,14 +32,14 @@
       @cell-click="onCellClick"
       @cell-dblclick="onCellDblClick"
       @header-cell-click="onHeaderClick"
+      @footer-cell-click="onFooterClick"
       @header-cell-dblclick="onHeaderDblClick"
       @scroll="onGridScroll"
-      @menu-click="onMenuClick"
       @checkbox-all="onCheckAll"
       @checkbox-change="onCheckChange"
     >
       <vxe-column type="checkbox" width="36" fixed="left" align="center" header-align="center" class-name="col-ck" header-class-name="col-ck" />
-      <vxe-column width="52" fixed="left" title="#" :params="{ rowNumber: true }" align="center" header-align="center" class-name="col-no" header-class-name="col-no">
+      <vxe-column width="39" fixed="left" title="#" :params="{ rowNumber: true }" align="center" header-align="center" class-name="col-no" header-class-name="col-no">
         <template #default="{ row }">
           <span v-if="row.__rowType === 'group'" class="group-toggle" @click.stop="$emit('toggle-group', row.key)">
             {{ collapsedGroups.has(row.key) ? '▸' : '▾' }}
@@ -48,7 +48,7 @@
         </template>
         <!-- 统计行左侧：添加一行「＋」（居中，设计稿 PixPin_2026-10-15_20-03-52 位置） -->
         <template #footer>
-          <span v-if="!readonly" class="footer-add-btn" title="添加一行" @click.stop="$emit('add-row')">＋</span>
+          <span v-if="canCreate" class="footer-add-btn" data-smart-tip="添加一行">＋</span>
         </template>
       </vxe-column>
 
@@ -56,9 +56,9 @@
       <template v-for="node in headerTree" :key="`${node.key}:${colSig}`">
         <vxe-colgroup v-if="node.isGroup" :title="node.name" :fixed="node.fixed" header-align="center" :params="{ group: node.group }">
           <template #header>
-            <span class="colgroup-title" :title="node.name">
+            <span class="colgroup-title">
               <span class="cg-name">{{ node.name }}</span>
-              <span class="st-dd cg-caret" title="编组操作" @click.stop="(e) => $emit('group-menu', node.group, e)" @dblclick.stop />
+              <span class="st-dd cg-caret" aria-label="编组操作" @click.stop="(e) => $emit('group-menu', node.group, e)" @dblclick.stop />
             </span>
           </template>
           <vxe-column v-for="f in node.fields" :key="f.field_name" :field="f.field_name"
@@ -80,9 +80,9 @@
       </template>
 
       <!-- 末尾「+」添加列：跟在最后一列后面随表格横向滚动（不冻结） -->
-      <vxe-column width="48" align="center" header-align="center">
+      <vxe-column width="48" align="center" header-align="center" header-class-name="th-add-col" :params="{ addField: true }">
         <template #header>
-          <span class="add-col" title="添加一列" @click.stop="(e) => $emit('add-field', e)">＋</span>
+          <span class="add-col" aria-label="添加一列">＋</span>
         </template>
         <template #default><span /></template>
       </vxe-column>
@@ -91,6 +91,9 @@
          骑在表格左边框上（一半在表格外）。表体滚动容器会裁剪溢出内容，所以挂 body 按行位置定位。
          独立组件渲染：滚动时位置逐帧更新只重绘按钮本身，不触发整表重渲染（否则拖滚动条时表格抖动） -->
     <RowExpandBtn />
+    <CellContextMenu v-if="cellMenu" :x="cellMenu.x" :y="cellMenu.y" :has-field="!!cellMenu.field"
+      :can-create="canCreate" :can-delete="canDelete" :readonly="readonly"
+      @action="onMenuAction" @close="cellMenu = null" />
     <!-- AI 列 / AI 单元格选中时：右侧浮出「✦ | ▾」生成按钮 -->
     <AiRunButton v-if="aiBtn && !readonly" :x="aiBtn.x" :y="aiBtn.y" :mode="aiBtn.mode" @run="onAiBtnRun" />
     <!-- 双击不可编辑的单元格：单元格下方提示（参照 PixPin_2026-10-17_16-22-09）「自动编号不可直接编辑 修改设置」 -->
@@ -106,6 +109,7 @@
 <script setup>
 import { Teleport, computed, h, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import SmartCell from './SmartCell.vue'
+import CellContextMenu from './CellContextMenu.vue'
 import SmartCellEditor from './SmartCellEditor.vue'
 import SelectCellPanel from './SelectCellPanel.vue'
 import FieldHeader from './FieldHeader.vue'
@@ -128,6 +132,8 @@ const props = defineProps({
   height: { type: [Number, String], default: 480 },
   collapsedGroups: { type: Object, default: () => new Set() },
   readonly: { type: Boolean, default: false },
+  canCreate: { type: Boolean, default: false },
+  canDelete: { type: Boolean, default: false },
   // 单元格级可编辑判定（内容权限：行级编辑范围 / 字段三态，V3）；缺省全部可编辑
   canEditCell: { type: Function, default: null },
   menuField: { type: String, default: null },   // 列头菜单当前打开的字段（三角保持展开态）
@@ -135,7 +141,7 @@ const props = defineProps({
   searchMatches: { type: Array, default: () => [] },
   searchCurrentIndex: { type: Number, default: -1 },
 })
-const emit = defineEmits(['cell-commit', 'add-row', 'cell-menu', 'field-menu', 'toggle-group',
+const emit = defineEmits(['cell-commit', 'add-row', 'add-field', 'cell-menu', 'field-menu', 'toggle-group',
                           'selection-change', 'open-config', 'footer-menu', 'add-option', 'group-menu', 'add-row-in-group', 'ai-run',
                           'field-edit', 'field-filter', 'group-edit', 'expand-row'])
 
@@ -171,18 +177,24 @@ const visibleFields = computed(() => {
 const headerTree = computed(() => buildColumnLayout(
   visibleFields.value, props.columnGroups, viewConfig.value.frozenFieldId))
 const displayedFields = computed(() => headerTree.value.flatMap(n => n.isGroup ? n.fields : [n.field]))
+// VXE 的边框绘制在列宽之内，无需额外加宽，否则末列右侧会露出第二条边框。
+const gridContentWidth = computed(() => 36 + 39 + 48 + displayedFields.value.reduce((sum, f) => sum + Number(colWidths.value[f.field_name] || 160), 0))
 const colSig = computed(() => JSON.stringify(headerTree.value.map(n => [
   n.key, n.fixed, n.isGroup ? n.fields.map(f => f.field_name) : n.field.field_name,
 ])))
 
-// 表头行高（参照 表头样式.png）：无编组单层 56px（字段名可放 2 行）；
+// 表头行高（参照 表头样式.png）：无编组单层 46px（字段名可放 2 行）；
 // 有编组每层 44px——编组内字段 1 行，散列字段纵跨两层 88px 可放 3 行。放不下才省略
 const hasColGroups = computed(() => headerTree.value.some(n => n.isGroup))
-const headerRowHeight = computed(() => (hasColGroups.value ? 44 : 56))
+const headerRowHeight = computed(() => (hasColGroups.value ? 44 : 46))
 const groupedFieldNames = computed(() => new Set(headerTree.value.filter(n => n.isGroup).flatMap(n => n.fields.map(f => f.field_name))))
 // 有编组时散列字段（纵跨两层）顶对齐：首行与编组标题同一水平线；整列选中态
 function headerCellClass({ column }) {
   const cls = []
+  if (column.type === 'checkbox' || column.params?.rowNumber) {
+    cls.push('th-utility')
+    if (hasColGroups.value) cls.push('th-utility-grouped')
+  }
   if (hasColGroups.value && column.field && !groupedFieldNames.value.has(column.field)) cls.push('th-span')
   // 编组表头被选中：组头框左/右/上边
   if (!column.field && selectedGroupId.value != null && column.params?.group?.id === selectedGroupId.value) {
@@ -195,6 +207,7 @@ function headerCellClass({ column }) {
   return cls.join(' ')
 }
 function footerCellClass({ column }) {
+  if (column.params?.rowNumber && props.canCreate) return 'footer-add-cell'
   const edge = selEdges(column.field)
   return edge ? ['tf-col-selected', 'sel-b', ...edge].join(' ') : ''
 }
@@ -224,6 +237,7 @@ function clearColSelection() {
   gridRef.value?.refreshColumn?.()
 }
 function onHeaderClick({ column, $event }) {
+  if (column.params?.addField) { emit('add-field', $event); return }
   if ($event?.target?.closest?.('.head-menu, .filter-dot, .cg-caret')) return
   const group = !column?.field && column?.params?.group
   if (!group && !props.fields.some(f => f.field_name === column?.field)) return
@@ -232,6 +246,9 @@ function onHeaderClick({ column, $event }) {
   selectedCol.value = group ? null : column.field
   selectedGroupId.value = group ? group.id : null
   gridRef.value?.refreshColumn?.()
+}
+function onFooterClick({ column }) {
+  if (column.params?.rowNumber && props.canCreate) emit('add-row')
 }
 function onHeaderDblClick({ column, $event }) {
   // 编组表头：双击打开「修改编组」
@@ -302,7 +319,7 @@ const RowExpandBtn = {
     const b = expandBtn.value
     if (!b) return null
     return h(Teleport, { to: 'body' }, h('span', {
-      class: 'st-row-expand', title: '展开记录',
+      class: 'st-row-expand', 'data-smart-tip': '展开记录',
       style: { left: `${b.x}px`, top: `${b.y}px` },
       onMouseenter: cancelExpandHide, onMouseleave: scheduleExpandHide,
       onMousedown: (e) => e.stopPropagation(),
@@ -332,10 +349,84 @@ function scheduleExpandLocate() {
   expandRaf = requestAnimationFrame(locateExpandBtn)
 }
 
+let rowSnapTimer = null
+let scrollPointerDown = false
+let locatingUntil = 0
+let wheelRemainder = 0
+let lastWheelTime = 0
+function onGridWheel(event) {
+  // 横向手势、缩放和编辑器内滚动仍由原控件处理。
+  if (event.ctrlKey || event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      || !event.deltaY || !event.cancelable
+      || !event.target.closest('.vxe-table--body-wrapper')
+      || event.target.closest('input, textarea, [contenteditable="true"], .cell-editor, .el-popper')) return
+  const table = gridRef.value
+  const body = table?.$el?.querySelector('.body--wrapper > .vxe-table--body-inner-wrapper')
+  if (!body || body.scrollHeight <= body.clientHeight) return
+  event.preventDefault()
+  event.stopPropagation()
+  clearTimeout(rowSnapTimer)
+  const now = Date.now()
+  const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? body.clientHeight : 1)
+  if (now - lastWheelTime > 180 || Math.sign(delta) !== Math.sign(wheelRemainder)) wheelRemainder = 0
+  lastWheelTime = now
+  wheelRemainder += delta
+  const steps = Math.min(5, Math.floor(Math.abs(wheelRemainder) / 40))
+  if (!steps) return
+  const direction = Math.sign(wheelRemainder)
+  wheelRemainder %= 40
+  const top = body.scrollTop
+  const viewportTop = body.getBoundingClientRect().top + body.clientTop
+  const offsets = [...body.querySelectorAll('.vxe-body--row')]
+    .map(row => top + row.getBoundingClientRect().top - viewportTop)
+    .filter(offset => direction > 0 ? offset > top + .5 : offset < top - .5)
+    .sort((a, b) => direction * (a - b))
+  const target = offsets[Math.min(steps, offsets.length) - 1]
+  if (target != null) table.scrollTo(undefined, Math.max(0, Math.min(target, body.scrollHeight - body.clientHeight)))
+}
+function scheduleRowSnap() {
+  clearTimeout(rowSnapTimer)
+  if (scrollPointerDown || Date.now() < locatingUntil) return
+  rowSnapTimer = setTimeout(snapToRow, 160)
+}
+function snapToRow() {
+  if (scrollPointerDown || Date.now() < locatingUntil) return
+  const table = gridRef.value
+  const body = table?.$el?.querySelector('.body--wrapper > .vxe-table--body-inner-wrapper')
+  if (!body) return
+  const top = body.scrollTop
+  const max = body.scrollHeight - body.clientHeight
+  // 保留首尾的自然边界，避免吸附导致最后一条记录无法完整看到。
+  if (top <= 0 || top >= max - 1) return
+  const viewportTop = body.getBoundingClientRect().top + body.clientTop
+  const offsets = [...body.querySelectorAll('.vxe-body--row')]
+    .map(row => top + row.getBoundingClientRect().top - viewportTop)
+    .filter(offset => offset >= 0 && offset <= max)
+  if (!offsets.length) return
+  const target = offsets.reduce((best, offset) => Math.abs(offset - top) < Math.abs(best - top) ? offset : best)
+  if (Math.abs(target - top) > .5) table.scrollTo(undefined, target)
+}
+function onScrollPointerDown(event) {
+  if (gridRef.value?.$el?.contains(event.target)) {
+    scrollPointerDown = true
+    clearTimeout(rowSnapTimer)
+  }
+}
+function onScrollPointerUp() {
+  if (!scrollPointerDown) return
+  scrollPointerDown = false
+  scheduleRowSnap()
+}
+let lastScrollTop = 0
 function onGridScroll() {
   scheduleExpandLocate()
   if (blockedHint.value) hideBlockedHint()
   if (aiBtn.value || selectedCol.value || selectedCell.value) scheduleLocate()
+  const top = gridRef.value?.getScroll?.().scrollTop ?? 0
+  if (top !== lastScrollTop) {
+    lastScrollTop = top
+    scheduleRowSnap()
+  }
 }
 function onAiBtnRun(scope) {
   const b = aiBtn.value
@@ -482,7 +573,7 @@ function CellSlot(props2) {
   if (row.__rowType === 'group-add') {
     if (field.field_name !== firstField || props.readonly) return h('span')
     return h('span', {
-      class: 'group-add-btn', title: '在该组内添加一行',
+      class: 'group-add-btn', 'data-smart-tip': '在该组内添加一行',
       onClick: (e) => { e.stopPropagation(); emit('add-row-in-group', row.conds) },
     }, [h(StIcon, { name: 'plus', size: 13 })])
   }
@@ -492,7 +583,7 @@ function CellSlot(props2) {
       const aggKind = viewConfig.value.aggregations?.[field.field_name]
       // 聚合值带 ⌄：点击切换统计方式（复用统计行菜单）
       return h('span', {
-        class: 'group-agg', title: '点击设置统计方式',
+        class: 'group-agg', 'data-smart-tip': '点击设置统计方式',
         onClick: (e) => { e.stopPropagation(); emit('footer-menu', field, e) },
       }, agg != null && aggKind
         ? [`${STAT_LABELS[aggKind] || ''} ${formatStatValue(aggKind, agg, field)}`, h('span', { class: 'st-dd ga-caret' })]
@@ -559,7 +650,7 @@ function CellSlot(props2) {
   const childN = field.field_name === firstField ? childCounts.value.get(row.id) : 0
   if (childN) {
     return h('span', { class: 'tree-cell' }, [
-      h('span', { class: 'tree-badge', title: `${childN} 条子记录` }, [h(StIcon, { name: 'tree', size: 11 }), String(childN)]),
+      h('span', { class: 'tree-badge', 'data-smart-tip': `${childN} 条子记录` }, [h(StIcon, { name: 'tree', size: 11 }), String(childN)]),
       cell,
     ])
   }
@@ -623,7 +714,7 @@ function FooterCell({ field }) {
     children.push(h('div', { class: 'fs-hint' }, ['统计', h('span', { class: 'st-dd fs-caret' })]))
   }
   return h('div', {
-    class: 'footer-stat', title: '点击设置统计方式',
+    class: 'footer-stat', 'data-smart-tip': '点击设置统计方式',
     onClick: (e) => { e.stopPropagation(); emit('footer-menu', field, e) },
   }, children)
 }
@@ -734,25 +825,24 @@ function onDocMouseDown(e) {
   gridRef.value?.refreshColumn?.()
 }
 
-// vxe 原生右键菜单（menu-config；cell-contextmenu 事件在 v4 不对外暴露）
+// 通过 vxe 菜单钩子获取行列上下文，使用独立浮层统一菜单样式。
+const cellMenu = ref(null)
 const menuConfig = computed(() => ({
-  body: {
-    options: [[
-      { code: 'expand', name: '展开记录' },
-      { code: 'only', name: '只看此内容' },
-      { code: 'exclude', name: '不看此内容' },
-      { code: 'duplicate', name: '创建副本' },
-      { code: 'add-child', name: '添加子记录' },
-      { code: 'delete', name: '删除', className: 'ctx-danger' },
-    ]],
-    visibleMethod: ({ row }) => !!row && !row.__rowType,   // 组标题行/加行不出菜单
+  body: { options: [[{ code: 'expand', name: 'expand' }]] },
+  visibleMethod: ({ row, column, $event, type }) => {
+    cellMenu.value = null
+    if (type !== 'body' || !row || row.__rowType) return false
+    const field = props.fields.find(f => f.field_name === column?.field)
+    if (field) {
+      clearColSelection()
+      selectedCell.value = { key: row.__key, fieldName: field.field_name }
+    }
+    cellMenu.value = { row, field, x: $event.clientX, y: $event.clientY }
+    return false
   },
 }))
-
-function onMenuClick({ row, column, menu }) {
-  if (!row || row.__rowType || !menu) return
-  const f = props.fields.find(x => x.field_name === column.field)
-  emit('cell-menu', { row, field: f, cmd: menu.code })
+function onMenuAction(cmd, count) {
+  if (cellMenu.value) emit('cell-menu', { row: cellMenu.value.row, field: cellMenu.value.field, cmd, count })
 }
 
 function onCheckAll({ checked }) { emit('selection-change', checked ? dataRowSelection() : []) }
@@ -765,6 +855,10 @@ function dataRowSelection() {
 window.addEventListener('resize', scheduleLocate)
 window.addEventListener('resize', scheduleExpandLocate)
 onBeforeUnmount(() => {
+  clearTimeout(rowSnapTimer)
+  document.removeEventListener('pointerdown', onScrollPointerDown, true)
+  document.removeEventListener('pointerup', onScrollPointerUp, true)
+  document.removeEventListener('pointercancel', onScrollPointerUp, true)
   window.removeEventListener('resize', scheduleExpandLocate)
   cancelExpandHide()
   document.removeEventListener('mousedown', onHintOutside, true)
@@ -774,11 +868,16 @@ onBeforeUnmount(() => {
 })
 
 document.addEventListener('keydown', onDocKeydown)
+document.addEventListener('pointerdown', onScrollPointerDown, true)
+document.addEventListener('pointerup', onScrollPointerUp, true)
+document.addEventListener('pointercancel', onScrollPointerUp, true)
 document.addEventListener('mousedown', onDocMouseDown)
 
 // 定位到指定记录：新增行默认选中首个可见列；查找定位可指定字段且只滚动、不弹出选中/编辑浮层。
 // 记录不在当前行序列（被筛选掉 / 在折叠分组里）时返回 false；隐藏字段退化为只定位记录。
 async function focusRecord(id, fieldName = null, { select = true } = {}) {
+  clearTimeout(rowSnapTimer)
+  locatingUntil = Date.now() + 600
   await nextTick()   // 等 rows → gridRows → vxe data 刷新
   const row = gridRows.value.find(r => !r.__rowType && r.id === id)
   if (!row) return false
@@ -827,7 +926,10 @@ defineExpose({
   display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;
   cursor: pointer; color: var(--el-text-color-regular); font-size: 16px; user-select: none;
 }
-.footer-add-btn:hover { color: var(--st-primary); }
+.smart-vxe :deep(.vxe-header--column.th-add-col),
+.smart-vxe :deep(.vxe-footer--column.footer-add-cell) { cursor: pointer; }
+.smart-vxe :deep(.vxe-header--column.th-add-col:hover),
+.smart-vxe :deep(.vxe-footer--column.footer-add-cell:hover) { background-color: var(--st-icon-hover-bg, #E6E8E8); }
 .group-toggle { cursor: pointer; color: var(--el-text-color-secondary); user-select: none; }
 .row-no { color: var(--el-text-color-placeholder); font-size: 12px; }
 /* 详情面板打开的记录：整行浅灰底（参照 hover-行.png） */
@@ -891,9 +993,9 @@ defineExpose({
   white-space: normal; word-break: break-all; line-height: 22px;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--rh-lines); }
 /* 序号、勾选框也顶对齐 */
-.smart-vxe.rh-tall :deep(.col-ck .vxe-cell),
-.smart-vxe.rh-tall :deep(.col-ck .vxe-cell--wrapper) { align-items: flex-start; height: auto; }
-.smart-vxe.rh-tall :deep(.col-ck .vxe-cell) { padding-top: 10px; }
+.smart-vxe.rh-tall :deep(.vxe-body--column.col-ck .vxe-cell),
+.smart-vxe.rh-tall :deep(.vxe-body--column.col-ck .vxe-cell--wrapper) { align-items: flex-start; height: auto; }
+.smart-vxe.rh-tall :deep(.vxe-body--column.col-ck .vxe-cell) { padding-top: 10px; }
 /* 单选/多选选中锚点：标签从上方开始（▼ 本就钉在右上角） */
 .smart-vxe.rh-tall :deep(.sel-anchor) { align-content: flex-start; align-items: flex-start; padding-top: 2px; }   /* 标签与查看态同一高度（实测差 1px） */
 /* 编辑态不加上内边距（编辑器严格填满单元格） */
@@ -974,6 +1076,16 @@ defineExpose({
 /* 有编组时纵跨两层的散列字段：顶对齐（首行与编组标题同一水平线，44px 层高 → 上内边距 12） */
 .smart-vxe :deep(.vxe-header--column.th-span) { vertical-align: top; }
 .smart-vxe :deep(.vxe-header--column.th-span .vxe-cell) { align-items: flex-start; padding-top: 11px; }
+.smart-vxe :deep(.vxe-header--column.th-utility) { vertical-align: top; }
+.smart-vxe :deep(.vxe-header--column.th-utility .vxe-cell) {
+  height: var(--header-row-height); min-height: var(--header-row-height) !important;
+  display: flex; align-items: center; justify-content: center; padding-top: 0; padding-bottom: 0;
+}
+.smart-vxe :deep(.vxe-header--column.th-utility-grouped .vxe-cell) { transform: translateY(2.5px); }
+.smart-vxe :deep(.vxe-header--column.th-utility.col-ck .vxe-cell--title),
+.smart-vxe :deep(.vxe-header--column.th-utility.col-ck .vxe-cell--title > span) {
+  display: flex; align-items: center; justify-content: center; line-height: 1;
+}
 /* 列头 / 编组下拉按钮：hover 列头时出现；单击选中的字段列持续显示 */
 .smart-vxe :deep(.vxe-header--column:hover .head-menu),
 .smart-vxe :deep(.vxe-header--column.th-col-selected:not(.sel-member) .head-menu),
@@ -1011,6 +1123,12 @@ defineExpose({
   background: var(--st-primary); z-index: 2; pointer-events: none;
 }
 .smart-vxe :deep(.vxe-header--row:first-child .vxe-header--column.th-col-selected.sel-t)::after { top: 1px; }
+/* 底边也画在统计行外框内侧，避免 inset 阴影被表格底边或滚动容器裁掉。 */
+.smart-vxe :deep(.vxe-footer--column.tf-col-selected.sel-b) { --cs-b: 0 0 0 0 transparent; }
+.smart-vxe :deep(.vxe-footer--column.tf-col-selected.sel-b)::after {
+  content: ''; position: absolute; bottom: 1px; left: 0; right: 0; height: 1px;
+  background: var(--st-primary); z-index: 2; pointer-events: none;
+}
 .smart-vxe :deep(.vxe-header--column.th-col-selected:hover) { background-color: #fff; }   /* 不叠表头 hover 灰（表头填色是内联样式，不受影响） */
 /* 编组组头：标题居中，下拉钉在右侧 */
 :deep(.colgroup-title) { display: flex; align-items: center; justify-content: center; position: relative; width: 100%; min-height: 22px; }
@@ -1023,6 +1141,9 @@ defineExpose({
 /* 统计行（设计稿 PixPin_2026-10-15_19-57-43）：单元格整格可点，hover 浅灰底；
    已配置列两行（方式名小灰字 + 数值右对齐）；未配置列 hover 浮现「统计 ▾」 */
 .smart-vxe :deep(.vxe-footer--column) { cursor: pointer; }
+.smart-vxe :deep(.vxe-footer--column .vxe-cell) {
+  height: 45px; box-sizing: border-box; padding-top: 0; padding-bottom: 0;
+}
 .smart-vxe :deep(.vxe-footer--column:hover) { background: var(--el-fill-color-light); }
 :deep(.footer-stat) { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; }
 :deep(.footer-stat .fs-label) { text-align: right; font-size: 12px; line-height: 18px; color: var(--el-text-color-secondary); }

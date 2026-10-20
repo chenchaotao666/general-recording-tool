@@ -281,15 +281,15 @@ def sort_records(recs: list[dict], sort_by: str | None, sort_order: str | None,
 def sort_records_multi(recs: list[dict], sorts: list[dict] | None,
                        fields_by_name: dict) -> list[dict]:
     """多级稳定排序：sorts=[{field, direction}]，数组序=优先级；direction 缺省 asc。
-    None 视为最小值（与单列排序一致）。sorts 为空时回落 id desc。"""
+    None 视为最小值（与单列排序一致）。sorts 为空时按手动顺序，旧记录回落 id desc。"""
     if not sorts:
-        return sort_records(recs, None, None, fields_by_name)
+        return sorted(recs, key=lambda r: (r.get("__sort_index", r["id"]), r["id"]), reverse=True)
     sortable = set(fields_by_name) | {"id", "created_at", "updated_at"}
     keys = [((s.get("fieldId") or s.get("field")), s.get("direction", "asc"))
             for s in sorts]
     keys = [(f, d) for f, d in keys if f in sortable]
     if not keys:
-        return sort_records(recs, None, None, fields_by_name)
+        return sorted(recs, key=lambda r: (r.get("__sort_index", r["id"]), r["id"]), reverse=True)
 
     def key_for(name):
         def k(rec):

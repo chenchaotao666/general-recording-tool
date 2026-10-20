@@ -8,12 +8,12 @@
         <span v-for="o in selectedOptions" :key="o.id" class="ev-tag"
               :style="isEnum ? { background: optionColor(o.color).value, color: optionColor(o.color).text } : {}">
           {{ o.label }}
-          <span class="ev-x" title="移除" @click.stop="removeOpt(o.id)">✕</span>
+          <span class="ev-x" data-smart-tip="移除" @click.stop="removeOpt(o.id)">✕</span>
         </span>
       </template>
       <span v-else class="ev-ph">请选择</span>
     </div>
-    <span class="ev-caret"><StIcon :name="open ? 'caret-up' : 'caret-down'" :size="10" /></span>
+    <span class="ev-caret st-icon-action"><StIcon :name="open ? 'caret-up' : 'caret-down'" :size="10" /></span>
 
     <!-- 浮动选项面板 -->
     <div v-if="open" class="ev-pop" @click.stop @mousedown.stop>

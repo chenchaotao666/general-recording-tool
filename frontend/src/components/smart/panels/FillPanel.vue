@@ -8,7 +8,7 @@
       <div class="flp-head"><span class="tbp-title">填色</span></div>
       <div v-for="(r, i) in draft" :key="r.id" class="flp-row" :class="dropClass(i)"
            @dragover.prevent="overIdx = i" @drop.prevent="dropRow(i)">
-        <span class="tbp-drag" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = null"><StIcon name="drag" :size="15" /></span>
+        <span class="tbp-drag st-icon-action" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = null"><StIcon name="drag" :size="15" /></span>
         <TbFieldSelect :model-value="r.fieldId" :fields="fields" placeholder="字段" class="flp-field"
                        @update:model-value="(v) => update(i, { fieldId: v, fillTarget: 'all', operator: null, value: undefined })" />
         <el-select :teleported="false" :model-value="targetOf(r)" :class="needsValue(r) ? 'flp-op' : 'flp-target'" placeholder="条件"
@@ -33,7 +33,7 @@
             <label class="flp-whole"><el-checkbox :model-value="!!r.wholeRow" @change="(v) => update(i, { wholeRow: v })" />整行填色</label>
           </div>
         </div>
-        <span class="tbp-del" title="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
+        <span class="tbp-del st-icon-action" data-smart-tip="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
       </div>
       <button class="tbp-add flp-add" @click="add"><StIcon name="plus" :size="15" />添加条件</button>
     </div>

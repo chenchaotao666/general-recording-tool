@@ -6,7 +6,7 @@
 from datetime import datetime
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from ..models import MetaField, MetaTable, Record
@@ -27,6 +27,7 @@ def _row_to_client(rec: Record, fields_by_name: dict) -> dict:
     out = {name: None for name in fields_by_name}
     out.update(rec.data or {})
     out["id"] = rec.id
+    out["__sort_index"] = rec.sort_index if rec.sort_index is not None else rec.id
     out["tenant_id"] = rec.tenant_id
     out["owner_id"] = rec.owner_id
     out["parent_id"] = rec.parent_id
@@ -52,7 +53,8 @@ def all_dicts(db: Session, table_id: int, fields: list[MetaField], normalized: b
     """全量记录。normalized=True 时值按字段类型还原（供引擎求值）；否则为客户端序列化形态。"""
     fields_by_name = {f.field_name: f for f in fields}
     rows = db.execute(
-        select(Record).where(Record.table_id == table_id).order_by(Record.id)
+        select(Record).where(Record.table_id == table_id)
+        .order_by(func.coalesce(Record.sort_index, Record.id).desc(), Record.id.desc())
     ).scalars().all()
     if not normalized:
         return [_row_to_client(r, fields_by_name) for r in rows]
@@ -61,6 +63,7 @@ def all_dicts(db: Session, table_id: int, fields: list[MetaField], normalized: b
         rec = {f.field_name: None for f in fields}  # 未赋值字段补 None，对齐物理表 NULL 列形状
         rec.update(r.data or {})
         rec["id"] = r.id
+        rec["__sort_index"] = r.sort_index if r.sort_index is not None else r.id
         rec["owner_id"] = r.owner_id      # P1 数据范围过滤用（引擎/报表 json 链路）
         rec["tenant_id"] = r.tenant_id
         rec["parent_id"] = r.parent_id    # 智能表树形子记录
@@ -111,7 +114,7 @@ def recompute_formulas(db: Session, mt: MetaTable, fields: list[MetaField]) -> i
     return changed
 
 
-def _post_insert_formulas(db: Session, mt: MetaTable, fields: list[MetaField], rec: Record) -> None:
+def _post_insert_formulas(db: Session, mt: MetaTable, fields: list[MetaField], rec: Record, commit: bool = True) -> None:
     """RECORD_ID() 在插入前没有 id：含该函数的公式在插入后补算一次。"""
     from . import formula_tables
     names = [f.field_name for f in fields
@@ -124,7 +127,7 @@ def _post_insert_formulas(db: Session, mt: MetaTable, fields: list[MetaField], r
     data = dict(rec.data or {})
     data.update({k: dyn_engine.serialize_value(computed.get(k)) for k in names})
     rec.data = data
-    db.commit()
+    db.commit() if commit else db.flush()
     db.refresh(rec)
 
 
@@ -191,7 +194,7 @@ def _strip_readonly(fields: list[MetaField], data: dict) -> dict:
 def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dict,
                   user: str | None = None, owner_id: int | None = None,
                   parent_id: int | None = None, actor_type: str = "user",
-                  anonymous: bool = False) -> dict:
+                  anonymous: bool = False, commit: bool = True) -> dict:
     """anonymous=True：公开表单的匿名外部填写者（创建人为空）；actor_type：user / ai / automation。"""
     cleaned, errors = dyn_engine.coerce_payload(fields, _strip_readonly(fields, data))
     if errors:
@@ -208,18 +211,44 @@ def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dic
         dyn_engine.apply_computed(fields, cleaned)
     now = datetime.now()
     owner = None if anonymous else (owner_id if owner_id is not None else mt.owner_id)
+    # 与插入接口共用表锁，避免并发写入覆盖手动顺序。
+    db.execute(select(MetaTable.id).where(MetaTable.id == mt.id).with_for_update())
+    rank = db.scalar(select(func.max(func.coalesce(Record.sort_index, Record.id))).where(Record.table_id == mt.id)) or 0
     rec = Record(table_id=mt.id, tenant_id=mt.tenant_id,
+                 sort_index=rank + 1,
                  owner_id=owner, parent_id=parent_id, updated_by=owner, updated_by_type=actor_type,
                  data=serialize_data(cleaned), created_at=now, updated_at=now)
     db.add(rec)
-    db.commit()
+    db.commit() if commit else db.flush()
     db.refresh(rec)
-    _post_insert_formulas(db, mt, fields, rec)
+    _post_insert_formulas(db, mt, fields, rec, commit=commit)
     record = _row_to_client(rec, {f.field_name: f for f in fields})
     dyn_engine.log_audit(db, "create", mt.id, record["id"], after=record, user=user,
                          tenant_id=mt.tenant_id)
-    db.commit()
+    db.commit() if commit else db.flush()
     return record
+
+
+def insert_records(db: Session, mt: MetaTable, fields: list[MetaField], anchor: Record,
+                   direction: str, count: int, data: dict, user: str, owner_id: int) -> list[dict]:
+    """批量插入与顺序调整在同一事务完成，失败不留下半批记录。"""
+    try:
+        db.execute(select(MetaTable.id).where(MetaTable.id == mt.id).with_for_update())
+        ids = list(db.scalars(select(Record.id).where(Record.table_id == mt.id)
+                             .order_by(func.coalesce(Record.sort_index, Record.id).desc(), Record.id.desc())))
+        offset = ids.index(anchor.id) + (1 if direction == "down" else 0)
+        records = [create_record(db, mt, fields, data, user=user, owner_id=owner_id,
+                                 parent_id=anchor.parent_id, commit=False) for _ in range(count)]
+        ids[offset:offset] = [r["id"] for r in records]
+        # 整数重排不累积分数精度误差，不改变原记录的编辑时间。
+        for index, rid in enumerate(ids):
+            db.execute(update(Record).where(Record.id == rid)
+                       .values(sort_index=len(ids) - index, updated_at=Record.updated_at))
+        db.commit()
+        return records
+    except Exception:
+        db.rollback()
+        raise
 
 
 def update_record(db: Session, mt: MetaTable, fields: list[MetaField], record_id: int, data: dict,

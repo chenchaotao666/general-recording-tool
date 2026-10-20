@@ -5,12 +5,12 @@
        值默认展示态，空值显示灰色占位提示；单击可编辑的值进入编辑器（复用单元格编辑器） -->
   <aside class="rd-panel" :style="{ width: `${panelWidth}px` }">
     <!-- 左边框拖拽改宽度（宽度记在本机，下次打开沿用） -->
-    <div class="rd-resize" :class="{ active: resizing }" title="拖动调整宽度" @mousedown.prevent="startResize" />
+    <div class="rd-resize" :class="{ active: resizing }" data-smart-tip="拖动调整宽度" @mousedown.prevent="startResize" />
     <div class="rd-top">
-      <button class="rd-ico" title="收起" @click="$emit('close')"><StIcon name="panel-close" :size="18" /></button>
+      <button class="rd-ico st-icon-action" data-smart-tip="收起" @click="$emit('close')"><StIcon name="panel-close" :size="18" /></button>
       <span class="rd-nav">
-        <button class="rd-ico" title="上一条" :disabled="!hasPrev" @click="$emit('nav', -1)"><StIcon name="chevron-up" :size="18" /></button>
-        <button class="rd-ico" title="下一条" :disabled="!hasNext" @click="$emit('nav', 1)"><StIcon name="chevron-down" :size="18" /></button>
+        <button class="rd-ico st-icon-action" data-smart-tip="上一条" :disabled="!hasPrev" @click="$emit('nav', -1)"><StIcon name="chevron-up" :size="18" /></button>
+        <button class="rd-ico st-icon-action" data-smart-tip="下一条" :disabled="!hasNext" @click="$emit('nav', 1)"><StIcon name="chevron-down" :size="18" /></button>
       </span>
     </div>
     <div v-if="record" class="rd-card">
@@ -37,7 +37,7 @@
         </div>
         <el-dropdown v-if="canCreate || canDelete" trigger="click" placement="bottom-end" popper-class="rd-more-pop"
                      @command="(cmd) => $emit('record-action', cmd, record)" @visible-change="(v) => (moreOpen = v)">
-          <button class="rd-more" :class="{ open: moreOpen }"><StIcon name="more-h" :size="18" /></button>
+          <button class="rd-more st-icon-action" :class="{ open: moreOpen }"><StIcon name="more-h" :size="18" /></button>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item v-if="canCreate" command="duplicate">生成记录副本</el-dropdown-item>
@@ -87,7 +87,7 @@
                 <span v-else-if="isEnum(f)" class="rd-tags">
                   <span v-for="o in enumTags(f)" :key="o.id" class="rd-tag"
                         :style="o.raw ? {} : { background: optionColor(o.color).value, color: optionColor(o.color).text }">
-                    {{ o.label }}<span v-if="canEdit(f)" class="rd-tag-x" title="移除" @click.stop="removeTag(f, o.id)">✕</span>
+                    {{ o.label }}<span v-if="canEdit(f)" class="rd-tag-x" data-smart-tip="移除" @click.stop="removeTag(f, o.id)">✕</span>
                   </span>
                 </span>
                 <!-- 日期类：按字段日期格式显示（与表格单元格 formatDate 一致），编辑框同格式，进出编辑文字不变 -->
@@ -404,13 +404,13 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMousedown, 
 .rd-more { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0;
            border: none; border-radius: 6px; background: transparent; color: var(--st-text-1); cursor: pointer; }
 .rd-more:hover, .rd-more.open { background: var(--st-bg-active); }
-.rd-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 16px 16px 24px; }
+.rd-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 16px 16px 16px; }
 /* 字段行：左列图标 + 字段名（可换行），右列值 */
 .rd-row { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: 4px 0; box-sizing: border-box; }
 .rd-row.member { margin-left: 8px; padding-left: 14px; border-left: 1px solid #DCDEE0; }
-.rd-label { display: flex; align-items: flex-start; gap: 8px; width: 200px; flex: none; padding-top: 7px;
+.rd-label { display: flex; align-items: flex-start; gap: 8px; width: 190px; flex: none; padding-top: 7px;
             font-size: 15px; line-height: 22px; color: var(--st-text-1); word-break: break-all; }
-.rd-row.member .rd-label { width: 178px; }
+.rd-row.member .rd-label { width: 168px; }
 /* 图标/名称样式与表格设置面板一致（图标 16px 灰、名称 15px 深色、间距 8px） */
 .rd-icon { color: var(--st-text-2); flex: none; margin-top: 3px; }
 .rd-value { position: relative; flex: 1; min-width: 0; min-height: 36px; padding: 7px 8px; margin-left: -8px; box-sizing: border-box;

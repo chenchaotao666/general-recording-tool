@@ -1,7 +1,7 @@
 <template>
   <div class="select-page">
     <div class="select-panel">
-      <div class="logo">通用记录工具</div>
+      <div class="logo"><img src="/wantong-logo.svg" alt="" style="width: 40px; height: 40px; display: block; margin: 0 auto 12px" />万通AI助手</div>
       <h2 class="welcome">欢迎！</h2>
       <p class="hint">您的账号属于多个公司，请选择要登录的公司</p>
 

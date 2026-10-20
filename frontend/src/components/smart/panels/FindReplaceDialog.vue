@@ -6,7 +6,7 @@
     <div class="fr-panel" @keydown.esc.stop.prevent="closePanel">
       <div class="fr-head" @pointerdown="startDrag" @pointermove="moveDrag" @pointerup="stopDrag" @pointercancel="stopDrag" @lostpointercapture="stopDrag">
         <span class="fr-title">{{ expanded ? '查找替换' : '查找' }}</span>
-        <button class="fr-close" type="button" aria-label="关闭" @click="closePanel">
+        <button class="fr-close st-icon-action" type="button" aria-label="关闭" @click="closePanel">
           <StIcon name="close" :size="16" />
         </button>
       </div>
@@ -16,11 +16,11 @@
                :class="{ 'has-nav': searched }" placeholder="输入查找内容"
                :readonly="busy" @input="onFindInput" @keydown.enter.prevent="onFindEnter" />
         <div v-if="searched" class="fr-nav" aria-label="查找结果导航">
-          <button type="button" aria-label="上一个" :disabled="!matches.length || busy" @click="findPrev">
+          <button class="st-icon-action" type="button" aria-label="上一个" :disabled="!matches.length || busy" @click="findPrev">
             <StIcon name="back" :size="14" />
           </button>
           <span class="fr-count">{{ currentIndex >= 0 ? currentIndex + 1 : 0 }}/{{ matches.length }}</span>
-          <button type="button" aria-label="下一个" :disabled="!matches.length || busy" @click="findNext">
+          <button class="st-icon-action" type="button" aria-label="下一个" :disabled="!matches.length || busy" @click="findNext">
             <StIcon name="chevron-right" :size="14" />
           </button>
         </div>

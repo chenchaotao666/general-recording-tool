@@ -1,7 +1,7 @@
 <template>
   <!-- 表单填写态（「填写表单」页签与公开链接页共用）：按字段类型渲染题目控件；
        显示条件前端即时求值（服务端提交时复核）；计算类字段只读置灰（§12.2） -->
-  <div class="ff">
+  <div class="ff" :class="{ 'without-cover': !coverSrc }">
     <div v-if="coverSrc" class="ff-cover"><img :src="coverSrc" alt="" /></div>
     <div class="ff-paper">
       <h1 class="ff-title">{{ def.title || '表单' }}</h1>
@@ -64,10 +64,12 @@ defineExpose({ setErrors: (errs) => Object.assign(errors, errs || {}) })
 </script>
 
 <style scoped>
-.ff { max-width: 760px; margin: 0 auto; }
-.ff-cover img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 12px 12px 0 0; display: block; }
+.ff { max-width: 780px; margin: 0 auto; background: #F6F7F7; border-radius: 16px; padding: 0 24px 24px; }
+.ff.without-cover { padding: 0; background: transparent; }
+.ff-cover { margin: 0 -24px; }
+.ff-cover img { width: 100%; height: 170px; object-fit: cover; border-radius: 16px 16px 0 0; display: block; }
 .ff-paper { background: #fff; border-radius: 12px; padding: 36px 48px 40px; }
-.ff-cover + .ff-paper { border-radius: 0 0 12px 12px; }
+.ff-cover + .ff-paper { position: relative; margin-top: -44px; border-radius: 8px; }
 .ff-title { font-size: 22px; font-weight: 700; margin: 0 0 8px; color: var(--st-text-1); }
 .ff-desc { font-size: 14px; color: var(--st-text-2); white-space: pre-wrap; }
 .ff-line { height: 1px; background: var(--st-border); margin: 20px 0 8px; }
@@ -76,5 +78,10 @@ defineExpose({ setErrors: (errs) => Object.assign(errors, errs || {}) })
 .ff-req { color: var(--el-color-danger); margin-right: 3px; }
 .ff-q-desc { font-size: 13px; color: var(--st-text-3); margin: -6px 0 10px; white-space: pre-wrap; }
 .ff-err { color: var(--el-color-danger); font-size: 12px; margin-top: 6px; }
-.ff-submit { width: 100%; height: 42px; margin-top: 28px; font-size: 15px; }
+.ff-submit { display: flex; width: 160px; max-width: 100%; height: 40px; margin: 40px auto 4px; border-radius: 4px; font-size: 14px; }
+@media (max-width: 600px) {
+  .ff { padding: 0 12px 12px; }
+  .ff-cover { margin: 0 -12px; }
+  .ff-paper { padding: 24px 20px 32px; }
+}
 </style>

@@ -10,12 +10,12 @@
         @dblclick.stop="closed && $emit('open')">
     <span v-for="o in selectedOptions" :key="o.id" class="opt-tag"
           :style="{ background: optionColor(o.color).value, color: optionColor(o.color).text }">
-      <span class="opt-label">{{ o.label }}</span><span class="tag-x" title="清除" @click.stop="removeOption(o.id)">✕</span>
+      <span class="opt-label">{{ o.label }}</span><span class="tag-x" data-smart-tip="清除" @click.stop="removeOption(o.id)">✕</span>
     </span>
     <!-- 未匹配到选项的原始值兜底（改类型/引用源被删场景） -->
     <span v-for="(v, i) in unmatchedValues" :key="`raw-${i}`" class="opt-tag raw"><span class="opt-label">{{ v }}</span></span>
     <!-- 下拉按钮：单个三角，点击切换展开/收起（方向随状态翻转） -->
-    <span class="st-dd chev" :class="{ up: !closed, open: !closed }" title="展开/收起选项" @click.stop="onChevClick" />
+    <span class="st-dd chev" :class="{ up: !closed, open: !closed }" aria-label="展开/收起选项" @click.stop="onChevClick" />
   </span>
   <teleport to="body">
     <div v-if="rect && !closed" v-show="!panelOut" ref="panelRef" class="sel-panel" :style="panelStyle" @mousedown.stop>

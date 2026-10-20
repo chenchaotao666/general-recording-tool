@@ -10,7 +10,7 @@
             <div class="pp-help">了解功能用法和使用场景 <StIcon name="chevron-right" :size="12" /></div>
           </el-tooltip>
         </div>
-        <span class="pp-x" @click="emit('close')"><StIcon name="close" :size="20" /></span>
+        <span class="pp-x st-icon-action" @click="emit('close')"><StIcon name="close" :size="20" /></span>
       </div>
       <div v-loading="loading" class="pp-body">
         <div class="pp-card">
@@ -34,7 +34,7 @@
                 <div class="pp-g-members">包含 {{ g.members.map(m => m.name).join('、') }}</div>
               </div>
               <el-dropdown v-if="overview.can_manage_groups" trigger="click" @command="(c) => groupAction(c, g)">
-                <span class="pp-more"><StIcon name="more-h" :size="18" /></span>
+                <span class="pp-more st-icon-action"><StIcon name="more-h" :size="18" /></span>
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="grants">设置额外权限</el-dropdown-item>

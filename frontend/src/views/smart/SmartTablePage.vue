@@ -1,13 +1,15 @@
 <template>
   <div class="st-page">
+    <div class="st-table-pane">
     <!-- 视图页签 -->
     <ViewTabs :views="views" :current-id="view?.id" @switch="switchView" @action="onViewAction" />
 
+    <div class="st-panel">
     <!-- 表单视图（V3 §12）：自带工具条与编辑/填写页签 -->
     <FormView v-if="viewType === 'form' && view" ref="formRef" :view="view" :fields="resolvedFields" :table-id="tableId"
               :table-name="entry?.name || ''" :members="members" :can-manage="contentPerm.viewManage"
               @save="onFormSave" @add-field="onFormAddField" @update-options="onFormOptions"
-              @edit-field="(f) => openFieldConfig(f)" @open-automation="openAutomation(formAutomationDraft())" />
+              @edit-field="(f, at) => openFieldConfig(f, null, at)" @delete-field="onFormDeleteField" @open-automation="openAutomation(formAutomationDraft())" />
 
     <template v-else>
     <!-- 工具栏（对齐参照 上方Tab页签.png：添加一行=蓝字圆⊕；条件按钮生效时浅蓝胶囊+计数） -->
@@ -98,25 +100,25 @@
         </el-popover>
         <!-- V3 右上工具栏（对齐参照 右上工具栏.png）：内容权限 / 自动化 / 生成表单 -->
         <el-tooltip content="内容权限" placement="bottom" :show-after="200">
-          <button class="tb-ico" :class="{ on: permPanel.visible }" @click="openPermPanel()"><StIcon name="lock" :size="16" /></button>
+          <button class="tb-ico st-icon-action" :class="{ on: permPanel.visible }" @click="openPermPanel()"><StIcon name="lock" :size="16" /></button>
         </el-tooltip>
         <el-tooltip content="自动化" placement="bottom" :show-after="200">
-          <button class="tb-ico" :class="{ on: automation.visible }" @click="openAutomation()"><StIcon name="automation" :size="16" /></button>
+          <button class="tb-ico st-icon-action" :class="{ on: automation.visible }" @click="openAutomation()"><StIcon name="automation" :size="16" /></button>
         </el-tooltip>
         <el-tooltip content="生成表单" placement="bottom" :show-after="200">
-          <button class="tb-ico" :disabled="!contentPerm.viewManage" @click="generateForm"><StIcon name="form-add" :size="16" /></button>
+          <button class="tb-ico st-icon-action" :disabled="!contentPerm.viewManage" @click="generateForm"><StIcon name="form-add" :size="16" /></button>
         </el-tooltip>
         <span class="tb-sep" />
-        <button class="tb-ico" title="撤销" :disabled="!undoStack.canUndo" @click="doUndo"><StIcon name="undo" :size="16" /></button>
-        <button class="tb-ico" title="重做" :disabled="!undoStack.canRedo" @click="doRedo"><StIcon name="redo" :size="16" /></button>
-        <button class="tb-ico" title="查找替换" @click="openFind($event)"><StIcon name="search" :size="16" /></button>
+        <button class="tb-ico st-icon-action" data-smart-tip="撤销" :disabled="!undoStack.canUndo" @click="doUndo"><StIcon name="undo" :size="16" /></button>
+        <button class="tb-ico st-icon-action" data-smart-tip="重做" :disabled="!undoStack.canRedo" @click="doRedo"><StIcon name="redo" :size="16" /></button>
+        <button class="tb-ico st-icon-action" data-smart-tip="查找替换" @click="openFind($event)"><StIcon name="search" :size="16" /></button>
       </div>
     </div>
 
 
     <!-- 主体：表格区 + 右侧记录详情面板（占位停靠，表格让出宽度） -->
     <div class="st-body">
-    <div class="st-main">
+    <div ref="gridAreaRef" class="st-main">
     <!-- 看板（V3 数据可视化入口）/ 网格 -->
     <KanbanView v-if="viewType === 'kanban'" v-loading="loading" :fields="resolvedFields" :rows="dataRows"
                 :config="cfg.kanban || {}" :can-edit-cell="canEditCell" :can-add="perms.can_create"
@@ -134,6 +136,7 @@
       :active-row-id="detail.visible ? detailRecord?.id : null"
       :search-matches="findHighlight.matches" :search-current-index="findHighlight.currentIndex"
       @expand-row="(r) => openDetail(r)"
+      :can-create="perms.can_create" :can-delete="perms.can_delete"
       @cell-commit="onCellCommit" @add-row="addRow" @cell-menu="onCellMenu" @field-menu="onFieldMenu" @ai-run="runAiField" @field-edit="(f, at) => openFieldConfig(f, null, at)"
       @group-edit="(g, at) => openGroupDialog(null, g, at)"
       @field-filter="(f, rect) => openFieldFilterAt(f, rect)"
@@ -148,6 +151,12 @@
                      :current-page="page" @current-change="(p) => { page = p; loadGrid() }" />
     </div>
     </div>
+
+    </div>
+    </template>
+
+    </div>
+    </div>
     <RecordDetailPanel v-if="detail.visible && detailRecord" :record="detailRecord" :fields="resolvedFields"
                        :view="view" :column-groups="columnGroups"
                        :has-prev="detailIdx > 0" :has-next="detailIdx < dataRows.length - 1"
@@ -157,9 +166,6 @@
                        @set-title-field="(fn) => patchConfig({ recordTitleField: fn }, { reload: false })"
                        @close="detail.visible = false" @nav="navDetail" @cell-commit="onCellCommit"
                        @add-option="onAddOption" @open-config="openFieldConfig" @record-action="onDetailAction" />
-    </div>
-    </template>
-
     <!-- 面板与弹窗 -->
     <FieldConfigDialog :visible="fieldDialog.visible" :field="fieldDialog.field" :preset="fieldDialog.preset" :fields="fields" :at="fieldDialog.at"
                        :table-id="tableId" :sample-record-id="dataRows[0]?.id || null"
@@ -265,22 +271,22 @@
           </div>
           <div v-if="menuIsSelect" class="mi" @click="fieldAct('aiTags')"><StIcon name="sparkle" :size="15" class="fm-ai" />AI 匹配标签</div>
           <div class="mi" @click="fieldAct('reminder')"><StIcon name="play-circle" :size="15" />内容变更时提醒</div>
-          <!-- 底部图标快捷栏（对齐参照 表头-工具栏.png：副本/列宽/冻结/隐藏/删除，黑底 tooltip） -->
+          <!-- 底部图标快捷栏：副本/列宽/冻结/隐藏/删除，统一浅色提示框 -->
           <div class="fm-bar">
             <el-tooltip content="创建副本" placement="top" :show-after="150" :z-index="3100">
-              <span class="fb-item" @click="fieldAct('duplicate')"><StIcon name="copy" :size="16" /></span>
+              <span class="fb-item st-icon-action" @click="fieldAct('duplicate')"><StIcon name="copy" :size="16" /></span>
             </el-tooltip>
             <el-tooltip content="自动调整列宽" placement="top" :show-after="150" :z-index="3100">
-              <span class="fb-item" @click="fieldAct('autoFit')"><StIcon name="autofit" :size="16" /></span>
+              <span class="fb-item st-icon-action" @click="fieldAct('autoFit')"><StIcon name="autofit" :size="16" /></span>
             </el-tooltip>
             <el-tooltip :content="menuFieldFrozen ? '取消冻结' : '冻结至此列'" placement="top" :show-after="150" :z-index="3100">
-              <span class="fb-item" @click="fieldAct('freeze')"><StIcon :name="menuFieldFrozen ? 'unfreeze' : 'freeze'" :size="16" /></span>
+              <span class="fb-item st-icon-action" @click="fieldAct('freeze')"><StIcon :name="menuFieldFrozen ? 'unfreeze' : 'freeze'" :size="16" /></span>
             </el-tooltip>
             <el-tooltip content="隐藏" placement="top" :show-after="150" :z-index="3100">
-              <span class="fb-item" @click="fieldAct('hide')"><StIcon name="eye-off" :size="16" /></span>
+              <span class="fb-item st-icon-action" @click="fieldAct('hide')"><StIcon name="eye-off" :size="16" /></span>
             </el-tooltip>
             <el-tooltip content="删除" placement="top" :show-after="150" :z-index="3100">
-              <span class="fb-item" @click="fieldAct('delete')"><StIcon name="trash" :size="16" /></span>
+              <span class="fb-item st-icon-action" @click="fieldAct('delete')"><StIcon name="trash" :size="16" /></span>
             </el-tooltip>
           </div>
         </div>
@@ -376,7 +382,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, provide, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import SmartGrid from '../../components/smart/grid/SmartGrid.vue'
@@ -412,7 +418,7 @@ import {
   alterTable, getTable, listMembers, listTables,
   smartGrid, smartListViews, smartCreateView, smartUpdateView, smartDeleteView,
   smartDuplicateView, smartSetDefaultView, smartPutViewPref, smartDeleteViewPref,
-  smartCreateRecord, smartUpdateRecord, smartDeleteRecord, smartBatchDelete,
+  smartCreateRecord, smartInsertRecords, smartUpdateRecord, smartDeleteRecord, smartBatchDelete,
   smartDuplicateRecord, smartDuplicateField, smartFieldDeps, smartFieldStats,
   smartListColumnGroups, smartCreateColumnGroup, smartUpdateColumnGroup, smartDeleteColumnGroup,
   smartGetDoc, smartGetTree, smartDocMembers, smartCreateEntry, smartCreateWidget, smartAiRun, handleBillingError,
@@ -527,7 +533,17 @@ const dataRows = computed(() => rows.value.filter(r => r.__rowType !== 'group'))
 // 表格最大高度：撑到页面底部（留 8px）；需要分页时给紧凑分页条留 36px。
 // 数据不满一屏时表格按内容收缩（SmartGrid 用 max-height），统计行/分页条跟着上移
 const showPager = computed(() => viewType.value === 'grid' && !grouped.value && total.value > pageSize)
-const gridHeight = computed(() => window.innerHeight - (showPager.value ? 212 : 176))
+const gridAreaRef = ref(null)
+const gridAreaHeight = ref(0)
+let gridAreaObserver = null
+watch(gridAreaRef, element => {
+  gridAreaObserver?.disconnect()
+  if (!element) return
+  gridAreaHeight.value = element.clientHeight
+  gridAreaObserver = new ResizeObserver(() => { gridAreaHeight.value = element.clientHeight })
+  gridAreaObserver.observe(element)
+}, { flush: 'post' })
+const gridHeight = computed(() => Math.max(100, (gridAreaHeight.value || window.innerHeight - 176) - (showPager.value ? 32 : 0)))
 const gridRef = ref(null)
 
 // 计数只算生效的条件（固定到工具栏但还没填值的不算）
@@ -956,11 +972,13 @@ function onKeydown(e) {
   if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); doRedo() }
 }
 
-// ---------- 右键菜单（vxe menu-config 原生渲染，点击项直接分发） ----------
+// ---------- 单元格右键菜单操作 ----------
 const ctx = reactive({ row: null, field: null })
-function onCellMenu({ row, field, cmd }) {
+function onCellMenu({ row, field, cmd, count }) {
   Object.assign(ctx, { row, field })
-  onCtxAction(cmd)
+  onCtxAction(cmd, count).catch(e => {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '操作失败')
+  })
 }
 const detail = reactive({ visible: false, record: null })
 // 详情记录按 id 跟随最新数据（表格重查后行对象会被替换）
@@ -986,11 +1004,37 @@ async function onDetailAction(cmd, rec) {
   }
 }
 
-async function onCtxAction(cmd) {
+const insertingRows = ref(false)
+async function onCtxAction(cmd, count = 1) {
   const { row, field } = ctx
   if (cmd === 'expand') {
     openDetail(row)
+  } else if (cmd === 'insert-up' || cmd === 'insert-down') {
+    if (insertingRows.value || !perms.value.can_create) return
+    insertingRows.value = true
+    try {
+      const result = await smartInsertRecords(tableId, row.id, {
+        direction: cmd === 'insert-up' ? 'up' : 'down', count, view_id: view.value?.id,
+        data: presetFromFilters({
+          conditions: panelConditions.value, conjunction: cfg.value.filters?.conjunction || 'and',
+          fields: resolvedFields.value, viewerId: me?.id ?? null, members: members.value, relationRows: relationRows.value,
+        }),
+      })
+      await loadGrid(view.value?.id, { focusId: result.ids[0] })
+      const shown = await gridRef.value?.focusRecord?.(result.ids[0])
+      if (shown === false) ElMessage.info(`已插入 ${result.ids.length} 行，但不符合当前筛选条件，暂未显示`)
+      else ElMessage.success(`已插入 ${result.ids.length} 行${cfg.value.sorts?.length ? '，当前视图仍按排序规则显示' : ''}`)
+    } finally { insertingRows.value = false }
+  } else if (cmd.startsWith('viz-')) {
+    fieldMenu.field = field
+    if (cmd === 'viz-more') await addMoreCharts()
+    else await addVizChart(cmd === 'viz-pie' ? 'pie' : 'bar')
+  } else if (cmd === 'reminder') {
+    Object.assign(reminder, { visible: true, field })
+  } else if (cmd === 'automation') {
+    openAutomation()
   } else if (cmd === 'only' || cmd === 'exclude') {
+    if (!field) return
     const op = cmd === 'only' ? 'eq' : 'neq'
     const c = { id: `c_${Date.now()}`, fieldId: field.field_name, operator: op, value: row[field.field_name] }
     onFiltersChange([...panelConditions.value, c])
@@ -1265,6 +1309,12 @@ async function onFormSave(form) {
   }
 }
 function onFormAddField(e) { pendingFormAdd = true; onAddFieldAt(e) }
+async function onFormDeleteField(field) {
+  try { await deleteField(field) }
+  catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '删除字段失败')
+  }
+}
 async function onFormOptions(field, options) {
   const f = fields.value.find(x => x.field_name === field.field_name)
   if (!f) return
@@ -1633,6 +1683,7 @@ onMounted(async () => {
   document.addEventListener('contextmenu', onDocClick)
 })
 onUnmounted(() => {
+  gridAreaObserver?.disconnect()
   clearTimeout(aiPollTimer)
   window.removeEventListener('keydown', onKeydown)
   document.removeEventListener('click', onDocClick)
@@ -1641,10 +1692,15 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.st-page { display: flex; flex-direction: column; height: 100%; background: #fff; }
+.st-page { display: flex; gap: 12px; height: 100%; min-width: 0; box-sizing: border-box; padding: 6px 12px 12px 6px; background: #fff; }
+.st-table-pane { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.st-page :deep(.view-tabs) { height: 40px; box-sizing: border-box; flex-shrink: 0; border-bottom: 0; padding-left: 0; }
+.st-page :deep(.rd-panel) { padding: 0; border-left: 0; }
+.st-page :deep(.rd-top) { height: 40px; box-sizing: border-box; flex-shrink: 0; margin: 0; }
+.st-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; border: 1px solid #d0d3d6; border-radius: 8px; overflow: hidden; background: #fff; }
 /* 表格区 + 右侧详情面板并排：面板占位，表格区收窄 */
 .st-body { display: flex; flex: 1; min-height: 0; }
-.st-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.st-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--st-border); }
 /* 幽灵按钮（对齐参照）：图标+文字 13px，hover 浅灰；生效条件=浅蓝胶囊+计数 */
 .tb-btn {
@@ -1691,7 +1747,7 @@ onUnmounted(() => {
 .tb-btn.tb-danger { color: var(--el-color-danger); }
 .tb-btn.tb-danger:hover { background: var(--el-color-danger-light-9); }
 /* 分页条：紧凑（36px），紧跟表格 */
-.pager { height: 36px; padding: 0; display: flex; align-items: center; justify-content: center; }
+.pager { height: 32px; flex: 0 0 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
 .fm-mask { position: fixed; inset: 0; z-index: 3000; }
 .fm { position: fixed; background: #fff; border-radius: 8px; box-shadow: var(--st-shadow-pop); padding: 4px; min-width: 170px; }
 .mi {

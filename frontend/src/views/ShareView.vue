@@ -6,7 +6,7 @@
       <el-input v-model="password" type="password" show-password placeholder="请输入访问密码" @keyup.enter="verify" />
       <el-button type="primary" style="width: 100%; margin-top: 12px" :loading="verifying" @click="verify">访问</el-button>
       <div v-if="error" class="error">{{ error }}</div>
-      <div class="pwd-brand">由「通用记录工具」提供的内容分享</div>
+      <div class="pwd-brand">由「万通AI助手」提供的内容分享</div>
     </el-card>
 
     <template v-else-if="data">

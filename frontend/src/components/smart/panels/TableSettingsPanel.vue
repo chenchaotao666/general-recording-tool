@@ -15,10 +15,10 @@
                draggable="true" @dragstart="dndStartGroup(row.group, $event)"
                @dragover="dndOver(row, $event)" @drop="dndDrop(row, $event)" @dragend="dndEnd"
                @click="toggleGroup(row.group.id)">
-            <span class="ts-drag"><StIcon name="drag" :size="14" /></span>
-            <span class="g-caret"><StIcon :name="collapsed.has(row.group.id) ? 'chevron-right' : 'chevron-down'" :size="16" /></span>
+            <span class="ts-drag st-icon-action"><StIcon name="drag" :size="14" /></span>
+            <span class="g-caret st-icon-action"><StIcon :name="collapsed.has(row.group.id) ? 'chevron-right' : 'chevron-down'" :size="16" /></span>
             <span class="g-name">{{ row.group.name }}</span>
-            <span class="f-eye" :title="groupHidden(row) ? '显示' : '隐藏'" @click.stop="toggleGroupVisible(row)">
+            <span class="f-eye st-icon-action" :data-smart-tip="groupHidden(row) ? '显示' : '隐藏'" @click.stop="toggleGroupVisible(row)">
               <StIcon :name="groupHidden(row) ? 'eye-off' : 'eye'" :size="20" :stroke-width="1.2" />
             </span>
             <span class="f-more f-more-ph" />
@@ -27,15 +27,15 @@
           <div v-else class="field-row tree-item" :class="[{ member: row.member, off: isHidden(row.field) }, dndIndicator(row)]"
                draggable="true" @dragstart="dndStart(row.field, $event)"
                @dragover="dndOver(row, $event)" @drop="dndDrop(row, $event)" @dragend="dndEnd">
-            <span class="ts-drag"><StIcon name="drag" :size="14" /></span>
+            <span class="ts-drag st-icon-action"><StIcon name="drag" :size="14" /></span>
             <StIcon :name="fieldIconName(row.field)" :size="16" class="ts-ico" />
             <span class="f-name">{{ row.field.label }}</span>
-            <span class="f-eye" :title="isHidden(row.field) ? '显示' : '隐藏'"
+            <span class="f-eye st-icon-action" :data-smart-tip="isHidden(row.field) ? '显示' : '隐藏'"
                   @click.stop="$emit('toggle-visible', row.field, isHidden(row.field))">
               <StIcon :name="isHidden(row.field) ? 'eye-off' : 'eye'" :size="20" :stroke-width="1.2" />
             </span>
             <el-dropdown trigger="click" @command="(cmd) => $emit('field-action', cmd, row.field)">
-              <span class="f-more" @click.stop><StIcon name="more-h" :size="18" /></span>
+              <span class="f-more st-icon-action" @click.stop><StIcon name="more-h" :size="18" /></span>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="edit">修改字段</el-dropdown-item>

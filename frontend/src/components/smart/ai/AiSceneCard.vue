@@ -35,7 +35,7 @@
           </div>
           <div class="asc-td">
             <span v-if="r.loading" class="asc-gen">正在生成…</span>
-            <span v-else-if="r.error" class="asc-err" :title="r.error">生成失败：{{ r.error }}</span>
+            <span v-else-if="r.error" class="asc-err" :data-smart-tip="r.error">生成失败：{{ r.error }}</span>
             <SmartCell v-else-if="r.outField" :field="r.outField" :record="r.outRecord" />
             <span v-else class="asc-ell">{{ r.outText }}</span>
           </div>
@@ -46,8 +46,8 @@
 
     <div v-if="feedback" class="asc-fb">
       <span>提交反馈帮助提升效果</span>
-      <span class="asc-fb-btn" :class="{ on: fb === 'up' }" title="有帮助" @click="vote('up')"><StIcon name="thumb-up" :size="16" /></span>
-      <span class="asc-fb-btn" :class="{ on: fb === 'down' }" title="不准确" @click="vote('down')"><StIcon name="thumb-down" :size="16" /></span>
+      <span class="asc-fb-btn st-icon-action" :class="{ on: fb === 'up' }" data-smart-tip="有帮助" @click="vote('up')"><StIcon name="thumb-up" :size="16" /></span>
+      <span class="asc-fb-btn st-icon-action" :class="{ on: fb === 'down' }" data-smart-tip="不准确" @click="vote('down')"><StIcon name="thumb-down" :size="16" /></span>
     </div>
     <slot />
   </div>

@@ -22,7 +22,7 @@
           </div>
         </div>
       </div>
-      <button class="aic-send" type="button" :class="{ on: canSend }" :disabled="!canSend" title="发送（Enter）" @click="send">
+      <button class="aic-send st-icon-action" type="button" :class="{ on: canSend }" :disabled="!canSend" data-smart-tip="发送（Enter）" @click="send">
         <StIcon name="arrow-right" :size="18" :stroke-width="2" />
       </button>
     </div>
@@ -64,7 +64,7 @@ function chipHtml(f) {
   const svg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"
     stroke-linecap="round" stroke-linejoin="round">${FIELD_TYPE_ICONS[iconOf(f)] || FIELD_TYPE_ICONS.text}</svg>`
   const esc = String(f.label).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
-  return `<span class="aic-chip" contenteditable="false" data-fn="${f.field_name}" data-label="${esc}">${svg}<span>${esc}</span><i class="aic-chip-x" title="移除">×</i></span>`
+  return `<span class="aic-chip" contenteditable="false" data-fn="${f.field_name}" data-label="${esc}">${svg}<span>${esc}</span><i class="aic-chip-x" data-smart-tip="移除">×</i></span>`
 }
 
 function refresh() {

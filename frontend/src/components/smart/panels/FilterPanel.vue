@@ -14,7 +14,7 @@
           <span class="fp-scope-item" :class="{ on: scope === 'personal' }" @click="$emit('scope-change', 'personal')">调整仅你可见</span>
           <span class="fp-scope-item" :class="{ on: scope === 'shared' }" @click="$emit('scope-change', 'shared')">对所有人生效</span>
           <el-dropdown trigger="click" :teleported="false" :popper-options="FIXED_POPPER" @command="onMore">
-            <span class="fp-scope-more"><StIcon name="more-h" :size="16" /></span>
+            <span class="fp-scope-more st-icon-action"><StIcon name="more-h" :size="16" /></span>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="clear" :disabled="!draft.length">清空所有条件</el-dropdown-item>
@@ -56,11 +56,11 @@
           </el-popover>
           <span v-if="!isOpen(c)" class="fp-sum">{{ summaryOf(c) }}</span>
           <span class="fp-acts">
-            <el-tooltip content="删除条件" placement="top" :show-after="300"><span class="fp-act" @click.stop="remove(i)"><StIcon name="minus-circle" :size="18" /></span></el-tooltip>
+            <el-tooltip content="删除条件" placement="top" :show-after="300"><span class="fp-act st-icon-action" @click.stop="remove(i)"><StIcon name="minus-circle" :size="18" /></span></el-tooltip>
             <el-tooltip :content="c.pinned ? '取消固定' : '固定到工具栏'" placement="top" :show-after="300">
-              <span class="fp-act" :class="{ on: c.pinned }" @click.stop="update(i, { pinned: !c.pinned })"><StIcon name="pin" :size="18" /></span></el-tooltip>
+              <span class="fp-act st-icon-action" :class="{ on: c.pinned }" @click.stop="update(i, { pinned: !c.pinned })"><StIcon name="pin" :size="18" /></span></el-tooltip>
             <span class="fp-vsep" />
-            <span class="fp-act" @click.stop="toggleOpen(c)"><StIcon :name="isOpen(c) ? 'chevron-up' : 'chevron-down'" :size="18" /></span>
+            <span class="fp-act st-icon-action" @click.stop="toggleOpen(c)"><StIcon :name="isOpen(c) ? 'chevron-up' : 'chevron-down'" :size="18" /></span>
           </span>
         </div>
         <div v-if="isOpen(c) && fieldOf(c)" class="fp-card-body">

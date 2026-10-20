@@ -11,14 +11,14 @@
         <AiBadge plain />
         <span class="afe-flex" />
         <span class="afe-more-wrap">
-          <span class="afe-icon" title="更多" @click="moreOpen = !moreOpen"><StIcon name="more-h" :size="18" /></span>
+          <span class="afe-icon st-icon-action" data-smart-tip="更多" @click="moreOpen = !moreOpen"><StIcon name="more-h" :size="18" /></span>
           <div v-if="moreOpen" class="afe-menu" @mouseleave="moreOpen = false">
             <div class="afe-mi" @click="run('all')"><StIcon name="sparkle" :size="14" />重新生成全部</div>
             <div class="afe-mi" @click="run('empty')"><StIcon name="row-add" :size="14" />仅生成空白行</div>
             <div class="afe-mi" @click="run('failed')"><StIcon name="sync" :size="14" />重新生成失败行</div>
           </div>
         </span>
-        <span class="afe-icon" title="关闭" @click="emit('close')"><StIcon name="close" :size="16" /></span>
+        <span class="afe-icon st-icon-action" data-smart-tip="关闭" @click="emit('close')"><StIcon name="close" :size="16" /></span>
       </div>
       <div class="afe-sub">
         <template v-for="(seg, i) in descSegments" :key="i">
@@ -78,10 +78,10 @@
             <div class="afe-opts">
               <div v-for="(o, i) in draft.options" :key="o.id" class="afe-opt-row" :class="dropCls(i)" draggable="true"
                    @dragstart="dragI = i" @dragover.prevent="overI = i" @drop.prevent="dropOpt(i)" @dragend="dragI = overI = null">
-                <span class="afe-drag"><StIcon name="drag" :size="14" /></span>
-                <span class="afe-color" :style="{ background: optionColor(o.color).value }" title="切换颜色" @click="cycleColor(o)" />
+                <span class="afe-drag st-icon-action"><StIcon name="drag" :size="14" /></span>
+                <span class="afe-color" :style="{ background: optionColor(o.color).value }" data-smart-tip="切换颜色" @click="cycleColor(o)" />
                 <input v-model="o.label" class="afe-opt-in" />
-                <span class="afe-del" title="删除" @click="removeOption(i)"><StIcon name="close" :size="13" /></span>
+                <span class="afe-del st-icon-action" data-smart-tip="删除" @click="removeOption(i)"><StIcon name="close" :size="13" /></span>
               </div>
               <div class="afe-add" @click="addOption"><StIcon name="plus" :size="14" />添加选项</div>
             </div>
@@ -109,7 +109,7 @@
       <div class="afe-ai">
         <div v-if="running" class="afe-running">
           <span class="afe-spin" />AI 正在调整设置…
-          <span class="afe-stop" title="停止" @click="stopRun"><StIcon name="stop" :size="16" /></span>
+          <span class="afe-stop st-icon-action" data-smart-tip="停止" @click="stopRun"><StIcon name="stop" :size="16" /></span>
         </div>
         <AiComposer v-else ref="composerRef" compact :fields="composeFields" placeholder="让 AI 修改：描述你的要求，如「只分 3 类」「输出不超过 20 字」"
                     @send="onAiModify" />

@@ -14,14 +14,14 @@
             <el-tooltip content="用一句话描述，AI 帮你写公式" placement="bottom">
               <span class="fxe-tool" @click="aiVisible = true"><StIcon name="bulb" :size="16" />AI 写公式</span>
             </el-tooltip>
-            <span class="fxe-ico" @click="emit('close')"><StIcon name="close" :size="18" /></span>
+            <span class="fxe-ico st-icon-action" @click="emit('close')"><StIcon name="close" :size="18" /></span>
           </div>
           <div ref="editorRef" class="fxe-editor" contenteditable="true" spellcheck="false"
                data-placeholder="从下方点选字段和函数，或直接输入，如 IF([状态]=&quot;完成&quot;, 1, 0)"
                @input="onInput" @keydown="onKeydown" @keyup="onKeyup" @mouseup="onCaretMove" @blur="onBlur"
                @paste="onPaste" />
           <div class="fxe-ops">
-            <span v-for="op in OPS" :key="op.v" class="fxe-op" :title="op.tip" @mousedown.prevent @click="insertText(op.v, op.back)">{{ op.label }}</span>
+            <span v-for="op in OPS" :key="op.v" class="fxe-op" :data-smart-tip="op.tip" @mousedown.prevent @click="insertText(op.v, op.back)">{{ op.label }}</span>
             <span class="fxe-ops-hint">输入字母或字段名可联想，Tab 补全</span>
           </div>
           <div class="fxe-result">
@@ -66,7 +66,7 @@
               <template v-for="t in tableList" :key="t.id">
                 <div class="fxe-item" :class="{ on: hover?.key === `t:${t.id}` }" @mouseenter="hover = tableItem(t)"
                      @mousedown.prevent @click="insertItem(tableItem(t))">
-                  <span class="fxe-caret" :class="{ open: expanded.has(t.id) }" @click.stop="toggleTable(t)"><StIcon name="chevron-right" :size="12" /></span>
+                  <span class="fxe-caret st-icon-action" :class="{ open: expanded.has(t.id) }" @click.stop="toggleTable(t)"><StIcon name="chevron-right" :size="12" /></span>
                   <StIcon name="view-grid" :size="14" class="fxe-item-ico" />
                   <span class="fxe-item-name">{{ t.label }}</span>
                   <span v-if="t.self" class="fxe-self">本表</span>
