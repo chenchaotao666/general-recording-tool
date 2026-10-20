@@ -2,7 +2,9 @@
 
 权限：查看规则需表查看权；增删改与运行需表编辑权且内容权限 ≥ 可编辑。
 """
+from datetime import date, datetime, time, timedelta
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -92,14 +94,15 @@ def update_rule(aid: int, payload: dict, db: Session = Depends(get_db),
                 ctx: Context = Depends(get_current_context)):
     a, access = _get_rule(db, aid, ctx, edit=True)
     was_schedule = (a.trigger_config or {}).get("type") == "schedule"
+    enabled = bool(payload.get("enabled", a.enabled))
+    if "trigger" in payload or "actions" in payload or enabled:
+        trig, actions = automation_engine.validate_rule(db, access.table, {
+            "trigger": payload.get("trigger", a.trigger_config), "actions": payload.get("actions", a.actions),
+            "enabled": enabled})
+        a.trigger_config, a.actions = trig, actions
     if "name" in payload:
         a.name = str(payload["name"] or "").strip()[:200] or a.name
-    if "enabled" in payload:
-        a.enabled = bool(payload["enabled"])
-    if "trigger" in payload or "actions" in payload:
-        trig, actions = automation_engine.validate_rule(db, access.table, {
-            "trigger": payload.get("trigger", a.trigger_config), "actions": payload.get("actions", a.actions)})
-        a.trigger_config, a.actions = trig, actions
+    a.enabled = enabled
     db.commit()
     if was_schedule or (a.trigger_config or {}).get("type") == "schedule":
         _reload()
@@ -120,11 +123,41 @@ def delete_rule(aid: int, db: Session = Depends(get_db), ctx: Context = Depends(
 
 @router.get("/automations/{aid}/runs")
 def list_runs(aid: int, limit: int = 50, db: Session = Depends(get_db),
-              ctx: Context = Depends(get_current_context)):
+              ctx: Context = Depends(get_current_context), page: int = 1,
+              start_date: date | None = None, end_date: date | None = None,
+              statuses: str | None = None, duration: str | None = None):
     a, _ = _get_rule(db, aid, ctx)
-    rows = (db.query(SmartAutomationRun).filter_by(rule_id=a.id)
-            .order_by(SmartAutomationRun.id.desc()).limit(min(max(limit, 1), 200)).all())
-    return {"runs": [_run_out(r) for r in rows]}
+    query = db.query(SmartAutomationRun).filter_by(rule_id=a.id)
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(400, "开始日期不能晚于结束日期")
+    if start_date:
+        query = query.filter(SmartAutomationRun.started_at >= datetime.combine(start_date, time.min))
+    if end_date:
+        query = query.filter(SmartAutomationRun.started_at < datetime.combine(end_date + timedelta(days=1), time.min))
+    if statuses:
+        selected = statuses.split(",")
+        if set(selected) - {"success", "failed", "partial", "skipped", "running"}:
+            raise HTTPException(400, "运行状态不支持")
+        query = query.filter(SmartAutomationRun.status.in_(selected))
+    if duration:
+        bounds = {"lt1": (0, 60), "1to3": (60, 180), "3to10": (180, 600),
+                  "10to60": (600, 3600), "gte60": (3600, None)}
+        if duration not in bounds:
+            raise HTTPException(400, "耗时范围不支持")
+        if db.bind.dialect.name == "sqlite":
+            seconds = func.round((func.julianday(SmartAutomationRun.finished_at)
+                                  - func.julianday(SmartAutomationRun.started_at)) * 86400, 3)
+        else:
+            seconds = func.timestampdiff(text("MICROSECOND"), SmartAutomationRun.started_at,
+                                         SmartAutomationRun.finished_at) / 1000000
+        low, high = bounds[duration]
+        query = query.filter(SmartAutomationRun.finished_at.isnot(None), seconds >= low)
+        if high is not None:
+            query = query.filter(seconds < high)
+    total = query.count()
+    size = min(max(limit, 1), 200)
+    rows = query.order_by(SmartAutomationRun.id.desc()).offset((max(page, 1) - 1) * size).limit(size).all()
+    return {"runs": [_run_out(r) for r in rows], "total": total}
 
 
 @router.post("/automations/{aid}/run")

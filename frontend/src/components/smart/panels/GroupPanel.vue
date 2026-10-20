@@ -1,7 +1,7 @@
 <template>
   <!-- 分组面板（§5.2，对齐参照 docs/智慧表格/表格上方按钮/分组.png）：
        规则行（⋮⋮ 拖拽 + 字段下拉 + 方向两段切换 + ⊖）→「＋ 添加分组字段」（最多 3 级，满额置灰）。即时生效 -->
-  <el-popover trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="500" popper-class="st-tbpanel">
+  <el-popover :hide-after="0" trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="500" popper-class="st-tbpanel">
     <template #reference><slot /></template>
     <div class="gp">
       <div class="gp-head"><span class="tbp-title">分组</span></div>
@@ -13,7 +13,7 @@
         <DirToggle :model-value="g.direction" :labels="labelsOf(g)" @update:model-value="(v) => update(i, { direction: v })" />
         <span class="tbp-del st-icon-action" data-smart-tip="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
       </div>
-      <el-tooltip :disabled="draft.length < 3" content="最多支持 3 级分组" placement="top">
+      <el-tooltip :hide-after="0" :disabled="draft.length < 3" content="最多支持 3 级分组" placement="top">
         <span class="gp-add-wrap"><button class="tbp-add" :disabled="draft.length >= 3" @click="add"><StIcon name="plus" :size="15" />添加分组字段</button></span>
       </el-tooltip>
     </div>

@@ -1,6 +1,6 @@
 <template>
   <!-- 列级精简版「记录变更提醒」（§11.3 入口 1，对齐参照 表头-记录变更提醒.png）：
-       当 [字段 ▾] 有变更时 → 发送 [文档消息 ▾] 给 [成员]；「更多配置 ›」进入完整版编辑器 -->
+       当 [字段 ▾] 有变更时 → 发送消息通知给 [成员]；「更多配置 ›」进入完整版编辑器 -->
   <el-dialog :model-value="visible" width="420px" class="st-qr-dlg" :show-close="false" append-to-body
              @update:model-value="emit('close')">
     <template #header><div class="qr-title">记录变更提醒</div></template>
@@ -14,20 +14,11 @@
       <div class="qr-line">
         <span class="qr-dot" />
         <span>发送</span>
-        <el-dropdown trigger="click" @command="(c) => (channel = c)">
-          <a class="qr-link">{{ channel === 'groupMessage' ? '群消息' : '文档消息' }}<StIcon name="chevron-down" :size="12" /></a>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="docMessage">文档消息</el-dropdown-item>
-              <el-dropdown-item command="groupMessage">群消息</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <span>通知消息</span>
         <span>给</span>
       </div>
       <div class="qr-to">
-        <el-input v-if="channel === 'groupMessage'" v-model="webhookUrl" placeholder="群机器人 Webhook 地址" />
-        <el-select v-else v-model="to" multiple filterable class="qr-members" placeholder="选择成员" :teleported="false">
+        <el-select v-model="to" multiple filterable class="qr-members" placeholder="选择成员" :teleported="false">
           <el-option v-for="m in members" :key="m.id" :value="m.id" :label="m.name" />
         </el-select>
       </div>
@@ -61,18 +52,14 @@ const props = defineProps({
 const emit = defineEmits(['close', 'more', 'saved'])
 
 const fieldName = ref(null)
-const channel = ref('docMessage')
 const to = ref([])
-const webhookUrl = ref('')
 const saving = ref(false)
 const field = computed(() => props.fields.find(f => f.field_name === fieldName.value))
 
 watch(() => props.visible, (v) => {
   if (!v) return
   fieldName.value = props.field?.field_name || props.fields[0]?.field_name
-  channel.value = 'docMessage'
   to.value = props.me ? [props.me] : []
-  webhookUrl.value = ''
 })
 
 function buildRule() {
@@ -90,13 +77,13 @@ function buildRule() {
   return {
     name: `「${f?.label || ''}」变更提醒`, enabled: true,
     trigger: { type: 'recordUpdated', watchFields: f ? [f.field_name] : [], filter: { match: 'all', conditions: [] } },
-    actions: [{ id: `a${Date.now().toString(36)}`, type: 'sendMessage', channel: channel.value, to: to.value, toFields: [],
-                webhookUrl: webhookUrl.value, title: '记录修改提醒', content, buttons: [{ label: '查看记录' }] }],
+    actions: [{ id: `a${Date.now().toString(36)}`, type: 'sendMessage', channel: 'docMessage', to: to.value, toFields: [],
+                webhookUrl: '', title: '记录修改提醒', content, buttons: [{ label: '查看记录' }] }],
   }
 }
 
 async function save() {
-  if (channel.value === 'docMessage' && !to.value.length) { ElMessage.warning('请选择接收消息的成员'); return }
+  if (!to.value.length) { ElMessage.warning('请选择接收消息的成员'); return }
   saving.value = true
   try {
     const rule = buildRule()

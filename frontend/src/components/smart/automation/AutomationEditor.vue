@@ -4,8 +4,12 @@
   <div class="ae">
     <div class="ae-sec-title">当满足以下条件</div>
     <div class="ae-step-label"><span class="ae-dot" />第1步</div>
-    <div class="ae-card">
-      <el-dropdown trigger="click" @command="setTriggerType">
+    <div v-if="!trig.type" class="ae-card">
+      <div class="ae-choice-label">请选择触发条件：</div>
+      <div class="ae-choice-options"><button v-for="t in TRIGGERS" :key="t.type" class="ae-choice" @click="setTriggerType(t.type)"><span class="ae-type-ico" :style="{ background: t.color }"><StIcon :name="t.icon" :size="13" /></span>{{ t.label }}</button></div>
+    </div>
+    <div v-else class="ae-card">
+      <el-dropdown :hide-after="0" trigger="click" @command="setTriggerType">
         <span class="ae-type"><span class="ae-type-ico" :style="{ background: trigMeta.color }"><StIcon :name="trigMeta.icon" :size="13" /></span>
           {{ trigMeta.label }}<StIcon name="chevron-down" :size="14" class="ae-caret" /></span>
         <template #dropdown>
@@ -21,7 +25,7 @@
       <div v-if="trig.type === 'schedule'" class="ae-line">
         <el-select :model-value="trig.schedule.freq" class="ae-sel-s" :teleported="false"
                    @update:model-value="(v) => patchSchedule({ freq: v })">
-          <el-option value="daily" label="每天" /><el-option value="weekly" label="每周" /><el-option value="monthly" label="每月" />
+          <el-option value="daily" label="每天" /><el-option value="weekly" label="每周" /><el-option value="monthly" label="每月" /><el-option value="weekdays" label="每工作日" />
         </el-select>
         <el-select v-if="trig.schedule.freq === 'weekly'" :model-value="trig.schedule.weekdays" multiple collapse-tags
                    class="ae-sel-m" :teleported="false" @update:model-value="(v) => patchSchedule({ weekdays: v })">
@@ -32,8 +36,7 @@
           <el-option v-for="d in 31" :key="d" :value="d" :label="`${d} 日`" />
         </el-select>
         <span>的</span>
-        <el-time-select :model-value="trig.schedule.time" start="00:00" step="00:30" end="23:30" class="ae-time"
-                        :teleported="false" @update:model-value="(v) => patchSchedule({ time: v })" />
+        <ScheduleTimePicker :model-value="trig.schedule.time" @update:model-value="v => patchSchedule({ time: v })" />
         <span>定时触发</span>
       </div>
 
@@ -61,7 +64,7 @@
     </div>
 
     <!-- 过滤器（事件型） -->
-    <div v-if="trig.type !== 'schedule'" class="ae-card ae-filter">
+    <div v-if="trig.type && trig.type !== 'schedule'" class="ae-card ae-filter">
       <div class="ae-line ae-filter-head">
         <span class="ae-type-ico ae-gray"><StIcon name="filter" :size="12" /></span>
         <span>{{ trig.type === 'recordCreated' ? '且被添加的记录满足' : '且被修改的记录满足以下' }}</span>
@@ -81,11 +84,15 @@
     <div class="ae-divider"><StIcon name="chevrons-down" :size="14" /></div>
     <div class="ae-sec-title">就执行以下操作</div>
 
+    <template v-if="!modelValue.actions.length">
+      <div class="ae-step-label"><span class="ae-dot" />第2步</div>
+      <div class="ae-card"><div class="ae-choice-label">请选择执行操作：</div><div class="ae-choice-options"><button v-for="t in ACTIONS" :key="t.type" :disabled="!trig.type" class="ae-choice" @click="addAction(t.type)"><span class="ae-type-ico" :style="{ background: t.color }"><StIcon :name="t.icon" :size="13" /></span>{{ t.label }}</button></div></div>
+    </template>
     <template v-for="(a, i) in modelValue.actions" :key="a.id">
       <div class="ae-step-label"><span class="ae-dot" />第{{ i + 2 }}步</div>
       <div class="ae-card ae-action">
         <div class="ae-action-head">
-          <el-dropdown trigger="click" @command="(t) => changeActionType(i, t)">
+          <el-dropdown :hide-after="0" trigger="click" @command="(t) => changeActionType(i, t)">
             <span class="ae-type"><span class="ae-type-ico" :style="{ background: actMeta(a.type).color }"><StIcon :name="actMeta(a.type).icon" :size="13" /></span>
               {{ actMeta(a.type).label }}<StIcon name="chevron-down" :size="14" class="ae-caret" /></span>
             <template #dropdown>
@@ -103,19 +110,10 @@
         <template v-if="a.type === 'sendMessage'">
           <div class="ae-label">发送方式</div>
           <div class="ae-channels">
-            <div class="ae-channel" :class="{ on: a.channel !== 'groupMessage' }" @click="patchAction(i, { channel: 'docMessage' })">
-              <span class="ae-radio" /><div><div class="ae-ch-t">文档消息</div><div class="ae-ch-s">通过文档动态发送</div></div>
-            </div>
-            <div class="ae-channel" :class="{ on: a.channel === 'groupMessage' }" @click="patchAction(i, { channel: 'groupMessage' })">
-              <span class="ae-radio" /><div><div class="ae-ch-t">群消息</div><div class="ae-ch-s">通过应用发送到群</div></div>
+            <div class="ae-channel on">
+              <span class="ae-radio" /><div><div class="ae-ch-t">通知消息</div><div class="ae-ch-s">发送到接收人的通知列表</div></div>
             </div>
           </div>
-          <template v-if="a.channel === 'groupMessage'">
-            <div class="ae-label">群机器人 Webhook</div>
-            <el-input :model-value="a.webhookUrl" placeholder="企业微信 / 钉钉 / 飞书群机器人地址 https://…"
-                      @update:model-value="(v) => patchAction(i, { webhookUrl: v })" />
-          </template>
-          <template v-else>
             <div class="ae-label">发送给</div>
             <el-select :model-value="recipientsOf(a)" multiple filterable class="ae-full" placeholder="选择成员，或记录中的人员字段"
                        :teleported="false" @update:model-value="(v) => setRecipients(i, v)">
@@ -126,7 +124,6 @@
                 <el-option v-for="f in memberFields" :key="f.field_name" :value="`field:${f.field_name}`" :label="`字段：${f.label}`" />
               </el-option-group>
             </el-select>
-          </template>
           <div class="ae-label">消息内容</div>
           <MessageEditor :title-value="a.title" :content="a.content" :buttons-value="a.buttons" :steps="stepsBefore(i + 2)"
                          :dashboards="dashboards"
@@ -137,12 +134,26 @@
         <template v-else-if="a.type === 'findRecords'">
           <div class="ae-line">
             <span>在</span><TableSelect :model-value="a.tableId" :tables="tables" @update:model-value="(v) => setActionTable(i, v)" />
-            <span>里，查找</span><span class="ae-pill">满足条件的记录</span>
-          </div>
-          <div class="ae-cond-box">
-            <PermCondRow v-for="(c, ci) in a.conditions" :key="ci" :cond="c" :fields="fieldsOf(a.tableId)" :column-groups="groupsOf(a.tableId)"
-                         @update="(nc) => setActCond(i, ci, nc)" @remove="removeActCond(i, ci)" />
-            <a class="ae-add-cond" @click="addActCond(i)"><StIcon name="plus" :size="13" />添加条件</a>
+            <span>里，查找</span>
+            <el-popover trigger="click" placement="bottom-start" :width="540" :hide-after="0" :show-arrow="false"
+                        popper-class="ae-find-pop" :popper-style="{ maxWidth: 'calc(100vw - 24px)' }">
+              <template #reference>
+                <button type="button" class="ae-pill ae-find-trigger">满足条件的记录<span class="ae-config-count">{{ a.conditions?.length || 0 }}</span></button>
+              </template>
+              <div class="ae-find-conditions">
+                <div class="ae-line">
+                  <span>满足以下</span>
+                  <el-select :model-value="a.match || 'all'" class="ae-sel-xs" :teleported="false"
+                             @update:model-value="v => patchAction(i, { match: v })">
+                    <el-option value="all" label="所有" /><el-option value="any" label="任一" />
+                  </el-select>
+                  <span>条件</span>
+                </div>
+                <PermCondRow v-for="(c, ci) in a.conditions" :key="ci" :cond="c" :fields="fieldsOf(a.tableId)" :column-groups="groupsOf(a.tableId)"
+                             @update="nc => setActCond(i, ci, nc)" @remove="removeActCond(i, ci)" />
+                <button type="button" class="ae-add-cond ae-find-add" @click="addActCond(i)"><StIcon name="plus" :size="16" />添加条件</button>
+              </div>
+            </el-popover>
           </div>
           <div class="ae-label">未查找到记录时</div>
           <el-radio-group :model-value="a.onNotFound" @update:model-value="(v) => patchAction(i, { onNotFound: v })">
@@ -154,42 +165,80 @@
         <template v-else>
           <div class="ae-line">
             <span>在</span><TableSelect :model-value="a.tableId" :tables="tables" @update:model-value="(v) => setActionTable(i, v)" />
-            <template v-if="a.type === 'createRecord'"><span>里，添加</span><span class="ae-pill">指定内容的记录</span></template>
+            <template v-if="a.type === 'createRecord'">
+              <span>里，添加</span>
+              <el-popover trigger="click" placement="bottom-start" :width="560" :hide-after="0" :show-arrow="false"
+                          :popper-style="{ maxWidth: 'calc(100vw - 24px)' }">
+                <template #reference><button type="button" class="ae-pill ae-create-trigger">{{ createMode(a) === 'blank' ? '空白记录' : '指定内容的记录' }}<span v-if="createMode(a) === 'specified'" class="ae-config-count">{{ a.values?.length || 0 }}</span></button></template>
+                <div class="ae-create-options">
+                  <label v-for="o in [{ value: 'blank', label: '空白记录' }, { value: 'specified', label: '指定内容的记录' }]" :key="o.value">
+                    <input type="radio" :name="`create-${a.id}`" :checked="createMode(a) === o.value" @change="setCreateMode(i, o.value)" />{{ o.label }}
+                  </label>
+                </div>
+                <div v-if="createMode(a) === 'specified'" class="ae-create-values">
+                  <div v-for="(v, vi) in a.values" :key="vi" class="ae-value-row">
+                    <TbFieldSelect :model-value="v.fieldId" :fields="writableFields(a.tableId)" :column-groups="groupsOf(a.tableId)"
+                                   class="ae-create-field" @update:model-value="fn => setValue(i, vi, { fieldId: fn, value: undefined })" />
+                    <span class="ae-create-eq">等于</span>
+                    <ValueInput :model-value="v.value" :field="fieldsOf(a.tableId).find(f => f.field_name === v.fieldId)"
+                                :steps="stepsBefore(i + 2)" @update:model-value="nv => setValue(i, vi, { ...v, value: nv })" />
+                    <button type="button" class="ae-create-delete" aria-label="删除指定内容" @click="removeValue(i, vi)"><StIcon name="trash" :size="16" /></button>
+                  </div>
+                  <button type="button" class="ae-add-cond ae-create-add" @click="addValue(i)"><StIcon name="plus" :size="16" />添加指定内容</button>
+                </div>
+              </el-popover>
+            </template>
             <template v-else>
               <span>里，对</span>
-              <el-select :model-value="targetValue(a)" class="ae-sel-t" :teleported="false" @update:model-value="(v) => setTarget(i, v)">
-                <el-option value="all" label="所有记录" />
-                <el-option v-if="trig.type !== 'schedule'" value="triggered" label="触发的记录" />
-                <el-option v-for="s in findStepsBefore(i + 2)" :key="s" :value="`found:${s}`" :label="`第${s}步找到的记录`" />
-                <el-option value="matching" label="满足条件的记录" />
-              </el-select>
-              <span>修改</span>
+              <el-popover trigger="click" placement="bottom-start" :width="540" :hide-after="0" :show-arrow="false"
+                          :popper-style="{ maxWidth: 'calc(100vw - 24px)' }">
+                <template #reference>
+                  <button type="button" class="ae-pill ae-create-trigger">{{ targetOptions(i).find(o => o.value === targetValue(a))?.label || '选择记录' }}</button>
+                </template>
+                <div class="ae-create-options ae-target-options">
+                  <label v-for="o in targetOptions(i)" :key="o.value" class="ae-target-option">
+                    <input type="radio" :name="`target-${a.id}`" :checked="targetValue(a) === o.value" @change="setTarget(i, o.value)" />{{ o.label }}
+                  </label>
+                </div>
+                <div v-if="a.target === 'matching'" class="ae-find-conditions ae-target-conditions">
+                  <div class="ae-line">
+                    <span>满足以下</span>
+                    <el-select :model-value="a.match || 'all'" class="ae-sel-xs" :teleported="false" @update:model-value="v => patchAction(i, { match: v })">
+                      <el-option value="all" label="所有" /><el-option value="any" label="任一" />
+                    </el-select><span>条件</span>
+                  </div>
+                  <PermCondRow v-for="(c, ci) in a.conditions" :key="ci" :cond="c" :fields="fieldsOf(a.tableId)" :column-groups="groupsOf(a.tableId)"
+                               @update="nc => setActCond(i, ci, nc)" @remove="removeActCond(i, ci)" />
+                  <button type="button" class="ae-add-cond ae-find-add" @click="addActCond(i)"><StIcon name="plus" :size="16" />添加条件</button>
+                </div>
+              </el-popover>
+              <div class="ae-update-inline">
+                <span>修改</span>
+                <el-popover trigger="click" placement="bottom-start" :width="560" :hide-after="0" :show-arrow="false"
+                            :popper-style="{ maxWidth: 'calc(100vw - 24px)' }">
+                  <template #reference>
+                    <button type="button" class="ae-pill ae-create-trigger">指定内容<span class="ae-config-count">{{ a.values?.length || 0 }}</span></button>
+                  </template>
+                  <div class="ae-update-values">
+                    <div v-for="(v, vi) in a.values" :key="vi" class="ae-value-row">
+                      <TbFieldSelect :model-value="v.fieldId" :fields="writableFields(a.tableId)" :column-groups="groupsOf(a.tableId)"
+                                     class="ae-create-field" @update:model-value="fn => setValue(i, vi, { fieldId: fn, value: undefined })" />
+                      <span class="ae-create-eq">修改为</span>
+                      <ValueInput :model-value="v.value" :field="fieldsOf(a.tableId).find(f => f.field_name === v.fieldId)"
+                                  :steps="stepsBefore(i + 2)" @update:model-value="nv => setValue(i, vi, { ...v, value: nv })" />
+                      <button type="button" class="ae-create-delete" aria-label="删除指定内容" @click="removeValue(i, vi)"><StIcon name="trash" :size="16" /></button>
+                    </div>
+                    <button type="button" class="ae-add-cond ae-create-add" @click="addValue(i)"><StIcon name="plus" :size="16" />添加指定内容</button>
+                  </div>
+                </el-popover>
+              </div>
             </template>
-          </div>
-          <div v-if="a.type === 'updateRecords' && a.target === 'matching'" class="ae-cond-box">
-            <PermCondRow v-for="(c, ci) in a.conditions" :key="ci" :cond="c" :fields="fieldsOf(a.tableId)" :column-groups="groupsOf(a.tableId)"
-                         @update="(nc) => setActCond(i, ci, nc)" @remove="removeActCond(i, ci)" />
-            <a class="ae-add-cond" @click="addActCond(i)"><StIcon name="plus" :size="13" />添加条件</a>
-          </div>
-          <div class="ae-values">
-            <div v-if="a.type === 'updateRecords'" class="ae-pill ae-pill-block">指定内容</div>
-            <div v-for="(v, vi) in a.values" :key="vi" class="ae-value-row">
-              <el-select :model-value="v.fieldId" class="ae-sel-f" placeholder="字段" :teleported="false"
-                         @update:model-value="(fn) => setValue(i, vi, { fieldId: fn, value: undefined })">
-                <el-option v-for="f in writableFields(a.tableId)" :key="f.field_name" :value="f.field_name" :label="f.label" />
-              </el-select>
-              <span class="ae-eq">=</span>
-              <ValueInput :model-value="v.value" :field="fieldsOf(a.tableId).find(f => f.field_name === v.fieldId)"
-                          :steps="stepsBefore(i + 2)" @update:model-value="(nv) => setValue(i, vi, { ...v, value: nv })" />
-              <span class="ae-rm st-icon-action" @click="removeValue(i, vi)"><StIcon name="minus-circle" :size="16" /></span>
-            </div>
-            <a class="ae-add-cond" @click="addValue(i)"><StIcon name="plus" :size="13" />添加要{{ a.type === 'createRecord' ? '填写' : '修改' }}的字段</a>
           </div>
         </template>
       </div>
     </template>
 
-    <el-dropdown trigger="click" @command="addAction">
+    <el-dropdown :hide-after="0" v-if="modelValue.actions.length" trigger="click" @command="addAction">
       <a class="ae-add-action"><StIcon name="plus" :size="16" />添加操作</a>
       <template #dropdown>
         <el-dropdown-menu>
@@ -211,6 +260,7 @@ import TbFieldSelect from '../panels/TbFieldSelect.vue'
 import PermCondRow from '../perms/PermCondRow.vue'
 import MessageEditor from './MessageEditor.vue'
 import ValueInput from './ValueInput.vue'
+import ScheduleTimePicker from './ScheduleTimePicker.vue'
 
 const props = defineProps({
   modelValue: { type: Object, required: true },   // {name, enabled, trigger, actions}
@@ -289,7 +339,7 @@ function removeFilterCond(i) {
 function newAction(type) {
   if (type === 'sendMessage') return { id: uid(), type, channel: 'docMessage', to: [], toFields: [], webhookUrl: '', title: props.modelValue.name || '', content: [], buttons: [] }
   if (type === 'findRecords') return { id: uid(), type, tableId: props.tableId, match: 'all', conditions: [], onNotFound: 'continue' }
-  if (type === 'createRecord') return { id: uid(), type, tableId: props.tableId, values: [] }
+  if (type === 'createRecord') return { id: uid(), type, tableId: props.tableId, recordMode: 'specified', values: [] }
   return { id: uid(), type, tableId: props.tableId, target: trig.value.type === 'schedule' ? 'all' : 'triggered', foundStep: null, match: 'all', conditions: [], values: [] }
 }
 function setActions(list) { emitV({ ...props.modelValue, actions: list }) }
@@ -308,10 +358,22 @@ function setActionTable(i, tid) { patchAction(i, { tableId: tid, conditions: [],
 function addActCond(i) { patchAction(i, { conditions: [...(props.modelValue.actions[i].conditions || []), { fieldId: null, operator: 'eq' }] }) }
 function setActCond(i, ci, c) { const l = [...props.modelValue.actions[i].conditions]; l[ci] = c; patchAction(i, { conditions: l }) }
 function removeActCond(i, ci) { patchAction(i, { conditions: props.modelValue.actions[i].conditions.filter((_, j) => j !== ci) }) }
+function createMode(a) { return a.recordMode || (a.values?.length ? 'specified' : 'blank') }
+function setCreateMode(i, mode) { patchAction(i, { recordMode: mode, ...(mode === 'blank' ? { values: [] } : {}) }) }
 function addValue(i) { patchAction(i, { values: [...(props.modelValue.actions[i].values || []), { fieldId: null, value: undefined }] }) }
 function setValue(i, vi, v) { const l = [...props.modelValue.actions[i].values]; l[vi] = v; patchAction(i, { values: l }) }
 function removeValue(i, vi) { patchAction(i, { values: props.modelValue.actions[i].values.filter((_, j) => j !== vi) }) }
 function targetValue(a) { return a.target === 'found' ? `found:${a.foundStep}` : a.target }
+function targetOptions(i) {
+  return [
+    { value: 'all', label: '所有记录' },
+    { value: 'matching', label: '满足条件的记录' },
+    ...(trig.value.type === 'schedule' ? [] : [{
+      value: 'triggered', label: trig.value.type === 'recordCreated' ? '第1步新增的记录' : '第1步修改的记录',
+    }]),
+    ...findStepsBefore(i + 2).map(s => ({ value: `found:${s}`, label: `第${s}步找到的记录` })),
+  ]
+}
 function setTarget(i, v) {
   if (String(v).startsWith('found:')) patchAction(i, { target: 'found', foundStep: Number(v.slice(6)) })
   else patchAction(i, { target: v, foundStep: null })
@@ -381,10 +443,10 @@ const TableSelect = defineComponent({
 
 <style scoped>
 .ae { padding: 6px 0 20px; }
-.ae-sec-title { font-size: 16px; font-weight: 700; color: var(--st-text-1); margin: 14px 0 10px; }
+.ae-sec-title { font-size: 16px; font-weight: 700; color: var(--st-text-1); margin: 16px 0 22px; }
 .ae-step-label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--st-text-2); margin: 8px 0 8px 2px; }
 .ae-dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--st-text-4); }
-.ae-card { background: #fff; border: 1px solid var(--st-border); border-radius: 8px; padding: 18px 22px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 14px; }
+.ae-card { background: #fff; border: 1px solid var(--st-border); border-radius: 5px; padding: 24px 20px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 18px; }
 .ae-type { display: inline-flex; align-items: center; gap: 10px; font-size: 16px; color: var(--st-text-1); cursor: pointer; }
 .ae-type-ico { width: 20px; height: 20px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; color: #fff; flex: none; }
 .ae-gray { background: #7A7F87; }
@@ -407,14 +469,14 @@ const TableSelect = defineComponent({
 .ae-add-cond { display: inline-flex; align-items: center; gap: 6px; color: var(--st-text-2); cursor: pointer; font-size: 14px; align-self: flex-start; }
 .ae-add-cond:hover { color: var(--st-primary); }
 .ae-note { font-size: 13px; color: var(--st-text-2); margin: -2px 0 6px; }
-.ae-divider { border-top: 1px solid var(--st-border); margin: 18px -24px 0; position: relative; display: flex; justify-content: flex-start; padding-left: 4px; color: var(--st-text-4); }
-.ae-divider .st-icon { margin-top: 4px; }
+.ae-divider { border-top: 1px solid var(--st-border); margin: 28px -28px 26px; position: relative; display: flex; justify-content: flex-start; padding-left: 30px; color: var(--st-text-4); }
+.ae-divider .st-icon { margin-top: -7px; }
 .ae-action-head { display: flex; justify-content: space-between; align-items: center; }
 .ae-del { color: var(--st-text-3); cursor: pointer; display: inline-flex; visibility: hidden; }
 .ae-action:hover .ae-del { visibility: visible; }
 .ae-del:hover { color: var(--el-color-danger); }
 .ae-label { font-size: 14px; color: var(--st-text-2); margin-bottom: -6px; }
-.ae-channels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.ae-channels { display: grid; grid-template-columns: 1fr; gap: 16px; }
 .ae-channel { display: flex; align-items: center; gap: 12px; border: 1px solid var(--st-border); border-radius: 8px; padding: 12px 16px; cursor: pointer; }
 .ae-channel.on { border-color: var(--st-primary); }
 .ae-radio { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--st-text-4); flex: none; box-sizing: border-box; }
@@ -425,11 +487,41 @@ const TableSelect = defineComponent({
 .ae-pill::after { content: ''; border: 4px solid transparent; border-top-color: var(--st-text-4); margin: 4px 0 0 8px; }
 .ae-pill-block { align-self: flex-start; }
 .ae-cond-box { display: flex; flex-direction: column; gap: 10px; }
+.ae-find-trigger { min-height: 36px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.ae-find-trigger:hover { border-color: var(--el-border-color-hover); }
+.ae-config-count { margin-left: 8px; color: var(--st-text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ae-find-conditions { display: flex; flex-direction: column; gap: 14px; padding: 4px; }
+.ae-target-conditions { border-top: 1px solid var(--st-border); padding-top: 14px; }
+.ae-find-add { align-self: flex-start; border: 0; background: transparent; font: inherit; padding: 6px 0; }
 .ae-values { display: flex; flex-direction: column; gap: 10px; }
+.ae-update-inline { display: inline-flex; align-items: center; gap: 8px; flex: none; white-space: nowrap; }
+.ae-update-values { display: flex; flex-direction: column; gap: 10px; padding: 4px; }
+.ae-create-trigger { min-height: 36px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.ae-create-options { display: flex; flex-direction: column; gap: 4px; padding: 0 4px 12px; }
+.ae-create-options label { display: flex; align-items: center; gap: 10px; padding: 10px 4px; cursor: pointer; font-size: 15px; color: var(--st-text-1); }
+.ae-create-options input { width: 18px; height: 18px; margin: 0; accent-color: var(--st-primary); }
+.ae-create-values { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--st-border); padding: 12px 4px 0; }
+.ae-create-field { width: 128px; flex: none; }
+.ae-create-eq { flex: none; color: var(--st-text-2); font-size: 14px; }
+.ae-create-delete { display: inline-flex; padding: 6px; border: 0; background: transparent; color: var(--st-text-3); cursor: pointer; }
+.ae-create-delete:hover { color: var(--el-color-danger); }
+.ae-create-add { align-self: flex-start; border: 0; background: transparent; font: inherit; padding: 8px 0; }
 .ae-value-row { display: flex; align-items: center; gap: 8px; }
 .ae-eq { color: var(--st-text-3); }
 .ae-rm { color: var(--st-text-4); cursor: pointer; display: inline-flex; }
 .ae-rm:hover { color: var(--el-color-danger); }
 .ae-add-action { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; color: var(--st-text-2); cursor: pointer; margin: 10px 0 0 6px; }
 .ae-add-action:hover { color: var(--st-primary); }
+.ae-step-label { position: relative; margin: 0 0 12px 4px; }
+.ae-step-label::after { content: ''; position: absolute; width: 1px; height: 13px; background: var(--st-border); left: 6px; top: 16px; }
+.ae-choice-label { font-size: 15px; color: var(--st-text-2); }
+.ae-choice-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.ae-choice { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; background: #fff; border: 1px solid var(--st-border); border-radius: 3px; cursor: pointer; color: var(--st-text-1); font: inherit; font-size: 14px; }
+.ae-choice:hover:not(:disabled) { background: var(--st-bg-hover); border-color: var(--st-primary); }
+.ae-choice:disabled { opacity: .4; cursor: not-allowed; }
+.ae :deep(.me) { border-radius: 5px; padding: 18px 16px 6px; }
+.ae :deep(.me-body) { min-height: 220px; }
+.ae :deep(.me-bar) { flex-wrap: wrap; gap: 12px; }
+.ae :deep(.el-select__wrapper), .ae :deep(.el-input__wrapper) { min-height: 34px; box-sizing: border-box; }
+@media (max-width: 520px) { .ae-card { padding: 18px 14px; } .ae-channels { gap: 8px; } .ae-channel { padding: 10px; } .ae-value-row { flex-wrap: wrap; } }
 </style>

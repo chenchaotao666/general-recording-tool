@@ -44,7 +44,7 @@
         <div class="fv-paper-wrap" :class="{ 'has-cover': form.cover }">
           <div class="fv-cover-bar" @click.stop>
             <img v-if="form.cover" :src="coverSrc" class="fv-cover-img" alt="表单封面" />
-            <el-popover v-if="form.cover" v-model:visible="coverMenu" trigger="click" placement="bottom-end"
+            <el-popover :hide-after="0" v-if="form.cover" v-model:visible="coverMenu" trigger="click" placement="bottom-end"
                         :width="150" popper-class="st-pop fv-cover-pop">
               <template #reference>
                 <button class="fv-cover-more st-icon-action" aria-label="封面设置" data-smart-tip="封面设置"><StIcon name="more-h" :size="18" /></button>
@@ -105,10 +105,10 @@
                   <span class="fv-attr-sp" />
                   <el-checkbox :model-value="!!it.required" :disabled="it.field.readonly" @update:model-value="(v) => patchItem(i, { required: v })">必填</el-checkbox>
                   <span class="fv-attr-sep" />
-                  <el-tooltip v-if="i === 0" content="表单的首个问题不支持设置显示条件" placement="top">
+                  <el-tooltip :hide-after="0" v-if="i === 0" content="表单的首个问题不支持设置显示条件" placement="top">
                     <span class="fv-attr-btn disabled" aria-disabled="true"><StIcon name="group" :size="14" />显示条件</span>
                   </el-tooltip>
-                  <el-popover v-else trigger="click" placement="bottom-start" :width="612" :popper-style="{ maxWidth: 'calc(100vw - 32px)' }" popper-class="st-pop fv-condition-pop">
+                  <el-popover :hide-after="0" v-else trigger="click" placement="bottom-start" :width="612" :popper-style="{ maxWidth: 'calc(100vw - 32px)' }" popper-class="st-pop fv-condition-pop">
                     <template #reference>
                       <span class="fv-attr-btn" :class="{ on: it.visibility?.conditions?.length }"><StIcon name="group" :size="14" />显示条件{{ it.visibility?.conditions?.length ? ` ${it.visibility.conditions.length}` : '' }}</span>
                     </template>
@@ -126,16 +126,16 @@
                     </div>
                   </el-popover>
                   <span class="fv-attr-sep" />
-                  <el-tooltip content="移出" placement="top">
+                  <el-tooltip :hide-after="0" content="移出" placement="top">
                     <span class="fv-attr-btn st-icon-action" aria-label="移出表单" @click="removeItem(i)"><StIcon name="minus-circle" :size="16" /></span>
                   </el-tooltip>
                   <span class="fv-attr-sep" />
-                  <el-tooltip content="编辑字段" placement="top">
+                  <el-tooltip :hide-after="0" content="编辑字段" placement="top">
                     <button class="fv-attr-btn fv-attr-icon st-icon-action" aria-label="编辑字段" :disabled="!canManage"
                             @click="editField(it.field, $event)"><StIcon name="pencil" :size="16" /></button>
                   </el-tooltip>
                   <span class="fv-attr-sep" />
-                  <el-tooltip content="删除字段" placement="top">
+                  <el-tooltip :hide-after="0" content="删除字段" placement="top">
                     <button class="fv-attr-btn fv-attr-icon danger st-icon-action" aria-label="删除字段" :disabled="!canManage"
                             @click="emit('delete-field', it.field)"><StIcon name="trash" :size="16" /></button>
                   </el-tooltip>

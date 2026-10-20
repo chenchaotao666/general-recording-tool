@@ -5,6 +5,7 @@ import { nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 export function anchoredDialogAttrs(at, width = 480, estHeight = 460) {
   const attrs = {
     modal: false,
+    modalClass: 'st-nonmodal-overlay',
     modalPenetrable: true,
     closeOnClickModal: false,
     lockScroll: false,

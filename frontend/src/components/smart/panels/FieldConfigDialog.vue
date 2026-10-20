@@ -28,7 +28,7 @@
             <span class="fcd-label">选项</span>
             <span class="fcd-right">
               <el-checkbox :model-value="isRef" @change="toggleRef">引用选项</el-checkbox>
-              <el-tooltip content="选项集来自其他表的单选/多选字段，源表选项变更后自动同步" placement="top">
+              <el-tooltip :hide-after="0" content="选项集来自其他表的单选/多选字段，源表选项变更后自动同步" placement="top">
                 <StIcon name="info" :size="15" class="fcd-tip" /></el-tooltip>
             </span>
           </div>
@@ -37,7 +37,7 @@
               <div v-for="(o, i) in form.config.options" :key="o.id" class="fcd-opt-row" :class="dropCls(i)"
                    @dragover.prevent="overIdx = i" @drop.prevent="dropOpt(i)">
                 <span class="fcd-del st-icon-action" data-smart-tip="删除选项" @click="form.config.options.splice(i, 1)"><StIcon name="minus-circle" :size="20" /></span>
-                <el-popover trigger="click" placement="bottom-start" :width="208" popper-class="fcd-color-pop" :show-arrow="false">
+                <el-popover :hide-after="0" trigger="click" placement="bottom-start" :width="208" popper-class="fcd-color-pop" :show-arrow="false">
                   <template #reference>
                     <span class="fcd-color" :style="{ background: optionColor(o.color).value }" data-smart-tip="选择颜色" />
                   </template>
@@ -70,7 +70,7 @@
             </div>
             <div class="fcd-inline">
               <el-checkbox :model-value="linkageEnabled" @change="(v) => (form.config.optionLinkage.enabled = v)">启用选项联动</el-checkbox>
-              <el-tooltip content="按本表当前行的字段值，过滤引用表中可选的选项" placement="top"><StIcon name="info" :size="15" class="fcd-tip" /></el-tooltip>
+              <el-tooltip :hide-after="0" content="按本表当前行的字段值，过滤引用表中可选的选项" placement="top"><StIcon name="info" :size="15" class="fcd-tip" /></el-tooltip>
             </div>
             <div v-if="linkageEnabled" class="fcd-graybox">
               <div class="fcd-gb-head">
@@ -228,7 +228,7 @@
                 </div>
                 <span class="fcd-drag st-icon-action" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = -1"><StIcon name="drag" :size="16" /></span>
               </div>
-              <el-dropdown trigger="click" @command="addSeg">
+              <el-dropdown :hide-after="0" trigger="click" @command="addSeg">
                 <div class="fcd-add dark"><StIcon name="plus-circle" :size="20" />添加编号字段</div>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -272,7 +272,7 @@
           </div>
           <div class="fcd-graybox">
             <div class="fcd-gb-head">
-              <el-dropdown trigger="click" @command="(m) => { lookupMode = m; if (m === 'all') form.config.conditions = [] }">
+              <el-dropdown :hide-after="0" trigger="click" @command="(m) => { lookupMode = m; if (m === 'all') form.config.conditions = [] }">
                 <span class="fcd-link-dd gray">{{ lookupMode === 'all' ? '引用全部记录' : '按条件查找' }}<StIcon name="chevron-down" :size="13" /></span>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -291,7 +291,7 @@
                 </el-select>
                 <input v-if="c.useValue" v-model="c.rightValue" class="fcd-input fcd-c3 fcd-small" placeholder="输入值" />
                 <FieldSel v-else v-model="c.rightFieldId" :fields="fields" placeholder="本表的字段" class="fcd-c3" />
-                <el-tooltip :content="c.useValue ? '改为引用本表字段' : '改为输入固定值'" placement="top">
+                <el-tooltip :hide-after="0" :content="c.useValue ? '改为引用本表字段' : '改为输入固定值'" placement="top">
                   <span class="fcd-swap" :class="{ off: !c.sourceFieldId }" @click="toggleCondValue(c)">A<sub>⇆</sub></span>
                 </el-tooltip>
                 <span class="fcd-del st-icon-action" @click="form.config.conditions.splice(i, 1)"><StIcon name="minus-circle" :size="20" /></span>
@@ -754,7 +754,7 @@ function save() {
 
 <style>
 /* 面板外壳（el-dialog 去标题栏）：白底圆角 + 阴影，内容区 24px 留白 */
-.el-dialog.st-fcd { padding: 0; border-radius: 12px; box-shadow: 0 8px 32px rgba(0, 0, 0, .14); }
+.el-dialog.st-fcd { padding: 0; border-radius: 8px; box-shadow: 0 8px 32px rgba(0, 0, 0, .14); }
 .el-dialog.st-fcd .el-dialog__header { display: none; }
 .el-dialog.st-fcd .el-dialog__body { padding: 24px; }
 /* 下拉：选项 16px、带图标；类型下拉分组之间用分隔线 */

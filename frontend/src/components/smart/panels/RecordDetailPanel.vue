@@ -3,9 +3,9 @@
        顶栏 |→ 收起 + ∧∨ 上一条/下一条；卡片内标题（主字段值）+ ⋯（生成记录副本 / 删除记录）；
        字段两列：类型图标 + 字段名 | 值。编组为可折叠节（∨ 组名，成员带竖向层级线）。
        值默认展示态，空值显示灰色占位提示；单击可编辑的值进入编辑器（复用单元格编辑器） -->
-  <aside class="rd-panel" :style="{ width: `${panelWidth}px` }">
+  <aside class="rd-panel st-side-panel" :style="{ width: `${panelWidth}px` }">
     <!-- 左边框拖拽改宽度（宽度记在本机，下次打开沿用） -->
-    <div class="rd-resize" :class="{ active: resizing }" data-smart-tip="拖动调整宽度" @mousedown.prevent="startResize" />
+    <div class="st-side-resize" :class="{ active: resizing }" data-smart-tip="拖动调整宽度" @mousedown.prevent="startResize" />
     <div class="rd-top">
       <button class="rd-ico st-icon-action" data-smart-tip="收起" @click="$emit('close')"><StIcon name="panel-close" :size="18" /></button>
       <span class="rd-nav">
@@ -17,7 +17,7 @@
       <div class="rd-head">
         <!-- 标题：选定字段的值；▾ 切换记录标题（参照 PixPin_2026-10-18_00-06-14，存视图配置 recordTitleField） -->
         <div class="rd-title">
-          <el-popover v-if="canSetTitle" v-model:visible="titlePickOpen" trigger="click" placement="bottom-start" :width="440"
+          <el-popover :hide-after="0" v-if="canSetTitle" v-model:visible="titlePickOpen" trigger="click" placement="bottom-start" :width="440"
                       :show-arrow="false" popper-class="rd-title-pop">
             <template #reference>
               <span class="rd-title-trigger" :class="{ open: titlePickOpen }">
@@ -35,7 +35,7 @@
           </el-popover>
           <span v-else :class="{ 'rd-title-empty': !titleText }">{{ titleText || '未命名记录' }}</span>
         </div>
-        <el-dropdown v-if="canCreate || canDelete" trigger="click" placement="bottom-end" popper-class="rd-more-pop"
+        <el-dropdown :hide-after="0" v-if="canCreate || canDelete" trigger="click" placement="bottom-end" popper-class="rd-more-pop"
                      @command="(cmd) => $emit('record-action', cmd, record)" @visible-change="(v) => (moreOpen = v)">
           <button class="rd-more st-icon-action" :class="{ open: moreOpen }"><StIcon name="more-h" :size="18" /></button>
           <template #dropdown>
@@ -112,6 +112,7 @@
 <script setup>
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
 import { computed, h, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { usePanelResize } from '../../../smart/utils/usePanelResize.js'
 import { ElMessage } from 'element-plus'
 import SmartCell from '../grid/SmartCell.vue'
 import SmartCellEditor from '../grid/SmartCellEditor.vue'
@@ -138,34 +139,7 @@ const emit = defineEmits(['close', 'nav', 'cell-commit', 'record-action', 'add-o
 const moreOpen = ref(false)
 
 // ---------- 面板宽度：拖左边框调整，记在本机（localStorage 可能不可用，失败按默认宽度） ----------
-const WIDTH_KEY = 'st-record-panel-width'
-const MIN_W = 400
-const maxW = () => Math.max(MIN_W, Math.round(window.innerWidth * 0.7))
-const clampW = (w) => Math.min(maxW(), Math.max(MIN_W, Math.round(w)))
-function loadWidth() {
-  try { const w = Number(localStorage.getItem(WIDTH_KEY)); return w ? clampW(w) : 560 } catch { return 560 }
-}
-const panelWidth = ref(loadWidth())
-const resizing = ref(false)
-function startResize(e) {
-  const startX = e.clientX
-  const startW = panelWidth.value
-  resizing.value = true
-  document.body.style.cursor = 'col-resize'
-  document.body.style.userSelect = 'none'
-  // 面板在右侧：向左拖变宽
-  const onMove = (ev) => { panelWidth.value = clampW(startW + (startX - ev.clientX)) }
-  const onUp = () => {
-    resizing.value = false
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    try { localStorage.setItem(WIDTH_KEY, String(panelWidth.value)) } catch { /* 隐私模式等：只本次生效 */ }
-  }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-}
+const { panelWidth, resizing, startResize } = usePanelResize('st-record-panel-width', 560)
 const editing = ref(null)   // 正在编辑的 field_name
 watch(() => props.record?.id, () => { editing.value = null })
 
@@ -379,20 +353,15 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMousedown, 
 
 <style scoped>
 .rd-panel { position: relative; display: flex; flex-direction: column; flex: none; min-height: 0; padding: 0 12px 12px 12px;
-            box-sizing: border-box; background: #fff; border-left: 1px solid var(--st-border); }
-/* 拖拽条：骑在左边框上，hover/拖动时显示主色竖线 */
-.rd-resize { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; z-index: 5; cursor: col-resize; }
-.rd-resize::after { content: ''; position: absolute; left: 3px; top: 0; bottom: 0; width: 2px; background: transparent; transition: background .15s; }
-.rd-resize:hover::after, .rd-resize.active::after { background: var(--st-primary); }
+            box-sizing: border-box; background: #fff; overflow: hidden; max-width: 100%; }
 .rd-top { display: flex; align-items: center; justify-content: space-between; height: 44px; flex: none; padding: 0 2px 0 6px; }
 .rd-nav { display: inline-flex; gap: 4px; }
 .rd-ico { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0;
           border: none; background: transparent; border-radius: 6px; color: var(--st-text-1); cursor: pointer; }
 .rd-ico:hover:not(:disabled) { background: var(--st-bg-hover); }
 .rd-ico:disabled { color: var(--st-disabled); cursor: not-allowed; }
-/* 卡片：细边 + 轻阴影，内容区独立滚动 */
-.rd-card { display: flex; flex-direction: column; flex: 1; min-height: 0; border: 1px solid var(--st-border); border-radius: 8px;
-           box-shadow: 0 2px 8px rgba(31, 35, 41, .06); }
+/* 统一外框内的内容区，独立滚动 */
+.rd-card { display: flex; flex-direction: column; flex: 1; min-height: 0; border-top: 1px solid var(--st-border); }
 .rd-head { display: flex; align-items: flex-start; gap: 12px; padding: 20px 16px 8px 24px; flex: none; }
 .rd-title { flex: 1; min-width: 0; font-size: 22px; line-height: 30px; font-weight: 500; color: var(--st-text-1); word-break: break-all; }
 .rd-title-empty { color: var(--st-text-4); }

@@ -107,7 +107,7 @@
 </template>
 
 <script setup>
-import { Teleport, computed, h, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { Teleport, computed, h, nextTick, onActivated, onDeactivated, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import SmartCell from './SmartCell.vue'
 import CellContextMenu from './CellContextMenu.vue'
 import SmartCellEditor from './SmartCellEditor.vue'
@@ -336,9 +336,9 @@ function locateExpandBtn() {
   const r = visibleCellRect(td)
   if (!r) { expandBtn.value = null; return }
   const left = tableEl.getBoundingClientRect().left
-  // 20px 按钮中心压在左边框；纵向再上移 2px，与单元格内容（显示态整体上移 2px 的光学居中）对齐
+  // 20px 按钮中心压在左边框；纵向上移 1px，保持光学居中。
   const x = Math.round(left - 10)
-  const y = Math.round(r.top + r.height / 2 - 10 - 2)
+  const y = Math.round(r.top + r.height / 2 - 10 - 1)
   const cur = expandBtn.value
   if (cur && cur.x === x && cur.y === y && cur.row.__key === row.__key) return   // 位置未变（如横向滚动）不写响应式
   expandBtn.value = { x, y, row }
@@ -418,11 +418,22 @@ function onScrollPointerUp() {
   scheduleRowSnap()
 }
 let lastScrollTop = 0
+let lastScrollLeft = 0
 function onGridScroll() {
   scheduleExpandLocate()
   if (blockedHint.value) hideBlockedHint()
   if (aiBtn.value || selectedCol.value || selectedCell.value) scheduleLocate()
-  const top = gridRef.value?.getScroll?.().scrollTop ?? 0
+  const scroll = gridRef.value?.getScroll?.() || {}
+  const top = scroll.scrollTop ?? 0
+  const left = scroll.scrollLeft ?? 0
+  if ((top !== lastScrollTop || left !== lastScrollLeft) && editingCell.value) {
+    const field = props.fields.find(f => f.field_name === editingCell.value.fieldName)
+    if (typeOf(field) === 'date') {
+      selectedCell.value = { ...editingCell.value }
+      editingCell.value = null
+    }
+  }
+  lastScrollLeft = left
   if (top !== lastScrollTop) {
     lastScrollTop = top
     scheduleRowSnap()
@@ -682,11 +693,11 @@ function groupValueNodes(row) {
 function cellFillStyle({ row, column }) {
   if (!row || row.__rowType) return null
   if (searchMatchKeys.value.has(findCellKey(row.id, column.field))
-      || (column.params?.rowNumber && searchRowIds.value.has(row.id))) return { backgroundColor: '#FFFCEB' }
+      || (column.params?.rowNumber && searchRowIds.value.has(row.id))) return { backgroundColor: '#FFFCEB', '--st-cell-fill': '#FFFCEB' }
   const f = props.fields.find(x => x.field_name === column.field)
   if (!f) return null
   const fill = evalFillRules(fillRules.value, f, row[f.field_name]) || rowFills.value.get(row.__key) || null
-  return fill ? { backgroundColor: fill } : null
+  return fill ? { backgroundColor: fill, '--st-cell-fill': fill } : null
 }
 
 // 整列填色之「为字段名称填色」：表头单元格着底色
@@ -852,9 +863,16 @@ function dataRowSelection() {
   return recs.filter(r => !r.__rowType)
 }
 
-window.addEventListener('resize', scheduleLocate)
-window.addEventListener('resize', scheduleExpandLocate)
-onBeforeUnmount(() => {
+function attachGlobalEvents() {
+  window.addEventListener('resize', scheduleLocate)
+  window.addEventListener('resize', scheduleExpandLocate)
+  document.addEventListener('keydown', onDocKeydown)
+  document.addEventListener('pointerdown', onScrollPointerDown, true)
+  document.addEventListener('pointerup', onScrollPointerUp, true)
+  document.addEventListener('pointercancel', onScrollPointerUp, true)
+  document.addEventListener('mousedown', onDocMouseDown)
+}
+function detachGlobalEvents() {
   clearTimeout(rowSnapTimer)
   document.removeEventListener('pointerdown', onScrollPointerDown, true)
   document.removeEventListener('pointerup', onScrollPointerUp, true)
@@ -865,17 +883,15 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', scheduleLocate)
   document.removeEventListener('keydown', onDocKeydown)
   document.removeEventListener('mousedown', onDocMouseDown)
-})
-
-document.addEventListener('keydown', onDocKeydown)
-document.addEventListener('pointerdown', onScrollPointerDown, true)
-document.addEventListener('pointerup', onScrollPointerUp, true)
-document.addEventListener('pointercancel', onScrollPointerUp, true)
-document.addEventListener('mousedown', onDocMouseDown)
+}
+onMounted(attachGlobalEvents)
+onActivated(() => { attachGlobalEvents(); scheduleLocate(); scheduleExpandLocate() })
+onDeactivated(() => { detachGlobalEvents(); editingCell.value = null })
+onBeforeUnmount(detachGlobalEvents)
 
 // 定位到指定记录：新增行默认选中首个可见列；查找定位可指定字段且只滚动、不弹出选中/编辑浮层。
 // 记录不在当前行序列（被筛选掉 / 在折叠分组里）时返回 false；隐藏字段退化为只定位记录。
-async function focusRecord(id, fieldName = null, { select = true } = {}) {
+async function focusRecord(id, fieldName = null, { select = true, edit = false } = {}) {
   clearTimeout(rowSnapTimer)
   locatingUntil = Date.now() + 600
   await nextTick()   // 等 rows → gridRows → vxe data 刷新
@@ -898,6 +914,13 @@ async function focusRecord(id, fieldName = null, { select = true } = {}) {
   // 等行和虚拟列布局稳定后横向定位，避免重绘恢复旧滚动位置。
   await nextTick()
   if (col) await gridRef.value?.scrollToColumn?.(col, { colAlign: true })
+  // 布局与滚动完成后挂载编辑器，由编辑器自动聚焦输入控件。
+  // 首列为只读字段或复选框时保留选中态，不修改其值。
+  if (edit && f && !props.readonly && canEdit(row, f) && !IMMEDIATE.includes(typeOf(f))) {
+    selectedCell.value = null
+    editingCell.value = { key: row.__key, fieldName: f.field_name }
+    await nextTick()
+  }
   return true
 }
 
@@ -934,6 +957,10 @@ defineExpose({
 .row-no { color: var(--el-text-color-placeholder); font-size: 12px; }
 /* 详情面板打开的记录：整行浅灰底（参照 hover-行.png） */
 .smart-vxe :deep(.vxe-body--row.row-active) { background-color: #F2F3F5; }
+/* 填色单元格在原色上叠加浅灰，让整行 hover 连续；不占用选中框的伪元素或边线背景。 */
+.smart-vxe :deep(.vxe-body--row.row--hover > .vxe-body--column[style*="--st-cell-fill"]) {
+  background-color: color-mix(in srgb, var(--st-cell-fill) 94%, #30343b 6%) !important;
+}
 .group-head { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
 /* 分组头：分组值彩色 chip（枚举）+ 记录数灰字（对齐参照 分组-1个字段.png） */
 .gv-chip { border-radius: 4px; padding: 1px 8px; font-size: 12px; font-weight: 500; }
@@ -1065,6 +1092,7 @@ defineExpose({
 }
 /* 表头单元格统一灰色（含 # 列；字段名/图标的样式由 FieldHeader 自己管，这里不覆盖避免优先级打架） */
 .smart-vxe :deep(.vxe-header--column) { font-size: 13px; color: var(--st-head-text); background-color: #fff; user-select: none; }   /* 表头文字不可选中 */
+.smart-vxe :deep(.vxe-table--scroll-y-top-corner) { background-color: #fff; }
 /* 表头（参照 表头样式.png）：白底，hover 整格浅灰；插槽内容撑满单元格宽，字段名可换行 */
 .smart-vxe :deep(.vxe-header--column:hover) { background-color: #F2F3F5; }
 /* 右内边距 6px：列头下拉按钮距单元格右边 6px，与单元格单选/多选的下拉按钮（.sel-anchor .chev，right 4 + 边框 2）一致 */
@@ -1097,12 +1125,11 @@ defineExpose({
 .smart-vxe :deep(.th-col-selected),
 .smart-vxe :deep(.col-selected),
 .smart-vxe :deep(.tf-col-selected) {
-  --cs-l: 0 0 0 0 transparent; --cs-r: 0 0 0 0 transparent; --cs-t: 0 0 0 0 transparent; --cs-b: 0 0 0 0 transparent;
-  box-shadow: var(--cs-l), var(--cs-r), var(--cs-t), var(--cs-b); }
-.smart-vxe :deep(.sel-l) { --cs-l: inset 1px 0 0 var(--st-primary); }
-.smart-vxe :deep(.sel-r) { --cs-r: inset -1px 0 0 var(--st-primary); }
-.smart-vxe :deep(.sel-t) { --cs-t: inset 0 1px 0 var(--st-primary); }
-.smart-vxe :deep(.sel-b) { --cs-b: inset 0 -1px 0 var(--st-primary); }
+  --cs-l: 0px; --cs-r: 0px; --cs-t: 0px; --cs-b: 0px; }
+.smart-vxe :deep(.sel-l) { --cs-l: 1px; }
+.smart-vxe :deep(.sel-r) { --cs-r: 1px; }
+.smart-vxe :deep(.sel-t) { --cs-t: 1px; }
+.smart-vxe :deep(.sel-b) { --cs-b: 1px; }
 /* 选中底色 = 在原底色上盖一层半透明主色（::before 贴膜），而不是替换底色：填色（td 内联 background-color）选中后
    仍可见、只是泛蓝（替换会把填色盖掉，参照 PixPin_2026-10-18_00-57-11）。不用 background-image：vxe 用背景渐变画单元格
    边线并设了 background-size，叠加的渐变会被压成 1px 细线、还会冲掉边线。白底上叠出的颜色即原来的 #EEF3FD / #E9EFFC */
@@ -1112,23 +1139,13 @@ defineExpose({
 .smart-vxe :deep(.vxe-header--column.th-col-selected)::before,
 .smart-vxe :deep(.vxe-body--column.col-selected)::before,
 .smart-vxe :deep(.vxe-footer--column.tf-col-selected)::before {
-  content: ''; position: absolute; inset: 0; pointer-events: none; background: rgba(46, 107, 230, .08); }
+  content: ''; position: absolute; inset: 0; pointer-events: none; background: rgba(46, 107, 230, .08);
+  box-sizing: border-box; border-style: solid; border-color: var(--st-primary);
+  border-width: var(--cs-t) var(--cs-r) var(--cs-b) var(--cs-l); }
 .smart-vxe :deep(.vxe-header--column.th-col-selected)::before { background: rgba(46, 107, 230, .105); }
-/* 顶边在表格外框内侧单独绘制，避免第一行表头的 inset 阴影被外框盖住。 */
-.smart-vxe :deep(.vxe-header--column.th-col-selected.sel-t) {
-  --cs-t: 0 0 0 0 transparent;
-}
-.smart-vxe :deep(.vxe-header--column.th-col-selected.sel-t)::after {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: var(--st-primary); z-index: 2; pointer-events: none;
-}
-.smart-vxe :deep(.vxe-header--row:first-child .vxe-header--column.th-col-selected.sel-t)::after { top: 1px; }
-/* 底边也画在统计行外框内侧，避免 inset 阴影被表格底边或滚动容器裁掉。 */
-.smart-vxe :deep(.vxe-footer--column.tf-col-selected.sel-b) { --cs-b: 0 0 0 0 transparent; }
-.smart-vxe :deep(.vxe-footer--column.tf-col-selected.sel-b)::after {
-  content: ''; position: absolute; bottom: 1px; left: 0; right: 0; height: 1px;
-  background: var(--st-primary); z-index: 2; pointer-events: none;
-}
+/* 表头、数据行、统计行统一用 1px border 绘制；首尾轮廓整体内缩，侧边不会突出。 */
+.smart-vxe :deep(.vxe-header--row:first-child .vxe-header--column.th-col-selected.sel-t)::before { top: 1px; }
+.smart-vxe :deep(.vxe-footer--column.tf-col-selected.sel-b)::before { bottom: 1px; }
 .smart-vxe :deep(.vxe-header--column.th-col-selected:hover) { background-color: #fff; }   /* 不叠表头 hover 灰（表头填色是内联样式，不受影响） */
 /* 编组组头：标题居中，下拉钉在右侧 */
 :deep(.colgroup-title) { display: flex; align-items: center; justify-content: center; position: relative; width: 100%; min-height: 22px; }
@@ -1154,7 +1171,7 @@ defineExpose({
 :deep(.filter-dot) { color: var(--st-primary); }
 :deep(.sort-mark) { color: var(--st-primary); }
 /* 查找命中：浅黄底由 cellFillStyle 内联下发（优先于视图填色）；当前项用金黄描边，放在选中样式之后覆盖蓝框。 */
-.smart-vxe :deep(.vxe-body--column.cell-search-match.col-selected)::before { display: none; }
+.smart-vxe :deep(.vxe-body--column.cell-search-match.col-selected)::before { background: transparent; }
 .smart-vxe :deep(.vxe-body--column.cell-search-active),
 .smart-vxe :deep(.row-last .vxe-body--column.cell-search-active) {
   position: relative; z-index: 4; box-shadow: 0 0 0 2px #FCBA02 inset;
@@ -1169,6 +1186,6 @@ defineExpose({
 :global(.st-row-expand) { position: fixed; z-index: 2000; display: inline-flex; align-items: center; justify-content: center;
   width: 20px; height: 20px; box-sizing: border-box; border: 1px solid var(--st-border); border-radius: 4px;
   background: #fff; color: var(--st-text-2); cursor: pointer; box-shadow: 0 1px 3px rgba(31, 35, 41, .08); }
-:global(.st-row-expand:hover) { color: var(--st-primary); border-color: var(--st-primary); }
+:global(.st-row-expand:hover) { color: var(--st-primary); }
 :global(.st-blocked-link:hover) { text-decoration: underline; }
 </style>

@@ -63,7 +63,7 @@
       </div>
     </div>
     <!-- 分隔条：拖拽调节目录栏宽度 -->
-    <div v-show="!sideCollapsed" class="side-resizer" title="拖动调整目录宽度" @mousedown.prevent="startSideResize" />
+    <div v-show="!sideCollapsed" class="side-resizer" @mousedown.prevent="startSideResize" />
     <!-- 收起后的窄条：点击展开 -->
     <div v-show="sideCollapsed" class="side-expand" title="展开目录" @click="expandSide">
       <el-icon><Expand /></el-icon>

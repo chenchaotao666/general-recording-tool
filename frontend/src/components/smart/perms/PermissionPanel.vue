@@ -6,7 +6,7 @@
       <div class="pp-head">
         <div>
           <div class="pp-title">内容权限<span class="st-free-tag">限时免费</span></div>
-          <el-tooltip placement="bottom" :content="'为不同成员设置可查看/可编辑的记录与字段：全员权限是基线，指定成员可额外叠加权限'">
+          <el-tooltip :hide-after="0" placement="bottom" :content="'为不同成员设置可查看/可编辑的记录与字段：全员权限是基线，指定成员可额外叠加权限'">
             <div class="pp-help">了解功能用法和使用场景 <StIcon name="chevron-right" :size="12" /></div>
           </el-tooltip>
         </div>
@@ -15,7 +15,7 @@
       <div v-loading="loading" class="pp-body">
         <div class="pp-card">
           <div class="pp-card-t">全员权限
-            <el-tooltip content="全员权限对所有可编辑、仅浏览成员生效" placement="top"><StIcon name="info" :size="14" class="pp-i" /></el-tooltip>
+            <el-tooltip :hide-after="0" content="全员权限对所有可编辑、仅浏览成员生效" placement="top"><StIcon name="info" :size="14" class="pp-i" /></el-tooltip>
           </div>
           <div v-for="e in overview.entries" :key="e.entry_id" class="pp-row" @click="openBase(e.entry_id)">
             <StIcon :name="entryIcon(e.type)" :size="16" class="pp-eicon" />
@@ -33,7 +33,7 @@
                 <div class="pp-g-name">{{ g.name }}</div>
                 <div class="pp-g-members">包含 {{ g.members.map(m => m.name).join('、') }}</div>
               </div>
-              <el-dropdown v-if="overview.can_manage_groups" trigger="click" @command="(c) => groupAction(c, g)">
+              <el-dropdown :hide-after="0" v-if="overview.can_manage_groups" trigger="click" @command="(c) => groupAction(c, g)">
                 <span class="pp-more st-icon-action"><StIcon name="more-h" :size="18" /></span>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -168,5 +168,6 @@ async function groupAction(cmd, g) {
 .pp-add.solo { border-top: none; padding-top: 6px; }
 .pp-add:hover { color: var(--st-primary); }
 .pp-slide-enter-active, .pp-slide-leave-active { transition: transform .2s ease; }
+.pp-slide-leave-active { transition-duration: var(--st-panel-close-duration, 80ms); }
 .pp-slide-enter-from, .pp-slide-leave-to { transform: translateX(100%); }
 </style>

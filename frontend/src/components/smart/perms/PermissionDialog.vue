@@ -9,12 +9,12 @@
         <div>
           <div class="pd-title">{{ mode === 'group' ? group?.name : '全员权限' }}<span class="st-free-tag">限时免费</span></div>
           <div v-if="mode === 'group'" class="pd-sub">
-            <el-tooltip :content="`包含 ${memberNames}`" placement="bottom"><span>对指定成员生效 <StIcon name="chevron-right" :size="12" /></span></el-tooltip>
+            <el-tooltip :hide-after="0" :content="`包含 ${memberNames}`" placement="bottom"><span>对指定成员生效 <StIcon name="chevron-right" :size="12" /></span></el-tooltip>
           </div>
           <div v-else class="pd-sub">全员权限对所有可编辑、仅浏览成员生效。仅浏览成员编辑前仍需申请文档编辑权限。</div>
         </div>
         <div class="pd-head-r">
-          <el-dropdown v-if="mode === 'group'" trigger="click" @command="(c) => emit('group-action', c, group)">
+          <el-dropdown :hide-after="0" v-if="mode === 'group'" trigger="click" @command="(c) => emit('group-action', c, group)">
             <span class="pd-ico st-icon-action"><StIcon name="more-h" :size="18" /></span>
             <template #dropdown>
               <el-dropdown-menu>

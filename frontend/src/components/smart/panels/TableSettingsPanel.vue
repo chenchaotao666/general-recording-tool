@@ -3,7 +3,7 @@
        字段行 = 56px，类型图标 + 名称 + 眼睛(显隐) + ⋯；编组为可折叠节（▾ 组名，成员带竖向层级线）。
        列顺序即表格显示顺序，整行可拖（落点指示同记事本目录：上/下沿蓝线、组头中部虚线框=移入编组）。
        长字段列表独立滚动，新增字段固定在下方；成员拖出编组范围即退出编组（父级处理）。 -->
-  <el-popover trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="420" popper-class="st-tbpanel st-ts-pop">
+  <el-popover :hide-after="0" trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="420" popper-class="st-tbpanel st-ts-pop">
     <template #reference><slot /></template>
     <div class="tbp-title ts-title">表格设置</div>
     <div class="settings">
@@ -34,7 +34,7 @@
                   @click.stop="$emit('toggle-visible', row.field, isHidden(row.field))">
               <StIcon :name="isHidden(row.field) ? 'eye-off' : 'eye'" :size="20" :stroke-width="1.2" />
             </span>
-            <el-dropdown trigger="click" @command="(cmd) => $emit('field-action', cmd, row.field)">
+            <el-dropdown :hide-after="0" trigger="click" @command="(cmd) => $emit('field-action', cmd, row.field)">
               <span class="f-more st-icon-action" @click.stop><StIcon name="more-h" :size="18" /></span>
               <template #dropdown>
                 <el-dropdown-menu>

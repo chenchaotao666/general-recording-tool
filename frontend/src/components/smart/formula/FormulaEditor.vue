@@ -11,7 +11,7 @@
             <span class="fxe-title">{{ title || '公式' }}</span>
             <span class="fxe-tool" @click="format"><StIcon name="brush" :size="15" />格式优化</span>
             <span class="fxe-vsep" />
-            <el-tooltip content="用一句话描述，AI 帮你写公式" placement="bottom">
+            <el-tooltip :hide-after="0" content="用一句话描述，AI 帮你写公式" placement="bottom">
               <span class="fxe-tool" @click="aiVisible = true"><StIcon name="bulb" :size="16" />AI 写公式</span>
             </el-tooltip>
             <span class="fxe-ico st-icon-action" @click="emit('close')"><StIcon name="close" :size="18" /></span>

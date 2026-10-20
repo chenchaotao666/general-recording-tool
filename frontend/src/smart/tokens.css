@@ -59,6 +59,27 @@
 /* 双击表头弹出的非模态对话框（anchoredDialogAttrs）：左上角固定在双击位置，超高时内部滚动 */
 .el-dialog.st-at-dialog { position: fixed; margin: 0 !important; overflow-y: auto; box-shadow: 0 8px 32px rgba(0, 0, 0, .18); }
 
+/* 仅加快非模态面板收起；包含传送到 body 的菜单、选择器及工具栏浮层。 */
+:root { --st-panel-close-duration: 80ms; }
+.st-side-panel {
+  border: 1px solid var(--st-border);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(31, 35, 41, .06);
+}
+.st-side-resize { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; z-index: 5; cursor: col-resize; }
+.st-side-resize::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: transparent; }
+.st-side-resize:hover::after, .st-side-resize.active::after { background: var(--st-primary); }
+body:has(.smart-home, .st-page, .dash-page) .el-popper[class*="-leave-active"] {
+  transition-duration: var(--st-panel-close-duration) !important;
+  transition-delay: 0s !important;
+}
+.st-nonmodal-overlay.dialog-fade-leave-active,
+.st-nonmodal-overlay.dialog-fade-leave-active .el-dialog {
+  animation-duration: var(--st-panel-close-duration) !important;
+  transition-duration: var(--st-panel-close-duration) !important;
+  animation-delay: 0s !important;
+}
+
 /* 智能表格滚动条：12px 热区 + 平时 6px 细滑块；鼠标移到滚动条区域或拖动时变粗到 10px 并加深（好抓好拖）。
    Chrome 不会因 :hover 重绘自定义滚动条，加粗由 smart/utils/scrollbarHover.js 打 .sb-hot 并强制重绘实现。
    半透明灰滑块、透明轨道、无箭头，配色同首页 .sec-body。滑块粗细用透明边框 + background-clip 控制，热区宽度不变不抖动。

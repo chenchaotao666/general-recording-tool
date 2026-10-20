@@ -1,5 +1,5 @@
 <template>
-  <el-popover v-model:visible="visible" trigger="click" placement="bottom-end" :width="400"
+  <el-popover :hide-after="0" v-model:visible="visible" trigger="click" placement="bottom-end" :width="400"
               :popper-style="{ maxWidth: 'calc(100vw - 24px)', borderRadius: '8px' }" :show-arrow="false" popper-class="st-pop form-share-pop">
     <template #reference>
       <button class="share-trigger" :disabled="!canManage"><StIcon name="link" :size="15" />分享表单</button>

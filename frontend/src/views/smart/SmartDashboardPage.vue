@@ -6,7 +6,8 @@
       <el-button type="primary" size="small" @click="openConfig(null)">＋ 添加图表</el-button>
     </div>
 
-    <div v-if="!widgets.length" class="empty">
+    <el-skeleton v-if="loading && !widgets.length" :rows="5" />
+    <div v-else-if="!widgets.length" class="empty">
       <div class="empty-cards">
         <div class="demo-card bar-demo"><i v-for="h in [60, 90, 45, 75]" :key="h" :style="{ height: `${h}%` }" /></div>
         <div class="demo-card line-demo">📈</div>
@@ -38,9 +39,10 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onActivated, onDeactivated, onMounted, onBeforeUnmount, ref } from 'vue'
+import { getInstanceByDom } from 'echarts'
 import { useRoute } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import ChartConfigDialog from '../../components/smart/dashboard/ChartConfigDialog.vue'
 import { renderChart } from '../../components/smart/dashboard/chartRender.js'
 import {
@@ -50,6 +52,9 @@ import {
 
 const route = useRoute()
 const entryId = Number(route.params.entryId)
+const entryQuery = { ...route.query }
+const loading = ref(true)
+const chartElements = new Map()
 const name = ref('仪表盘')
 const widgets = ref([])
 const dataMap = ref(new Map())
@@ -86,14 +91,24 @@ async function load() {
   renderAll()
 }
 
-function mountChart(el, w) { if (el) setTimeout(() => renderOne(el, w), 0) }
+function mountChart(el, w) {
+  const previous = chartElements.get(w.id)
+  if (previous && previous !== el) getInstanceByDom(previous)?.dispose()
+  if (el) {
+    chartElements.set(w.id, el)
+    renderOne(el, w)
+  } else chartElements.delete(w.id)
+}
 function renderOne(el, w) {
   const c = w.config || {}
   renderChart(el, w.chart_type, w.sub_type, dataMap.value.get(w.id),
               tables.value, fieldsMap.value.get(c.sourceTableId) || [], c)
 }
 function renderAll() {
-  document.querySelectorAll('.w-chart').forEach(() => {})   // ref 回调已逐个渲染
+  for (const w of widgets.value) {
+    const el = chartElements.get(w.id)
+    if (el) renderOne(el, w)
+  }
 }
 
 function openConfig(w) { editing.value = w; cfgVisible.value = true }
@@ -110,14 +125,24 @@ async function removeWidget(w) {
 }
 
 onMounted(async () => {
-  await load()
+  try { await load() } finally { loading.value = false }
   // 表头「数据可视化 → 添加更多图表…」：?addChart=1&table=<tid>&dim=<field>&title=<标题>
-  if (route.query.addChart && route.query.table) {
+  if (entryQuery.addChart && entryQuery.table && route.path === `/smart/dashboard/${entryId}`) {
     editing.value = null
-    preset.value = { chart_type: 'bar', title: route.query.title || '图表',
-                     config: { sourceTableId: Number(route.query.table), dimension: route.query.dim || null, splitMulti: true } }
+    preset.value = { chart_type: 'bar', title: entryQuery.title || '图表',
+                     config: { sourceTableId: Number(entryQuery.table), dimension: entryQuery.dim || null, splitMulti: true } }
     cfgVisible.value = true
   }
+})
+onActivated(async () => {
+  await nextTick()
+  for (const el of chartElements.values()) getInstanceByDom(el)?.resize()
+  if (!loading.value) load().catch(e => ElMessage.error(e.message))
+})
+onDeactivated(() => { cfgVisible.value = false })
+onBeforeUnmount(() => {
+  for (const el of chartElements.values()) getInstanceByDom(el)?.dispose()
+  chartElements.clear()
 })
 </script>
 

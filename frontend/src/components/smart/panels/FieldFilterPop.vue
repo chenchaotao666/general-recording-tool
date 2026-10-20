@@ -8,7 +8,7 @@
       <b>筛选</b>
       <span class="ffp-scope">{{ scopeText }}</span>
       <span class="ffp-flex" />
-      <el-tooltip :content="pinned ? '取消固定' : '固定到工具栏'" placement="top" :show-after="300">
+      <el-tooltip :hide-after="0" :content="pinned ? '取消固定' : '固定到工具栏'" placement="top" :show-after="300">
         <span class="ffp-icon st-icon-action" :class="{ on: pinned }" @click="$emit('pin', !pinned)"><StIcon name="pin" :size="16" /></span>
       </el-tooltip>
       <span class="ffp-more-wrap">

@@ -32,7 +32,7 @@ def _out(db: Session, rows) -> list[dict]:
     for n in rows:
         d = {
             "id": n.id, "title": n.title, "content": n.content, "link": n.link,
-            "ref_type": n.ref_type, "ref_id": n.ref_id,
+            "ref_type": n.ref_type, "ref_id": n.ref_id, "buttons": n.buttons or [],
             "read": n.read, "created_at": n.created_at.isoformat(sep=" ") if n.created_at else None,
         }
         if n.ref_type == "tenant_invitation":

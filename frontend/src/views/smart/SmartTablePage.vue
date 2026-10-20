@@ -1,8 +1,19 @@
 <template>
   <div class="st-page">
+    <div v-if="initialLoading || initialError" class="st-initial" role="status">
+      <span>{{ initialError || '正在加载工作表…' }}</span>
+      <el-button v-if="initialError" size="small" @click="loadInitialTable">重试</el-button>
+    </div>
+    <template v-else>
     <div class="st-table-pane">
     <!-- 视图页签 -->
-    <ViewTabs :views="views" :current-id="view?.id" @switch="switchView" @action="onViewAction" />
+    <ViewTabs :views="views" :current-id="view?.id" @switch="switchView" @action="onViewAction">
+      <template #actions>
+        <button type="button" class="tb-btn tab-automation" :class="{ on: automation.visible }" @click="openAutomation()">
+          <StIcon name="automation" :size="18" />自动化
+        </button>
+      </template>
+    </ViewTabs>
 
     <div class="st-panel">
     <!-- 表单视图（V3 §12）：自带工具条与编辑/填写页签 -->
@@ -53,7 +64,7 @@
 
       <!-- 行高（对齐参照 行高.png）：✓ + 档位图标 + 文案；底部自定义行高（行数） -->
       <!-- 弹出方式与排序/分组等工具栏面板一致：trigger=click + 受控 visible（点按钮开合、点外部关闭，带指向箭头） -->
-      <el-popover trigger="click" :visible="activePanel === 'rowHeight'" @update:visible="(v) => setPanel('rowHeight', v)"
+      <el-popover :hide-after="0" trigger="click" :visible="activePanel === 'rowHeight'" @update:visible="(v) => setPanel('rowHeight', v)"
                   placement="bottom-start" :width="250" popper-class="st-tbpanel st-rh-pop">
         <template #reference>
           <button class="tb-btn" :class="{ on: activePanel === 'rowHeight' }">
@@ -89,7 +100,7 @@
 
       <div class="tb-right">
         <!-- 条件胶囊（pin 的筛选条件）：点击弹单字段筛选浮层（运算符+勾选清单，与列头「筛选」同款） -->
-        <el-popover v-for="c in pinnedConditions" :key="c.id" trigger="click" placement="bottom-start" :width="480" popper-class="st-pop st-ffp-pop">
+        <el-popover :hide-after="0" v-for="c in pinnedConditions" :key="c.id" trigger="click" placement="bottom-start" :width="480" popper-class="st-pop st-ffp-pop">
           <template #reference>
             <span class="chip"><StIcon name="filter" :size="12" />{{ labelOf(c.fieldId) }}<StIcon name="chevron-down" :size="12" /></span>
           </template>
@@ -98,14 +109,11 @@
                           @change="(cond) => applyFieldCondition(c.fieldId, cond)"
                           @pin="(v) => setFieldPinned(c.fieldId, v)" @open-panel="setPanel('filter', true)" />
         </el-popover>
-        <!-- V3 右上工具栏（对齐参照 右上工具栏.png）：内容权限 / 自动化 / 生成表单 -->
-        <el-tooltip content="内容权限" placement="bottom" :show-after="200">
+        <!-- 右上工具栏：内容权限 / 生成表单 -->
+        <el-tooltip :hide-after="0" content="内容权限" placement="bottom" :show-after="200">
           <button class="tb-ico st-icon-action" :class="{ on: permPanel.visible }" @click="openPermPanel()"><StIcon name="lock" :size="16" /></button>
         </el-tooltip>
-        <el-tooltip content="自动化" placement="bottom" :show-after="200">
-          <button class="tb-ico st-icon-action" :class="{ on: automation.visible }" @click="openAutomation()"><StIcon name="automation" :size="16" /></button>
-        </el-tooltip>
-        <el-tooltip content="生成表单" placement="bottom" :show-after="200">
+        <el-tooltip :hide-after="0" content="生成表单" placement="bottom" :show-after="200">
           <button class="tb-ico st-icon-action" :disabled="!contentPerm.viewManage" @click="generateForm"><StIcon name="form-add" :size="16" /></button>
         </el-tooltip>
         <span class="tb-sep" />
@@ -123,7 +131,7 @@
     <KanbanView v-if="viewType === 'kanban'" v-loading="loading" :fields="resolvedFields" :rows="dataRows"
                 :config="cfg.kanban || {}" :can-edit-cell="canEditCell" :can-add="perms.can_create"
                 :can-manage="contentPerm.viewManage" @move="onKanbanMove" @add="onKanbanAdd"
-                @open="(r) => { detail.record = r; detail.visible = true }"
+                @open="openDetail"
                 @config="(p) => patchConfig({ kanban: { ...(cfg.kanban || {}), ...p } }, { reload: false })" />
     <SmartGrid
       v-else
@@ -157,6 +165,9 @@
 
     </div>
     </div>
+    <AutomationDrawer :visible="automation.visible" :table-id="tableId" :table-name="entry?.name || ''" :fields="fields"
+                      :tables="smartTables" :members="members" :dashboards="dashboards" :load-fields="loadFieldsOf"
+                      :initial-draft="automation.draft" @close="automation.visible = false" @run-complete="refreshAfterAutomation" />
     <RecordDetailPanel v-if="detail.visible && detailRecord" :record="detailRecord" :fields="resolvedFields"
                        :view="view" :column-groups="columnGroups"
                        :has-prev="detailIdx > 0" :has-next="detailIdx < dataRows.length - 1"
@@ -180,17 +191,34 @@
     <!-- 新建/修改编组弹窗（设计文档 §6.1：编组名称 + 包含字段，默认含当前列） -->
     <!-- 非模态（同字段编辑框）：双击编组表头时在鼠标位置弹出，点外部收起 -->
     <el-dialog :model-value="groupDialog.visible" :title="groupDialog.id ? '修改编组' : '新建编组'"
-               width="420px" append-to-body v-bind="anchoredDialogAttrs(groupDialog.at, 420, 220)" @close="groupDialog.visible = false">
+               width="470px" class="st-fcd" :show-close="false" append-to-body
+               v-bind="anchoredDialogAttrs(groupDialog.at, 470, 250)"
+               @opened="focusGroupName" @close="groupDialog.visible = false; groupFieldsOpen = false">
       <div class="gd-form">
-        <el-input v-model="groupDialog.name" placeholder="编组名称" maxlength="100" />
-        <el-select v-model="groupDialog.members" multiple placeholder="包含字段" style="width: 100%">
-          <el-option v-for="f in fields" :key="f.field_name" :value="f.field_name" :label="f.label" />
-        </el-select>
+        <input ref="groupNameRef" v-model="groupDialog.name" class="gd-name" placeholder="编组名称" aria-label="编组名称" maxlength="100"
+               @keydown.enter="saveGroupDialog" @keydown.esc="groupDialog.visible = false" />
+        <el-popover v-model:visible="groupFieldsOpen" trigger="click" placement="bottom-start" :width="324"
+                    :hide-after="0" :show-arrow="false" popper-class="st-tbpanel st-pick-pop">
+          <template #reference>
+            <div class="gd-fields" :class="{ open: groupFieldsOpen }" role="button" tabindex="0" aria-label="选择包含字段"
+                 :aria-expanded="groupFieldsOpen" @keydown.enter.prevent="groupFieldsOpen = !groupFieldsOpen">
+              <StIcon name="colgroup" :size="17" />
+              <div class="gd-tags">
+                <span v-if="!groupDialog.members.length" class="gd-placeholder">包含字段</span>
+                <el-tag v-for="name in groupDialog.members" :key="name" closable size="small" @close="toggleGroupField({ field_name: name })" @click.stop>
+                  {{ fields.find(f => f.field_name === name)?.label || name }}
+                </el-tag>
+              </div>
+              <StIcon :name="groupFieldsOpen ? 'chevron-up' : 'chevron-down'" :size="14" />
+            </div>
+          </template>
+          <FieldPickList :fields="fields" :column-groups="columnGroups" :selected="groupDialog.members" @pick="toggleGroupField" />
+        </el-popover>
+        <div class="gd-foot">
+          <button type="button" class="gd-btn primary" @click="saveGroupDialog">确定</button>
+          <button type="button" class="gd-btn" @click="groupDialog.visible = false">取消</button>
+        </div>
       </div>
-      <template #footer>
-        <el-button size="small" @click="groupDialog.visible = false">取消</el-button>
-        <el-button size="small" type="primary" @click="saveGroupDialog">确定</el-button>
-      </template>
     </el-dialog>
 
     <!-- 字段列头菜单 -->
@@ -273,19 +301,19 @@
           <div class="mi" @click="fieldAct('reminder')"><StIcon name="play-circle" :size="15" />内容变更时提醒</div>
           <!-- 底部图标快捷栏：副本/列宽/冻结/隐藏/删除，统一浅色提示框 -->
           <div class="fm-bar">
-            <el-tooltip content="创建副本" placement="top" :show-after="150" :z-index="3100">
+            <el-tooltip :hide-after="0" content="创建副本" placement="top" :show-after="150" :z-index="3100">
               <span class="fb-item st-icon-action" @click="fieldAct('duplicate')"><StIcon name="copy" :size="16" /></span>
             </el-tooltip>
-            <el-tooltip content="自动调整列宽" placement="top" :show-after="150" :z-index="3100">
+            <el-tooltip :hide-after="0" content="自动调整列宽" placement="top" :show-after="150" :z-index="3100">
               <span class="fb-item st-icon-action" @click="fieldAct('autoFit')"><StIcon name="autofit" :size="16" /></span>
             </el-tooltip>
-            <el-tooltip :content="menuFieldFrozen ? '取消冻结' : '冻结至此列'" placement="top" :show-after="150" :z-index="3100">
+            <el-tooltip :hide-after="0" :content="menuFieldFrozen ? '取消冻结' : '冻结至此列'" placement="top" :show-after="150" :z-index="3100">
               <span class="fb-item st-icon-action" @click="fieldAct('freeze')"><StIcon :name="menuFieldFrozen ? 'unfreeze' : 'freeze'" :size="16" /></span>
             </el-tooltip>
-            <el-tooltip content="隐藏" placement="top" :show-after="150" :z-index="3100">
+            <el-tooltip :hide-after="0" content="隐藏" placement="top" :show-after="150" :z-index="3100">
               <span class="fb-item st-icon-action" @click="fieldAct('hide')"><StIcon name="eye-off" :size="16" /></span>
             </el-tooltip>
-            <el-tooltip content="删除" placement="top" :show-after="150" :z-index="3100">
+            <el-tooltip :hide-after="0" content="删除" placement="top" :show-after="150" :z-index="3100">
               <span class="fb-item st-icon-action" @click="fieldAct('delete')"><StIcon name="trash" :size="16" /></span>
             </el-tooltip>
           </div>
@@ -352,9 +380,6 @@
     <!-- ========== V3：协作与智能 ========== -->
     <PermissionPanel :visible="permPanel.visible" :doc-id="doc?.id" :members="members" :focus-entry-id="permPanel.focus"
                      @close="permPanel.visible = false" @changed="loadGrid(view?.id)" />
-    <AutomationDrawer :visible="automation.visible" :table-id="tableId" :table-name="entry?.name || ''" :fields="fields"
-                      :tables="smartTables" :members="members" :dashboards="dashboards" :load-fields="loadFieldsOf"
-                      :initial-draft="automation.draft" @close="automation.visible = false" />
     <QuickReminderDialog :visible="reminder.visible" :table-id="tableId" :field="reminder.field" :fields="fields"
                          :members="members" :me="me?.id" @close="reminder.visible = false"
                          @more="(d) => openAutomation(d)" />
@@ -378,11 +403,12 @@
         </div>
       </div>
     </teleport>
+    </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import SmartGrid from '../../components/smart/grid/SmartGrid.vue'
@@ -400,6 +426,7 @@ import RecordDetailPanel from '../../components/smart/panels/RecordDetailPanel.v
 import FindReplaceDialog from '../../components/smart/panels/FindReplaceDialog.vue'
 import PermissionPanel from '../../components/smart/perms/PermissionPanel.vue'
 import AutomationDrawer from '../../components/smart/automation/AutomationDrawer.vue'
+import FieldPickList from '../../components/smart/panels/FieldPickList.vue'
 import QuickReminderDialog from '../../components/smart/automation/QuickReminderDialog.vue'
 import FormView from '../../components/smart/form/FormView.vue'
 import KanbanView from '../../components/smart/kanban/KanbanView.vue'
@@ -426,14 +453,19 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const tableId = Number(route.params.tableId)
-provide('smartTableId', ref(tableId))
+const tableId = ref(Number(route.params.tableId))
+const entryQuery = { ...route.query }
+let pageActive = true
+let pageLoaded = false
+provide('smartTableId', tableId)
 const me = JSON.parse(localStorage.getItem('grt_user') || 'null')
 
 const ROW_HEIGHTS = { default: '默认', medium: '中等', tall: '高', extraTall: '超高' }
 
 // ---------- 状态 ----------
 const loading = ref(false)
+const initialLoading = ref(true)
+const initialError = ref('')
 const fields = ref([])
 const rows = ref([])
 const total = ref(0)
@@ -553,50 +585,73 @@ const pinnedConditions = computed(() => (cfg.value.filters?.conditions || []).fi
 const panelConditions = computed(() => cfg.value.filters?.conditions || [])
 
 // ---------- 加载 ----------
-async function loadAll() {
-  loading.value = true
+let loadRequestId = 0
+async function loadAll({ silent = false } = {}) {
+  const requestId = ++loadRequestId
+  const requestedTableId = tableId.value
+  loading.value = !silent
   try {
-    const [meta, vs, gs, d] = await Promise.all([
-      getTable(tableId), smartListViews(tableId), smartListColumnGroups(tableId), smartGetDoc(),
+    const qv = view.value?.id || Number(entryQuery.view) || undefined
+    const [meta, vs, gs, d, grid] = await Promise.all([
+      getTable(requestedTableId), smartListViews(requestedTableId), smartListColumnGroups(requestedTableId), smartGetDoc(),
+      smartGrid(requestedTableId, { view_id: qv, page: page.value, page_size: pageSize }),
     ])
+    if (requestId !== loadRequestId) return
     fields.value = meta.fields
     perms.value = meta.my_perms || perms.value
     views.value = vs.views
     columnGroups.value = gs.groups
     doc.value = d
     loadDocEntries()
-    // 成员目录：文档成员（user_id + 用户名），普通成员也可读（原 listMembers 仅管理员可用）
-    members.value = (await smartDocMembers(d.id).catch(() => null))?.members
-      || ((await listMembers().catch(() => [])) || []).map(m => ({ id: m.user_id, name: m.username }))
-    const qv = Number(route.query.view)
-    await loadGrid(qv || undefined)
+    await applyGridResult(grid)
+    if (requestId !== loadRequestId) return
+    // 成员目录不是网格显示的前置条件，后台补齐，避免表结构与行数据分两次渲染。
+    ;(async () => {
+      const directory = (await smartDocMembers(d.id).catch(() => null))?.members
+        || ((await listMembers().catch(() => [])) || []).map(m => ({ id: m.user_id, name: m.username }))
+      if (requestId === loadRequestId) members.value = directory
+    })()
     loadRelationRows()
     loadRefSources()
   } finally {
-    loading.value = false
+    if (requestId === loadRequestId && !silent) loading.value = false
   }
 }
 
 // focusId：返回该记录（筛选+排序后）所在的页，用于新增一行后翻到它
+async function refreshAfterAutomation() {
+  try {
+    await loadGrid(view.value?.id, { silent: true })
+  } catch (e) {
+    ElMessage.error(e.message || '自动化已执行，表格刷新失败，请重试')
+  }
+}
+
 async function loadGrid(viewId, { silent = false, focusId = null } = {}) {
+  const requestedTableId = tableId.value
   if (!silent) loading.value = true
   try {
-    const g = await smartGrid(tableId, { view_id: viewId, page: page.value, page_size: pageSize,
+    const g = await smartGrid(requestedTableId, { view_id: viewId, page: page.value, page_size: pageSize,
                                          ...(focusId != null ? { focus_id: focusId } : {}) })
-    if (g.page) page.value = g.page
-    rows.value = g.items
-    total.value = g.total
-    aggregations.value = g.aggregations || {}
-    grouped.value = !!g.grouped
-    view.value = g.view
-    if (g.my_perms) perms.value = g.my_perms
-    if (g.content_perm) contentPerm.value = g.content_perm
-    if (g.view) filterScope.value = g.view.config?.filtersScope === 'personal' ? 'personal' : 'shared'
-    if (hasUnknownAiOptions()) await reloadMeta()   // AI 生成时自动新建了选项：刷新字段元数据，否则单元格显示裸 optionId
-    scheduleAiPoll()
+    if (requestedTableId !== tableId.value) return
+    await applyGridResult(g)
   } finally {
-    if (!silent) loading.value = false
+    if (!silent && requestedTableId === tableId.value) loading.value = false
   }
+}
+
+async function applyGridResult(g) {
+  if (g.page) page.value = g.page
+  rows.value = g.items
+  total.value = g.total
+  aggregations.value = g.aggregations || {}
+  grouped.value = !!g.grouped
+  view.value = g.view
+  if (g.my_perms) perms.value = g.my_perms
+  if (g.content_perm) contentPerm.value = g.content_perm
+  if (g.view) filterScope.value = g.view.config?.filtersScope === 'personal' ? 'personal' : 'shared'
+  if (hasUnknownAiOptions()) await reloadMeta()   // AI 生成时自动新建了选项：刷新字段元数据，否则单元格显示裸 optionId
+  scheduleAiPoll()
 }
 
 function openFind(event) {
@@ -632,7 +687,7 @@ async function applyFindChanges(changes, valueKey) {
     byRecord.get(rid)[change.field] = change[valueKey]
   }
   for (const [rid, data] of byRecord) {
-    await smartUpdateRecord(tableId, rid, { data })
+    await smartUpdateRecord(tableId.value, rid, { data })
   }
   await loadGrid(view.value?.id)
 }
@@ -660,7 +715,7 @@ async function loadDocEntries() {
   if (!doc.value) return
   const t = await smartGetTree(doc.value.id).catch(() => ({ entries: [] }))
   docEntries.value = t.entries
-  entry.value = t.entries.find(e => e.ref_table_id === tableId) || null
+  entry.value = t.entries.find(e => e.ref_table_id === tableId.value) || null
 }
 
 // 单元格可编辑：行级编辑范围外（__readonly）或字段无编辑权时只读
@@ -693,7 +748,7 @@ let aiPollTimer = null
 function scheduleAiPoll() {
   clearTimeout(aiPollTimer)
   const busy = rows.value.some(r => r.__ai && Object.values(r.__ai).some(x => x.status === 'pending' || x.status === 'running'))
-  if (busy) aiPollTimer = setTimeout(() => loadGrid(view.value?.id, { silent: true }), 2500)
+  if (pageActive && busy) aiPollTimer = setTimeout(() => loadGrid(view.value?.id, { silent: true }), 2500)
 }
 
 // 关联字段：加载目标表记录做标签目录
@@ -720,7 +775,7 @@ async function onViewAction(cmd, v) {
     const base = { grid: '表格视图', kanban: '看板', form: '表单' }[type]
     const sameType = views.value.filter(x => (x.type || 'grid') === type).length
     try {
-      const r = await smartCreateView(tableId, { type, name: sameType ? `${base} ${sameType + 1}` : base, config: {} })
+      const r = await smartCreateView(tableId.value, { type, name: sameType ? `${base} ${sameType + 1}` : base, config: {} })
       views.value.push(r.view)
       switchView(r.view)
     } catch (e) {
@@ -728,17 +783,17 @@ async function onViewAction(cmd, v) {
     }
   } else if (cmd === 'rename') {
     const { value } = await ElMessageBox.prompt('视图名称', '重命名', { inputValue: v.name })
-    if (value) { await smartUpdateView(v.id, { name: value }); views.value = (await smartListViews(tableId)).views }
+    if (value) { await smartUpdateView(v.id, { name: value }); views.value = (await smartListViews(tableId.value)).views }
   } else if (cmd === 'duplicate') {
     const r = await smartDuplicateView(v.id)
     views.value.push(r.view)
   } else if (cmd === 'default') {
     await smartSetDefaultView(v.id)
-    views.value = (await smartListViews(tableId)).views
+    views.value = (await smartListViews(tableId.value)).views
   } else if (cmd === 'delete') {
     await ElMessageBox.confirm(`删除视图「${v.name}」？`, '删除', { type: 'warning' })
     await smartDeleteView(v.id)
-    views.value = (await smartListViews(tableId)).views
+    views.value = (await smartListViews(tableId.value)).views
     await loadGrid()
   }
 }
@@ -871,12 +926,12 @@ async function onCellCommit({ row, field, value }) {
   if (sameCellValue(old, value)) return   // 未修改：不写库、不刷新
   row[field.field_name] = value   // 乐观更新
   try {
-    const r = await smartUpdateRecord(tableId, row.id, { data: { [field.field_name]: value } })
+    const r = await smartUpdateRecord(tableId.value, row.id, { data: { [field.field_name]: value } })
     Object.assign(row, r.record)
     undoStack.push({
       label: `编辑 ${field.label}`,
-      undo: async () => { await smartUpdateRecord(tableId, row.id, { data: { [field.field_name]: old } }); loadGrid(view.value?.id) },
-      redo: async () => { await smartUpdateRecord(tableId, row.id, { data: { [field.field_name]: value } }); loadGrid(view.value?.id) },
+      undo: async () => { await smartUpdateRecord(tableId.value, row.id, { data: { [field.field_name]: old } }); loadGrid(view.value?.id) },
+      redo: async () => { await smartUpdateRecord(tableId.value, row.id, { data: { [field.field_name]: value } }); loadGrid(view.value?.id) },
     })
     // 只在改动影响排序/筛选/分组/聚合结果时重查；否则乐观更新即可（公式/查找由 PATCH 响应带回）
     if (field.field_type !== 'checkbox' && fieldAffectsView(field)) loadGrid(view.value?.id)
@@ -894,7 +949,7 @@ async function onAddOption({ row, field, label }) {
   const nid = `opt_${Date.now()}`
   opts.push({ id: nid, label, color: OPTION_COLORS[opts.length % OPTION_COLORS.length].key, order: opts.length })
   try {
-    await alterTable(tableId, [{ op: 'update_field', field_name: f.field_name, options: { ...f.options, options: opts } }])
+    await alterTable(tableId.value, [{ op: 'update_field', field_name: f.field_name, options: { ...f.options, options: opts } }])
     f.options = { ...f.options, options: opts }
     const value = (f.field_type === 'ai' ? f.options?.outputType : f.field_type) === 'multiSelect'
       ? [...(Array.isArray(row[f.field_name]) ? row[f.field_name] : []), nid]
@@ -907,7 +962,7 @@ async function onAddOption({ row, field, label }) {
 }
 
 // 添加一行：按当前筛选条件预设初始值（让新记录能命中筛选而显示出来），groupPreset（组内「+」的分组值）优先；
-// 新记录按视图排序落位，翻到所在页并滚动选中它的第一个可见列
+// 新记录按视图排序落位，翻到所在页并编辑它的第一个可见单元格
 async function addRow(groupPreset = {}) {
   const preset = {
     ...presetFromFilters({
@@ -916,15 +971,15 @@ async function addRow(groupPreset = {}) {
     }),
     ...groupPreset,
   }
-  const r = await smartCreateRecord(tableId, { data: preset })
+  const r = await smartCreateRecord(tableId.value, { data: preset })
   const newId = r.record.id
   undoStack.push({
     label: '添加行',
-    undo: async () => { await smartDeleteRecord(tableId, newId); loadGrid(view.value?.id) },
-    redo: async () => { await smartCreateRecord(tableId, { data: preset }); loadGrid(view.value?.id) },
+    undo: async () => { await smartDeleteRecord(tableId.value, newId); loadGrid(view.value?.id) },
+    redo: async () => { await smartCreateRecord(tableId.value, { data: preset }); loadGrid(view.value?.id) },
   })
   await loadGrid(view.value?.id, { focusId: newId })
-  const shown = await gridRef.value?.focusRecord?.(newId)
+  const shown = await gridRef.value?.focusRecord?.(newId, null, { edit: true })
   if (shown === false) ElMessage.info('已添加一行，但它不符合当前筛选条件，暂未显示')
   else ElMessage.success('已添加一行')
 }
@@ -942,7 +997,7 @@ async function batchDelete() {
   await ElMessageBox.confirm(`删除选中的 ${selection.value.length} 条记录？`, '批量删除', { type: 'warning' })
   const snapshot = selection.value.map(r => ({ ...r }))
   const ids = snapshot.map(r => r.id)
-  await smartBatchDelete(tableId, ids)
+  await smartBatchDelete(tableId.value, ids)
   undoStack.push({
     label: `删除 ${ids.length} 行`,
     undo: async () => {
@@ -951,11 +1006,11 @@ async function batchDelete() {
         delete data.id; delete data.created_at; delete data.updated_at
         delete data.owner_id; delete data.tenant_id; delete data.parent_id; delete data.updated_by
         delete data.__key; delete data.__no; delete data.__indent; delete data.__rowType
-        await smartCreateRecord(tableId, { data })
+        await smartCreateRecord(tableId.value, { data })
       }
       loadGrid(view.value?.id)
     },
-    redo: async () => { await smartBatchDelete(tableId, ids); loadGrid(view.value?.id) },
+    redo: async () => { await smartBatchDelete(tableId.value, ids); loadGrid(view.value?.id) },
   })
   selection.value = []
   ElMessage.success('已删除')
@@ -985,19 +1040,20 @@ const detail = reactive({ visible: false, record: null })
 const detailRecord = computed(() => dataRows.value.find(r => r.id === detail.record?.id) || detail.record)
 const detailIdx = computed(() => dataRows.value.findIndex(r => r.id === detail.record?.id))
 function openDetail(r) {
+  automation.visible = false
   detail.record = dataRows.value.find(x => x.id === r.id) || r
   detail.visible = true
 }
 // 详情面板 ⋯：生成记录副本 / 删除记录（删除后切到下一条，没有则收起）
 async function onDetailAction(cmd, rec) {
   if (cmd === 'duplicate') {
-    await smartDuplicateRecord(tableId, rec.id)
+    await smartDuplicateRecord(tableId.value, rec.id)
     loadGrid(view.value?.id)
   } else if (cmd === 'delete') {
     await ElMessageBox.confirm('删除这条记录？', '删除', { type: 'warning' })
     const i = detailIdx.value
     const next = dataRows.value[i + 1] || dataRows.value[i - 1] || null
-    await smartDeleteRecord(tableId, rec.id)
+    await smartDeleteRecord(tableId.value, rec.id)
     if (next) detail.record = next
     else detail.visible = false
     loadGrid(view.value?.id)
@@ -1013,7 +1069,7 @@ async function onCtxAction(cmd, count = 1) {
     if (insertingRows.value || !perms.value.can_create) return
     insertingRows.value = true
     try {
-      const result = await smartInsertRecords(tableId, row.id, {
+      const result = await smartInsertRecords(tableId.value, row.id, {
         direction: cmd === 'insert-up' ? 'up' : 'down', count, view_id: view.value?.id,
         data: presetFromFilters({
           conditions: panelConditions.value, conjunction: cfg.value.filters?.conjunction || 'and',
@@ -1039,14 +1095,14 @@ async function onCtxAction(cmd, count = 1) {
     const c = { id: `c_${Date.now()}`, fieldId: field.field_name, operator: op, value: row[field.field_name] }
     onFiltersChange([...panelConditions.value, c])
   } else if (cmd === 'duplicate') {
-    await smartDuplicateRecord(tableId, row.id)
+    await smartDuplicateRecord(tableId.value, row.id)
     loadGrid(view.value?.id)
   } else if (cmd === 'add-child') {
-    await smartCreateRecord(tableId, { data: {}, parent_id: row.id })
+    await smartCreateRecord(tableId.value, { data: {}, parent_id: row.id })
     loadGrid(view.value?.id)
   } else if (cmd === 'delete') {
     await ElMessageBox.confirm('删除这条记录？', '删除', { type: 'warning' })
-    await smartDeleteRecord(tableId, row.id)
+    await smartDeleteRecord(tableId.value, row.id)
     loadGrid(view.value?.id)
   }
 }
@@ -1140,13 +1196,13 @@ async function onFieldSave({ label, field_type, config }) {
     const f = fieldDialog.field
     const op = { op: 'update_field', field_name: f.field_name, label, options: config, field_type }
     if (f.field_type !== field_type) op.data_type = DATA_TYPE_MAP[field_type]
-    await alterTable(tableId, [op])
+    await alterTable(tableId.value, [op])
     fieldDialog.visible = false
     await reloadMeta()
     loadGrid(view.value?.id)
   } else {
     const payload = buildFieldPayload(field_type, label, config)
-    await alterTable(tableId, [{ op: 'add_field', field: payload }])
+    await alterTable(tableId.value, [{ op: 'add_field', field: payload }])
     fieldDialog.visible = false
     await reloadMeta()
     // 插入上下文定位（编组菜单/列头菜单「插入字段」；AddFieldPop 无上下文保持末尾）
@@ -1160,7 +1216,7 @@ async function onFieldSave({ label, field_type, config }) {
 }
 
 async function reloadMeta() {
-  const meta = await getTable(tableId)
+  const meta = await getTable(tableId.value)
   fields.value = meta.fields
   loadRefSources()   // 字段增删改后引用选项/联动源可能变化
 }
@@ -1230,7 +1286,7 @@ async function fieldAct(cmd) {
   } else if (cmd === 'freeze') { fieldMenu.visible = false; patchConfig({ frozenFieldId: menuFieldFrozen.value ? null : f.field_name }, { reload: false }) }
   else if (cmd === 'hide') { fieldMenu.visible = false; patchConfig({ fieldVisibility: { ...(cfg.value.fieldVisibility || {}), [f.field_name]: false } }, { reload: false }) }
   else if (cmd === 'autoFit') { fieldMenu.visible = false; autoFitFields([f.field_name]) }
-  else if (cmd === 'duplicate') { fieldMenu.visible = false; await smartDuplicateField(tableId, f.field_name); reloadMeta(); loadGrid(view.value?.id) }
+  else if (cmd === 'duplicate') { fieldMenu.visible = false; await smartDuplicateField(tableId.value, f.field_name); reloadMeta(); loadGrid(view.value?.id) }
   else if (cmd === 'delete') { fieldMenu.visible = false; await deleteField(f) }
   else if (cmd === 'perm') { fieldMenu.visible = false; openPermPanel(entry.value?.id) }
   else if (cmd === 'kanban') { fieldMenu.visible = false; await createKanban(f) }
@@ -1265,6 +1321,7 @@ function openPermPanel(focusEntryId = null) {
 const automation = reactive({ visible: false, draft: null })
 const reminder = reactive({ visible: false, field: null })
 function openAutomation(draft = null) {
+  detail.visible = false
   permPanel.visible = false
   Object.assign(automation, { visible: true, draft })
 }
@@ -1289,7 +1346,7 @@ let pendingFormAdd = false
 async function generateForm() {
   const n = views.value.filter(v => v.type === 'form').length
   try {
-    const r = await smartCreateView(tableId, { type: 'form', name: n ? `表单 ${n + 1}` : '表单' })
+    const r = await smartCreateView(tableId.value, { type: 'form', name: n ? `表单 ${n + 1}` : '表单' })
     views.value.push(r.view)
     switchView(r.view)
     ElMessage.success('已按表格字段生成表单')
@@ -1319,7 +1376,7 @@ async function onFormOptions(field, options) {
   const f = fields.value.find(x => x.field_name === field.field_name)
   if (!f) return
   try {
-    await alterTable(tableId, [{ op: 'update_field', field_name: f.field_name, options: { ...f.options, options } }])
+    await alterTable(tableId.value, [{ op: 'update_field', field_name: f.field_name, options: { ...f.options, options } }])
     await reloadMeta()
   } catch (e) {
     ElMessage.error(e.message || '选项保存失败')
@@ -1329,7 +1386,7 @@ async function onFormOptions(field, options) {
 // ---------- 看板 ----------
 async function createKanban(f) {
   try {
-    const r = await smartCreateView(tableId, { type: 'kanban', name: `${f.label}看板`, config: { kanban: { groupField: f.field_name } } })
+    const r = await smartCreateView(tableId.value, { type: 'kanban', name: `${f.label}看板`, config: { kanban: { groupField: f.field_name } } })
     views.value.push(r.view)
     switchView(r.view)
   } catch (e) {
@@ -1357,7 +1414,7 @@ async function addVizChart(chartType, d) {
     const dash = await ensureDashboard(d, `${entry.value?.name || '表格'}仪表盘`)
     await smartCreateWidget(dash.id, {
       title: `${f.label}${chartType === 'pie' ? '占比' : '统计'}`, chart_type: chartType,
-      config: { sourceTableId: tableId, dimension: f.field_name, metric: { agg: 'count', field: null },
+      config: { sourceTableId: tableId.value, dimension: f.field_name, metric: { agg: 'count', field: null },
                 splitMulti: true, sort: { by: 'value', direction: 'desc' } },
     })
     await ElMessageBox.confirm(`已将「${f.label}」${chartType === 'pie' ? '饼图' : '柱状图'}添加到「${dash.name}」，是否前往查看？`, '已添加图表',
@@ -1373,7 +1430,7 @@ async function addMoreCharts(d) {
   if (!f) return
   try {
     const dash = await ensureDashboard(d, `${entry.value?.name || '表格'}仪表盘`)
-    router.push({ path: `/smart/dashboard/${dash.id}`, query: { addChart: 1, table: tableId, dim: f.field_name, title: `${f.label}统计` } })
+    router.push({ path: `/smart/dashboard/${dash.id}`, query: { addChart: 1, table: tableId.value, dim: f.field_name, title: `${f.label}统计` } })
   } catch (e) {
     ElMessage.error(e.message || '打开仪表盘失败')
   }
@@ -1394,18 +1451,18 @@ async function onAiSave({ label, config, run }) {
   try {
     let fn
     if (editing) {
-      await alterTable(tableId, [{ op: 'update_field', field_name: editing.field_name, label, options: config, field_type: 'ai' }])
+      await alterTable(tableId.value, [{ op: 'update_field', field_name: editing.field_name, label, options: config, field_type: 'ai' }])
       fn = editing.field_name
     } else {
       const payload = buildFieldPayload('ai', label, config)
-      await alterTable(tableId, [{ op: 'add_field', field: payload }])
+      await alterTable(tableId.value, [{ op: 'add_field', field: payload }])
       fn = payload.field_name
     }
     await reloadMeta()
     if (run === 'first5' || run === 'all') {
       // 前 5 行 = 当前视图（排序/筛选/分组后）看到的前 5 条数据行，而不是按记录 id 的前 5 条
       const first5 = dataRows.value.filter(r => !r.__rowType && r.id != null).slice(0, 5).map(r => r.id)
-      const r = await smartAiRun(tableId, fn, run === 'first5' ? { record_ids: first5 } : { scope: 'all' })
+      const r = await smartAiRun(tableId.value, fn, run === 'first5' ? { record_ids: first5 } : { scope: 'all' })
       ElMessage.success(r.queued ? `AI 正在生成 ${r.queued} 行…` : '已保存 AI 字段')
     } else {
       ElMessage.success(editing ? '已保存 AI 字段设置' : '已保存 AI 字段配置，可在列头 ✦ 按钮中随时生成')
@@ -1419,7 +1476,7 @@ async function onAiSave({ label, config, run }) {
 async function runAiField(f, scope = 'all', recordIds = null) {
   if (!f) return
   try {
-    const r = await smartAiRun(tableId, f.field_name, scope === 'rows' ? { record_ids: recordIds } : { scope })
+    const r = await smartAiRun(tableId.value, f.field_name, scope === 'rows' ? { record_ids: recordIds } : { scope })
     ElMessage.success(r.queued ? `AI 正在生成 ${r.queued} 行…` : (scope === 'failed' ? '没有生成失败的行' : '没有需要生成的行'))
     loadGrid(view.value?.id, { silent: true })
   } catch (e) {
@@ -1430,7 +1487,7 @@ async function onAiFormulaApply({ formula, returnType, label }) {
   aiFormulaDlg.visible = false
   try {
     const payload = buildFieldPayload('formula', label || '公式', { formula, returnType })
-    await alterTable(tableId, [{ op: 'add_field', field: payload }])
+    await alterTable(tableId.value, [{ op: 'add_field', field: payload }])
     await reloadMeta()
     loadGrid(view.value?.id)
     ElMessage.success('已添加公式列')
@@ -1456,7 +1513,7 @@ function onFooterMenu(field, e) {
     y: Math.max(8, e.clientY - estH),
   })
   // 各统计方式的值异步拉取（服务端按筛选后全集计算），到位后填入菜单
-  smartFieldStats(tableId, { field_name: field.field_name, view_id: view.value?.id })
+  smartFieldStats(tableId.value, { field_name: field.field_name, view_id: view.value?.id })
     .then(r => { if (statMenu.visible && statMenu.field === field) statMenu.stats = r.stats || {} })
     .catch(() => {})
 }
@@ -1490,7 +1547,19 @@ async function copyStats() {
 
 // ---------- 列编组（设计文档 §6.3：新建/修改弹窗 + 移入移出；字段最多属于一个编组） ----------
 const groupDialog = reactive({ visible: false, id: null, name: '', members: [], at: null })
+const groupNameRef = ref(null)
+const groupFieldsOpen = ref(false)
+function toggleGroupField(field) {
+  const name = field.field_name
+  groupDialog.members = groupDialog.members.includes(name)
+    ? groupDialog.members.filter(n => n !== name) : [...groupDialog.members, name]
+}
+function focusGroupName() {
+  groupNameRef.value?.focus()
+  groupNameRef.value?.select()
+}
 function openGroupDialog(field, group = null, at = null) {
+  groupFieldsOpen.value = false
   fieldMenu.visible = false
   Object.assign(groupDialog, group
     ? { visible: true, id: group.id, name: group.name, members: [...(group.field_names || [])], at }
@@ -1509,9 +1578,9 @@ async function saveGroupDialog() {
     }
   }
   if (groupDialog.id) await smartUpdateColumnGroup(groupDialog.id, { name: groupDialog.name, field_names: members })
-  else await smartCreateColumnGroup(tableId, { name: groupDialog.name || '编组', field_names: members })
+  else await smartCreateColumnGroup(tableId.value, { name: groupDialog.name || '编组', field_names: members })
   groupDialog.visible = false
-  columnGroups.value = (await smartListColumnGroups(tableId)).groups
+  columnGroups.value = (await smartListColumnGroups(tableId.value)).groups
 }
 
 // 字段编组归属变更：targetGroup 为 null = 移出所有编组；否则移入目标组（字段最多属于一个编组）。
@@ -1527,7 +1596,7 @@ async function setFieldGroup(fieldName, targetGroup) {
   if (targetGroup && !(targetGroup.field_names || []).includes(fieldName)) {
     await smartUpdateColumnGroup(targetGroup.id, { field_names: [...(targetGroup.field_names || []), fieldName] })
   }
-  columnGroups.value = (await smartListColumnGroups(tableId)).groups
+  columnGroups.value = (await smartListColumnGroups(tableId.value)).groups
 }
 
 // 列头菜单「移入编组 ▸」：切换语义（已在该组则移出）
@@ -1539,12 +1608,12 @@ async function moveToGroup(g) {
 }
 
 async function deleteField(f) {
-  const { deps } = await smartFieldDeps(tableId, f.field_name)
+  const { deps } = await smartFieldDeps(tableId.value, f.field_name)
   const depText = deps.length
     ? `\n该字段被以下视图引用：${deps.map(d => `「${d.viewName}」(${d.usages.join('/')})`).join('、')}，删除后这些配置将失效。`
     : ''
   await ElMessageBox.confirm(`删除字段「${f.label}」？存量数据将一并清除。${depText}`, '删除字段', { type: 'warning' })
-  await alterTable(tableId, [{ op: 'delete_field', field_name: f.field_name }])
+  await alterTable(tableId.value, [{ op: 'delete_field', field_name: f.field_name }])
   reloadMeta()
   loadGrid(view.value?.id)
 }
@@ -1557,7 +1626,7 @@ function onReorder(order) { patchConfig({ fieldOrder: order }, { reload: false }
 async function onFieldAction(cmd, f) {
   if (cmd === 'edit') openFieldConfig(f)
   else if (cmd === 'delete') deleteField(f)
-  else if (cmd === 'duplicate') { await smartDuplicateField(tableId, f.field_name); reloadMeta(); loadGrid(view.value?.id) }
+  else if (cmd === 'duplicate') { await smartDuplicateField(tableId.value, f.field_name); reloadMeta(); loadGrid(view.value?.id) }
   else if (cmd === 'newGroup') openGroupDialog(f)
 }
 
@@ -1585,7 +1654,7 @@ async function groupAct(cmd) {
   } else if (cmd === 'dissolve') {
     await ElMessageBox.confirm(`解散编组「${g.name}」？字段保留。`, '解散编组', { type: 'warning' })
     await smartDeleteColumnGroup(g.id)
-    columnGroups.value = (await smartListColumnGroups(tableId)).groups
+    columnGroups.value = (await smartListColumnGroups(tableId.value)).groups
   }
 }
 
@@ -1607,7 +1676,7 @@ async function placeNewField(newName, ctx) {
   let anchor
   if (ctx.mode === 'inside') {
     await smartUpdateColumnGroup(g.id, { field_names: [...members, newName] })
-    columnGroups.value = (await smartListColumnGroups(tableId)).groups
+    columnGroups.value = (await smartListColumnGroups(tableId.value)).groups
     anchor = members[members.length - 1]
   } else {
     anchor = ctx.mode === 'left' ? members[0] : members[members.length - 1]
@@ -1623,12 +1692,12 @@ async function placeNewField(newName, ctx) {
 async function duplicateGroup(g) {
   const newNames = []
   for (const fn of g.field_names || []) {
-    const r = await smartDuplicateField(tableId, fn)
+    const r = await smartDuplicateField(tableId.value, fn)
     newNames.push(r.field_name)
   }
   await reloadMeta()
-  await smartCreateColumnGroup(tableId, { name: `${g.name} 副本`, field_names: newNames })
-  columnGroups.value = (await smartListColumnGroups(tableId)).groups
+  await smartCreateColumnGroup(tableId.value, { name: `${g.name} 副本`, field_names: newNames })
+  columnGroups.value = (await smartListColumnGroups(tableId.value)).groups
   const base = cfg.value.fieldOrder?.length ? [...cfg.value.fieldOrder] : fields.value.map(f => f.field_name)
   const order = base.filter(n => !newNames.includes(n))
   const last = (g.field_names || [])[(g.field_names || []).length - 1]
@@ -1669,20 +1738,51 @@ function toggleGroup(key) {
   collapsedGroups.value = next
 }
 
-onMounted(async () => {
-  await loadAll()
+
+async function loadInitialTable() {
+  initialLoading.value = true
+  initialError.value = ''
+  try {
+    await loadAll()
+    pageLoaded = true
+  } catch (e) {
+    initialError.value = e.message || '工作表加载失败'
+    return
+  } finally {
+    initialLoading.value = false
+  }
   // 通知链接 ?record=<id>：直接展开该记录详情（自动化消息「查看记录」）
-  const rid = Number(route.query.record)
+  const rid = Number(entryQuery.record)
   if (rid) {
     const r = dataRows.value.find(x => x.id === rid)
-    if (r) { detail.record = r; detail.visible = true }
+    if (r) openDetail(r)
   }
   listTables().then(r => { allTables.value = Array.isArray(r) ? r : (r.tables || []) }).catch(() => {})
+}
+onMounted(loadInitialTable)
+onActivated(() => {
+  pageActive = true
+  if (pageLoaded) loadAll({ silent: true }).catch(e => ElMessage.error(e.message))
+  scheduleAiPoll()
   window.addEventListener('keydown', onKeydown)
   document.addEventListener('click', onDocClick)
   document.addEventListener('contextmenu', onDocClick)
 })
+onDeactivated(() => {
+  pageActive = false
+  clearTimeout(aiPollTimer)
+  window.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('click', onDocClick)
+  document.removeEventListener('contextmenu', onDocClick)
+  activePanel.value = null
+  closeFind()
+  for (const panel of [fieldDialog, addFieldPop, fieldMenu, fieldFilter, permPanel,
+    automation, reminder, aiPanel, aiFormulaDlg, aiTags, statMenu, groupDialog, groupMenu]) {
+    panel.visible = false
+  }
+})
 onUnmounted(() => {
+  pageActive = false
   gridAreaObserver?.disconnect()
   clearTimeout(aiPollTimer)
   window.removeEventListener('keydown', onKeydown)
@@ -1692,12 +1792,13 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.st-page { display: flex; gap: 12px; height: 100%; min-width: 0; box-sizing: border-box; padding: 6px 12px 12px 6px; background: #fff; }
+.st-page { display: flex; gap: 12px; height: 100%; min-width: 0; box-sizing: border-box; padding: 6px 12px 12px 12px; background: #fff; }
+.st-initial { flex: 1; display: flex; align-items: center; justify-content: center; gap: 12px; color: #909399; font-size: 14px; }
 .st-table-pane { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .st-page :deep(.view-tabs) { height: 40px; box-sizing: border-box; flex-shrink: 0; border-bottom: 0; padding-left: 0; }
-.st-page :deep(.rd-panel) { padding: 0; border-left: 0; }
+.st-page :deep(.rd-panel) { padding: 0; }
 .st-page :deep(.rd-top) { height: 40px; box-sizing: border-box; flex-shrink: 0; margin: 0; }
-.st-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; border: 1px solid #d0d3d6; border-radius: 8px; overflow: hidden; background: #fff; }
+.st-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; border: 1px solid var(--st-border); border-radius: 8px; overflow: hidden; background: #fff; box-shadow: 0 2px 4px rgba(31, 45, 61, .04), 0 4px 10px rgba(31, 45, 61, .10); }
 /* 表格区 + 右侧详情面板并排：面板占位，表格区收窄 */
 .st-body { display: flex; flex: 1; min-height: 0; }
 .st-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
@@ -1779,7 +1880,21 @@ onUnmounted(() => {
 .mi-s { font-size: 12px; color: var(--st-text-3); margin-top: 2px; }
 .tb-ico.on { background: var(--st-primary-weak); color: var(--st-primary); }
 .sub-check { display: inline-block; width: 16px; color: var(--st-primary); }
-.gd-form { display: flex; flex-direction: column; gap: 12px; }
+.gd-form { display: flex; flex-direction: column; --el-color-primary: var(--st-primary); }
+.gd-name { width: 100%; box-sizing: border-box; height: 36px; margin-bottom: 12px; border: 1px solid #DEE0E3; border-radius: 6px; padding: 0 12px; font-size: 14px; color: var(--st-text-1); background: #fff; outline: none; }
+.gd-name:hover { border-color: #C9CDD4; }
+.gd-name:focus { border-color: var(--st-primary); }
+.gd-fields { display: flex; align-items: center; gap: 8px; min-height: 36px; border-radius: 6px; box-shadow: 0 0 0 1px #DEE0E3 inset; padding: 5px 12px; box-sizing: border-box; cursor: pointer; }
+.gd-fields:hover { box-shadow: 0 0 0 1px #C9CDD4 inset; }
+.gd-fields.open, .gd-fields:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--st-primary) inset; }
+.gd-fields > .st-icon { flex: none; }
+.gd-tags { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+.gd-placeholder { color: var(--el-text-color-placeholder); font-size: 14px; }
+.gd-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; border-top: 1px solid #EBECEE; margin: 16px -24px 0; padding: 16px 24px 0; }
+.gd-btn { height: 32px; padding: 0 16px; border-radius: 6px; border: none; background: #F2F3F5; font-size: 14px; color: var(--st-text-1); cursor: pointer; }
+.gd-btn:hover { background: #E6E8EA; }
+.gd-btn.primary { background: var(--st-primary); color: #fff; }
+.gd-btn.primary:hover { background: #255BD0; }
 /* 统计行菜单：勾选位 + 方式名 + 右对齐值（对齐设计稿 PixPin_2026-10-15_16-56-53） */
 .stat-fm { min-width: 180px; }
 .stat-mi { display: flex; align-items: center; gap: 6px; }

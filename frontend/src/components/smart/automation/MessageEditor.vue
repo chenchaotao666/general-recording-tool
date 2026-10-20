@@ -5,14 +5,36 @@
     <input v-model="title" class="me-title" placeholder="消息标题" @input="emitAll" />
     <div ref="bodyRef" class="me-body" contenteditable="true" data-placeholder="请输入消息内容，可插入变量"
          @input="emitAll" @focus="focus = true" @blur="onBlur" @keydown="onKey" @click="onBodyClick" />
-    <div v-if="buttons.length" class="me-buttons">
-      <span v-for="(b, i) in buttons" :key="i" class="me-btn-chip">{{ b.label }}
-        <span class="me-x" @click="buttons.splice(i, 1); emitAll()">✕</span></span>
-    </div>
     <div class="me-bar">
       <span class="me-tool" @mousedown.prevent @click="toggleEmoji($event)"><StIcon name="emoji" :size="16" />添加表情</span>
       <span class="me-tool" @mousedown.prevent @click="openVars($event)">{x} 插入变量</span>
-      <span class="me-tool me-right" @click="addButton"><StIcon name="plus" :size="15" />添加按钮</span>
+      <el-popover v-model:visible="buttonOpen" :trigger="[]" :trigger-keys="[]" placement="bottom-end" :width="480" :hide-after="0" :show-arrow="false"
+                  :popper-style="{ maxWidth: 'calc(100vw - 24px)' }">
+        <template #reference><button type="button" class="me-tool me-right me-add-button" :disabled="buttons.length >= 2" @click="startButton()"><StIcon name="plus" :size="15" />添加按钮</button></template>
+        <div class="me-button-form">
+          <label>按钮标题</label><el-input v-model="buttonDraft.label" maxlength="20" placeholder="输入文本" />
+          <label>按钮链接</label>
+          <div class="me-link-input">
+            <el-input v-if="!buttonDraft.variable" v-model="buttonDraft.url" placeholder="粘贴链接" />
+            <button v-else type="button" class="me-link-chip" @click="buttonDraft.variable = null">{{ buttonDraft.variableLabel }} ×</button>
+            <el-popover v-model:visible="linkVarsOpen" trigger="click" placement="bottom-end" :width="232" :teleported="false"
+                        :popper-options="{ strategy: 'fixed' }" :hide-after="0" :show-arrow="false">
+              <template #reference><button type="button" class="me-var-link">{x}</button></template>
+              <VarMenu v-if="linkVarsOpen" inline hide-time :steps="linkSteps" :dashboards="dashboards" :reports="reports" @pick="pickButtonLink" />
+            </el-popover>
+          </div>
+          <div class="me-button-actions"><el-button @click="buttonOpen = false">取消</el-button><el-button type="primary" :disabled="!buttonValid" @click="confirmButton">确定</el-button></div>
+        </div>
+      </el-popover>
+    </div>
+    <div v-if="buttons.length" class="me-buttons">
+      <div v-for="(b, i) in buttons" :key="i" class="me-btn-chip">
+        <span>{{ b.label }}</span>
+        <el-dropdown trigger="click" :hide-after="0" @command="cmd => cmd === 'edit' ? startButton(i) : removeButton(i)">
+          <button type="button" class="me-button-more" aria-label="按钮操作"><StIcon name="more-h" :size="16" /></button>
+          <template #dropdown><el-dropdown-menu><el-dropdown-item command="edit">编辑</el-dropdown-item><el-dropdown-item command="delete">删除</el-dropdown-item></el-dropdown-menu></template>
+        </el-dropdown>
+      </div>
     </div>
     <teleport to="body">
       <div v-if="emoji.visible || vars.visible" class="me-mask" @mousedown="closeMenus" />
@@ -25,9 +47,10 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 import VarMenu from './VarMenu.vue'
+import { listReports } from '../../../api/index.js'
 
 const props = defineProps({
   titleValue: { type: String, default: '' },
@@ -45,6 +68,20 @@ const title = ref(props.titleValue)
 const buttons = ref([...(props.buttonsValue || [])])
 const bodyRef = ref(null)
 const focus = ref(false)
+const buttonOpen = ref(false)
+const reports = ref([])
+async function loadReports() {
+  try { reports.value = await listReports() } catch { reports.value = [] }
+}
+const linkVarsOpen = ref(false)
+const editIndex = ref(-1)
+const buttonDraft = reactive({ label: '', url: '', variable: null, variableLabel: '' })
+const safeUrl = value => /^https?:\/\/[^\s]+$/i.test(value) || /^\/(?!\/)[^\s\\]*$/.test(value)
+const buttonValid = computed(() => buttonDraft.label.trim() && (buttonDraft.variable || safeUrl(buttonDraft.url.trim())))
+const linkSteps = computed(() => props.steps.map(s => ({ ...s, vars: [
+  ...(!['定时触发'].includes(s.name) ? [{ key: 'recordLink', label: '记录链接', icon: 'url', var: { kind: 'step', step: s.step, key: 'recordLink' } }] : []),
+  ...(s.vars || []).filter(v => v.icon === 'url'),
+] })))
 const emoji = reactive({ visible: false, x: 0, y: 0 })
 const vars = reactive({ visible: false, x: 0, y: 0 })
 let savedRange = null
@@ -101,6 +138,7 @@ function emitAll() {
 onMounted(() => render(props.content))
 watch(() => props.content, (c) => { if (!selfUpdate) render(c) })
 watch(() => props.titleValue, (t) => { if (!selfUpdate) title.value = t })
+watch(() => props.buttonsValue, value => { if (!selfUpdate) buttons.value = [...(value || [])] })
 
 function saveRange() {
   const sel = window.getSelection()
@@ -159,15 +197,34 @@ function openVars(e) {
   Object.assign(vars, { visible: true, x: r.left, y: r.bottom + 6 })
 }
 function closeMenus() { emoji.visible = false; vars.visible = false }
-function addButton() {
-  if (buttons.value.length >= 1) return
-  buttons.value.push({ label: '查看记录' })
+function startButton(index = -1) {
+  if (index < 0 && buttons.value.length >= 2) return
+  editIndex.value = index
+  const b = buttons.value[index]
+  Object.assign(buttonDraft, { label: b?.label || '', url: b?.link?.value || '', variable: b?.link?.var || null, variableLabel: b?.link?.label || '' })
+  linkVarsOpen.value = false
+  buttonOpen.value = true
+  loadReports()
+}
+function pickButtonLink(variable, label) {
+  Object.assign(buttonDraft, { variable, variableLabel: label })
+  linkVarsOpen.value = false
+}
+function confirmButton() {
+  if (!buttonValid.value) return
+  const b = { label: buttonDraft.label.trim(), link: buttonDraft.variable
+    ? { type: 'var', var: buttonDraft.variable, label: buttonDraft.variableLabel }
+    : { type: 'static', value: buttonDraft.url.trim() } }
+  if (editIndex.value < 0) buttons.value.push(b)
+  else buttons.value.splice(editIndex.value, 1, b)
+  buttonOpen.value = false
   emitAll()
 }
+function removeButton(index) { buttons.value.splice(index, 1); emitAll() }
 </script>
 
 <style scoped>
-.me { border: 1px solid var(--st-border); border-radius: 8px; padding: 14px 18px 6px; background: #fff; }
+.me { min-width: 0; max-width: 100%; box-sizing: border-box; border: 1px solid var(--st-border); border-radius: 8px; padding: 14px 18px 6px; background: #fff; }
 .me.focus { border-color: var(--st-primary); }
 .me-title { width: 100%; border: none; outline: none; font-size: 18px; font-weight: 700; padding: 0 0 10px; color: var(--st-text-1); }
 .me-body { min-height: 170px; outline: none; font-size: 15px; line-height: 2; color: var(--st-text-1); white-space: pre-wrap; word-break: break-word; }
@@ -175,8 +232,18 @@ function addButton() {
 .me-body :deep(.me-chip) { display: inline-flex; align-items: center; gap: 4px; background: #F0F1F3; border-radius: 4px; padding: 0 6px; margin: 0 2px; line-height: 26px; font-size: 14px; user-select: none; }
 .me-body :deep(.me-chip-x) { color: var(--st-text-3); cursor: pointer; font-size: 12px; }
 .me-body :deep(.me-chip-x:hover) { color: var(--st-text-1); }
-.me-buttons { padding: 6px 0; }
-.me-btn-chip { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--st-border); border-radius: 6px; padding: 4px 14px; font-size: 13px; color: var(--st-primary); }
+.me-buttons { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); min-width: 0; max-width: 100%; gap: 10px; padding: 6px 0; }
+.me-btn-chip { display: flex; flex: 1; min-width: 0; align-items: center; background: #f2f3f5; border-radius: 5px; padding: 8px; font-size: 14px; color: var(--st-text-1); }
+.me-btn-chip > span { flex: 1; min-width: 0; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-btn-chip :deep(.el-dropdown) { flex: none; }
+.me-button-more, .me-var-link { border: 0; background: transparent; color: var(--st-text-3); cursor: pointer; }
+.me-add-button { border: 0; background: transparent; padding: 6px; }
+.me-add-button:disabled { opacity: .4; cursor: not-allowed; }
+.me-button-form { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 14px; align-items: center; padding: 16px; }
+.me-link-input { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.me-link-chip { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 8px; border: 0; background: #f2f3f5; cursor: pointer; }
+.me-button-actions { grid-column: 1 / -1; display: flex; gap: 12px; margin-top: 10px; }
+.me-button-actions > button { flex: 1; margin: 0; }
 .me-x { color: var(--st-text-3); cursor: pointer; }
 .me-bar { display: flex; align-items: center; gap: 18px; border-top: 1px solid var(--st-border); margin-top: 8px; padding: 10px 0 6px; }
 .me-tool { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--st-text-2); cursor: pointer; }

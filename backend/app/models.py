@@ -619,6 +619,7 @@ class Notification(Base):
     title = Column(String(256))
     content = Column(Text)
     link = Column(String(256))
+    buttons = Column(JSON, default=list)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)   # 接收人
     read = Column(Boolean, default=False)
     # 结构化引用：如 ref_type=tenant_invitation + ref_id=tenant_members.id，

@@ -2,7 +2,7 @@
   <!-- 填色面板（§5.5，对齐参照 docs/智慧表格/表格上方按钮/填色.png）：
        规则行 = ⋮⋮ + 字段 + 目标/条件（字段名称 / 所有内容 / 筛选运算符）+ [值] → 色块 ▾ + ⊖；
        色板：9 色 × 3 深浅 + 整行填色。条件不完整不生效不计数；即时生效 -->
-  <el-popover trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="760" popper-class="st-tbpanel">
+  <el-popover :hide-after="0" trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="760" popper-class="st-tbpanel">
     <template #reference><slot /></template>
     <div class="flp">
       <div class="flp-head"><span class="tbp-title">填色</span></div>

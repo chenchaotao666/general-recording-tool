@@ -8,7 +8,7 @@
           <el-input v-model="kw" placeholder="搜索智能表" clearable :prefix-icon="Search" />
         </div>
         <div class="side-top-row">
-          <el-dropdown class="side-new" trigger="click" @command="cmd => cmd === 'import' ? importVisible = true : createEntry(cmd)">
+          <el-dropdown :hide-after="0" class="side-new" trigger="click" @command="cmd => cmd === 'import' ? importVisible = true : createEntry(cmd)">
             <el-button type="primary" :icon="Plus">新建</el-button>
             <template #dropdown><el-dropdown-menu>
               <el-dropdown-item command="sheet">工作表</el-dropdown-item>
@@ -18,7 +18,7 @@
             </el-dropdown-menu></template>
           </el-dropdown>
           <el-button :icon="FolderAdd" data-smart-tip="新建文件夹" @click="createEntry('folder')" />
-          <el-tooltip content="内容权限" placement="bottom">
+          <el-tooltip :hide-after="0" content="内容权限" placement="bottom">
             <button class="side-fold st-icon-action" type="button" aria-label="内容权限" @click="permVisible = !permVisible"><StIcon name="lock" :size="15" /></button>
           </el-tooltip>
         </div>
@@ -34,7 +34,7 @@
             <StIcon :name="{ folder: 'folder', dashboard: 'dashboard', form: 'form' }[data.type] || 'view-grid'"
                     :size="14" class="t-icon" />
             <span class="t-name">{{ data.name }}</span>
-            <el-dropdown trigger="click" @command="(cmd) => onNodeAction(cmd, data)">
+            <el-dropdown :hide-after="0" trigger="click" @command="(cmd) => onNodeAction(cmd, data)">
               <span class="t-more st-icon-action" @click.stop><StIcon name="more-h" :size="14" /></span>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -50,15 +50,12 @@
 
     </div>
 
-    <div v-show="!sideCollapsed" class="side-resizer" data-smart-tip="拖动调整目录宽度" @pointerdown.prevent="startSideResize" />
+    <div v-show="!sideCollapsed" class="side-resizer" @pointerdown.prevent="startSideResize" />
     <button v-if="sideCollapsed" class="side-expand st-icon-action" type="button" aria-label="展开目录" @click="toggleSide">
       <el-icon><Expand /></el-icon>
     </button>
     <div class="smart-content">
-      <router-view v-slot="{ Component }">
-        <component :is="Component" v-if="Component" :key="$route.path" />
-        <el-empty v-else :description="treeLoading ? '正在加载…' : '从左侧选择或新建工作表'" />
-      </router-view>
+      <SmartEntryOutlet :loading="treeLoading" />
     </div>
 
     <!-- 导入 Excel（复用现有上传/探测） -->
@@ -111,13 +108,14 @@ import {
   smartImportExcel, uploadExcel, excelPreview, smartDocMembers,
 } from '../../api/index.js'
 import { Expand, Fold, FolderAdd, Plus, Search } from '@element-plus/icons-vue'
+import SmartEntryOutlet from '../../components/smart/SmartEntryOutlet.vue'
 import StIcon from '../../components/smart/icons/StIcon.vue'
 import PermissionPanel from '../../components/smart/perms/PermissionPanel.vue'
 
 const router = useRouter()
 const route = useRoute()
 const treeRef = ref(null)
-const treeLoading = ref(false)
+const treeLoading = ref(true)
 const sideWidth = ref(Math.min(480, Math.max(200, Number(localStorage.getItem('grt_smart_side_w')) || 280)))
 const sideCollapsed = ref(localStorage.getItem('grt_smart_side_collapsed') === '1')
 const doc = ref(null)

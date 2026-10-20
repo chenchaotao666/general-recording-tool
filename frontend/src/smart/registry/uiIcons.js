@@ -2,6 +2,7 @@
 // 与 fieldIcons.js（字段类型象形）并列，由 StIcon 统一渲染
 
 export const UI_ICONS = {
+  refresh: '<path d="M13.5 6A5.7 5.7 0 1 0 13 11M13.5 2.5V6H10"/>',
   // 工具栏
   'plus-circle': '<circle cx="8" cy="8" r="6.6" fill="currentColor" stroke="none"/><path d="M8 5.2v5.6M5.2 8h5.6" stroke="#fff" stroke-width="1.5"/>',
   table: '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M2.5 6.2h11M6.2 6.2v7.3"/>',

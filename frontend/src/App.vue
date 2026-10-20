@@ -196,7 +196,8 @@ watch(focusMode, (on) => {
   else window.removeEventListener('keydown', onFocusEsc)
 })
 
-watch(() => route.path, () => {
+// 表格 ID 等页面内参数变化不需要重新拉取全局未读数和租户信息。
+watch(() => route.matched[0]?.path || route.path, () => {
   user.value = readUser()
   // 离开编辑器页面时自动退出专注模式（侧边导航被隐藏，避免用户卡在无边框状态）
   if (focusMode.value && !route.meta.flush) focusMode.value = false

@@ -476,7 +476,7 @@ export const smartListAutomations = (tid) => http.get(`/smart/tables/${tid}/auto
 export const smartCreateAutomation = (tid, payload) => http.post(`/smart/tables/${tid}/automations`, payload)
 export const smartUpdateAutomation = (aid, payload) => http.patch(`/smart/automations/${aid}`, payload)
 export const smartDeleteAutomation = (aid) => http.delete(`/smart/automations/${aid}`)
-export const smartAutomationRuns = (aid) => http.get(`/smart/automations/${aid}/runs`)
+export const smartAutomationRuns = (aid, params = {}) => http.get(`/smart/automations/${aid}/runs`, { params })
 export const smartRunAutomation = (aid, payload) => http.post(`/smart/automations/${aid}/run`, payload || {})
 
 // ---------- 智能表 V3：表单 ----------

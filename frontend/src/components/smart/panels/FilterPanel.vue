@@ -3,7 +3,7 @@
        标题 + 作用域胶囊（调整仅你可见 | 对所有人生效 | ⋯）→「满足以下 全部条件 ▾」→ 条件卡片
        （头：字段 ▾ + ⊖ 📌 ︿；体：运算符 ▾ + 值；人员/选项为内联勾选清单）→「＋ 添加筛选条件」（选择字段下拉）。
        即时生效：本地保留草稿（含未填完的条件），每次变更只把完整条件提交给父级 -->
-  <el-popover trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="560"
+  <el-popover :hide-after="0" trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="560"
               popper-class="filter-popover st-tbpanel">
     <template #reference><span ref="refEl" class="fp-ref"><slot /></span></template>
     <!-- 高度上限 = 按钮下方可用空间：条件多时中间列表区滚动，标题与「添加筛选条件」常驻可见，不被屏幕底部遮挡 -->
@@ -13,7 +13,7 @@
         <span class="fp-scope">
           <span class="fp-scope-item" :class="{ on: scope === 'personal' }" @click="$emit('scope-change', 'personal')">调整仅你可见</span>
           <span class="fp-scope-item" :class="{ on: scope === 'shared' }" @click="$emit('scope-change', 'shared')">对所有人生效</span>
-          <el-dropdown trigger="click" :teleported="false" :popper-options="FIXED_POPPER" @command="onMore">
+          <el-dropdown :hide-after="0" trigger="click" :teleported="false" :popper-options="FIXED_POPPER" @command="onMore">
             <span class="fp-scope-more st-icon-action"><StIcon name="more-h" :size="16" /></span>
             <template #dropdown>
               <el-dropdown-menu>
@@ -27,7 +27,7 @@
 
       <div v-if="draft.length" class="fp-scroll">
       <div class="fp-conj">满足以下
-        <el-dropdown trigger="click" :teleported="false" :popper-options="FIXED_POPPER" @command="(v) => { draftConj = v; commit() }">
+        <el-dropdown :hide-after="0" trigger="click" :teleported="false" :popper-options="FIXED_POPPER" @command="(v) => { draftConj = v; commit() }">
           <a class="fp-link">{{ draftConj === 'or' ? '任一条件' : '全部条件' }}<StIcon name="chevron-down" :size="12" /></a>
           <template #dropdown>
             <el-dropdown-menu>
@@ -44,7 +44,7 @@
           <span v-if="!isOpen(c)" class="fp-field static"><StIcon :name="fieldIconName(fieldOf(c))" :size="18" />
             <span class="fp-field-name">{{ fieldOf(c)?.label || '选择字段' }}</span></span>
           <!-- 切换字段：统一「选择字段」面板（编组可折叠，参照 PixPin_2026-10-18_01-05-36） -->
-          <el-popover v-else :visible="fieldPickId === c.id" @update:visible="(v) => (fieldPickId = v ? c.id : null)" trigger="click"
+          <el-popover :hide-after="0" v-else :visible="fieldPickId === c.id" @update:visible="(v) => (fieldPickId = v ? c.id : null)" trigger="click"
                       placement="bottom-start" :width="324" :teleported="false" :show-arrow="false"
                       :popper-options="FIXED_POPPER" popper-class="st-tbpanel st-pick-pop">
             <template #reference>
@@ -56,8 +56,8 @@
           </el-popover>
           <span v-if="!isOpen(c)" class="fp-sum">{{ summaryOf(c) }}</span>
           <span class="fp-acts">
-            <el-tooltip content="删除条件" placement="top" :show-after="300"><span class="fp-act st-icon-action" @click.stop="remove(i)"><StIcon name="minus-circle" :size="18" /></span></el-tooltip>
-            <el-tooltip :content="c.pinned ? '取消固定' : '固定到工具栏'" placement="top" :show-after="300">
+            <el-tooltip :hide-after="0" content="删除条件" placement="top" :show-after="300"><span class="fp-act st-icon-action" @click.stop="remove(i)"><StIcon name="minus-circle" :size="18" /></span></el-tooltip>
+            <el-tooltip :hide-after="0" :content="c.pinned ? '取消固定' : '固定到工具栏'" placement="top" :show-after="300">
               <span class="fp-act st-icon-action" :class="{ on: c.pinned }" @click.stop="update(i, { pinned: !c.pinned })"><StIcon name="pin" :size="18" /></span></el-tooltip>
             <span class="fp-vsep" />
             <span class="fp-act st-icon-action" @click.stop="toggleOpen(c)"><StIcon :name="isOpen(c) ? 'chevron-up' : 'chevron-down'" :size="18" /></span>
@@ -65,7 +65,7 @@
         </div>
         <div v-if="isOpen(c) && fieldOf(c)" class="fp-card-body">
           <!-- 运算符（参照 PixPin_2026-10-18_00-48-13）：当前项 ✓ 在右；展开时触发文字带灰底 -->
-          <el-dropdown trigger="click" placement="bottom-start" :teleported="false" :popper-options="FIXED_POPPER" popper-class="fp-op-pop"
+          <el-dropdown :hide-after="0" trigger="click" placement="bottom-start" :teleported="false" :popper-options="FIXED_POPPER" popper-class="fp-op-pop"
                        @visible-change="(v) => (opOpenId = v ? c.id : null)" @command="(op) => changeOp(i, op)">
             <a class="fp-op" :class="{ open: opOpenId === c.id }">{{ opLabel(fieldOf(c), c.operator) || '选择条件' }}<StIcon name="chevron-down" :size="14" /></a>
             <template #dropdown>
@@ -91,7 +91,7 @@
       </div>
       </div>
 
-      <el-popover v-model:visible="picking" trigger="click" placement="bottom-start" :width="324" :teleported="false"
+      <el-popover :hide-after="0" v-model:visible="picking" trigger="click" placement="bottom-start" :width="324" :teleported="false"
                   popper-class="st-tbpanel st-pick-pop" :show-arrow="false">
         <template #reference><button class="tbp-add"><StIcon name="plus" :size="15" />添加筛选条件</button></template>
         <FieldPickList :fields="fields" :column-groups="columnGroups" @pick="add" />

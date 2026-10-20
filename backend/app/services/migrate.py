@@ -16,6 +16,7 @@ from ..config import settings
 
 # (表名, 列名, 列 DDL)
 _NEW_COLUMNS = [
+    ("notifications", "buttons", "JSON"),
     ("meta_tables", "owner_id", "INTEGER"),
     ("meta_tables", "storage_mode", "VARCHAR(16)"),
     ("task_rules", "user_id", "INTEGER"),

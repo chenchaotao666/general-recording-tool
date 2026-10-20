@@ -3,13 +3,13 @@
        点开为统一的「选择字段」面板（FieldPickList：编组为可折叠节点，参照 docs/PixPin_2026-10-18_01-05-36.png）。
        :teleported="false"：面板渲染在外层工具栏面板内部，点选字段不会被当成"点击外部"而关掉外层面板；
        strategy fixed：不被外层面板的滚动区裁剪 -->
-  <el-popover v-model:visible="open" trigger="click" placement="bottom-start" :width="324" :teleported="false"
+  <el-popover :hide-after="0" v-model:visible="open" trigger="click" placement="bottom-start" :width="324" :teleported="false"
               :show-arrow="false" :popper-options="{ strategy: 'fixed' }" popper-class="st-tbpanel st-pick-pop">
     <template #reference>
       <div class="tbfs" :class="{ borderless, open }">
         <StIcon v-if="current" :name="fieldIconName(current)" :size="16" class="tbfs-ico" />
-        <span class="tbfs-label" :class="{ ph: !current }">{{ current ? current.label : placeholder }}</span>
-        <span v-if="clearable && current" class="tbfs-clear st-icon-action" data-smart-tip="清除" @click.stop="emit('update:modelValue', null)"><StIcon name="close" :size="12" /></span>
+        <span class="tbfs-label" :class="{ ph: !hasSelection }">{{ selectionLabel || placeholder }}</span>
+        <span v-if="clearable && hasSelection" class="tbfs-clear st-icon-action" data-smart-tip="清除" @click.stop="emit('update:modelValue', multiple ? [] : null)"><StIcon name="close" :size="12" /></span>
         <StIcon :name="open ? 'chevron-up' : 'chevron-down'" :size="14" class="tbfs-caret" />
       </div>
     </template>
@@ -24,7 +24,7 @@ import StIcon from '../icons/StIcon.vue'
 import FieldPickList from './FieldPickList.vue'
 
 const props = defineProps({
-  modelValue: { type: String, default: null },
+  modelValue: { type: [String, Array], default: null },
   fields: { type: Array, default: () => [] },
   placeholder: { type: String, default: '选择字段' },
   borderless: Boolean,
@@ -35,7 +35,17 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 const open = ref(false)
 const current = computed(() => props.fields.find(f => f.field_name === props.modelValue))
+const multiple = computed(() => Array.isArray(props.modelValue))
+const hasSelection = computed(() => multiple.value ? props.modelValue.length > 0 : !!current.value)
+const selectionLabel = computed(() => multiple.value
+  ? props.fields.filter(f => props.modelValue.includes(f.field_name)).map(f => f.label).join('、')
+  : current.value?.label)
 function pick(f) {
+  if (multiple.value) {
+    emit('update:modelValue', props.modelValue.includes(f.field_name)
+      ? props.modelValue.filter(name => name !== f.field_name) : [...props.modelValue, f.field_name])
+    return
+  }
   open.value = false
   if (f.field_name !== props.modelValue) emit('update:modelValue', f.field_name)
 }

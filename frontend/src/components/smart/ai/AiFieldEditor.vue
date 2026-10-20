@@ -72,7 +72,7 @@
             <div class="afe-l">选项
               <span class="afe-flex" />
               <el-checkbox v-model="onlyExisting" size="small">仅使用已有选项</el-checkbox>
-              <el-tooltip content="勾选后 AI 只从这些选项中选择；不勾选时遇到都不合适的情况会自动新建选项" placement="top">
+              <el-tooltip :hide-after="0" content="勾选后 AI 只从这些选项中选择；不勾选时遇到都不合适的情况会自动新建选项" placement="top">
                 <StIcon name="info" :size="14" class="afe-tip" /></el-tooltip>
             </div>
             <div class="afe-opts">

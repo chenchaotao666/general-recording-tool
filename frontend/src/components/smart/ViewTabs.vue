@@ -4,7 +4,7 @@
     <div v-for="v in views" :key="v.id" class="view-tab" :class="{ active: v.id === currentId }"
          @click="$emit('switch', v)">
       <StIcon :name="TYPE_ICON[v.type] || 'view-grid'" :size="13" class="vt-icon" />{{ v.name }}
-      <el-dropdown v-if="v.id === currentId" trigger="click" @command="(cmd) => $emit('action', cmd, v)">
+      <el-dropdown :hide-after="0" v-if="v.id === currentId" trigger="click" @command="(cmd) => $emit('action', cmd, v)">
         <span class="vt-more st-icon-action" @click.stop><StIcon name="more-v" :size="13" /></span>
         <template #dropdown>
           <el-dropdown-menu>
@@ -18,7 +18,7 @@
     </div>
     <span class="vt-sep" />
     <!-- ＋：新建表格视图 / 看板 / 表单（§12.1：表单与表格视图并列于页签，可建多个） -->
-    <el-dropdown trigger="click" @command="(t) => $emit('action', 'add', t)">
+    <el-dropdown :hide-after="0" trigger="click" @command="(t) => $emit('action', 'add', t)">
       <span class="vt-add st-icon-action" data-smart-tip="新建视图"><StIcon name="plus" :size="13" /></span>
       <template #dropdown>
         <el-dropdown-menu>
@@ -28,6 +28,7 @@
         </el-dropdown-menu>
       </template>
     </el-dropdown>
+    <div v-if="$slots.actions" class="vt-actions"><slot name="actions" /></div>
   </div>
 </template>
 
@@ -55,4 +56,5 @@ defineEmits(['switch', 'action'])
 .vt-add { display: inline-flex; padding: 4px; margin-bottom: 6px; cursor: pointer; color: var(--st-text-2); border-radius: 4px; }
 .vt-add:hover { background: var(--st-bg-hover); }
 .vt-dd-i { margin-right: 6px; color: var(--st-text-2); }
+.vt-actions { display: flex; align-items: center; flex-shrink: 0; margin-left: auto; margin-bottom: 6px; padding-left: 12px; }
 </style>

@@ -11,9 +11,12 @@
           <span class="fpl-name">{{ n.group.name }}</span>
         </div>
         <template v-if="!n.group || !collapsed.has(n.group.id)">
-          <div v-for="f in n.fields" :key="f.field_name" class="fpl-item" :class="{ sub: !!n.group, on: f.field_name === selected }"
-               :data-smart-tip="f.label" @click="emit('pick', f)">
+          <div v-for="f in n.fields" :key="f.field_name" class="fpl-item" :class="{ sub: !!n.group, on: isSelected(f.field_name) }"
+               :role="multiple ? 'checkbox' : undefined" :aria-checked="multiple ? isSelected(f.field_name) : undefined"
+               :tabindex="multiple ? 0 : undefined" :data-smart-tip="f.label" @click="emit('pick', f)"
+               @keydown.enter.prevent="emit('pick', f)" @keydown.space.prevent="emit('pick', f)">
             <StIcon :name="fieldIconName(f)" :size="16" class="fpl-ico" /><span class="fpl-name">{{ f.label }}</span>
+            <span v-if="multiple" class="fpl-check" :class="{ checked: isSelected(f.field_name) }" aria-hidden="true">{{ isSelected(f.field_name) ? '✓' : '' }}</span>
           </div>
         </template>
       </template>
@@ -31,11 +34,13 @@ const props = defineProps({
   fields: { type: Array, default: () => [] },
   // 编组：不传时取 SmartTablePage 提供的当前表编组（smartColumnGroups）
   columnGroups: { type: Array, default: null },
-  selected: { type: String, default: null },   // 当前选中字段（浅灰底高亮）
+  selected: { type: [String, Array], default: null },   // 数组用于多选字段
   title: { type: String, default: '选择字段' },
   maxHeight: { type: Number, default: 420 },
 })
 const emit = defineEmits(['pick'])
+const multiple = computed(() => Array.isArray(props.selected))
+const isSelected = name => multiple.value ? props.selected.includes(name) : props.selected === name
 const injectedGroups = inject('smartColumnGroups', ref([]))
 const groupsSrc = computed(() => props.columnGroups ?? injectedGroups.value ?? [])
 
@@ -63,11 +68,11 @@ const nodes = computed(() => {
 </script>
 
 <style scoped>
-/* 尺寸参照稿：标题 14px 灰；行 40px、字段名 15px、类型图标 16px 深色；编组成员再缩进一级；hover/选中浅灰圆角底 */
+/* 尺寸参照稿：标题 14px 灰；行 32px、字段名 15px、类型图标 16px 深色；编组成员再缩进一级；hover/选中浅灰圆角底 */
 .fpl { width: 300px; }
 .fpl-title { font-size: 14px; color: var(--st-text-3); padding: 4px 12px 8px; }
 .fpl-list { overflow-y: auto; }
-.fpl-item { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px 0 28px; border-radius: 6px; cursor: pointer;
+.fpl-item { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 12px 0 28px; border-radius: 6px; cursor: pointer;
   font-size: 15px; color: var(--st-text-1); }
 .fpl-item:hover, .fpl-item.on { background: #F2F3F5; }
 .fpl-item.sub { padding-left: 56px; }
@@ -76,4 +81,7 @@ const nodes = computed(() => {
 .fpl-ico { color: var(--st-text-1); flex: none; }
 .fpl-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fpl-empty { padding: 12px; font-size: 13px; color: var(--st-text-3); text-align: center; }
+.fpl-check { margin-left: auto; width: 16px; height: 16px; flex: none; box-sizing: border-box; border: 1px solid #d5d9df; border-radius: 3px; font-size: 12px; line-height: 14px; text-align: center; }
+.fpl-check.checked { background: var(--st-primary); border-color: var(--st-primary); color: #fff; }
+.fpl-item:focus-visible { outline: 2px solid var(--st-primary); outline-offset: -2px; }
 </style>

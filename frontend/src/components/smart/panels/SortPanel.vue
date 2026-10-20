@@ -1,7 +1,7 @@
 <template>
   <!-- 排序面板（§5.3，对齐参照 docs/智慧表格/表格上方按钮/排序.png）：
        标题 + 自动排序开关 → 规则行（⋮⋮ 拖拽 + 字段下拉 + 方向两段切换 + ⊖）→「＋ 添加排序字段」。即时生效 -->
-  <el-popover trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="500" popper-class="st-tbpanel">
+  <el-popover :hide-after="0" trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="500" popper-class="st-tbpanel">
     <template #reference><slot /></template>
     <div class="sp">
       <div class="sp-head">

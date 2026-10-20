@@ -4,7 +4,7 @@
        ✦ = 重新生成（列：整列；单元格：该行），▾ = 生成全部 / 仅生成空白行 / 重新生成失败行 -->
   <teleport to="body">
     <div class="arb" :style="{ left: `${x}px`, top: `${y}px` }" @mousedown.stop>
-      <el-tooltip :content="mode === 'cell' ? '重新生成此行' : '重新生成'" placement="top" :show-after="200">
+      <el-tooltip :hide-after="0" :content="mode === 'cell' ? '重新生成此行' : '重新生成'" placement="top" :show-after="200">
         <span class="arb-main st-icon-action" @click="emit('run', mode === 'cell' ? 'row' : 'all')"><span class="arb-logo"><StIcon name="sparkle" :size="11" /></span></span>
       </el-tooltip>
       <span class="arb-dd st-icon-action" :class="{ open: menu }" @click="menu = !menu"><span class="arb-tri" /></span>

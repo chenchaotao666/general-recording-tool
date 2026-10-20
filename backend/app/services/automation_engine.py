@@ -15,24 +15,26 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from urllib.parse import urlsplit
+from datetime import date, datetime, timedelta
 
 import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from ..models import MetaTable, Record, SmartAutomation, SmartAutomationRun, SmartDocEntry, User
+from ..models import MetaTable, Record, ReportTemplate, SmartAutomation, SmartAutomationRun, SmartDoc, SmartDocEntry, User
 from . import json_store, smart_events
 from .meta_service import get_meta_fields
 from .notify import notify_user
 from .smart_cond import match_conditions
 from .smart_format import display
+from .pyquery import normalize_record
 
 log = logging.getLogger(__name__)
 
 TRIGGER_TYPES = {"schedule", "recordCreated", "recordUpdated"}
 ACTION_TYPES = {"sendMessage", "findRecords", "createRecord", "updateRecords"}
-FREQS = {"daily", "weekly", "monthly"}
+FREQS = {"daily", "weekly", "monthly", "weekdays"}
 MAX_ACTIONS = 10
 MAX_BATCH = 1000
 WEEKDAY_CRON = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -94,6 +96,13 @@ def validate_rule(db: Session, mt: MetaTable, payload: dict) -> tuple[dict, list
         raise HTTPException(400, "至少需要一个执行操作")
     if len(actions) > MAX_ACTIONS:
         raise HTTPException(400, f"最多 {MAX_ACTIONS} 个执行操作")
+    if payload.get("enabled", True):
+        if isinstance(actions[-1], dict) and actions[-1].get("type") == "findRecords":
+            raise HTTPException(400, "最后一步不能为查找记录，请调整后再启用。")
+        loop_action = {"recordCreated": "createRecord", "recordUpdated": "updateRecords"}.get(ttype)
+        for index, action in enumerate(actions):
+            if loop_action and action.get("type") == loop_action and str(action.get("tableId") or mt.id) == str(mt.id):
+                raise HTTPException(400, f"当前流程的触发器和第 {index + 2} 步存在循环执行的关系，请调整后再启用。")
     out_a = []
     for i, a in enumerate(actions):
         at = a.get("type")
@@ -108,8 +117,7 @@ def validate_rule(db: Session, mt: MetaTable, payload: dict) -> tuple[dict, list
                 "webhookUrl": str(a.get("webhookUrl") or "")[:500],
                 "title": str(a.get("title") or "")[:200],
                 "content": [seg for seg in (a.get("content") or []) if isinstance(seg, dict)][:200],
-                "buttons": [{"label": str(b.get("label") or "查看记录")[:20]} for b in (a.get("buttons") or [])
-                            if isinstance(b, dict)][:3],
+                "buttons": [_clean_button(b) for b in (a.get("buttons") or []) if isinstance(b, dict)][:2],
             })
             if item["channel"] == "docMessage" and not item["to"] and not item["toFields"]:
                 raise HTTPException(400, f"第 {i + 2} 步「发送消息」请选择接收人")
@@ -125,6 +133,10 @@ def validate_rule(db: Session, mt: MetaTable, payload: dict) -> tuple[dict, list
             if at in ("createRecord", "updateRecords"):
                 item["values"] = [{"fieldId": v["fieldId"], "value": v.get("value")}
                                   for v in (a.get("values") or []) if isinstance(v, dict) and v.get("fieldId")]
+            if at == "createRecord":
+                item["recordMode"] = a.get("recordMode") if a.get("recordMode") in ("blank", "specified") else ("specified" if item["values"] else "blank")
+                if item["recordMode"] == "blank":
+                    item["values"] = []
             if at == "updateRecords":
                 target = a.get("target") or "triggered"
                 if target not in ("triggered", "all", "found", "matching"):
@@ -139,6 +151,51 @@ def validate_rule(db: Session, mt: MetaTable, payload: dict) -> tuple[dict, list
 
 
 # ---------- 变量与渲染 ----------
+
+def _safe_button_url(value) -> str:
+    value = str(value or "").strip()
+    if not value or "\\" in value or any(c.isspace() for c in value):
+        return ""
+    if value.startswith("/") and not value.startswith("//"):
+        return value
+    parsed = urlsplit(value)
+    return value if parsed.scheme.lower() in ("http", "https") and parsed.netloc else ""
+
+
+def _clean_button(button: dict) -> dict:
+    result = {"label": str(button.get("label") or "查看记录")[:20]}
+    spec = button.get("link")
+    if isinstance(spec, dict):
+        if spec.get("type") == "static":
+            url = _safe_button_url(spec.get("value"))
+            if not url:
+                raise HTTPException(400, "按钮链接请输入有效的 http、https 或站内链接")
+            result["link"] = {"type": "static", "value": url}
+        elif spec.get("type") == "var" and isinstance(spec.get("var"), dict):
+            result["link"] = {"type": "var", "var": spec["var"], "label": str(spec.get("label") or "")[:200]}
+    return result
+
+
+def _button_link(rc, button, fallback):
+    spec = button.get("link")
+    if not spec:
+        return fallback
+    if spec.get("type") == "static":
+        return _safe_button_url(spec.get("value"))
+    var = spec.get("var") or {}
+    if var.get("kind") == "dashboard":
+        entry = rc.db.get(SmartDocEntry, int(var.get("entryId") or 0))
+        doc = rc.db.get(SmartDoc, entry.doc_id) if entry and entry.type == "dashboard" else None
+        return f"/smart/dashboard/{entry.id}" if doc and doc.tenant_id == rc.rule.tenant_id else ""
+    if var.get("kind") == "report":
+        report = rc.db.get(ReportTemplate, int(var.get("entryId") or 0))
+        return f"/reports/{report.id}/view" if report and report.tenant_id == rc.rule.tenant_id else ""
+    if var.get("kind") == "step" and var.get("key") == "recordLink":
+        step = rc.steps.get(int(var.get("step") or 0)) or {}
+        record = step.get("record") or {}
+        tid = step.get("table_id") or rc.rule.table_id
+        return f"/smart/table/{tid}" + (f"?record={record['id']}" if record.get("id") else "")
+    return _safe_button_url(rc.resolve_raw(var))
 
 class RunContext:
     def __init__(self, db: Session, rule: SmartAutomation, depth: int):
@@ -160,7 +217,10 @@ class RunContext:
     def resolve_raw(self, var: dict):
         kind = var.get("kind")
         if kind == "time":
-            return date.today().isoformat() if var.get("key") == "today" else datetime.now().strftime("%Y-%m-%d %H:%M")
+            offsets = {"today": 0, "tomorrow": 1, "yesterday": -1}
+            if var.get("key") in offsets:
+                return (date.today() + timedelta(days=offsets[var["key"]])).isoformat()
+            return datetime.now().strftime("%Y-%m-%d %H:%M")
         if kind in ("dashboard", "report"):
             return f"「{var.get('name') or '仪表盘'}」"
         if kind == "step":
@@ -255,8 +315,10 @@ def _act_send(rc: RunContext, a: dict) -> tuple[dict, str]:
                 recipients.add(int(x))
     if not recipients:
         return {"sent": 0}, "没有可接收消息的成员"
+    buttons = [{"label": b.get("label") or "查看记录", "link": url}
+               for b in (a.get("buttons") or [])[:2] if (url := _button_link(rc, b, link))]
     for uid in recipients:
-        notify_user(db, uid, title, content, link=link, ref_type="smart_automation", ref_id=rc.rule.id)
+        notify_user(db, uid, title, content, link=link, ref_type="smart_automation", ref_id=rc.rule.id, buttons=buttons)
     db.commit()
     return {"sent": len(recipients)}, f"已发送给 {len(recipients)} 人"
 
@@ -349,6 +411,7 @@ def run_rule(db: Session, rule: SmartAutomation, trigger_out: dict, depth: int =
     results, status, error = [], "success", None
     for i, a in enumerate(rule.actions or [], start=2):
         fn = ACTIONS.get(a.get("type"))
+        step_started = datetime.now()
         try:
             out, msg = fn(rc, a)
             rc.steps[i] = out
@@ -363,6 +426,13 @@ def run_rule(db: Session, rule: SmartAutomation, trigger_out: dict, depth: int =
             status = "failed" if i == 2 else "partial"
             error = str(detail)[:2000]
             break
+        finally:
+            step_finished = datetime.now()
+            results[-1].update({
+                "started_at": step_started.isoformat(sep=" "),
+                "finished_at": step_finished.isoformat(sep=" "),
+                "duration_ms": round((step_finished - step_started).total_seconds() * 1000),
+            })
     run = db.get(SmartAutomationRun, run.id)
     run.status = status
     run.step_results = results
@@ -378,14 +448,16 @@ def _trigger_matches(db: Session, rule: SmartAutomation, event: dict) -> bool:
         return False
     fields = get_meta_fields(db, rule.table_id)
     try:
-        rec = json_store.normalized_one(db, rule.table_id, event["record_id"], fields)
+        rec = (normalize_record(event["after"], {f.field_name: f for f in fields})
+               if event.get("after") is not None else
+               json_store.normalized_one(db, rule.table_id, event["record_id"], fields))
     except HTTPException:
         return False   # 记录已被删除
     if event["type"] == "recordUpdated":
         watch = trig.get("watchFields") or []
         if watch and not set(watch) & set(event.get("changed") or []):
             return False
-    if event["type"] == "recordCreated" and not match_conditions(rec, fields, trig.get("rowConditions"), "all"):
+    if trig.get("type") == "recordCreated" and not match_conditions(rec, fields, trig.get("rowConditions"), "all"):
         return False
     flt = trig.get("filter") or {}
     return match_conditions(rec, fields, flt.get("conditions"), flt.get("match", "all"))
@@ -398,7 +470,9 @@ def trigger_output(db: Session, rule: SmartAutomation, event: dict | None) -> di
     fields = get_meta_fields(db, rule.table_id)
     labels = {f.field_name: f.label for f in fields}
     try:
-        record = json_store.get_record(db, rule.table_id, event["record_id"], fields)
+        record = event.get("after")
+        if record is None:
+            record = json_store.get_record(db, rule.table_id, event["record_id"], fields)
     except HTTPException:
         record = event.get("after") or {}
     operator = {"ai": "AI", "automation": "自动化"}.get(event.get("actor_type")) or _user_name(db, event.get("actor_id"))
@@ -407,16 +481,41 @@ def trigger_output(db: Session, rule: SmartAutomation, event: dict | None) -> di
             "changed": [labels.get(k, k) for k in event.get("changed") or []]}
 
 
+def _completes_new_record(db: Session, rule: SmartAutomation, event: dict) -> bool:
+    """空行后续首次填写必填字段，也属于新增记录；旧记录及重复编辑不触发。"""
+    conditions = (rule.trigger_config or {}).get("rowConditions") or []
+    if not conditions or event.get("before") is None:
+        return False
+    record = db.get(Record, event["record_id"])
+    if not record or record.created_at < rule.created_at:
+        return False
+    fields = get_meta_fields(db, rule.table_id)
+    before = normalize_record(event["before"], {f.field_name: f for f in fields})
+    if match_conditions(before, fields, conditions, "all"):
+        return False
+    # 运行记录持久化去重，清空后重填也不会重复发送；手动试运行不消耗新增触发。
+    already_ran = db.query(SmartAutomationRun.id).filter(
+        SmartAutomationRun.rule_id == rule.id,
+        SmartAutomationRun.trigger_snapshot["record"]["id"].as_integer() == event["record_id"],
+        SmartAutomationRun.trigger_snapshot["event_type"].as_string() == "recordCreated",
+    ).first()
+    return already_ran is None
+
+
 def handle_event(db: Session, event: dict) -> None:
     rules = (db.query(SmartAutomation)
              .filter_by(table_id=event["table_id"], enabled=True).order_by(SmartAutomation.id).all())
     for rule in rules:
-        if (rule.trigger_config or {}).get("type") != event["type"]:
-            continue
         try:
+            trigger_type = (rule.trigger_config or {}).get("type")
+            if trigger_type != event["type"]:
+                if not (trigger_type == "recordCreated" and event["type"] == "recordUpdated"
+                        and _completes_new_record(db, rule, event)):
+                    continue
             if not _trigger_matches(db, rule, event):
                 continue
-            run_rule(db, rule, trigger_output(db, rule, event), depth=event.get("depth", 0))
+            output = {**trigger_output(db, rule, event), "event_type": trigger_type}
+            run_rule(db, rule, output, depth=event.get("depth", 0))
         except Exception:  # noqa: BLE001
             log.exception("automation rule %s failed", rule.id)
             db.rollback()
@@ -451,7 +550,9 @@ def run_scheduled(rule_id: int) -> None:
 def cron_kwargs(schedule: dict) -> dict:
     hh, mm = (int(x) for x in (schedule.get("time") or "09:00").split(":"))
     kw = {"hour": hh, "minute": mm}
-    if schedule.get("freq") == "weekly":
+    if schedule.get("freq") == "weekdays":
+        kw["day_of_week"] = "mon,tue,wed,thu,fri"
+    elif schedule.get("freq") == "weekly":
         kw["day_of_week"] = ",".join(WEEKDAY_CRON[d - 1] for d in schedule.get("weekdays") or [1])
     elif schedule.get("freq") == "monthly":
         kw["day"] = ",".join(str(d) for d in schedule.get("monthDays") or [1])

@@ -18,7 +18,7 @@
     <template v-if="!isDashboard && p.level !== 'NONE'">
       <!-- ---------- 记录权限（行） ---------- -->
       <div class="pe-sec">记录权限(行)
-        <el-tooltip content="控制成员可以查看、编辑哪些记录" placement="top"><StIcon name="info" :size="15" class="pe-i" /></el-tooltip>
+        <el-tooltip :hide-after="0" content="控制成员可以查看、编辑哪些记录" placement="top"><StIcon name="info" :size="15" class="pe-i" /></el-tooltip>
       </div>
       <div v-if="warnText" class="pe-warn-inline">{{ warnText }}</div>
 
@@ -53,7 +53,7 @@
           </div>
           <div v-if="p.record.editScope === 'PARTIAL'" class="pe-cond-box">
             <div class="pe-cond-title">满足此条件时可编辑，否则
-              <el-dropdown trigger="click" @command="(v) => patchRec({ editFallback: v })">
+              <el-dropdown :hide-after="0" trigger="click" @command="(v) => patchRec({ editFallback: v })">
                 <a class="pe-link">{{ p.record.editFallback === 'NO_ACCESS' ? '不可查看' : '只可查看' }}<StIcon name="chevron-down" :size="12" /></a>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -80,7 +80,7 @@
 
       <!-- ---------- 字段权限（列） ---------- -->
       <div class="pe-sec">字段权限(列)
-        <el-tooltip content="控制成员可以查看、首次提交、编辑哪些字段" placement="top"><StIcon name="info" :size="15" class="pe-i" /></el-tooltip>
+        <el-tooltip :hide-after="0" content="控制成员可以查看、首次提交、编辑哪些字段" placement="top"><StIcon name="info" :size="15" class="pe-i" /></el-tooltip>
       </div>
       <div v-if="p.level === 'FULL' && !expanded" class="pe-card pe-summary">
         <StIcon name="colgroup" :size="15" />可以编辑所有字段内容、修改字段设置。<a class="pe-link" @click="expanded = true">更改</a>
