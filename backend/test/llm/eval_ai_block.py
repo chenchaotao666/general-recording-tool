@@ -32,7 +32,7 @@ def prepare_db():
     import sqlite3
     shutil.copy(BACKEND_DIR / "grt.db", EVAL_DB)
     conn = sqlite3.connect(EVAL_DB)
-    for t in ("meta_tables", "meta_fields", "records", "report_templates", "workflows"):
+    for t in ("meta_tables", "meta_fields", "records", "report_templates"):
         try:
             conn.execute(f"DELETE FROM {t}")
         except sqlite3.Error:

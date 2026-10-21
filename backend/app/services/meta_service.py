@@ -346,7 +346,7 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
             by_name.pop(name)
             by_name[new_name] = f
             changes.append(f"字段 {name} 改名为 {new_name}" + (f"，迁移 {n} 条存量数据" if n else ""))
-            warnings.append(f"任务/报表/工作流中对字段 {name} 的引用不会自动更新，请检查")
+            warnings.append(f"任务/报表中对字段 {name} 的引用不会自动更新，请检查")
             continue
 
         # update_field：只改出现的键

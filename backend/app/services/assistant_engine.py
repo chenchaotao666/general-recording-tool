@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from ..models import MetaTable, User, Workflow
+from ..models import MetaTable, User
 from ..schemas import TableCreate
 from ..utils.access import check_owner_or_admin, get_table_access
 from ..utils.rbac import has_perm, tenant_role
@@ -165,47 +165,9 @@ def execute_action(db: Session, user: User, type_: str, payload: dict) -> dict:
         return _exec_create_report(db, user, payload or {})
     if type_ == "gen_excel":
         return _exec_gen_excel(db, user, payload or {})
-    if type_ == "run_workflow":
-        return _exec_run_workflow(db, user, payload or {})
-    if type_ == "create_workflow":
-        return _exec_create_workflow(db, user, payload or {})
     if type_ == "alter_table":
         return _exec_alter_table(db, user, payload or {})
     raise HTTPException(400, f"不支持的动作类型：{type_}")
-
-
-def _exec_create_workflow(db: Session, user: User, payload: dict) -> dict:
-    """创建 AI 生成的工作流（默认停用，到编辑器确认后启用）；落库前再过一次完整定义校验。"""
-    import uuid
-
-    from . import scheduler as sched
-    from .workflow import engine as wf_engine
-    from .workflow.engine import WorkflowError
-
-    trigger = dict(payload.get("trigger") or {"type": "manual"})
-    nodes = payload.get("nodes") or []
-    edges = payload.get("edges") or []
-    if not nodes:
-        raise HTTPException(400, "工作流没有节点")
-    try:
-        wf_engine.validate_definition(db, trigger, nodes, edges, user)
-    except WorkflowError as e:
-        raise HTTPException(400, str(e))
-    if trigger.get("type") in ("webhook", "form") and not trigger.get("secret"):
-        trigger["secret"] = uuid.uuid4().hex
-    from ..services.tenancy import default_tenant_id
-    wf = Workflow(
-        user_id=user.id, tenant_id=default_tenant_id(db, user),
-        name=str(payload.get("name") or "AI 工作流")[:128],
-        description=str(payload.get("description") or "")[:500],
-        enabled=False,
-        trigger_json=trigger, nodes_json=nodes, edges_json=edges,
-    )
-    db.add(wf)
-    db.commit()
-    db.refresh(wf)
-    sched.reload_jobs()
-    return {"type": "create_workflow", "workflow_id": wf.id, "name": wf.name}
 
 
 def _exec_alter_table(db: Session, user: User, payload: dict) -> dict:
@@ -224,26 +186,6 @@ def _exec_alter_table(db: Session, user: User, payload: dict) -> dict:
     log_audit(db, "alter_table", access.table.id, after={"ops": ops}, user=user.username)
     db.commit()
     return {"type": "alter_table", "table_id": access.table.id, "table_label": access.table.label, **result}
-
-
-def _exec_run_workflow(db: Session, user: User, payload: dict) -> dict:
-    """执行用户自己的工作流（同步），返回执行摘要 + run_id 供跳转轨迹页。"""
-    from .workflow import engine as wf_engine
-
-    try:
-        wf_id = int(payload.get("workflow_id") or 0)
-    except (TypeError, ValueError):
-        wf_id = 0
-    wf = db.get(Workflow, wf_id)
-    if not wf:
-        raise HTTPException(404, "工作流不存在")
-    check_owner_or_admin(wf.user_id, user, db, wf.tenant_id)
-    params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
-    result = wf_engine.run_now(wf.id, trigger="manual", trigger_data={"params": params})
-    return {
-        "type": "run_workflow", "workflow_id": wf.id, "workflow_name": wf.name,
-        **(result or {"status": "failed", "error": "执行失败"}),
-    }
 
 
 def _exec_fill(db: Session, user: User, payload: dict) -> dict:

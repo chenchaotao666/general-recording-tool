@@ -24,7 +24,7 @@ from ..utils.context import Context, get_current_context
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
-# 报表模板市场（与工作流模板市场同一模式：/api/report-templates）
+# 报表模板市场（/api/report-templates）
 templates_router = APIRouter(prefix="/api/report-templates", tags=["report-templates"])
 
 

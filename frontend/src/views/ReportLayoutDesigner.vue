@@ -1,6 +1,6 @@
 <template>
   <div v-loading="loading" class="rp-designer">
-    <!-- 顶栏（与工作流编辑器一致：白底通栏、名称内联编辑、操作按钮右排）
+    <!-- 顶栏（白底通栏、名称内联编辑、操作按钮右排）
          分组：返回+名称 ｜ 页签 ｜（弹性空白）｜ 全局时间 ｜ 操作按钮 -->
     <div class="topbar">
       <!-- 组1：返回 + 名称 -->
@@ -384,7 +384,7 @@
           </div>
           <div class="set-sec-desc">配好周期和渠道后开启；启用后按周期自动生成并推送报表</div>
 
-          <!-- 执行周期：与工作流触发器的「触发频率」同款交互（间隔 / Cron 可视化构建器） -->
+          <!-- 执行周期：触发频率配置（间隔 / Cron 可视化构建器） -->
           <el-form-item label="执行周期">
             <el-radio-group v-model="settingsForm.schedule.type" size="small">
               <el-radio-button value="">不定时</el-radio-button>
@@ -431,13 +431,13 @@
           <template v-if="settingsForm.schedule.type">
             <div class="set-sub">推送渠道</div>
             <el-form-item label="收件邮箱">
-              <!-- 与工作流「接收邮箱」同款：标签式录入，回车添加、逐个校验格式 -->
+              <!-- 标签式录入，回车添加、逐个校验格式 -->
               <el-select :model-value="recipientsList" multiple filterable allow-create default-first-option
                 placeholder="输入邮箱后回车，可添加多个" style="width: 100%" @update:model-value="setRecipients">
                 <el-option v-for="r in recipientsList" :key="r" :label="r" :value="r" />
               </el-select>
             </el-form-item>
-            <!-- 群机器人：通道选择与工作流「发送通知」节点的通道同款（完整名称下拉） -->
+            <!-- 群机器人：通知通道选择（完整名称下拉） -->
             <el-form-item label="群机器人">
               <div style="width: 100%">
                 <div v-for="(wh, i) in settingsForm.push.webhooks" :key="i" class="wh-row">
@@ -590,7 +590,7 @@ import { GridLayout, GridItem } from 'grid-layout-plus'
 import { aiAssistBlock, aiAssistReport, checkExpr, getReport, getTable, listTables, previewPushReport, runReport, updateReport } from '../api'
 import ReportDashboard from '../components/ReportDashboard.vue'
 import AiPromptPanel from '../components/AiPromptPanel.vue'
-import VariablePicker from '../components/workflow/VariablePicker.vue'
+import VariablePicker from '../components/VariablePicker.vue'
 import ReportBlock from '../components/ReportBlock.vue'
 import BlockConfigForm from '../components/BlockConfigForm.vue'
 import {
@@ -622,13 +622,13 @@ const blocks = computed(() => tpl.value?.blocks || [])
 const statBlocks = computed(() => blocks.value.filter((b) => b.type === 'stat'))
 const activePage = computed(() => pages.value.find((p) => p.id === activePageId.value))
 
-// 顶栏名称内联编辑（与工作流编辑器一致）
+// 顶栏名称内联编辑
 const tplName = computed({
   get: () => tpl.value?.name || '',
   set: (v) => { if (tpl.value) tpl.value.name = v },
 })
 
-// 右侧配置面板：可拖宽（与工作流编辑器一致），宽度记忆在 localStorage
+// 右侧配置面板：可拖宽，宽度记忆在 localStorage
 const panelWidth = ref(Number(localStorage.getItem('grt_rp_panel_w')) || 400)
 
 function startResize(e) {
@@ -1508,7 +1508,7 @@ function setRecipients(list) {
   settingsForm.push.recipients = list.filter((s) => re.test(s)).join(',')
 }
 
-// ---------- 执行周期：Cron 可视化构建器（与工作流触发频率同款；APScheduler 周一=0） ----------
+// ---------- 执行周期：Cron 可视化构建器（APScheduler 周一=0） ----------
 const cronMode = ref('day')
 const cronMinute = ref(0)          // 每小时模式：第几分
 const cronTime = ref('09:00')      // 天/周/月模式：HH:mm
@@ -1712,7 +1712,7 @@ async function aiApply() {
   refreshData(true)   // AI 生成后立即绘制
 }
 
-// ---- AI 帮我设置这个区块（与工作流节点「AI 帮我配置」同款：一句话 → 配置 patch，合并后自动重绘） ----
+// ---- AI 帮我设置这个区块（一句话 → 配置 patch，合并后自动重绘） ----
 const aiBlockVisible = ref(false)
 const aiBlockDesc = ref('')
 const aiBlockLoading = ref(false)
@@ -1978,7 +1978,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/* 结构与工作流编辑器一致：白顶栏 + 左白栏 + 灰画布 + 右白配置面板（可拖宽）。
+/* 结构白顶栏 + 左白栏 + 灰画布 + 右白配置面板（可拖宽）。
    高度用 100%（填满 el-main 内容区），不能用 100vh：外层还有顶栏 + el-main padding。 */
 .rp-designer { height: 100%; display: flex; flex-direction: column; background: #f5f7fa; }
 .topbar {
@@ -2012,7 +2012,7 @@ onBeforeUnmount(() => {
 
 .body { flex: 1; display: flex; min-height: 0; position: relative; }
 
-/* 左侧栏（与工作流节点面板一致：白底、右边线） */
+/* 左侧栏（白底、右边线） */
 .sidebar { width: 210px; background: #fff; border-right: 1px solid #e4e7ed; overflow-y: auto; padding: 10px; }
 .side-section { margin-bottom: 18px; }
 .side-title { font-size: 13px; font-weight: 600; color: #303133; margin-bottom: 8px; }

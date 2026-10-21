@@ -72,7 +72,6 @@ cd backend
 
 ## 后续可加
 
-- `eval_ai_workflow.py`：AI 生成工作流（assist_workflow）的同类评测
 - `eval_ai_assistant.py`：AI 助手动作识别（填表/建表/查数据/建流程的意图分类准确率）
 
 > 提示词踩坑备忘：否定式指令（「不要输出 JSON」「不要解释」）会让部分模型直接输出空白——

@@ -1,3 +1,5 @@
+> 功能状态（2026-10-21）：工作流模块已移除，本文涉及工作流的内容仅为历史设计记录，不代表当前可用功能。
+
 # 销售易 CRM（NeoCRM / SCRM）全面解析与本系统超越策略
 
 > 分析对象：https://scrm.xiaoshouyi.com/bff/neoweb （销售易 SCRM，NeoCRM 产品族）

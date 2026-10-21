@@ -3,23 +3,17 @@
     <div class="page-header">
       <h2>通知</h2>
       <div class="header-actions">
-        <el-radio-group v-model="tab" size="small" @change="onTabChange">
-          <el-radio-button value="inbox">通知</el-radio-button>
-          <el-radio-button value="todo">待审批<template v-if="todos.length">（{{ todos.length }}）</template></el-radio-button>
+        <el-radio-group v-model="onlyUnread" size="small" @change="reload">
+          <el-radio-button :value="false">全部</el-radio-button>
+          <el-radio-button :value="true">只看未读</el-radio-button>
         </el-radio-group>
-        <template v-if="tab === 'inbox'">
-          <el-radio-group v-model="onlyUnread" size="small" @change="reload">
-            <el-radio-button :value="false">全部</el-radio-button>
-            <el-radio-button :value="true">只看未读</el-radio-button>
-          </el-radio-group>
-          <el-button size="small" :disabled="!items.length" @click="readAll">全部已读</el-button>
-          <el-button size="small" type="danger" plain @click="clearRead">清空已读</el-button>
-        </template>
+        <el-button size="small" :disabled="!items.length" @click="readAll">全部已读</el-button>
+        <el-button size="small" type="danger" plain @click="clearRead">清空已读</el-button>
       </div>
     </div>
 
     <!-- 通知列表 -->
-    <section v-if="tab === 'inbox'" v-loading="loading" class="notify-list" aria-label="通知列表">
+    <section v-loading="loading" class="notify-list" aria-label="通知列表">
       <el-empty v-if="!items.length && !loading" :description="onlyUnread ? '没有未读通知' : '暂无通知'" />
       <article
         v-for="n in items" :key="n.id" class="notify-item" :class="{ unread: !n.read }"
@@ -61,27 +55,6 @@
       />
     </section>
 
-    <!-- 待审批聚合：我是审批人/归属人的全部等待中审批，不用翻通知找链接 -->
-    <el-card v-else v-loading="todoLoading" shadow="never">
-      <el-empty v-if="!todos.length && !todoLoading" description="没有待审批的事项" />
-      <div v-for="t in todos" :key="t.node_run_id" class="todo-item">
-        <div class="todo-head">
-          <b>{{ t.title }}</b>
-          <span class="todo-wf">来自工作流「{{ t.workflow_name }}」</span>
-          <span class="notify-time">{{ t.started_at }}</span>
-        </div>
-        <div v-if="t.detail" class="notify-content">{{ t.detail }}</div>
-        <el-input v-model="comments[t.node_run_id]" type="textarea" :rows="2"
-          placeholder="审批意见（可选）" class="todo-comment" />
-        <div class="todo-actions">
-          <el-button type="success" size="small" :loading="actingId === t.node_run_id"
-            @click="act(t, true)">通过</el-button>
-          <el-button type="danger" size="small" plain :loading="actingId === t.node_run_id"
-            @click="act(t, false)">驳回</el-button>
-          <el-link type="primary" size="small" @click="$router.push(`/workflows/runs/${t.run_id}`)">查看运行详情 →</el-link>
-        </div>
-      </div>
-    </el-card>
   </div>
 </template>
 
@@ -89,8 +62,8 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Bell, Timer, UserFilled, Share, CircleCheck, Connection, Wallet } from '@element-plus/icons-vue'
-import { approveWorkflowNode, deleteNotifications, getMe, listMyInvitations, acceptInvitation, declineInvitation, listNotificationsPage, listPendingApprovals, markRead } from '../api'
+import { Delete, Bell, Timer, UserFilled, Share, Wallet } from '@element-plus/icons-vue'
+import { deleteNotifications, getMe, listMyInvitations, acceptInvitation, declineInvitation, listNotificationsPage, markRead } from '../api'
 import { fmtRelative } from '../utils/format'
 
 const router = useRouter()
@@ -103,9 +76,7 @@ const onlyUnread = ref(false)
 const expandedMessages = reactive({})
 const messageTypes = {
   automation: { kind: 'automation', label: '自动化', icon: Timer },
-  approval: { kind: 'approval', label: '审批通知', icon: CircleCheck },
   invitation: { kind: 'invitation', label: '企业邀请', icon: UserFilled },
-  workflow: { kind: 'workflow', label: '工作流', icon: Connection },
   friend: { kind: 'friend', label: '好友消息', icon: UserFilled },
   share: { kind: 'share', label: '协作分享', icon: Share },
   billing: { kind: 'billing', label: '账户服务', icon: Wallet },
@@ -114,8 +85,6 @@ const messageTypes = {
 function notificationType(n) {
   if (n.ref_type === 'smart_automation') return messageTypes.automation
   if (n.ref_type === 'tenant_invitation') return messageTypes.invitation
-  if (n.link?.startsWith('/approve/')) return messageTypes.approval
-  if (n.link?.startsWith('/workflows/')) return messageTypes.workflow
   if (n.link === '/friends') return messageTypes.friend
   if (n.link === '/billing') return messageTypes.billing
   if (['/tables', '/mindmaps', '/shares'].includes(n.link)) return messageTypes.share
@@ -123,8 +92,6 @@ function notificationType(n) {
 }
 function notificationAction(n) {
   if (n.ref_type === 'smart_automation') return n.link?.includes('record=') ? '查看记录' : '查看数据表'
-  if (n.link?.startsWith('/approve/')) return '查看审批'
-  if (n.link?.startsWith('/workflows/')) return '查看流程详情'
   if (n.link === '/friends') return '查看好友'
   if (notificationType(n).kind === 'share') return '查看分享'
   if (n.link === '/billing') return '查看账户'
@@ -214,13 +181,6 @@ function markInvRead(n) {
   window.dispatchEvent(new Event('grt-notify-refresh'))
 }
 
-// 待审批 Tab
-const tab = ref('inbox')
-const todos = ref([])
-const todoLoading = ref(false)
-const actingId = ref(null)
-const comments = reactive({})
-
 async function load() {
   loading.value = true
   try {
@@ -232,21 +192,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-}
-
-async function loadTodos() {
-  todoLoading.value = true
-  try {
-    todos.value = await listPendingApprovals()
-  } catch (e) {
-    ElMessage.error(e.message)
-  } finally {
-    todoLoading.value = false
-  }
-}
-
-function onTabChange() {
-  if (tab.value === 'todo') loadTodos()
 }
 
 function reload() {
@@ -301,28 +246,7 @@ async function clearRead() {
   }
 }
 
-// L3 审批决定不可撤销：确认时说明审批对象
-async function act(t, approved) {
-  try {
-    await ElMessageBox.confirm(
-      `确定${approved ? '通过' : '驳回'}「${t.title || '该审批'}」？${approved ? '流程将继续执行。' : '驳回后流程将终止，不可撤销。'}`,
-      `${approved ? '通过' : '驳回'}审批`,
-      { type: 'warning', confirmButtonText: approved ? '通过' : '驳回', cancelButtonText: '取消' },
-    )
-  } catch { return }
-  actingId.value = t.node_run_id
-  try {
-    await approveWorkflowNode(t.node_run_id, approved, comments[t.node_run_id] || '')
-    ElMessage.success(approved ? '已通过，流程继续执行' : '已驳回')
-    await loadTodos()
-  } catch (e) {
-    ElMessage.error(e.message)
-  } finally {
-    actingId.value = null
-  }
-}
-
-onMounted(() => { load(); loadTodos(); loadInvitations() })
+onMounted(() => { load(); loadInvitations() })
 </script>
 
 <style scoped>
@@ -337,9 +261,7 @@ onMounted(() => { load(); loadTodos(); loadInvitations() })
 .notify-item:focus-visible { outline: 2px solid #409eff; outline-offset: -2px; }
 .notify-kind { display: flex; align-items: center; justify-content: center; position: relative; width: 38px; height: 38px; flex: none; border-radius: 10px; color: #737c8c; background: #f0f2f5; }
 .notify-kind.automation { color: #377ce8; background: #eaf2ff; }
-.notify-kind.approval { color: #bb801c; background: #fff5df; }
 .notify-kind.invitation, .notify-kind.friend { color: #3c9270; background: #eaf7f1; }
-.notify-kind.workflow { color: #8660c7; background: #f2edfc; }
 .notify-kind.share { color: #2d969e; background: #e8f6f7; }
 .notify-kind.billing { color: #b77a29; background: #fff5e8; }
 .notify-unread-dot { position: absolute; right: -2px; top: -2px; width: 7px; height: 7px; border: 2px solid #fff; border-radius: 50%; background: #409eff; }
@@ -372,10 +294,5 @@ onMounted(() => { load(); loadTodos(); loadInvitations() })
   .notify-side { flex: 1; flex-direction: row; align-items: center; justify-content: space-between; margin-left: 42px; }
   .del-btn { opacity: 1; }
 }
-.todo-item { padding: 12px 14px; border: 1px solid #e4e7ed; border-radius: 8px; margin-bottom: 10px; }
-.todo-head { display: flex; align-items: center; gap: 10px; }
-.todo-wf { font-size: 12px; color: #909399; flex: 1; }
-.todo-comment { margin-top: 8px; }
-.todo-actions { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
 .invite-inline { margin-top: 8px; display: flex; align-items: center; gap: 8px; }
 </style>

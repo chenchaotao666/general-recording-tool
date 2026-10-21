@@ -136,17 +136,6 @@ await page.waitForSelector('.ai-pp')
 step('报表 面板含表选择器', await page.locator('.ai-pp .el-select').count() === 1)
 await page.keyboard.press('Escape')
 
-// 4. 工作流列表
-await page.goto(`${BASE}/workflows`)
-await page.waitForSelector('.ai-btn')
-await checkPanel('工作流', '.ai-btn')
-await page.click('.ai-btn')
-await page.waitForSelector('.ai-pp')
-step('工作流 示例 chips 在位', await page.locator('.ai-pp .ai-pp-chip').count() === 3)
-step('工作流 提交文案保留业务差异', await page.locator('.ai-pp button:has-text("生成并进入画布")').count() === 1)
-await page.screenshot({ path: 'e2e/out-ai-panel-wf.png' })
-await page.keyboard.press('Escape')
-
 await page.request.delete(`${BASE}/api/mindmaps/${mm.id}`, { headers })
 await page.request.delete(`${BASE}/api/whiteboards/${wb.id}`, { headers })
 await browser.close()

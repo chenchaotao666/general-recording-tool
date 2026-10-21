@@ -1,4 +1,4 @@
-"""通知渠道公共件：渠道设置读写 + SMTP 发送（工作流/报表推送共用）。"""
+"""通知渠道公共件：渠道设置读写 + SMTP 发送（报表推送共用）。"""
 import smtplib
 from email.header import Header
 from email.mime.text import MIMEText

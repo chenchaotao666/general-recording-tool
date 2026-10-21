@@ -32,7 +32,7 @@
       </template>
     </AiPromptPanel>
 
-    <!-- 模板市场对话框（与工作流模板市场同一交互：搜索/分类/一键安装） -->
+    <!-- 模板市场对话框（搜索/分类/一键安装） -->
     <el-dialog v-model="tplVisible" title="模板市场 · 一键安装场景报表" width="720px">
       <div class="tpl-filter">
         <el-input v-model="tplKw" placeholder="搜索模板名称 / 描述 / 场景" clearable size="small" class="tpl-search" />
@@ -613,7 +613,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-/* 模板市场（与工作流列表页同款卡片网格） */
+/* 模板市场（模板卡片网格） */
 .tpl-filter { display: flex; gap: 10px; margin-bottom: 12px; }
 .tpl-search { flex: 1; }
 .tpl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

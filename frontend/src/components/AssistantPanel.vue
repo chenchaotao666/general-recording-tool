@@ -96,23 +96,6 @@
                 <card-footer :m="m" confirm-text="确认创建（默认不启用推送）" @confirm="confirm(m)" />
               </div>
 
-              <!-- 动作卡片：创建工作流 -->
-              <div v-else-if="m.card?.type === 'create_workflow'" class="card">
-                <div class="card-title">⚡ {{ m.card.summary }}</div>
-                <div class="kv-row">
-                  <span class="kv-k">名称</span>
-                  <el-input v-model="m.card.payload.name" size="small" :disabled="!!m.done" style="width: 220px" />
-                  <span class="kv-k" style="margin-left: 10px">触发</span>
-                  <span>{{ TRIGGER_LABELS[m.card.payload.trigger?.type] || m.card.payload.trigger?.type }}</span>
-                </div>
-                <div v-for="(n, ni) in m.card.payload.nodes" :key="ni" class="kv-row">
-                  <el-tag size="small" effect="plain">{{ ni + 1 }}</el-tag>
-                  <span style="margin-left: 6px">{{ n.name || n.type }}</span>
-                </div>
-                <warnings-view :list="m.card.warnings" />
-                <card-footer :m="m" confirm-text="确认创建（默认停用）" @confirm="confirm(m)" />
-              </div>
-
               <!-- 动作卡片：生成 Excel -->
               <div v-else-if="m.card?.type === 'gen_excel'" class="card">
                 <div class="card-title">📊 {{ m.card.summary }}</div>
@@ -246,7 +229,6 @@ const RANGE_LABELS = {
   this_week: '本周', last_week: '上周', this_month: '本月', last_month: '上月',
   this_quarter: '本季度', this_year: '今年', custom: '自定义',
 }
-const TRIGGER_LABELS = { manual: '手动', interval: '定时', cron: '定时', record_created: '记录新增时', record_updated: '记录修改时', webhook: 'Webhook', form: '表单' }
 const BLOCK_LABELS = { stat: '统计卡片', chart: '图表', pivot: '透视表', table: '明细表', text: '文本' }
 const BLOCK_TAG = { stat: 'success', chart: 'primary', pivot: 'danger', table: 'warning', text: 'info' }
 
@@ -255,7 +237,6 @@ const SUGGESTIONS = [
   // 建表/报表/提醒故意不指定对象：让 AI 追问需求或目标表，而不是替用户编造
   { icon: '🧱', label: '创建数据表', text: '我想创建一个数据表' },
   { icon: '📊', label: '做一份报表', text: '我想做一份数据报表' },
-  { icon: '⚡', label: '做自动化流程', text: '我想创建一个自动化工作流程' },
   { icon: '📤', label: '导出 Excel', text: '把数据表的数据导出 Excel' },
 ]
 
@@ -322,7 +303,6 @@ const quickChips = computed(() => {
       { label: '📝 把数据插入当前数据表', text: '帮我向当前数据表插入一条数据' },
       { label: '📊 统计当前表数据', text: '帮我统计一下当前数据表的数据情况' },
       { label: '📤 导出当前表 Excel', text: '把当前数据表的数据导出 Excel' },
-      { label: '⚡ 对当前表做自动化', text: '我想基于当前数据表创建一个自动化工作流程（如定时提醒）' },
     ]
   }
   return [
@@ -536,9 +516,7 @@ function cardDigest(card) {
       return `[建表预览：${card.payload?.label}（${(card.payload?.fields || []).map((f) => f.label).join('、')}）]`
     }
     if (card.type === 'create_report') return `[报表预览：${card.payload?.name}，${(card.payload?.blocks || []).length} 个区块]`
-    if (card.type === 'create_workflow') return `[工作流预览：${card.payload?.name}，${(card.payload?.nodes || []).length} 个节点]`
     if (card.type === 'alter_table') return `[修改表结构 → ${card.payload?.table_label}：${(card.payload?.summaries || []).join('；')}]`
-    if (card.type === 'run_workflow') return `[执行工作流：${card.payload?.workflow_name}]`
     if (card.type === 'gen_excel') return `[生成 Excel：${card.summary}]`
     if (card.type === 'query_answer') {
       const r = card.result || {}
@@ -616,9 +594,7 @@ const TYPE_DEFAULT_PAYLOAD = {
   fill_records: (card) => ({ table_id: card.table_id, records: card.payload.records }),
   create_table: (card) => card.payload,
   create_report: (card) => card.payload,
-  create_workflow: (card) => card.payload,
   gen_excel: (card) => card.payload,
-  run_workflow: (card) => card.payload,
   alter_table: (card) => card.payload,
 }
 
@@ -640,14 +616,8 @@ async function confirm(m) {
       window.dispatchEvent(new CustomEvent('grt:tables-changed', { detail: { table_id: res.table_id } }))
     } else if (res.type === 'create_report') {
       m.done = `✅ 已创建报表「${res.name}」 · <a href="/reports/${res.report_id}/view" class="dl-link">查看报表</a>`
-    } else if (res.type === 'create_workflow') {
-      m.done = `✅ 已创建工作流「${res.name}」（默认停用） · <a href="/workflows/${res.workflow_id}/edit" class="dl-link">去编辑启用</a>`
     } else if (res.type === 'gen_excel') {
       m.download = { url: assistantDownloadUrl(res.file_id), filename: res.filename }
-    } else if (res.type === 'run_workflow') {
-      m.done = res.status === 'success'
-        ? `✅ 工作流「${res.workflow_name}」执行成功（token ${res.tokens_used || 0}） · <a href="/workflows/runs/${res.id}" class="dl-link">查看轨迹</a>`
-        : `⚠️ 工作流「${res.workflow_name}」状态：${res.status}${res.error ? `（${res.error}）` : ''} · <a href="/workflows/runs/${res.id}" class="dl-link">查看轨迹</a>`
     } else if (res.type === 'alter_table') {
       let text = `✅ 表结构已更新：${(res.changes || []).join('；')}`
       if (res.warnings?.length) text += `<br/>⚠️ ${res.warnings.join('；')}`

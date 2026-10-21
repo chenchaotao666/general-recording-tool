@@ -19,12 +19,8 @@ const router = createRouter({
     { path: '/select-tenant', component: TenantSelect },
     // 公开链接分享，免登录（懒加载隔离 echarts 体积）
     { path: '/share/:token', component: () => import('../views/ShareView.vue') },
-    // 公开表单（工作流表单触发器），免登录
-    { path: '/form/:wfId/:secret', component: () => import('../views/PublicForm.vue') },
     // 智能表公开表单（分享链接），免登录
     { path: '/sf/:token', component: () => import('../views/smart/PublicSmartForm.vue'), meta: { public: true } },
-    // 免登审批（签名链接），免登录
-    { path: '/approve/:token', component: () => import('../views/PublicApprove.vue') },
     { path: '/', redirect: '/home' },
     // 首页工作台：懒加载隔离 grid-layout-plus 体积
     { path: '/home', component: () => import('../views/Home.vue'), meta: { title: '首页' } },
@@ -49,13 +45,6 @@ const router = createRouter({
     { path: '/whiteboard', component: () => import('../views/Whiteboards.vue'), meta: { perm: 'menu_whiteboard', title: '画板', flush: true } },
     // /studio 是曾经合并入口的临时路径，已拆回两个菜单；旧链接按 tab 参数分流
     { path: '/studio', redirect: (to) => ({ path: to.query.tab === 'boards' ? '/whiteboard' : '/notes', query: Object.fromEntries(Object.entries(to.query).filter(([k]) => k !== 'tab')) }) },
-    // 工作流：编辑器懒加载隔离 vue-flow 体积
-    { path: '/workflows', component: () => import('../views/Workflows.vue') , meta: { perm: 'menu_workflows', title: '工作流' } },
-    { path: '/workflows/new', component: () => import('../views/WorkflowEditor.vue'), meta: { title: '工作流编辑器' } },
-    // 旧站内通知里的链接是 /workflows/:id，重定向到编辑器
-    { path: '/workflows/:id', redirect: (to) => `/workflows/${to.params.id}/edit` },   // 正则参数在 vue-router 4.6 不匹配，改普通参数
-    { path: '/workflows/:id/edit', component: () => import('../views/WorkflowEditor.vue'), meta: { title: '工作流编辑器' } },
-    { path: '/workflows/runs/:id', component: () => import('../views/WorkflowRunDetail.vue'), meta: { title: '执行详情' } },
     { path: '/notifications', component: () => import('../views/Notifications.vue') , meta: { perm: 'menu_notifications', title: '通知' } },
     { path: '/reports', component: Reports , meta: { perm: 'menu_reports', title: '报表' } },
     // 懒加载隔离 echarts 体积
@@ -75,8 +64,7 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const user = JSON.parse(localStorage.getItem('grt_user') || 'null')
-  if (to.path === '/login' || to.path.startsWith('/share/') || to.path.startsWith('/form/') || to.path.startsWith('/sf/')
-    || to.path.startsWith('/approve/')) return true
+  if (to.path === '/login' || to.path.startsWith('/share/') || to.path.startsWith('/sf/')) return true
   if (!localStorage.getItem('grt_token')) return '/login'
   // 多空间账号：每个浏览器会话进入主界面前先选公司（选择动作会写 sessionStorage 标记）
   if (to.path !== '/select-tenant' && (user?.tenants?.length || 0) > 1

@@ -2136,8 +2136,8 @@ def _guard_met(result: dict, guard: dict) -> bool:
 def push_template(template_id: int, trigger: str = "schedule", range_override: dict | None = None,
                   viewer_id: int | None = None) -> dict | None:
     """生成报表并推送（邮件 + 群机器人 Webhook），写 ReportRunLog。供调度器和手动调用。
-    range_override：工作流「推送报表」节点的口径覆盖（不落库，仅本次生成生效）。
-    viewer_id（P1 数据范围）：报表内容按该用户的 scope 过滤；默认模板主人，工作流节点传流程 owner。"""
+    range_override：调用方指定的口径覆盖（不落库，仅本次生成生效）。
+    viewer_id（P1 数据范围）：报表内容按该用户的 scope 过滤；默认模板主人。"""
     from .report_export import export_xlsx
 
     db = SessionLocal()

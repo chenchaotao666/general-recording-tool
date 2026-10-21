@@ -19,9 +19,6 @@ try:
         "SELECT id FROM meta_tables WHERE tenant_id != ? OR owner_id != ?", (ADMIN_TENANT, ADMIN_ID))]
     dyn_names = [r[0] for r in cur.execute(
         f"SELECT name FROM meta_tables WHERE id IN ({','.join('?'*len(dead_tables))})", dead_tables)] if dead_tables else []
-    dead_workflows = [r[0] for r in cur.execute("SELECT id FROM workflows WHERE user_id != ?", (ADMIN_ID,))]
-    dead_runs = [r[0] for r in cur.execute(
-        f"SELECT id FROM workflow_runs WHERE workflow_id IN ({','.join('?'*len(dead_workflows))})", dead_workflows)] if dead_workflows else []
     dead_groups = [r[0] for r in cur.execute(
         f"SELECT id FROM groups WHERE tenant_id IN ({','.join('?'*len(dead_tenants))})", dead_tenants)] if dead_tenants else []
     dead_rules = [r[0] for r in cur.execute(
@@ -35,13 +32,6 @@ try:
     def exec_(label, sql, params=()):
         cur.execute(sql, params)
         print(f"{label}: {cur.rowcount} rows")
-
-    # 1. 工作流：jobs/node_runs -> runs -> workflows
-    if dead_runs:
-        exec_("workflow_jobs", f"DELETE FROM workflow_jobs WHERE run_id IN ({in_list(dead_runs)})", dead_runs)
-        exec_("workflow_node_runs", f"DELETE FROM workflow_node_runs WHERE run_id IN ({in_list(dead_runs)})", dead_runs)
-        exec_("workflow_runs", f"DELETE FROM workflow_runs WHERE id IN ({in_list(dead_runs)})", dead_runs)
-    exec_("workflows", "DELETE FROM workflows WHERE user_id != ?", (ADMIN_ID,))
 
     # 2. 任务规则日志 -> 规则
     if dead_rules:

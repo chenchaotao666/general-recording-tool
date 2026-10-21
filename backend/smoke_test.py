@@ -946,28 +946,6 @@ r = client.post(f"/api/reports/{rep_id}/run")
 assert r.status_code == 200 and r.json()["blocks"][0]["value"] == 4, r.text  # 本周 4 条 PRECS
 client.delete(f"/api/reports/{rep_id}")
 
-# 创建工作流：chat 意图 → assist_workflow 生成定义 → 执行落库默认停用
-AssistantFakeProvider.responses = [
-    '{"reply": "流程设计好了", "action": {"type": "create_workflow", "description": "每天早上查超期客户并发站内通知"}}',
-    '{"name": "超期客户提醒", "description": "每日巡检", "trigger": {"type": "cron", "expr": "0 9 * * *"},'
-    ' "nodes": ['
-    '{"id": "q_1", "type": "query_records", "name": "查超期客户", "config": {"table_id": %d, "filters": {"logic": "AND", "rules": [{"field": "next_follow_date", "op": "older_than_days", "value": 30}]}}},'
-    '{"id": "send_1", "type": "send_message", "name": "发通知", "config": {"channel": "notify", "title": "超期提醒", "template": "有 {nodes.q_1.count} 位客户超期"}}],'
-    ' "edges": [{"from": "q_1", "to": "send_1"}], "notes": ""}' % tj,
-]
-r = client.post("/api/assistant/chat", json={"message": "帮我建一个每天早上提醒超期客户的流程", "context": {"table_id": tj}})
-card = r.json()["action_card"]
-assert card["type"] == "create_workflow" and card["payload"]["name"] == "超期客户提醒", r.text
-r = client.post("/api/assistant/execute", json={"type": "create_workflow", "payload": card["payload"]})
-wf_id = r.json()["workflow_id"]
-assert r.status_code == 200 and wf_id, r.text
-wf = client.get(f"/api/workflows/{wf_id}").json()
-assert wf["enabled"] is False and len(wf["nodes"]) == 2, wf
-r = client.post(f"/api/workflows/{wf_id}/run", json={"params": {}})
-assert r.status_code == 200 and r.json()["status"] == "success", r.text  # 停用也可手动执行
-client.delete(f"/api/workflows/{wf_id}")
-
-# 恢复后续测试使用的 LLM mock（智能判断条件）
 gw.get_default_provider = lambda db: JudgeFakeProvider()
 
 client.delete(f"/api/tables/{new_tid}")

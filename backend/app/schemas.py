@@ -116,7 +116,6 @@ class ProviderIn(BaseModel):
         return v
 
 
-
 class ReportTemplateIn(BaseModel):
     name: str
     description: str | None = None
@@ -147,13 +146,3 @@ class PrintExcelJsonIn(BaseModel):
     sort_by: str | None = None
     sort_order: str | None = None
     template_id: int | None = None   # 预览时从该模板已保存文件里带入图片（logo 等）
-
-
-class WorkflowIn(BaseModel):
-    name: str
-    description: str = ""
-    enabled: bool = False
-    trigger: dict = {}     # {type: schedule|record_created|record_updated|webhook|manual, ...}
-    nodes: list[dict] = [] # [{id, type, name?, config, on_error?}]
-    edges: list[dict] = [] # [{from, to, branch?}]
-    draft: bool = False    # 草稿：跳过完整性校验（前端体检有错误时用户选择"仍要保存草稿"）

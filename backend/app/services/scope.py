@@ -137,7 +137,7 @@ def resolve_owner_ids(db: Session, user: User, scope: str, tenant_id: int,
 
 def scope_rule(db: Session, mt: MetaTable, viewer: User | None,
                ctx=None, use_cache: bool = True) -> dict | None:
-    """当前用户对这张表的记录过滤规则；None=不过滤。供 dyn_engine / 报表 / 工作流统一调用。"""
+    """当前用户对这张表的记录过滤规则；None=不过滤。供 dyn_engine / 报表统一调用。"""
     if viewer is None or mt.tenant_id is None:
         return None
     if not entitlement.has_feature(db, mt.tenant_id, "feature_data_scope"):

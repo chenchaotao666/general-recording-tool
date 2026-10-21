@@ -28,7 +28,6 @@ _NEW_COLUMNS = [
     ("report_templates", "layout_json", "JSON"),
     ("report_templates", "source_json", "JSON"),
     ("report_templates", "datasets_json", "JSON"),
-    ("workflow_node_runs", "warnings_json", "JSON"),
     ("report_run_logs", "skipped", "BOOLEAN DEFAULT 0"),
     ("shared_links", "allow_interact", "INTEGER DEFAULT 0"),
     ("print_templates", "kind", "VARCHAR(16) DEFAULT 'excel'"),
@@ -39,7 +38,6 @@ _NEW_COLUMNS = [
     ("records", "owner_id", "INTEGER"),
     ("audit_logs", "tenant_id", "INTEGER"),
     ("groups", "tenant_id", "INTEGER"),
-    ("workflows", "tenant_id", "INTEGER"),
     ("report_templates", "tenant_id", "INTEGER"),
     # P1 数据范围+组织树：用户组织归属
     ("users", "department_id", "INTEGER"),
@@ -114,7 +112,6 @@ def _seed_rbac(conn) -> None:
         ("menu_import", "菜单-导入Excel", "侧边「导入 Excel」入口"),
         ("menu_notes", "菜单-记事本", "侧边「记事本」入口"),
         ("menu_reports", "菜单-报表", "侧边「报表」入口"),
-        ("menu_workflows", "菜单-工作流", "侧边「工作流」入口"),
         ("menu_notifications", "菜单-通知", "侧边「通知」入口"),
         ("menu_friends", "菜单-好友", "侧边「好友」入口"),
         ("menu_groups", "菜单-用户组", "侧边「用户组」入口"),
@@ -271,7 +268,6 @@ def _migrate_v2_tenants(conn) -> None:
     for table, owner_col in (
         ("meta_tables", "owner_id"),
         ("groups", "created_by"),
-        ("workflows", "user_id"),
         ("report_templates", "user_id"),
     ):
         conn.execute(text(
@@ -494,6 +490,51 @@ def _migrate_v8_workspace_data(conn) -> None:
 
 
 # (版本, 迁移函数)——已执行的版本记录在 schema_migrations，跳过
+def _migrate_v9_remove_workflows(conn) -> None:
+    """删除已下线模块的数据与入口；run_migrations 会先备份 SQLite。"""
+    import json
+
+    tables = set(inspect(conn).get_table_names())
+    for table in ("workflow_jobs", "workflow_node_runs", "workflow_runs", "workflows"):
+        if table in tables:
+            conn.execute(text(f"DROP TABLE {table}"))
+    if "permissions" in tables:
+        if "role_permissions" in tables:
+            conn.execute(text("DELETE FROM role_permissions WHERE permission_id IN "
+                              "(SELECT id FROM permissions WHERE code = 'menu_workflows')"))
+        conn.execute(text("DELETE FROM permissions WHERE code = 'menu_workflows'"))
+    if "app_settings" in tables:
+        conn.execute(text("DELETE FROM app_settings WHERE key = 'mcp_tokens'"))
+    if "notifications" in tables:
+        conn.execute(text("DELETE FROM notifications WHERE link LIKE '/workflows/%' "
+                          "OR link LIKE '/approve/%'"))
+
+    def clean(value):
+        if isinstance(value, list):
+            return [clean(item) for item in value if not (
+                isinstance(item, dict) and (
+                    item.get("type") == "todos" or
+                    (item.get("type") == "menu" and
+                     (item.get("config") or {}).get("path") == "/workflows")
+                )
+            )]
+        if isinstance(value, dict):
+            return {key: clean(item) for key, item in value.items()}
+        return value
+
+    for table in ("home_layouts", "home_default_layout"):
+        if table not in tables:
+            continue
+        for row_id, raw in conn.execute(text(f"SELECT id, layout_json FROM {table}")).all():
+            if not raw:
+                continue
+            layout = json.loads(raw) if isinstance(raw, str) else raw
+            updated = clean(layout)
+            if updated != layout:
+                conn.execute(text(f"UPDATE {table} SET layout_json = :layout WHERE id = :id"),
+                             {"layout": json.dumps(updated, ensure_ascii=False), "id": row_id})
+
+
 _MIGRATIONS = [
     ("v2_tenants", _migrate_v2_tenants),
     ("v3_scope_org", _migrate_v3_scope_org),
@@ -503,6 +544,7 @@ _MIGRATIONS = [
     ("v6_drop_vip_role", _migrate_v6_drop_vip_role),
     ("v7_tenant_ids", _migrate_v7_tenant_ids),
     ("v8_workspace_data", _migrate_v8_workspace_data),
+    ("v9_remove_workflows", _migrate_v9_remove_workflows),
 ]
 
 

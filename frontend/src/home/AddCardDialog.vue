@@ -63,11 +63,11 @@
           <el-option v-for="b in reportBlocks" :key="b.id" :label="`${b.title || '未命名'}（${b.type}）`" :value="b.id" />
         </el-select>
       </el-form-item>
-      <el-form-item v-if="['notifications', 'todos', 'table-list'].includes(type)" label="条数">
+      <el-form-item v-if="['notifications', 'table-list'].includes(type)" label="条数">
         <el-input-number v-model="cfg.limit" :min="1" :max="20" />
       </el-form-item>
       <!-- 数据类卡片（菜单卡是纯入口，无数据可刷） -->
-      <el-form-item v-if="['table', 'table-list', 'notifications', 'todos', 'report'].includes(type)" label="自动刷新">
+      <el-form-item v-if="['table', 'table-list', 'notifications', 'report'].includes(type)" label="自动刷新">
         <el-select v-model="cfg.refresh" style="width: 160px">
           <el-option label="关闭" :value="0" />
           <el-option label="每 30 秒" :value="30" />

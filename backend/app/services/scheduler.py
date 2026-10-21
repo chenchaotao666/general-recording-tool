@@ -1,10 +1,9 @@
-"""APScheduler 调度器：进程内后台运行，按配置注册周期任务（报表推送/工作流定时触发），变更时重载。"""
+"""APScheduler 调度器：进程内后台运行，按配置注册周期任务（报表推送定时触发），变更时重载。"""
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from ..database import SessionLocal
-from ..models import Workflow
 
 scheduler = BackgroundScheduler()
 
@@ -27,15 +26,6 @@ def trigger_of(schedule: dict):
     return None
 
 
-def _register_workflow_poller() -> None:
-    """工作流任务队列轮询（5s）：延迟/重试/审批恢复/异步触发的统一出口。"""
-    from .workflow.engine import process_due_jobs
-    scheduler.add_job(
-        process_due_jobs, IntervalTrigger(seconds=5),
-        id="workflow_poller", replace_existing=True, max_instances=1,
-    )
-
-
 def _register_billing_jobs() -> None:
     """计费固定任务（每日）：订阅巡检/配额宽限提醒/用量校准。remove_all_jobs 会清掉，须随重载补回。"""
     from .billing_jobs import calibrate_usage, remind_quota_grace, sweep_subscriptions
@@ -48,7 +38,7 @@ def _register_billing_jobs() -> None:
 
 
 def reload_jobs() -> None:
-    """全量重载任务（报表模板/工作流增删改后调用）。单进程部署下足够简单可靠。"""
+    """全量重载任务（报表模板增删改后调用）。单进程部署下足够简单可靠。"""
     scheduler.remove_all_jobs()
     db = SessionLocal()
     try:
@@ -63,25 +53,11 @@ def reload_jobs() -> None:
                     push_template, trigger, args=[tpl.id, "schedule"],
                     id=f"report_{tpl.id}", replace_existing=True, misfire_grace_time=300,
                 )
-        # 工作流定时触发（trigger_json 格式：{type: interval|cron, ...}）
-        from .workflow.engine import run_scheduled
-        workflows = db.query(Workflow).filter_by(enabled=True).all()
-        for wf in workflows:
-            t = wf.trigger_json or {}
-            if t.get("type") not in ("interval", "cron"):
-                continue
-            trigger = trigger_of(t)
-            if trigger is not None:
-                scheduler.add_job(
-                    run_scheduled, trigger, args=[wf.id],
-                    id=f"wf_{wf.id}", replace_existing=True, misfire_grace_time=300,
-                )
         # 智能表自动化：定时重复触发（设计文档 §11.4）
         from .automation_engine import register_jobs
         register_jobs(scheduler, db)
     finally:
         db.close()
-    _register_workflow_poller()   # remove_all_jobs 会清掉 poller，每次重载后补回
     _register_billing_jobs()      # 计费固定任务同理补回
 
 

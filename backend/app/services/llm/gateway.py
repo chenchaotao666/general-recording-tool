@@ -936,38 +936,6 @@ def align_assistant_action(db: Session, user, action: dict | None, notes: list) 
             "warnings": notes,
         }
 
-    if t == "run_workflow":
-        from ...models import Workflow
-        try:
-            wf = db.get(Workflow, int(action.get("workflow_id") or 0))
-        except (TypeError, ValueError):
-            wf = None
-        if wf is None or wf.user_id != user.id:
-            notes.append("工作流不存在或不属于你，已忽略执行工作流动作")
-            return None
-        params = action.get("params") if isinstance(action.get("params"), dict) else {}
-        status_note = "" if wf.enabled else "（当前停用，仍可手动执行一次）"
-        return {
-            "type": "run_workflow", "summary": f"执行工作流「{wf.name}」{status_note}",
-            "payload": {"workflow_id": wf.id, "workflow_name": wf.name, "params": params},
-            "warnings": notes,
-        }
-
-    if t == "create_workflow":
-        desc = str(action.get("description") or "").strip()
-        if not desc:
-            notes.append("缺少流程需求描述，已忽略")
-            return None
-        from ..workflow.ai_assist import assist_workflow
-        definition = assist_workflow(db, user, desc)   # 生成 + 字段对齐 + 定义校验（含重试）
-        if definition.get("notes"):
-            notes.append(definition["notes"])
-        return {
-            "type": "create_workflow",
-            "summary": f"创建工作流「{definition['name']}」（{len(definition['nodes'])} 个节点）",
-            "payload": definition,
-            "warnings": notes,
-        }
 
     if t == "query":
         mt, fields = table_ctx(action.get("table_id"))
@@ -1067,11 +1035,6 @@ def assist_chat(db: Session, user, message: str, history: list | None, context: 
 
     provider = get_default_provider(db)
     tables = _accessible_tables(db, user)
-    from ...models import Workflow
-    wf_briefs = [
-        {"id": w.id, "name": w.name, "description": w.description, "enabled": w.enabled}
-        for w in db.query(Workflow).filter(Workflow.user_id == user.id).order_by(Workflow.id.desc()).limit(30).all()
-    ]
     # 前 15 张表带字段简报（模型才能在任意页面正确填表/问答）；更多表只给 id+label
     table_briefs = []
     for t in tables[:15]:
@@ -1101,7 +1064,6 @@ def assist_chat(db: Session, user, message: str, history: list | None, context: 
     from ...services.tenancy import default_tenant_id
     from ...utils.rbac import has_perm, tenant_role
     prompt = build_assistant_prompt(message, history, table_briefs, current, datetime.now().strftime("%Y-%m-%d"),
-                                    workflows=wf_briefs,
                                     can_physical_table=has_perm(db, tenant_role(db, user, (tid := default_tenant_id(db, user))), "create_physical_table", tid))
     if img_bytes:
         prompt += (f"\n\n注意：用户随消息附上了 {len(img_bytes)} 张图片，请结合图片内容理解需求"

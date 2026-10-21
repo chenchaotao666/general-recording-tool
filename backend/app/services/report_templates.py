@@ -1,6 +1,6 @@
 """内置报表模板市场：场景报表一键安装。
 
-与工作流模板市场（workflow/templates.py）同一模式：
+内置报表模板市场：
 模板 = 所需表结构 + 报表定义（数据集/区块，table 引用用 "$表key" 占位）。
 安装：按 label 复用已有表或自动建表 → 占位符重映射 → validate_template 校验 →
 落库（默认停用推送）。可选：为新建的表生成示例数据，装完即可看到真实图表。
@@ -12,7 +12,7 @@ from ..models import MetaTable, ReportTemplate, User
 from ..schemas import FieldIn, ReportTemplateIn, TableCreate
 from . import meta_service
 from .report_engine import validate_template
-from .workflow.templates import _remap, _seed_demo_data
+from .template_data import _remap, _seed_demo_data
 
 # 区块公共字段的简写：filters 恒 AND 空条件组
 _F = {"logic": "AND", "rules": []}

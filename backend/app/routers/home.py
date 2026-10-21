@@ -11,15 +11,14 @@ from ..utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/home-layout", tags=["home"])
 
-# 系统默认布局：待办 + 通知 + 数据表三块，新用户开箱即用（栅格 36 列 × 36px 行）
+# 系统默认布局：通知 + 数据表，新用户开箱即用（栅格 36 列 × 36px 行）
 DEFAULT_LAYOUT = {
     "version": 1,
     "grid": {"cols": 36, "row": 36},
     "sections": [
         {
-            "id": "sec_todo", "title": "待办中心", "x": 0, "y": 0, "w": 21, "h": 8,
+            "id": "sec_notifications", "title": "通知中心", "x": 0, "y": 0, "w": 21, "h": 8,
             "cards": [
-                {"id": "card_todos", "type": "todos", "config": {"limit": 5}},
                 {"id": "card_notifications", "type": "notifications", "config": {"limit": 5}},
             ],
         },

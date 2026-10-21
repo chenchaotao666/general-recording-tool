@@ -2,14 +2,13 @@
 // 设计见 docs/首页工作台设计.md
 import { markRaw } from 'vue'
 import {
-  AlarmClock, Avatar, Bell, Connection, DataAnalysis, Grid, Key, List, Menu, Notebook, Setting, Upload, User, UserFilled, Wallet,
+  Avatar, Bell, DataAnalysis, Grid, Key, List, Menu, Notebook, Setting, Upload, User, UserFilled, Wallet,
 } from '@element-plus/icons-vue'
 
 import TableCard from './cards/TableCard.vue'
 import TableListCard from './cards/TableListCard.vue'
 import MenuCard from './cards/MenuCard.vue'
 import NotificationsCard from './cards/NotificationsCard.vue'
-import TodosCard from './cards/TodosCard.vue'
 import ReportCard from './cards/ReportCard.vue'
 
 const _types = new Map()
@@ -32,7 +31,6 @@ export const MENU_ENTRIES = [
   { path: '/import', title: '导入 Excel', icon: Upload, desc: '从 Excel 建表' },
   { path: '/notes', title: '记事本', icon: Notebook, desc: '笔记与文档' },
   { path: '/reports', title: '报表', icon: DataAnalysis, desc: '报表模板与查看' },
-  { path: '/workflows', title: '工作流', icon: Connection, desc: '自动化流程' },
   { path: '/notifications', title: '通知', icon: Bell, desc: '站内通知' },
   { path: '/friends', title: '好友', icon: User, desc: '好友与分享' },
   { path: '/system/groups', title: '用户组', icon: UserFilled, desc: '用户组管理' },
@@ -64,7 +62,7 @@ registerCardType({
   component: TableListCard, defaultConfig: { limit: 6 },
 })
 registerCardType({
-  type: 'menu', name: '菜单功能', desc: '系统功能入口（导入/报表/工作流…）',
+  type: 'menu', name: '菜单功能', desc: '系统功能入口（导入/报表…）',
   icon: Menu, accent: { bg: '#e6f7f6', fg: '#13c2c2' },
   component: MenuCard, needConfig: true,
 })
@@ -72,11 +70,6 @@ registerCardType({
   type: 'notifications', name: '通知', desc: '最近站内通知与未读数',
   icon: Bell, accent: { bg: '#fdeaea', fg: '#f56c6c' },
   component: NotificationsCard, defaultConfig: { limit: 5 },
-})
-registerCardType({
-  type: 'todos', name: '待办', desc: '我的待审批事项',
-  icon: AlarmClock, accent: { bg: '#fdf3e3', fg: '#e6a23c' },
-  component: TodosCard, defaultConfig: { limit: 5 },
 })
 registerCardType({
   type: 'report', name: '报表', desc: '报表区块迷你展示（统计卡/图表等）',

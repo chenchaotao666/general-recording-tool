@@ -492,19 +492,12 @@ def get_record(db: Session, table_id: int, record_id: int, viewer=None) -> dict:
     return record
 
 
-def _fire_workflow_hook(kind: str, table_id: int, record: dict, old_record: dict | None = None) -> None:
-    """记录变更触发工作流。只投递不执行，失败绝不影响写入主流程。"""
-    try:
-        from .workflow import triggers
-        triggers.fire_record_event(table_id, kind, record, old_record)
-    except Exception:
-        pass
 
 
 def create_record(db: Session, table_id: int, data: dict, user: str | None = None,
                   owner_id: int | None = None) -> dict:
     mt, fields = load_meta(db, table_id)
-    # 引擎层单点闸（覆盖页面/AI/工作流/公开表单/MCP 全部写入路径）：
+    # 引擎层单点闸（覆盖页面/AI/公开表单 全部写入路径）：
     # 只读闸（订阅到期）+ 配额闸（max_rows，宽限期模型）；租户信息从 meta 自取，不感知用户
     from . import entitlement
     entitlement.assert_tenant_writable(db, mt.tenant_id)
@@ -516,7 +509,6 @@ def create_record(db: Session, table_id: int, data: dict, user: str | None = Non
         entitlement.bump_usage(db, mt.tenant_id, "row_count", 1)
         db.commit()
         _sync_images(db, table_id, record["id"], fields, {}, record)
-        _fire_workflow_hook("record_created", table_id, record)
         return record
     _, fields, table = load_business(db, table_id)
     cleaned, errors = coerce_payload(fields, data)
@@ -542,7 +534,6 @@ def create_record(db: Session, table_id: int, data: dict, user: str | None = Non
     log_audit(db, "create", table_id, record["id"], after=record, user=user, tenant_id=mt.tenant_id)
     db.commit()
     _sync_images(db, table_id, record["id"], fields, {}, record)
-    _fire_workflow_hook("record_created", table_id, record)
     return record
 
 
@@ -558,7 +549,6 @@ def update_record(db: Session, table_id: int, record_id: int, data: dict, user: 
         scope_mod.assert_record_writable(db, mt, viewer, before.get("owner_id"))
         record = json_store.update_record(db, mt, fields, record_id, data, user=user)
         _sync_images(db, table_id, record_id, fields, before, record)
-        _fire_workflow_hook("record_updated", table_id, record)
         return record
     _, fields, table = load_business(db, table_id)
     before = get_record(db, table_id, record_id)
@@ -577,7 +567,6 @@ def update_record(db: Session, table_id: int, record_id: int, data: dict, user: 
               tenant_id=mt.tenant_id)
     db.commit()
     _sync_images(db, table_id, record_id, fields, before, after)
-    _fire_workflow_hook("record_updated", table_id, after, before)
     return after
 
 
@@ -620,7 +609,7 @@ def delete_record(db: Session, table_id: int, record_id: int, user: str | None =
 def transfer_records(db: Session, table_id: int, record_ids: list[int], new_owner_id: int,
                      user: str | None = None) -> int:
     """记录转移（P1）：批量改 owner_id。权限校验在 router 层（表主/租户 admin）。
-    单行审计（不逐条刷屏）；owner 变更不是内容变更，不触发工作流 hook。"""
+    单行审计（不逐条刷屏）；owner 变更不是内容变更。"""
     if not record_ids:
         return 0
     mt, fields = load_meta(db, table_id)

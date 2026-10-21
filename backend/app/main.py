@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import assistant, audit, auth, billing, departments, dyn, excel, friends, groups, home, images, mcp, members, mindmaps, notes, notify, platform, print_templates, rbac, reports, scopes, settings as settings_router, share_links, shares, smart_ai, smart_automation, smart_docs, smart_dashboard, smart_forms, smart_perms, smart_records, smart_views, tables, tenants, users, vision, whiteboards, workflows
+from .routers import assistant, audit, auth, billing, departments, dyn, excel, friends, groups, home, images, members, mindmaps, notes, notify, platform, print_templates, rbac, reports, scopes, settings as settings_router, share_links, shares, smart_ai, smart_automation, smart_docs, smart_dashboard, smart_forms, smart_perms, smart_records, smart_views, tables, tenants, users, vision, whiteboards
 from .services import scheduler
 from .routers import enterprises
 from .services.migrate import run_migrations
@@ -72,8 +72,6 @@ app.add_middleware(
 
 app.include_router(auth.router)  # 登录接口本身不鉴权
 app.include_router(share_links.router)  # 管理端点自带 get_current_user；/share/{token} 公开免登录
-app.include_router(workflows.public_router)  # webhook 触发：URL 即凭证，免登录
-app.include_router(mcp.public_router)        # MCP 端点：URL 路径 token 即凭证，免登录
 app.include_router(smart_forms.public_router)  # 智能表公开表单：分享链接 token 即凭证，免登录
 
 # 其余所有接口都需要登录（支持 Authorization 头或 ?token= 查询参数，后者供导出下载用）
@@ -86,9 +84,6 @@ app.include_router(excel.router, dependencies=protected)
 app.include_router(tables.router, dependencies=protected)
 app.include_router(dyn.router, dependencies=protected)
 app.include_router(vision.router, dependencies=protected)
-app.include_router(workflows.router, dependencies=protected)
-app.include_router(workflows.templates_router, dependencies=protected)
-app.include_router(mcp.router, dependencies=protected)
 app.include_router(reports.router, dependencies=protected)
 app.include_router(reports.templates_router, dependencies=protected)
 app.include_router(print_templates.router, dependencies=protected)

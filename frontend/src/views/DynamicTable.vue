@@ -825,7 +825,7 @@ async function load() {
   }
 }
 
-// 后台写入（工作流定时/webhook、其他同事编辑）感知：页面可见时每 15s 探测一次；
+// 后台写入（其他同事编辑）感知：页面可见时每 15s 探测一次；
 // 发现变化不直接换位（阅读中行位置会跳），改为顶部轻提示条，由用户决定何时刷新
 let pollTimer = null
 function startPoll() {

@@ -1,4 +1,4 @@
-"""隔离 SQLite 验证报表/工作流/记事本/画板按工作空间（个人空间/企业）隔离，不连接工作数据库。"""
+"""隔离 SQLite 验证报表/记事本/画板按工作空间（个人空间/企业）隔离，不连接工作数据库。"""
 import unittest
 
 from fastapi import FastAPI
@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.models import MetaTable, ReportTemplate
-from app.routers import auth, enterprises, notes, reports, whiteboards, workflows
+from app.routers import auth, enterprises, notes, reports, whiteboards
 from app.services import entitlement
 from app.services.migrate import _migrate_v8_workspace_data, _seed_plans, _seed_rbac
 
@@ -28,7 +28,7 @@ class WorkspaceIsolationTests(unittest.TestCase):
                 yield db
 
         app = FastAPI()
-        for module in [auth, enterprises, notes, whiteboards, workflows, reports]:
+        for module in [auth, enterprises, notes, whiteboards, reports]:
             app.include_router(module.router)
         app.dependency_overrides[get_db] = database
         self.client = TestClient(app)
@@ -86,23 +86,6 @@ class WorkspaceIsolationTests(unittest.TestCase):
         mine = self.client.get('/api/whiteboards/tree', headers=self.headers()).json()['whiteboards']
         self.assertEqual(len(mine), 1)
 
-    def test_workflows_scoped_per_workspace(self):
-        r = self.client.post('/api/workflows', headers=self.headers(),
-                             json={'name': 'personal wf', 'draft': True, 'trigger': {'type': 'manual'},
-                                   'nodes': [], 'edges': []})
-        self.assertEqual(r.status_code, 200, r.text)
-        wf_id = r.json()['id']
-        h = self.headers(self.enterprise)
-        self.assertEqual(self.client.get('/api/workflows', headers=h).json(), [])
-        self.assertEqual(self.client.get(f'/api/workflows/{wf_id}', headers=h).status_code, 404)
-        self.assertEqual(self.client.post(f'/api/workflows/{wf_id}/toggle', headers=h).status_code, 404)
-        r2 = self.client.post('/api/workflows', headers=h,
-                              json={'name': 'corp wf', 'draft': True, 'trigger': {'type': 'manual'},
-                                    'nodes': [], 'edges': []})
-        self.assertEqual(r2.status_code, 200, r2.text)
-        self.assertEqual([w['name'] for w in self.client.get('/api/workflows', headers=self.headers()).json()],
-                         ['personal wf'])
-        self.assertEqual([w['name'] for w in self.client.get('/api/workflows', headers=h).json()], ['corp wf'])
 
     def test_reports_scoped_per_workspace(self):
         uid = self.owner['user']['id']

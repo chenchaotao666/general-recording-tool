@@ -1,7 +1,7 @@
 <template>
   <!-- 裸页（不带侧边菜单壳）：登录、登录后的选择公司、公开分享/表单/审批 -->
   <router-view v-if="$route.path === '/login' || $route.path === '/select-tenant'
-    || $route.path.startsWith('/share/') || $route.path.startsWith('/form/') || $route.path.startsWith('/approve/') || $route.path.startsWith('/sf/')" />
+    || $route.path.startsWith('/share/') || $route.path.startsWith('/sf/')" />
   <el-container v-else class="layout" :class="{ focus: focusMode }">
     <el-aside :width="navCollapsed ? '82px' : '180px'" class="aside" :class="{ 'nav-compact': navCollapsed }">
       <router-link to="/home" class="nav-brand" title="万通AI助手" aria-label="万通AI助手首页">
@@ -34,9 +34,6 @@
           </el-menu-item>
           <el-menu-item v-if="hasMenu('menu_reports')" index="/reports">
             <el-icon><DataAnalysis /></el-icon><span>报表</span>
-          </el-menu-item>
-          <el-menu-item v-if="hasMenu('menu_workflows')" index="/workflows">
-            <el-icon><Connection /></el-icon><span>工作流</span>
           </el-menu-item>
         </el-menu-item-group>
         <el-menu-item-group v-if="hasMenu('menu_notifications') || hasMenu('menu_friends') || hasMenu('menu_groups')">
@@ -162,7 +159,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElLoading, ElMessage } from 'element-plus'
-import { Bell, Brush, Collection, Connection, DataAnalysis, Expand, Fold, FullScreen, Grid, HomeFilled, Notebook, OfficeBuilding, Postcard, PriceTag, ScaleToOriginal, Setting, Share, Tickets, Upload, User, Wallet } from '@element-plus/icons-vue'
+import { Bell, Brush, Collection, DataAnalysis, Expand, Fold, FullScreen, Grid, HomeFilled, Notebook, OfficeBuilding, Postcard, PriceTag, ScaleToOriginal, Setting, Share, Tickets, Upload, User, Wallet } from '@element-plus/icons-vue'
 import { changePassword as changePasswordApi, getCurrentTenant, listMyTenants, switchTenant, unreadCount } from './api'
 import AssistantPanel from './components/AssistantPanel.vue'
 import EnterpriseDialog from './components/EnterpriseDialog.vue'
@@ -173,7 +170,7 @@ const unread = ref(0)
 // 侧边导航折叠状态（记住选择）
 const navCollapsed = ref(localStorage.getItem('grt_nav_collapsed') !== '0')
 const activeNavPath = computed(() => {
-  const sections = ['/system/groups', '/system/users', '/platform/tenants', '/platform/plans', '/home', '/tables', '/smart', '/import', '/notes', '/whiteboard', '/mindmaps', '/reports', '/workflows', '/notifications', '/friends', '/billing', '/settings']
+  const sections = ['/system/groups', '/system/users', '/platform/tenants', '/platform/plans', '/home', '/tables', '/smart', '/import', '/notes', '/whiteboard', '/mindmaps', '/reports', '/notifications', '/friends', '/billing', '/settings']
   return sections.find(path => route.path === path || route.path.startsWith(`${path}/`)) || route.path
 })
 function toggleNav() {

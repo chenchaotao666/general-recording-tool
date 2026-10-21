@@ -483,25 +483,19 @@ _ASSISTANT_OUTPUT_EXAMPLE = {
 
 def build_assistant_prompt(message: str, history: list[dict], tables: list[dict],
                            current_table: dict | None, today: str,
-                           workflows: list[dict] | None = None,
                            can_physical_table: bool = False) -> str:
     """AI 助手对话提示词。tables: [{id, label, fields?: [{field_name,label,data_type,options}]}]（前 N 张表带字段简报）；
-    current_table: {id, label} 用户当前正在查看的表；workflows: [{id, name, description, enabled}] 用户的工作流；
+    current_table: {id, label} 用户当前正在查看的表；
     can_physical_table: 用户是否有「创建独立表」权限（决定建表动作能否用 physical 存储）。"""
     lines = [
         f"今天日期：{today}",
         "",
         f"用户可访问的数据表（含字段清单）：\n{json.dumps(tables, ensure_ascii=False, indent=2)}",
         "",
-        "注意：上面的数据表清单和工作流清单是本次请求实时查询的**最新状态**，"
-        "历史对话中出现的表清单/工作流清单可能已经过期（表可能新建、改名或删除），一律以最新清单为准；"
+        "注意：上面的数据表清单是本次请求实时查询的**最新状态**，"
+        "历史对话中出现的表清单可能已经过期（表可能新建、改名或删除），一律以最新清单为准；"
         "用户问「有哪些表/某张表是否存在」时，直接查最新清单回答，不要引用历史消息里的旧清单。",
     ]
-    if workflows:
-        wf_lines = "、".join(
-            f"#{w['id']}「{w['name']}」{'（停用）' if not w.get('enabled') else ''}" for w in workflows
-        )
-        lines += ["", f"用户已配置的工作流（可执行）：{wf_lines}"]
     if current_table:
         lines += [
             "",
@@ -533,7 +527,7 @@ def build_assistant_prompt(message: str, history: list[dict], tables: list[dict]
         "系统数据答不了的如实说明，不要编造数字",
         "7. reply 用自然的中文，像日常聊天一样，可以有适当的结构和细节",
         "",
-        "你需要输出 JSON：{\"reply\": \"给用户看的回复文字\", \"action\": 动作对象或 null}。action 有九种：",
+        "你需要输出 JSON：{\"reply\": \"给用户看的回复文字\", \"action\": 动作对象或 null}。action 有七种：",
         "0. 联网搜索 web_search（优先考虑的只读动作）：{\"type\": \"web_search\", \"queries\": [\"搜索词1\", \"搜索词2\"]}。"
         "问题涉及实时/公开信息而你不确定时使用，queries 1~3 个、每个是一句精炼的搜索词；"
         "执行后你会拿到搜索结果，再基于结果组织最终回答",
@@ -568,15 +562,7 @@ def build_assistant_prompt(message: str, history: list[dict], tables: list[dict]
         "5. 创建报表 create_report：{\"type\": \"create_report\", \"table_id\": 表id, \"description\": \"报表需求描述\"}。"
         "用户想基于某张表做报表/周报/月报/看板时使用；description 写清要统计什么（时间口径、指标、分组维度），"
         "系统会自动生成报表配置并让用户预览确认",
-        "6. 创建工作流 create_workflow：{\"type\": \"create_workflow\", \"description\": \"流程需求描述\"}。"
-        "用户想创建自动化流程时使用：定时提醒/到期通知/监控预警/数据同步/新增记录后自动处理等。"
-        "description 写清触发方式（每天 9 点/记录新增时/webhook）、处理步骤、通知方式与接收人；"
-        "系统会自动生成流程定义并让用户预览确认（创建后默认停用，用户在工作流编辑器里启用）",
-        "7. 执行工作流 run_workflow：{\"type\": \"run_workflow\", \"workflow_id\": 工作流id, \"params\": {}}。"
-        "用户让你运行某个已配置好的工作流/自动化流程时使用（如「帮我跑一下每日汇总」「执行 XX 流程」）；"
-        "只能用上方工作流清单里的 id；params 是手动触发参数（流程里可用 {trigger.params.xxx} 引用），一般给空对象；"
-        "用户没说清跑哪个时在 reply 里追问并列出可选工作流",
-        "8. 修改表结构 alter_table：{\"type\": \"alter_table\", \"table_id\": 表id, \"ops\": [...]}。"
+        "6. 修改表结构 alter_table：{\"type\": \"alter_table\", \"table_id\": 表id, \"ops\": [...]}。"
         "用户想给现有表加字段/删字段/改字段（改中文名、改类型、改枚举选项、改字段名）时使用。ops 每项是："
         "加字段 {\"op\": \"add_field\", \"field\": {同 create_table 的字段定义}}；"
         "删字段 {\"op\": \"delete_field\", \"field_name\": \"字段名\"}；"
