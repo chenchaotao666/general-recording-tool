@@ -130,8 +130,13 @@ async def upload_file(table_id: int, file: UploadFile, db: Session = Depends(get
         raise HTTPException(400, str(e))
 
 
+@router.get("/tables/{table_id}/files/recent")
+def recent_files(table_id: int, access: TableAccess = Depends(require_table("view"))):
+    return smart_files.recent(table_id, access.ctx.user.id)
+
+
 @router.get("/files/{file_id}")
-def download_file(file_id: str, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+def download_file(file_id: str, preview: bool = False, db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
     try:
         path, meta = smart_files.locate(file_id)
     except smart_files.SmartFileError as e:
@@ -140,4 +145,9 @@ def download_file(file_id: str, db: Session = Depends(get_db), ctx: Context = De
         if not meta.get("table_id"):
             raise HTTPException(404, "文件不存在")
         get_table_access(db, int(meta["table_id"]), ctx.user, ctx)
-    return FileResponse(path, filename=meta["filename"])
+    preview_types = {'.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg',
+                     '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
+                     '.txt': 'text/plain'}
+    media_type = preview_types.get(path.suffix.lower()) if preview else None
+    return FileResponse(path, filename=meta["filename"], media_type=media_type,
+                        content_disposition_type='inline' if media_type else 'attachment')

@@ -26,6 +26,13 @@ export function installSmartTooltips() {
   let timer = null
   let observer = null
   const id = 'smart-native-replacement-tip'
+  function shouldShow(element) {
+    if (!element?.dataset.smartTip) return false
+    const selector = element.dataset.smartTipOverflow
+    if (!selector) return true
+    const text = element.querySelector(selector)
+    return !!text && (text.scrollWidth > text.clientWidth || text.scrollHeight > text.clientHeight)
+  }
 
   function hide() {
     clearTimeout(timer)
@@ -41,7 +48,7 @@ export function installSmartTooltips() {
     anchor = null
   }
   function place() {
-    if (!anchor?.isConnected || !anchor.dataset.smartTip) { hide(); return }
+    if (!anchor?.isConnected || !shouldShow(anchor)) { hide(); return }
     if (tip.textContent !== anchor.dataset.smartTip) tip.textContent = anchor.dataset.smartTip
     const rect = anchor.getBoundingClientRect()
     const size = tip.getBoundingClientRect()
@@ -53,7 +60,7 @@ export function installSmartTooltips() {
   function show(element) {
     if (element === anchor) return
     hide()
-    if (!element?.dataset.smartTip || element.closest('.vxe-header--column, .sel-anchor .chev')) return
+    if (!shouldShow(element) || element.closest('.vxe-header--column, .sel-anchor .chev')) return
     anchor = element
     timer = setTimeout(() => {
       if (!anchor?.isConnected) { hide(); return }

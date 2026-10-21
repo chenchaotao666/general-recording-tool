@@ -3,6 +3,7 @@
        flatten 行序列：分组标题行 / 数据行（树形缩进）。添加一行入口在统计行左侧「＋」。
        视图配置（显隐/列序/列宽/冻结/行高/填色）纯前端应用，数据层不动（设计文档 §1.3 原则 1）。 -->
   <div class="smart-grid" :class="{ 'is-empty': !gridRows.length }" :style="{ maxWidth: `${gridContentWidth}px` }" @contextmenu.prevent @mouseover="onRowOver" @mouseleave="scheduleExpandHide" @wheel.capture="onGridWheel">
+    <textarea ref="typingBuffer" class="grid-typing-buffer" tabindex="-1" aria-label="输入以替换选中单元格" @input="onSelectedInput" @compositionstart="typingComposing = true" @compositionend="finishSelectedComposition" />
     <!-- :key="t_colSig"：列序/列集变化时整表重挂载。vxe 列注册只在挂载时按 DOM 位次进行，
          增量重挂载会与静态列/编组竞态导致顺序错乱，整表重挂载保证按 headerTree 顺序干净注册 -->
     <vxe-table
@@ -10,7 +11,7 @@
       :key="`t_${colSig}`"
       class="smart-vxe"
       :class="{ 'rh-tall': rowHeightPx > 36 }"
-      :style="{ '--rh-lines': rowLines, '--header-row-height': `${headerRowHeight}px` }"
+      :style="{ '--rh-lines': rowLines, '--header-row-height': `${headerRowHeight}px`, '--image-cell-height': `${rowHeightPx - 1}px` }"
       :data="gridRows"
       :max-height="height"
       border
@@ -58,7 +59,7 @@
           <template #header>
             <span class="colgroup-title">
               <span class="cg-name">{{ node.name }}</span>
-              <span class="st-dd cg-caret" aria-label="编组操作" @click.stop="(e) => $emit('group-menu', node.group, e)" @dblclick.stop />
+              <CellDropdown class="cg-caret" label="编组操作" @click="(e) => $emit('group-menu', node.group, e)" />
             </span>
           </template>
           <vxe-column v-for="f in node.fields" :key="f.field_name" :field="f.field_name"
@@ -111,12 +112,19 @@ import { Teleport, computed, h, nextTick, onActivated, onDeactivated, onMounted,
 import SmartCell from './SmartCell.vue'
 import CellContextMenu from './CellContextMenu.vue'
 import SmartCellEditor from './SmartCellEditor.vue'
+import ProgressCell from './ProgressCell.vue'
 import SelectCellPanel from './SelectCellPanel.vue'
+import ImageCellPanel from './ImageCellPanel.vue'
+import FileCellPanel from './FileCellPanel.vue'
+import LinkCellPanel from './LinkCellPanel.vue'
+import RelationCellPanel from './RelationCellPanel.vue'
+import CellDropdown from './CellDropdown.vue'
 import FieldHeader from './FieldHeader.vue'
 import AiRunButton from '../ai/AiRunButton.vue'
 import { isDisplayCell, visibleCellRect } from '../../../smart/utils/vxeCell.js'
 import StIcon from '../icons/StIcon.vue'
 import { BLOCKED_CONFIGURABLE, BLOCKED_EDIT_TEXT, regOf, sortDirectionLabels, STAT_LABELS, formatStatValue, optionColor } from '../../../smart/registry/fieldRegistry.js'
+import { nextCell } from '../../../smart/utils/cellNavigation.js'
 import { evalFillRules, evalRowFill, headerFillColor } from '../../../smart/utils/format.js'
 import { buildColumnLayout } from '../../../smart/utils/columnLayout.js'
 import { currentFindKey, findCellKey, findMatchKeys, orderFindMatches } from '../../../smart/utils/findReplace.js'
@@ -544,16 +552,17 @@ function cellClass({ row, column }) {
     cls.push('cell-indent')
   }
   // 单击选中态（企微式：边框与单元格同大，与编辑态边框同款）。
+  if (!row.__rowType && ['image', 'url', 'relation'].includes(typeOf(props.fields.find(f => f.field_name === column.field)))) cls.push('cell-image')
   // 单选/多选用独立类名：选中框由锚点自绘（标签换行展开时随内容增高），不走 td inset 阴影
   if (selectedCell.value && row.__key === selectedCell.value.key && column.field === selectedCell.value.fieldName) {
     const f = props.fields.find(x => x.field_name === column.field)
-    cls.push(['singleSelect', 'multiSelect'].includes(typeOf(f)) ? 'cell-selected-enum' : 'cell-selected')
+    cls.push(['singleSelect', 'multiSelect', 'file', 'relation'].includes(typeOf(f)) ? 'cell-selected-enum' : 'cell-selected')
   }
   // 编辑态：去单元格内边距，编辑器与单元格严格同边界。
   // 单选/多选追加 cell-editing-enum：锚点换行展开（同选中态），边框由锚点自绘
   if (editingCell.value && row.__key === editingCell.value.key && column.field === editingCell.value.fieldName) {
-    cls.push('cell-editing')
     const f = props.fields.find(x => x.field_name === column.field)
+    if (!['image', 'file', 'url', 'relation'].includes(typeOf(f))) cls.push('cell-editing')
     if (['singleSelect', 'multiSelect'].includes(typeOf(f))) cls.push('cell-editing-enum')
   }
   const edge = selEdges(column.field)
@@ -597,7 +606,7 @@ function CellSlot(props2) {
         class: 'group-agg', 'data-smart-tip': '点击设置统计方式',
         onClick: (e) => { e.stopPropagation(); emit('footer-menu', field, e) },
       }, agg != null && aggKind
-        ? [`${STAT_LABELS[aggKind] || ''} ${formatStatValue(aggKind, agg, field)}`, h('span', { class: 'st-dd ga-caret' })]
+        ? [`${STAT_LABELS[aggKind] || ''} ${formatStatValue(aggKind, agg, field)}`, h(CellDropdown, { class: 'ga-caret', decorative: true })]
         : '')
     }
     return h('span', { class: 'group-head' }, [
@@ -606,10 +615,32 @@ function CellSlot(props2) {
     ])
   }
   const ef = effOf(field)
+  // 图片始终复用同一个锚点，选中/展开时不替换缩略图 DOM，避免尺寸和位置抖动。
+  if (['image', 'file', 'url', 'relation'].includes(ef.field_type)) {
+    const cell = { key: row.__key, fieldName: field.field_name }
+    const isCurrent = value => value?.key === cell.key && value?.fieldName === cell.fieldName
+    return h(ef.field_type === 'image' ? ImageCellPanel : ef.field_type === 'file' ? FileCellPanel : ef.field_type === 'relation' ? RelationCellPanel : LinkCellPanel, {
+      field: ef, record: row,
+      style: { '--file-row-height': `${rowHeightPx.value}px` },
+      value: row[field.field_name], readonly: !canEdit(row, field) || props.readonly,
+      selected: isCurrent(selectedCell.value),
+      initialInput: isCurrent(editingCell.value) ? editingCell.value.initialInput : undefined,
+      advanceOnEnter: true,
+      onAdvance: direction => advanceCell(row, field, direction),
+      onSelect: () => { clearColSelection(); selectedCell.value = cell },
+      onOpen: () => { editingCell.value = cell },
+      onCollapse: () => { if (isCurrent(editingCell.value)) editingCell.value = null; selectedCell.value = cell },
+      onCancel: () => { if (isCurrent(editingCell.value)) editingCell.value = null },
+      onCommit: value => emit('cell-commit', { row, field, value }),
+    })
+  }
   const isEdit = editingCell.value && editingCell.value.key === row.__key && editingCell.value.fieldName === field.field_name
   if (isEdit && canEdit(row, field)) {
     return h(SmartCellEditor, {
       field: ef, record: row,
+      initialInput: editingCell.value.initialInput,
+      advanceOnEnter: true,
+      onAdvance: direction => advanceCell(row, field, direction),
       frozen: isFrozen(field.field_name),   // 编辑器按 wrapper 判断自己是不是显示副本用
       onCommit: (v) => { editingCell.value = null; emit('cell-commit', { row, field, value: v }) },
       onCancel: () => { editingCell.value = null },
@@ -625,6 +656,28 @@ function CellSlot(props2) {
     })
   }
   // 单选/多选单击选中：呈现编辑态锚点（标签+✕+下拉按钮），面板不展开；
+  if (ef.field_type === 'progress' && canEdit(row, field) && selectedCell.value?.key === row.__key
+      && selectedCell.value?.fieldName === field.field_name) {
+    return h(ProgressCell, {
+      value: row[field.field_name], config: ef.options || {}, interactive: true,
+      onPointerdown: event => {
+        // 首击会替换 DOM，原生 dblclick 可能丢失；在第二击改变滑块值之前切到数字编辑。
+        if (lastClick.key === row.__key && lastClick.fieldName === field.field_name && Date.now() - lastClick.t < 400) {
+          event.preventDefault()
+          event.stopPropagation()
+          lastClick = { key: null, fieldName: null, t: 0 }
+          selectedCell.value = null
+          editingCell.value = { key: row.__key, fieldName: field.field_name }
+        }
+      },
+      onCommit: value => emit('cell-commit', { row, field, value }),
+      onCancel: () => { selectedCell.value = null },
+      'onEnter-edit': () => {
+        selectedCell.value = null
+        editingCell.value = { key: row.__key, fieldName: field.field_name }
+      },
+    })
+  }
   // 点下拉按钮或双击锚点 → open 进编辑态（面板展开）
   const isSelEnum = selectedCell.value && selectedCell.value.key === row.__key
     && selectedCell.value.fieldName === field.field_name
@@ -640,20 +693,7 @@ function CellSlot(props2) {
       },
     })
   }
-  // 文本单元格单击选中：用与编辑相同的浮层只读展示全文；双击浮层（enter-edit）再进编辑
-  const isSelText = selectedCell.value && selectedCell.value.key === row.__key
-    && selectedCell.value.fieldName === field.field_name && ef.field_type === 'text'
-  if (isSelText) {
-    return h(SmartCellEditor, {
-      field: ef, record: row, frozen: isFrozen(field.field_name), preview: true,
-      onCancel: () => { selectedCell.value = null },
-      'onEnter-edit': () => {
-        if (!canEdit(row, field)) return
-        selectedCell.value = null
-        editingCell.value = { key: row.__key, fieldName: field.field_name }
-      },
-    })
-  }
+  // 未进入编辑时继续展示原内容，键入后的首段文本由输入缓冲交给编辑器。
   // 填色只在 td 级铺满（cellFillStyle）；不再给 SmartCell 内容层重复着色——内容层色块只盖住文字范围，
   // 选中列/悬停等改变 td 底色时会露出一块块残色
   const cell = h(SmartCell, { field, record: row })
@@ -722,7 +762,7 @@ function FooterCell({ field }) {
       h('div', { class: 'fs-value' }, String(value)),
     )
   } else {
-    children.push(h('div', { class: 'fs-hint' }, ['统计', h('span', { class: 'st-dd fs-caret' })]))
+    children.push(h('div', { class: 'fs-hint' }, ['统计', h(CellDropdown, { class: 'fs-caret', decorative: true })]))
   }
   return h('div', {
     class: 'footer-stat', 'data-smart-tip': '点击设置统计方式',
@@ -738,6 +778,56 @@ function footerMethod({ columns }) {
 
 const IMMEDIATE = ['checkbox']
 const selectedCell = ref(null)   // 单击选中态 {key, fieldName}（企微式：单击选中、双击编辑）
+const typingBuffer = ref(null)
+let typingComposing = false
+watch(selectedCell, async cell => {
+  if (!cell) return
+  await nextTick()
+  if (selectedCell.value !== cell || editingCell.value) return
+  typingBuffer.value.value = ''
+  typingBuffer.value.focus({ preventScroll: true })
+})
+function finishSelectedComposition(event) {
+  typingComposing = false
+  onSelectedInput(event)
+}
+function onSelectedInput(event) {
+  if (typingComposing || event.isComposing) return
+  const text = event.target.value
+  event.target.value = ''
+  if (!text) return
+  if (editingCell.value?.initialInput != null) {
+    editingCell.value = { ...editingCell.value, initialInput: editingCell.value.initialInput + text }
+    return
+  }
+  const cell = selectedCell.value
+  if (!cell) return
+  const row = gridRows.value.find(r => r.__key === cell.key)
+  const field = props.fields.find(f => f.field_name === cell.fieldName)
+  if (!row || !field || !canEdit(row, field)) return
+  if (!['inline', 'progress', 'date', 'select', 'member', 'url'].includes(regOf(effOf(field)).editor)) return
+  editingCell.value = { ...cell, initialInput: text }
+  if (typeOf(field) !== 'url') selectedCell.value = null
+}
+async function advanceCell(row, field, direction = 'down') {
+  await moveCell(direction, { key: row.__key, fieldName: field.field_name })
+}
+let navigationVersion = 0
+async function moveCell(direction, current = selectedCell.value) {
+  const target = nextCell(gridRows.value, displayedFields.value, current, direction)
+  if (!target) return
+  const version = ++navigationVersion
+  editingCell.value = null
+  clearColSelection()
+  selectedCell.value = target
+  await nextTick()
+  if (version !== navigationVersion) return
+  const row = gridRows.value.find(r => r.__key === target.key)
+  const column = gridRef.value?.getColumnByField?.(target.fieldName)
+  await gridRef.value?.scrollToRow?.(row)
+  if (version !== navigationVersion) return
+  if (column) await gridRef.value?.scrollToColumn?.(column)
+}
 watch([selectedCol, selectedCell, () => props.rows], scheduleLocate)   // 选中 AI 列/单元格（或数据刷新）→ 重新定位生成按钮
 // 展开记录按钮跟随 hover 行 / 当前行 / 数据与行高变化（须在 selectedCell 声明之后：watch 立即求值）
 watch([hoverKey, currentRowKey, () => props.rows, () => props.view?.config?.rowHeight], scheduleExpandLocate)
@@ -748,6 +838,10 @@ function onCellClick({ row, column }) {
   if (!row || row.__rowType) return
   const f = props.fields.find(x => x.field_name === column.field)
   if (!f) return
+  // 切换目标时结束旧编辑态；新选中必须在同一次 click 中落下。
+  if (editingCell.value && (editingCell.value.key !== row.__key || editingCell.value.fieldName !== f.field_name)) {
+    editingCell.value = null
+  }
   clearColSelection()
   if (IMMEDIATE.includes(typeOf(f))) {
     if (!canEdit(row, f)) return
@@ -765,7 +859,7 @@ function onCellClick({ row, column }) {
     editingCell.value = { key: row.__key, fieldName: f.field_name }
     return
   }
-  // 单击只做选中，进入编辑只能通过双击（或选中态锚点上的 ▼/双击）
+  // 只读字段保持选中，可通过后续操作查看权限或类型提示。
   selectedCell.value = { key: row.__key, fieldName: f.field_name }
 }
 
@@ -773,6 +867,9 @@ function onCellDblClick({ row, column }) {
   if (!row || row.__rowType) return
   const f = props.fields.find(x => x.field_name === column.field)
   if (!f) return
+  // 附件组件自己处理单击、预览及面板开关；快速连点箭头产生的 dblclick
+  // 不应再进入通用编辑流程，否则会清掉组件仍在使用的选中状态。
+  if (['image', 'file', 'url', 'relation'].includes(typeOf(f))) return
   if (props.readonly) { showBlockedHint(row, f); return }
   if (IMMEDIATE.includes(typeOf(f))) return   // checkbox 单击已切换，无需编辑态
   if (!canEdit(row, f)) { showBlockedHint(row, f); return }
@@ -817,6 +914,16 @@ watch(selectedCell, (v) => { if (!v) hideBlockedHint() })
 
 // Esc 取消选中（编辑态的 Esc 由编辑器自身处理）
 function onDocKeydown(e) {
+  // 只接管当前网格的选中态，避免抢走搜索框、弹窗和编辑器的键盘事件。
+  if (e.target !== typingBuffer.value || e.isComposing || typingComposing || e.keyCode === 229) return
+  if (!editingCell.value && selectedCell.value && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const direction = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: e.shiftKey ? 'up' : 'down', Tab: e.shiftKey ? 'left' : 'right' }[e.key]
+    if (direction) {
+      e.preventDefault(); e.stopPropagation()
+      moveCell(direction)
+      return
+    }
+  }
   if (e.key === 'Escape' && selectedCell.value && !editingCell.value) {
     selectedCell.value = null
     // vxe 的 cell-class-name 只在渲染周期重算：Esc 清选中不走数据流，手动触发列重渲染
@@ -824,9 +931,12 @@ function onDocKeydown(e) {
   }
 }
 
-// 点外部取消选中：目标在选中单元格（含枚举锚点展开区）或文本预览浮层内不动，其余一律清选中。
-// 用 mousedown 而不是 click：与 vxe 的 cell-click 错开时序，点其他单元格时先清旧、再由 click 落新选中
+// 表格内部切换交给 cell-click 原子地更新选中。不能在 mousedown 时 refreshColumn：
+// 它会重建鼠标下的目标 DOM，导致 mouseup/click 丢失，用户被迫再点一次。
 function onDocMouseDown(e) {
+  if (e.target.closest?.('.el-image-viewer__wrapper')) return
+  const cell = e.target.closest?.('td, th')
+  if (cell && gridRef.value?.$el?.contains(cell)) return
   if ((selectedCol.value || selectedGroupId.value != null) && !e.target.closest?.('th.th-col-selected, .arb')) clearColSelection()
   if (!selectedCell.value || editingCell.value) return
   if (e.target.closest?.('.arb')) return   // AI 生成按钮（浮在单元格右侧）
@@ -929,6 +1039,8 @@ function orderSearchMatches(matches) {
 }
 
 defineExpose({
+  isEditing: () => !!editingCell.value || (document.activeElement?.matches?.('.progress-slider')
+    && gridRef.value?.$el?.contains(document.activeElement)),
   orderSearchMatches,
   clearEditing: () => { editingCell.value = null; selectedCell.value = null; selectedCol.value = null; selectedGroupId.value = null },
   clearSelection: () => gridRef.value?.clearCheckboxRow?.(),
@@ -937,6 +1049,7 @@ defineExpose({
 </script>
 
 <style scoped>
+.grid-typing-buffer { position: fixed; left: -100px; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .smart-grid { width: 100%; }
 .add-col { display: block; width: 100%; text-align: center; color: var(--st-text-3); font-weight: 600; cursor: pointer; font-size: 15px; }
 /* 末尾添加列：浅灰底方块 + 灰「＋」（对齐参照 添加一列-按钮.png） */
@@ -1057,6 +1170,9 @@ defineExpose({
 /* 显示态内容整体上移 1px：13px CJK 文字在 36px 行高内半行距分布偏下，光学居中补偿。
    只作用非编辑态——编辑边框画在 .vxe-cell 上、编辑器严格填满单元格，不能跟着移 */
 .smart-vxe :deep(.vxe-body--column:not(.cell-editing) .vxe-cell--wrapper) { transform: translateY(-2px); }
+.smart-vxe :deep(.vxe-body--column.cell-image) { vertical-align: middle; }
+.smart-vxe :deep(.vxe-body--column.cell-image .vxe-cell) { height: var(--image-cell-height); padding-top: 0; padding-bottom: 0; align-items: center; }
+.smart-vxe :deep(.vxe-body--column.cell-image .vxe-cell--wrapper) { height: 100%; width: 100%; margin: 0 !important; transform: none !important; align-items: center; }
 /* 查看/选中态禁止选中文字（企微式：单击只是选中单元格，双击才进编辑态，编辑器内不受影响） */
 .smart-vxe :deep(.vxe-body--column:not(.cell-editing) .vxe-cell) { user-select: none; }
 /* 行选 checkbox（设计稿 PixPin_2026-10-15_00-02-56 风格：细边圆角小方框；选中主色底+白勾）。

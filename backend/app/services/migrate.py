@@ -535,6 +535,12 @@ def _migrate_v9_remove_workflows(conn) -> None:
                              {"layout": json.dumps(updated, ensure_ascii=False), "id": row_id})
 
 
+def _migrate_v10_retire_contact_field_types(conn) -> None:
+    """电话和邮箱退为文本：保留字段、配置及记录中的原始内容。"""
+    if "meta_fields" in inspect(conn).get_table_names():
+        conn.execute(text("UPDATE meta_fields SET field_type = 'text' WHERE field_type IN ('phone', 'email')"))
+
+
 _MIGRATIONS = [
     ("v2_tenants", _migrate_v2_tenants),
     ("v3_scope_org", _migrate_v3_scope_org),
@@ -545,6 +551,7 @@ _MIGRATIONS = [
     ("v7_tenant_ids", _migrate_v7_tenant_ids),
     ("v8_workspace_data", _migrate_v8_workspace_data),
     ("v9_remove_workflows", _migrate_v9_remove_workflows),
+    ("v10_retire_contact_field_types", _migrate_v10_retire_contact_field_types),
 ]
 
 

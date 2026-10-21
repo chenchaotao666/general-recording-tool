@@ -4,16 +4,18 @@
   <div class="pcr">
     <!-- 字段：统一「选择字段」面板（编组可折叠） -->
     <TbFieldSelect :model-value="cond.fieldId" :fields="fields" :column-groups="columnGroups" class="pcr-field" @update:model-value="onField" />
-    <el-select v-if="field && !memberLike" :model-value="cond.operator" class="pcr-op" :teleported="teleported"
+    <el-select v-if="field && (!memberLike || allowChanged)" :model-value="cond.operator" class="pcr-op" :teleported="teleported"
                @update:model-value="(v) => emit('update', { ...cond, operator: v })">
-      <el-option v-for="op in ops" :key="op" :value="op" :label="opLabel(field, op)" />
+      <el-option v-for="op in ops" :key="op" :value="op" :label="op === 'changed' ? '有变更' : opLabel(field, op)" />
     </el-select>
     <div v-if="field && needsValue" class="pcr-val">
       <ConditionValue :field="field" :operator="cond.operator" :value="cond.value"
+                      :number-controls="!compact"
                       @update="(v) => emit('update', { ...cond, value: v })" />
     </div>
     <div v-else-if="!field" class="pcr-val pcr-ph">请先选择字段</div>
-    <span class="pcr-del st-icon-action" data-smart-tip="删除条件" @click="emit('remove')"><StIcon name="minus-circle" :size="18" /></span>
+    <button v-if="compact" type="button" class="pcr-del st-icon-action" aria-label="删除条件" data-smart-tip="删除条件" @click="emit('remove')"><StIcon name="trash" :size="16" /></button>
+    <span v-else class="pcr-del st-icon-action" data-smart-tip="删除条件" @click="emit('remove')"><StIcon name="minus-circle" :size="18" /></span>
   </div>
 </template>
 
@@ -31,14 +33,16 @@ const props = defineProps({
   fields: { type: Array, default: () => [] },
   allowViewer: { type: Boolean, default: false },   // 人员类值是否提供「查看者本人」
   teleported: { type: Boolean, default: false },
+  allowChanged: { type: Boolean, default: false },
+  compact: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update', 'remove'])
 
 const MEMBER_LIKE = ['member', 'createdBy', 'lastModifiedBy']
 const field = computed(() => props.fields.find(f => f.field_name === props.cond.fieldId))
 const memberLike = computed(() => MEMBER_LIKE.includes(field.value?.field_type))
-const ops = computed(() => (field.value ? filterOpsOf(field.value) : []))
-const needsValue = computed(() => !NO_VALUE_OPS.includes(props.cond.operator))
+const ops = computed(() => (field.value ? [...(props.allowChanged ? ['changed'] : []), ...filterOpsOf(field.value)] : []))
+const needsValue = computed(() => props.cond.operator !== 'changed' && !NO_VALUE_OPS.includes(props.cond.operator))
 
 // 人员目录注入「查看者本人」虚拟项（ConditionValue 从 smartMembers 取人员候选）
 const members = inject('smartMembers', { value: [] })

@@ -6,6 +6,8 @@ lookup 字段读时计算；系统字段（创建人/时间等）从记录系统
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+from hashlib import sha256
 import re
 
 from ..database import get_db
@@ -104,6 +106,17 @@ def _search_relation_labels(db, fields, access):
     return labels
 
 
+def _records_revision(db: Session, table_id: int) -> str:
+    count, updated = db.query(func.count(Record.id), func.max(Record.updated_at)).filter(Record.table_id == table_id).one()
+    return sha256(f"{count}:{updated}".encode()).hexdigest()
+
+
+@router.get("/tables/{table_id}/revision")
+def records_revision(table_id: int, db: Session = Depends(get_db),
+                     access: TableAccess = Depends(require_table("view"))):
+    return {"revision": _records_revision(db, table_id)}
+
+
 @router.get("/tables/{table_id}/grid")
 def grid_query(table_id: int, view_id: int | None = None, page: int = 1, page_size: int = 200,
                focus_id: int | None = None,
@@ -117,6 +130,7 @@ def grid_query(table_id: int, view_id: int | None = None, page: int = 1, page_si
         raise HTTPException(400, "智能表网格仅支持 JSON 存储模式的表")
     user = access.ctx.user
 
+    revision = _records_revision(db, table_id)
     view, effective = _load_effective_view(db, table_id, view_id, user.id)
     all_fields = get_meta_fields(db, table_id)
     eff = _effective(db, access)
@@ -172,7 +186,7 @@ def grid_query(table_id: int, view_id: int | None = None, page: int = 1, page_si
     ai_field_service.attach_status(db, table_id, fields, data_rows)
 
     return {
-        "items": rows, "total": total, "aggregations": aggs, "grouped": bool(groups), "page": page,
+        "items": rows, "total": total, "aggregations": aggs, "grouped": bool(groups), "page": page, "revision": revision,
         "view": {"id": view.id, "name": view.name, "type": view.type, "config": effective,
                  "is_default": bool(view.is_default)} if view else None,
         "fields": [
@@ -186,6 +200,61 @@ def grid_query(table_id: int, view_id: int | None = None, page: int = 1, page_si
                      "can_delete": eff.can_delete_record},
         "content_perm": eff.to_client(fields),
     }
+
+
+@router.get("/tables/{table_id}/relation-records")
+def relation_records(table_id: int, search: str = "", ids: str | None = None,
+                     page: int = 1, page_size: int = 50, view_id: int | None = None,
+                     db: Session = Depends(get_db),
+                     access: TableAccess = Depends(require_table("view"))):
+    """关联选择独立分页；已选 ID 读取仍遵守行、列查看权限。"""
+    all_fields = get_meta_fields(db, table_id)
+    eff = _effective(db, access)
+    rights = eff.field_rights_map(all_fields)
+    fields = [f for f in all_fields if rights[f.field_name]["view"]]
+    rows = json_store.all_dicts(db, table_id, all_fields, normalized=True)
+    rows = [r for r in rows if eff.row_viewable(r, all_fields)]
+    relation_view, config = _load_effective_view(db, table_id, view_id, access.ctx.user.id)
+    if ids is not None:
+        try:
+            wanted = {int(v) for v in ids.split(",") if v}
+        except ValueError:
+            raise HTTPException(422, "无效的记录 ID")
+        rows = [r for r in rows if r["id"] in wanted]
+    elif view_id:
+        view = db.query(MetaView).filter_by(id=view_id, table_id=table_id).first()
+        if not view:
+            raise HTTPException(404, "视图不存在")
+        _, config = _load_effective_view(db, table_id, view_id, access.ctx.user.id)
+        filters = config.get("filters") or {}
+        conditions = [c for c in filters.get("conditions", [])
+                      if c.get("fieldId") in rights and rights[c["fieldId"]]["view"] and _complete(c)]
+        rows = [r for r in rows if match_conditions(r, all_fields, conditions,
+                "any" if filters.get("conjunction") == "or" else "all", access.ctx.user.id)] if conditions else rows
+        rows = sort_records_multi(rows, config.get("sorts"), {f.field_name: f for f in fields})
+    editable = {r["id"] for r in rows if eff.row_editable(r, all_fields)}
+    if search.strip():
+        _inject_system_and_lookup(db, fields, rows)
+        cache = {}
+        needle = search.strip().casefold()
+        rows = [r for r in rows if any(needle in str(smart_format.display(db, f, r.get(f.field_name), cache)).casefold() for f in fields)]
+    total = len(rows)
+    page, page_size = max(1, page), min(200, max(1, page_size))
+    if ids is None:
+        rows = rows[(page - 1) * page_size:page * page_size]
+    _inject_system_and_lookup(db, fields, rows)
+    title_field = next((f for f in fields if f.field_name == config.get("recordTitleField")), None)
+    title_field = title_field or next((f for f in fields if f.field_type == "text"), fields[0] if fields else None)
+    label_cache = {}
+    items = [{"id": r["id"], "__readonly": r["id"] not in editable,
+              "__relation_label": (smart_format.display(db, title_field, r.get(title_field.field_name), label_cache)
+                                   if title_field else "") or f"#{r['id']}",
+              **{f.field_name: dyn_engine.serialize_value(r.get(f.field_name)) for f in fields}} for r in rows]
+    return {"items": items, "total": total, "table_name": access.table.label,
+            "fields": [{"id": f.id, "field_name": f.field_name, "label": f.label,
+                        "field_type": f.field_type, "options": f.options or {}} for f in fields],
+            "view": {"id": relation_view.id if relation_view else None, "config": config}, "content_perm": eff.to_client(fields),
+            "my_perms": {"can_create": eff.can_add_record, "can_edit": access.can_edit and eff.can_edit}}
 
 
 # ---------- 统计行：按列统计方式选择 ----------

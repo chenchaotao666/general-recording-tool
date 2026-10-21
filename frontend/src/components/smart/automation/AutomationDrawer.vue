@@ -71,6 +71,7 @@
         </div>
         <div v-if="mode === 'edit'" class="ad-foot">
           <span v-if="enableError" class="ad-save-error" role="alert"><span aria-hidden="true">!</span>{{ enableError }}</span>
+          <span v-else-if="loopWarning" class="ad-save-error ad-save-warning" role="status"><span aria-hidden="true">!</span>{{ loopWarning }}</span>
           <el-button v-if="draft.trigger?.type === 'schedule'" :disabled="!canSave || !!enableError || saving" :loading="running" @click="runOnce(draft, true)">试运行</el-button>
           <span class="ad-foot-sp" />
           <el-button :disabled="!canSave || saving" @click="save(false)">仅保存</el-button>
@@ -119,9 +120,21 @@ let logsFrom = 'list'
 const enableError = computed(() => {
   const actions = draft.value?.actions || []
   if (actions.at(-1)?.type === 'findRecords') return '最后一步不能为查找记录，请调整后再启用。'
-  const type = { recordCreated: 'createRecord', recordUpdated: 'updateRecords' }[draft.value?.trigger?.type]
-  const index = actions.findIndex(a => type && a.type === type && String(a.tableId || props.tableId) === String(props.tableId))
-  return index < 0 ? '' : `当前流程的触发器和第 ${index + 2} 步存在循环执行的关系，请调整后再启用。`
+  return ''
+})
+const loopWarning = computed(() => {
+  const trigger = draft.value?.trigger || {}
+  if (!trigger.triggerByAutomation) return ''
+  const actions = draft.value?.actions || []
+  const specified = trigger.watchMode === 'specified' || (!trigger.watchMode && (trigger.watchConditions?.length || trigger.watchFields?.length))
+  const watched = new Set(trigger.watchConditions?.map(c => c.fieldId) ?? trigger.watchFields ?? [])
+  const index = actions.findIndex(a => {
+    if (String(a.tableId || props.tableId) !== String(props.tableId)) return false
+    if (trigger.type === 'recordCreated') return a.type === 'createRecord'
+    return trigger.type === 'recordUpdated' && a.type === 'updateRecords'
+      && a.values?.some(v => v.fieldId && (!specified || watched.has(v.fieldId)))
+  })
+  return index < 0 ? '' : `已允许自动化再次触发，第 ${index + 2} 步可能触发本流程；仅在数据实际变化且满足条件时执行，并受递归深度限制。`
 })
 const canSave = computed(() => Boolean(draft.value?.name?.trim() && draft.value?.trigger?.type && draft.value?.actions?.length))
 const templates = [
@@ -140,7 +153,10 @@ function summary(r) {
     const s = t.schedule || {}
     head = `${{ daily: '每天', weekly: '每周', monthly: '每月', weekdays: '每工作日' }[s.freq] || ''} ${s.time} 定时触发`
   } else if (t.type === 'recordCreated') head = '添加新记录时'
-  else head = t.watchFields?.length ? `「${t.watchFields.map(labelOf).join('、')}」有变更时` : '记录内容变更时'
+  else {
+    const watched = t.watchMode === 'any' ? [] : (t.watchConditions?.map(c => c.fieldId).filter(Boolean) ?? t.watchFields ?? [])
+    head = watched.length ? `「${[...new Set(watched)].map(labelOf).join('、')}」有变更时` : t.watchMode === 'specified' ? '指定列有变更时' : '记录内容变更时'
+  }
   return head
 }
 
@@ -163,7 +179,7 @@ function newRule(kind) {
   const msg = (title) => ({ id: uid(), type: 'sendMessage', channel: 'docMessage', to: [], toFields: [], webhookUrl: '', title, content: [{ t: 'text', v: '请查看文档内容' }], buttons: [] })
   const presets = {
     schedule: { name: '定时提醒', trigger: { type: 'schedule', schedule: { freq: 'daily', time: '09:00', weekdays: [1], monthDays: [1] } }, actions: [msg('定时提醒')] },
-    recordCreated: { name: '新记录提醒', trigger: { type: 'recordCreated', rowConditions: [], filter: { match: 'all', conditions: [] } }, actions: [msg('新记录提醒')] },
+    recordCreated: { name: '新记录提醒', trigger: { type: 'recordCreated', rowConditions: props.fields[0] ? [{ fieldId: props.fields[0].field_name, operator: 'isNotEmpty' }] : [], filter: { match: 'all', conditions: [] } }, actions: [msg('新记录提醒')] },
     recordUpdated: { name: '记录修改提醒', trigger: { type: 'recordUpdated', watchFields: [], filter: { match: 'all', conditions: [] } }, actions: [msg('记录修改提醒')] },
   }
   const p = presets[kind] || (kind === 'blank'
@@ -278,6 +294,7 @@ async function ruleAction(cmd, r) {
 .ad-foot-sp { flex: 1; }
 .ad-save-error { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--st-text-2); }
 .ad-save-error > span { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--el-color-danger); color: #fff; font-weight: 700; }
+.ad-save-warning > span { background: var(--el-color-warning); }
 .ad-slide-enter-active, .ad-slide-leave-active { transition: opacity .15s ease; }
 .ad-slide-leave-active { transition-duration: var(--st-panel-close-duration, 80ms); }
 .ad-slide-enter-from, .ad-slide-leave-to { opacity: 0; }

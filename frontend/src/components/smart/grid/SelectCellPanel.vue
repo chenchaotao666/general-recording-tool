@@ -10,17 +10,17 @@
         @dblclick.stop="closed && $emit('open')">
     <span v-for="o in selectedOptions" :key="o.id" class="opt-tag"
           :style="{ background: optionColor(o.color).value, color: optionColor(o.color).text }">
-      <span class="opt-label">{{ o.label }}</span><span class="tag-x" data-smart-tip="清除" @click.stop="removeOption(o.id)">✕</span>
+      <span class="opt-label">{{ o.label }}</span><span class="tag-x" @click.stop="removeOption(o.id)">✕</span>
     </span>
     <!-- 未匹配到选项的原始值兜底（改类型/引用源被删场景） -->
     <span v-for="(v, i) in unmatchedValues" :key="`raw-${i}`" class="opt-tag raw"><span class="opt-label">{{ v }}</span></span>
     <!-- 下拉按钮：单个三角，点击切换展开/收起（方向随状态翻转） -->
-    <span class="st-dd chev" :class="{ up: !closed, open: !closed }" aria-label="展开/收起选项" @click.stop="onChevClick" />
+    <CellDropdown class="chev" overlay bordered :open="!closed" label="展开/收起选项" @click="onChevClick" />
   </span>
   <teleport to="body">
     <div v-if="rect && !closed" v-show="!panelOut" ref="panelRef" class="sel-panel" :style="panelStyle" @mousedown.stop>
       <input ref="kwRef" v-model="kw" class="sel-search" placeholder="查找或添加选项"
-             @keydown.enter.prevent="onEnter" @keydown.esc.stop.prevent="onEsc" />
+             @keydown.enter="onEnter" @keydown.tab="onEnter" @keydown.esc.stop.prevent="onEsc" />
       <div class="sel-kind">{{ isMulti ? '多选' : '单选' }}</div>
       <div class="sel-list">
         <div v-for="o in visibleOptions" :key="o.id" class="sel-item" @click="pick(o.id)">
@@ -38,17 +38,20 @@
 <script setup>
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
+import CellDropdown from './CellDropdown.vue'
 import { optionColor } from '../../../smart/registry/fieldRegistry.js'
 import { filterLinkageOptions } from '../../../smart/utils/refOptions.js'
 import { afterFrame, isDisplayCell, visibleCellRect } from '../../../smart/utils/vxeCell.js'
 
 const props = defineProps({
+  advanceOnEnter: Boolean,
+  initialQuery: { type: String, default: undefined },
   field: { type: Object, required: true },
   record: { type: Object, required: true },
   frozen: { type: Boolean, default: false },   // 列是否被冻结（判断显示副本在哪个 wrapper）
   closed: { type: Boolean, default: false },   // 单击选中态：只显示锚点，不展开面板
 })
-const emit = defineEmits(['commit', 'commit-soft', 'cancel', 'add-option', 'open', 'collapse'])
+const emit = defineEmits(['advance', 'commit', 'commit-soft', 'cancel', 'add-option', 'open', 'collapse'])
 
 // 选项联动上下文：SmartTablePage 提供 Map(field_name → {linkage, remoteRows, refFieldId})
 const refContext = inject('smartRefContext', { value: new Map() })
@@ -73,7 +76,8 @@ const baseOptions = computed(() => {
   return opts
 })
 
-const kw = ref('')
+const kw = ref(props.initialQuery || '')
+watch(() => props.initialQuery, value => { if (value != null) kw.value = value })
 const visibleOptions = computed(() => {
   const k = kw.value.trim()
   return k ? baseOptions.value.filter(o => o.label.includes(k)) : baseOptions.value
@@ -139,8 +143,22 @@ function removeOption(id) {
 function create() {
   emit('add-option', kw.value.trim())   // 父级落库新选项并提交新 optionId，随后关闭编辑器
 }
-function onEnter() {
-  if (creatable.value) return create()
+function onEnter(event) {
+  if (event?.key === 'Tab' && !props.advanceOnEnter) return
+  const direction = event?.key === 'Tab' ? (event.shiftKey ? 'left' : 'right') : event?.shiftKey ? 'up' : 'down'
+  if (event?.isComposing || event?.keyCode === 229) return
+  event?.preventDefault(); event?.stopPropagation()
+  if (props.advanceOnEnter && !creatable.value) {
+    const match = kw.value.trim() && visibleOptions.value.length === 1 ? visibleOptions.value[0] : null
+    if (match) {
+      if (isMulti.value && !draft.value.includes(match.id)) draft.value.push(match.id)
+      else if (!isMulti.value) draft.value = match.id
+    }
+    emit('commit', isMulti.value ? (draft.value.length ? [...draft.value] : null) : draft.value)
+    emit('advance', direction)
+    return
+  }
+  if (creatable.value) { create(); if (props.advanceOnEnter) emit('advance', direction); return }
   if (visibleOptions.value.length === 1) pick(visibleOptions.value[0].id)
 }
 function close() {
@@ -250,7 +268,6 @@ onUnmounted(() => {
 /* 选中态与编辑态一样：宿主单元格内边距与光学上移已由 SmartGrid 归零，锚点框直接撑满单元格
    （原先用固定负边距补偿 8px padding，行高变大后单元格 padding 不同，框会超出单元格） */
 .sel-anchor.closed { margin: 0; width: 100%; min-height: 100%; }
-.sel-anchor .chev { position: absolute; top: 4px; right: 4px; margin-left: 0; }
 .opt-tag { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; max-width: 100%; box-sizing: border-box; }
 /* 单个标签超宽时省略号截断，✕ 始终保留 */
 .opt-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -258,7 +275,6 @@ onUnmounted(() => {
 .tag-x { margin-left: 4px; cursor: pointer; opacity: .6; flex: none; }
 .tag-x:hover { opacity: 1; }
 /* 下拉按钮（设计稿 PixPin_2026-10-15_00-56-40）：浅灰圆角小方块 + 单三角，点击切换展开/收起 */
-.chev { margin-left: auto; }   /* 外观/hover 由全局 .st-dd 统一 */
 .sel-panel {
   display: flex; flex-direction: column;   /* 受 max-height 限制时由列表区收缩滚动 */
   position: fixed; z-index: 3000; background: #fff; border-radius: 6px;

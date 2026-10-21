@@ -442,8 +442,8 @@ import { resolveRefOptions } from '../../smart/utils/refOptions.js'
 import { buildColumnLayout } from '../../smart/utils/columnLayout.js'
 import { presetFromFilters } from '../../smart/utils/newRowPreset.js'
 import {
-  alterTable, getTable, listMembers, listTables,
-  smartGrid, smartListViews, smartCreateView, smartUpdateView, smartDeleteView,
+  alterTable, getTable, listMembers, listTables, getUserDirectory,
+  smartGrid, smartRelationRecords, smartRecordsRevision, smartListViews, smartCreateView, smartUpdateView, smartDeleteView,
   smartDuplicateView, smartSetDefaultView, smartPutViewPref, smartDeleteViewPref,
   smartCreateRecord, smartInsertRecords, smartUpdateRecord, smartDeleteRecord, smartBatchDelete,
   smartDuplicateRecord, smartDuplicateField, smartFieldDeps, smartFieldStats,
@@ -586,6 +586,28 @@ const panelConditions = computed(() => cfg.value.filters?.conditions || [])
 
 // ---------- 加载 ----------
 let loadRequestId = 0
+let recordsRevision = null
+let revisionTimer = null
+let revisionPolling = false
+let pendingCellWrites = 0
+function scheduleRevisionPoll() {
+  clearTimeout(revisionTimer)
+  if (pageActive) revisionTimer = setTimeout(pollRevision, 2000)
+}
+async function pollRevision() {
+  if (revisionPolling) return
+  revisionPolling = true
+  const tid = tableId.value
+  try {
+    if (!pageActive || document.hidden || loading.value || pendingCellWrites || gridRef.value?.isEditing?.()) return
+    const result = await smartRecordsRevision(tid)
+    if (pageActive && tid === tableId.value && !pendingCellWrites && !gridRef.value?.isEditing?.()
+        && result.revision !== recordsRevision) {
+      await loadGrid(view.value?.id, { silent: true })
+    }
+  } catch { /* 暂时断网时保留当前数据，下次检查重试。 */ }
+  finally { revisionPolling = false; scheduleRevisionPoll() }
+}
 async function loadAll({ silent = false } = {}) {
   const requestId = ++loadRequestId
   const requestedTableId = tableId.value
@@ -609,7 +631,11 @@ async function loadAll({ silent = false } = {}) {
     ;(async () => {
       const directory = (await smartDocMembers(d.id).catch(() => null))?.members
         || ((await listMembers().catch(() => [])) || []).map(m => ({ id: m.user_id, name: m.username }))
-      if (requestId === loadRequestId) members.value = directory
+      const contacts = await getUserDirectory().catch(() => null)
+      const people = [...directory, ...(contacts?.enterprise?.members || []),
+        ...(contacts?.friends || []).map(p => ({ id: p.user_id, name: p.username })),
+        ...(contacts?.groups || []).flatMap(g => (g.members || []).map(p => ({ id: p.id, name: p.username })))]
+      if (requestId === loadRequestId) members.value = [...new Map(people.map(p => [p.id, p])).values()]
     })()
     loadRelationRows()
     loadRefSources()
@@ -628,12 +654,14 @@ async function refreshAfterAutomation() {
 }
 
 async function loadGrid(viewId, { silent = false, focusId = null } = {}) {
+  const requestId = ++loadRequestId
   const requestedTableId = tableId.value
   if (!silent) loading.value = true
   try {
     const g = await smartGrid(requestedTableId, { view_id: viewId, page: page.value, page_size: pageSize,
                                          ...(focusId != null ? { focus_id: focusId } : {}) })
-    if (requestedTableId !== tableId.value) return
+    if (requestedTableId !== tableId.value || requestId !== loadRequestId) return
+    if (silent && (pendingCellWrites || gridRef.value?.isEditing?.())) return
     await applyGridResult(g)
   } finally {
     if (!silent && requestedTableId === tableId.value) loading.value = false
@@ -641,8 +669,10 @@ async function loadGrid(viewId, { silent = false, focusId = null } = {}) {
 }
 
 async function applyGridResult(g) {
+  recordsRevision = g.revision ?? null
   if (g.page) page.value = g.page
   rows.value = g.items
+  loadRelationRows()
   total.value = g.total
   aggregations.value = g.aggregations || {}
   grouped.value = !!g.grouped
@@ -652,6 +682,7 @@ async function applyGridResult(g) {
   if (g.view) filterScope.value = g.view.config?.filtersScope === 'personal' ? 'personal' : 'shared'
   if (hasUnknownAiOptions()) await reloadMeta()   // AI 生成时自动新建了选项：刷新字段元数据，否则单元格显示裸 optionId
   scheduleAiPoll()
+  scheduleRevisionPoll()
 }
 
 function openFind(event) {
@@ -755,13 +786,22 @@ function scheduleAiPoll() {
 async function loadRelationRows() {
   for (const f of fields.value.filter(x => x.field_type === 'relation' && x.options?.targetTableId)) {
     const tid = f.options.targetTableId
-    if (relationRows.value.has(tid)) continue
+    const cached = new Map((relationRows.value.get(tid) || []).map(r => [r.id, r]))
+    const ids = [...new Set(rows.value.flatMap(r => {
+      const value = r[f.field_name]
+      return (Array.isArray(value) ? value : value ? [value] : []).map(Number)
+    }))].filter(id => !cached.has(id))
+    if (!ids.length) continue
     try {
-      const g = await smartGrid(tid, { page_size: 200 })
-      const labelField = g.fields.find(x => x.field_type === 'text') || g.fields[0]
-      const next = new Map(relationRows.value)
-      next.set(tid, g.items.filter(r => !r.__rowType).map(r => ({ id: r.id, label: r[labelField?.field_name] ?? `#${r.id}` })))
-      relationRows.value = next
+      for (let offset = 0; offset < ids.length; offset += 200) {
+        const g = await smartRelationRecords(tid, { ids: ids.slice(offset, offset + 200).join(',') })
+        const labelField = g.fields.find(x => x.field_type === 'text') || g.fields[0]
+        const next = new Map(relationRows.value)
+        const merged = new Map((relationRows.value.get(tid) || []).map(r => [r.id, r]))
+        g.items.forEach(r => merged.set(r.id, { id: r.id, label: r.__relation_label ?? r[labelField?.field_name] ?? `#${r.id}` }))
+        next.set(tid, [...merged.values()])
+        relationRows.value = next
+      }
     } catch { /* 目标表无权访问时忽略 */ }
   }
 }
@@ -924,6 +964,8 @@ function fieldAffectsView(field) {
 async function onCellCommit({ row, field, value }) {
   const old = row[field.field_name]
   if (sameCellValue(old, value)) return   // 未修改：不写库、不刷新
+  ++loadRequestId
+  pendingCellWrites++
   row[field.field_name] = value   // 乐观更新
   try {
     const r = await smartUpdateRecord(tableId.value, row.id, { data: { [field.field_name]: value } })
@@ -938,6 +980,9 @@ async function onCellCommit({ row, field, value }) {
   } catch (e) {
     row[field.field_name] = old
     ElMessage.error(e.message || '保存失败')
+  } finally {
+    pendingCellWrites--
+    scheduleRevisionPoll()
   }
 }
 
@@ -1770,6 +1815,8 @@ onActivated(() => {
 })
 onDeactivated(() => {
   pageActive = false
+  ++loadRequestId
+  clearTimeout(revisionTimer)
   clearTimeout(aiPollTimer)
   window.removeEventListener('keydown', onKeydown)
   document.removeEventListener('click', onDocClick)
@@ -1783,6 +1830,8 @@ onDeactivated(() => {
 })
 onUnmounted(() => {
   pageActive = false
+  ++loadRequestId
+  clearTimeout(revisionTimer)
   gridAreaObserver?.disconnect()
   clearTimeout(aiPollTimer)
   window.removeEventListener('keydown', onKeydown)

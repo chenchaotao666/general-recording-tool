@@ -42,7 +42,7 @@ describe('automation flow creation', () => {
     expect(wrapper.findComponent(AutomationEditor).exists()).toBe(true)
     wrapper.unmount()
   })
-  it('allows draft saving but blocks enabling final find steps and same-table loops', async () => {
+  it('blocks final find steps but allows same-table actions with runtime trigger guards', async () => {
     const wrapper = mount(AutomationDrawer, {
       props: { visible: false, tableId: 1, loadFields: async () => [] },
       global: { plugins: [ElementPlus] },
@@ -64,9 +64,9 @@ describe('automation flow creation', () => {
     expect(smartCreateAutomation.mock.calls.length).toBe(calls)
     editor.vm.$emit('update:modelValue', { ...draft, actions: [...draft.actions, { id: 'a2', type: 'createRecord', tableId: 1, values: [] }] })
     await flushPromises()
-    expect(wrapper.find('.ad-save-error').text()).toContain('第 3 步存在循环执行')
+    expect(wrapper.find('.ad-save-error').exists()).toBe(false)
     expect(wrapper.find('.ad-foot button').attributes('disabled')).toBeUndefined()
-    expect(wrapper.find('.ad-foot .el-button--primary').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.ad-foot .el-button--primary').attributes('disabled')).toBeUndefined()
     editor.vm.$emit('update:modelValue', { ...draft, actions: [...draft.actions, { id: 'a2', type: 'createRecord', tableId: 2, values: [] }] })
     await flushPromises()
     expect(wrapper.find('.ad-save-error').exists()).toBe(false)
@@ -101,6 +101,31 @@ describe('automation flow creation', () => {
     await wrapper.find('.ad-foot .el-button--primary').trigger('click')
     await flushPromises()
     expect(smartCreateAutomation).toHaveBeenLastCalledWith(1, expect.objectContaining({ enabled: true }))
+    wrapper.unmount()
+  })
+  it('only warns about possible retriggering when automation writes watched columns', async () => {
+    const wrapper = mount(AutomationDrawer, {
+      props: { visible: false, tableId: 1, fields: [], loadFields: async () => [] },
+      global: { plugins: [ElementPlus] },
+    })
+    const draft = { name: '联动修改', trigger: { type: 'recordUpdated', watchMode: 'specified',
+      watchConditions: [{ fieldId: 'shift', operator: 'contains', value: ['early'] }] },
+      actions: [{ id: 'a1', type: 'updateRecords', tableId: 1, target: 'triggered',
+        values: [{ fieldId: 'shift', value: { type: 'static', value: 'early' } }] }] }
+    await wrapper.setProps({ visible: true, initialDraft: draft })
+    await flushPromises()
+    expect(wrapper.find('.ad-save-error').exists()).toBe(false)
+    expect(wrapper.find('.ad-foot .el-button--primary').attributes('disabled')).toBeUndefined()
+    const editor = wrapper.findComponent(AutomationEditor)
+    const recursive = { ...draft, trigger: { ...draft.trigger, triggerByAutomation: true } }
+    editor.vm.$emit('update:modelValue', recursive)
+    await flushPromises()
+    expect(wrapper.find('.ad-save-warning').text()).toContain('可能触发本流程')
+    expect(wrapper.find('.ad-foot .el-button--primary').attributes('disabled')).toBeUndefined()
+    editor.vm.$emit('update:modelValue', { ...recursive, actions: [{ ...draft.actions[0],
+      values: [{ fieldId: 'product', value: { type: 'static', value: 'A' } }] }] })
+    await flushPromises()
+    expect(wrapper.find('.ad-save-warning').exists()).toBe(false)
     wrapper.unmount()
   })
 })

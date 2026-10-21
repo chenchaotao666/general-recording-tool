@@ -36,7 +36,7 @@ const emit = defineEmits(['pick', 'pick-again', 'close', 'ai'])
 
 // 参照顺序：基础 → 协作/媒体 → 标识 → 关联 → 计算 → 系统（只列 FIELD_REGISTRY 支持的类型）
 const ORDER = ['text', 'singleSelect', 'multiSelect', 'number', 'percent', 'currency', 'progress', 'date',
-               'member', 'image', 'file', 'relation', 'url', 'phone', 'email', 'checkbox', 'autoNumber',
+               'member', 'image', 'file', 'relation', 'url', 'checkbox', 'autoNumber',
                'formula', 'lookup', 'createdBy', 'lastModifiedBy', 'createdTime', 'lastModifiedTime']
 const typeList = computed(() => ORDER.filter(k => FIELD_REGISTRY[k]).map(k => ({ key: k, label: FIELD_REGISTRY[k].label })))
 

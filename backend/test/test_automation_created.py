@@ -13,6 +13,29 @@ from app.routers import smart_automation as api
 
 
 class CreatedAutomationTests(unittest.TestCase):
+    def test_background_update_changes_grid_revision(self):
+        from app.routers.smart_records import _records_revision
+        from app.services import json_store
+        table = self.db.get(MetaTable, self.rule.table_id)
+        fields = engine.get_meta_fields(self.db, table.id)
+        empty_revision = _records_revision(self.db, table.id)
+        record = json_store.create_record(self.db, table, fields, {'f_1': 'before'})
+        revision = _records_revision(self.db, table.id)
+        self.assertNotEqual(revision, empty_revision)
+        rc = engine.RunContext(self.db, self.rule, 0)
+        rc.steps[1] = {'table_id': table.id, 'record': record}
+        with patch.object(engine.smart_events, 'record_updated'):
+            result, _ = engine._act_update(rc, {'tableId': table.id, 'target': 'triggered',
+                'values': [{'fieldId': 'f_1', 'value': {'type': 'static', 'value': 'after'}}]})
+        self.assertEqual(result['count'], 1)
+        self.assertEqual(json_store.get_record(self.db, table.id, record['id'], fields)['f_1'], 'after')
+        updated_revision = _records_revision(self.db, table.id)
+        self.assertNotEqual(updated_revision, revision)
+        self.assertEqual(updated_revision, _records_revision(self.db, table.id))
+        self.db.delete(self.db.get(Record, record['id']))
+        self.db.commit()
+        self.assertNotEqual(_records_revision(self.db, table.id), updated_revision)
+
     def test_dashboard_message_button_uses_document_tenant(self):
         self.rule.tenant_id = 101
         doc = SmartDoc(tenant_id=101, name="Workspace")
@@ -69,15 +92,15 @@ class CreatedAutomationTests(unittest.TestCase):
             "enabled": False, "trigger": {"type": "recordCreated"}, "actions": [find]})
         self.assertEqual(saved[0]["type"], "findRecords")
 
-    def test_same_table_loop_only_blocks_enabling(self):
+    def test_same_table_actions_can_be_enabled_without_automatic_retriggering(self):
         table = self.db.get(MetaTable, self.rule.table_id)
         for trigger, action in (("recordCreated", "createRecord"), ("recordUpdated", "updateRecords")):
             payload = {"trigger": {"type": trigger}, "actions": [
                 {"type": "findRecords", "tableId": table.id},
                 {"type": action, "tableId": table.id, "values": []}]}
-            with self.assertRaises(HTTPException) as caught:
-                engine.validate_rule(self.db, table, payload)
-            self.assertIn("第 3 步存在循环执行", caught.exception.detail)
+            trigger_config, enabled_actions = engine.validate_rule(self.db, table, payload)
+            self.assertFalse(trigger_config['triggerByAutomation'])
+            self.assertEqual(enabled_actions[-1]['type'], action)
             _, saved = engine.validate_rule(self.db, table, {**payload, "enabled": False})
             self.assertEqual(saved[-1]["type"], action)
 

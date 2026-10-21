@@ -3,8 +3,8 @@
        字段名称 → 字段类型（带图标）→ [类型说明] → 分隔线 → 类型专属设置（灰色小标题分区）→
        底部：左侧 AI 入口（使用 AI 生成/计算/判断/匹配标签/生成公式），右侧 确定 / 取消。
        无标题栏；所有入口均非模态，at 存在时锚定在打开位置（anchoredDialogAttrs），点击外部收起 -->
-  <el-dialog :model-value="visible" width="470px" :show-close="false" class="st-fcd" append-to-body
-             v-bind="anchoredDialogAttrs(at, 470, 560)" @opened="placeEditor" @update:model-value="$emit('close')" destroy-on-close>
+  <el-dialog :model-value="visible" :width="isNumberFamily ? '322px' : '470px'" :show-close="false" class="st-fcd" :class="{ 'st-fcd-number': isNumberFamily }" append-to-body
+             v-bind="anchoredDialogAttrs(at, isNumberFamily ? 322 : 470, 560)" @opened="placeEditor" @update:model-value="$emit('close')" destroy-on-close>
     <div ref="editorBody" class="fcd">
       <input ref="nameRef" v-model="form.label" class="fcd-input fcd-name" placeholder="字段名称" maxlength="100"
              @keydown.enter="save" @keydown.esc="$emit('close')" />
@@ -113,8 +113,18 @@
           <template v-if="form.field_type === 'progress'">
             <div class="fcd-label">进度条颜色</div>
             <div class="fcd-pcolors">
-              <span v-for="c in PROGRESS_COLORS" :key="c.key" class="fcd-pc" :class="{ on: form.config.color === c.key }"
-                    :style="{ background: c.css }" @click="form.config.color = c.key" />
+              <el-popover v-for="c in PROGRESS_COLORS" :key="c.key" trigger="hover" placement="right" :width="164" :show-arrow="false" :show-after="180">
+                <template #reference>
+                  <button type="button" class="fcd-pc" :class="{ on: form.config.color === c.key }" :aria-label="c.label" :aria-pressed="form.config.color === c.key"
+                          :style="{ background: c.css }" @click="form.config.color = c.key" />
+                </template>
+                <div class="fcd-progress-preview">
+                  <div v-for="p in [0.1, 0.3, 0.45, 0.6, 0.75, 0.9]" :key="p" class="fcd-preview-track">
+                    <span :style="{ width: `${p * 100}%`, background: progressColor(c.key, p) }" />
+                  </div>
+                  <div class="fcd-preview-name">{{ c.label }}</div>
+                </div>
+              </el-popover>
             </div>
             <div class="fcd-row2">
               <div class="fcd-col">
@@ -132,9 +142,17 @@
             </div>
             <div class="fcd-label">进度条范围</div>
             <div class="fcd-range">
-              <input v-model.number="form.config.range.min" type="number" class="fcd-range-in" />
+              <span class="fcd-range-value">
+                <input v-model.number="form.config.range.min" inputmode="decimal" class="fcd-range-in" aria-label="进度最小值"
+                       :style="{ width: `${Math.max(1, String(form.config.range.min).length)}ch` }" />
+                <span v-if="form.config.numberFormat === 'percent'">%</span>
+              </span>
               <span class="fcd-range-dash">—</span>
-              <input v-model.number="form.config.range.max" type="number" class="fcd-range-in right" />
+              <span class="fcd-range-value right">
+                <input v-model.number="form.config.range.max" inputmode="decimal" class="fcd-range-in right" aria-label="进度最大值"
+                       :style="{ width: `${Math.max(1, String(form.config.range.max).length)}ch` }" />
+                <span v-if="form.config.numberFormat === 'percent'">%</span>
+              </span>
             </div>
             <el-checkbox v-model="form.config.showNumber" class="fcd-ck">展示数字</el-checkbox>
           </template>
@@ -333,7 +351,7 @@ import StIcon from '../icons/StIcon.vue'
 import AiFormulaDialog from '../ai/AiFormulaDialog.vue'
 import FormulaEditor from '../formula/FormulaEditor.vue'
 import { referencedTableIds, tokenize } from '../../../smart/utils/formula.js'
-import { FIELD_REGISTRY, OPTION_COLORS, PROGRESS_COLORS, optionColor } from '../../../smart/registry/fieldRegistry.js'
+import { FIELD_REGISTRY, OPTION_COLORS, PROGRESS_COLORS, optionColor, progressColor } from '../../../smart/registry/fieldRegistry.js'
 import { anchoredDialogAttrs, useButtonAnchoredDialog, useNonModalOutsideClose } from '../../../smart/utils/anchorDialog.js'
 import { smartListViews } from '../../../api/index.js'
 
@@ -361,7 +379,7 @@ const nameRef = ref(null)
 const TYPE_GROUPS = [
   { key: 'basic', types: ['text', 'singleSelect', 'multiSelect', 'number', 'percent', 'currency', 'progress', 'date'] },
   { key: 'collab', types: ['member', 'image', 'file'] },
-  { key: 'ident', types: ['relation', 'url', 'phone', 'email', 'checkbox', 'autoNumber'] },
+  { key: 'ident', types: ['relation', 'url', 'checkbox', 'autoNumber'] },
   { key: 'calc', types: ['formula', 'lookup'] },
   { key: 'sys', types: ['createdBy', 'lastModifiedBy', 'createdTime', 'lastModifiedTime'] },
 ]
@@ -445,7 +463,7 @@ const isSelect = computed(() => ['singleSelect', 'multiSelect'].includes(form.fi
 const isNumberFamily = computed(() => ['number', 'percent', 'currency', 'progress'].includes(form.field_type))
 const isDateFamily = computed(() => ['date', 'createdTime', 'lastModifiedTime'].includes(form.field_type))
 const typeHint = computed(() => HINTS[form.field_type] || '')
-const hasBody = computed(() => !['text', 'phone', 'email', 'file', 'createdBy', 'lastModifiedBy'].includes(form.field_type))
+const hasBody = computed(() => !['text', 'file', 'createdBy', 'lastModifiedBy'].includes(form.field_type))
 // AI 入口：公式/单选多选沿用原能力；其余类型 → 改用 AI 字段生成该列（AI 场景市场）
 const aiAction = computed(() => {
   const a = AI_ACTIONS[form.field_type]
@@ -697,12 +715,19 @@ function save() {
 .fcd-qt:hover { background: #E8E9EB; }
 .fcd-qt.on { background: #fff; border-color: #DEE0E3; }
 .fcd-qt-ico { height: 28px; display: inline-flex; align-items: center; font-size: 22px; font-weight: 300; }
-.fcd-pcolors { display: grid; grid-template-columns: repeat(9, 30px); justify-content: space-between; row-gap: 18px; }
-.fcd-pc { width: 30px; height: 30px; border-radius: 4px; cursor: pointer; box-sizing: border-box; }
-.fcd-pc.on { box-shadow: 0 0 0 2px #fff inset, 0 0 0 1px #3DC15E, 0 0 0 3px rgba(61, 193, 94, .25); }
+.fcd-pcolors { display: grid; grid-template-columns: repeat(9, 20px); justify-content: space-between; row-gap: 12px; }
+.fcd-pc { width: 20px; height: 20px; padding: 0; border: none; border-radius: 2px; cursor: pointer; box-sizing: border-box; }
+.fcd-pc.on { outline: 1px solid var(--st-primary); outline-offset: 2px; }
+.fcd-progress-preview { display: flex; flex-direction: column; gap: 4px; }
+.fcd-preview-track { height: 10px; background: #f1f2f3; border-radius: 2px; overflow: hidden; }
+.fcd-preview-track span { display: block; height: 100%; border-radius: 2px; }
+.fcd-preview-name { text-align: center; margin-top: 8px; font-size: 13px; color: var(--st-text-1); }
 .fcd-range { display: flex; align-items: center; height: 36px; border: 1px solid #DEE0E3; border-radius: 6px; padding: 0 12px; }
 .fcd-range-in { flex: 1; min-width: 0; border: none; outline: none; font-size: 14px; color: var(--st-text-1); background: transparent; }
 .fcd-range-in.right { text-align: right; }
+.fcd-range-value { display: flex; align-items: center; flex: 1; min-width: 0; }
+.fcd-range-value.right { justify-content: flex-end; }
+.fcd-range-value .fcd-range-in { flex: none; padding: 0; max-width: calc(100% - 16px); }
 .fcd-range-dash { color: #DEE0E3; padding: 0 12px; }
 /* 人员：开关行 */
 .fcd-switch { display: flex; align-items: center; justify-content: space-between; font-size: 16px; color: var(--st-text-1); height: 40px; }
@@ -757,6 +782,10 @@ function save() {
 .el-dialog.st-fcd { padding: 0; border-radius: 8px; box-shadow: 0 8px 32px rgba(0, 0, 0, .14); }
 .el-dialog.st-fcd .el-dialog__header { display: none; }
 .el-dialog.st-fcd .el-dialog__body { padding: 24px; }
+.el-dialog.st-fcd-number .el-dialog__body { padding: 16px; }
+.el-dialog.st-fcd-number .fcd-qt { height: 56px; }
+.el-dialog.st-fcd-number .fcd-sep { margin-left: -16px; margin-right: -16px; }
+.el-dialog.st-fcd-number .fcd-foot.sep { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
 /* 下拉：选项 16px、带图标；类型下拉分组之间用分隔线 */
 .fcd-pop .el-select-dropdown__item { font-size: 15px; height: 40px; line-height: 40px; }
 .fcd-pop .el-select-group__wrap:not(:last-of-type)::after { left: 12px; right: 12px; background: #EBECEE; }

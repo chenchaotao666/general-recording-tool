@@ -75,6 +75,23 @@ def search_users(
     return [{"id": u.id, "username": u.username} for u in rows]
 
 
+@router.get("/directory")
+def user_directory(db: Session = Depends(get_db), ctx: Context = Depends(get_current_context)):
+    """选人目录：仅当前企业、可见用户组和已接受的好友。"""
+    from .groups import list_groups
+    from .friends import list_friends
+
+    colleagues = (db.query(User).join(TenantMember, TenantMember.user_id == User.id)
+                  .filter(TenantMember.tenant_id == ctx.tenant.id, TenantMember.status == "active")
+                  .order_by(User.id).all())
+    return {
+        "enterprise": {"id": ctx.tenant.id, "name": ctx.tenant.name,
+                       "members": [{"id": u.id, "name": u.username} for u in colleagues]},
+        "groups": list_groups(db=db, ctx=ctx),
+        "friends": list_friends(db=db, user=ctx.user),
+    }
+
+
 @router.put("/{user_id}/role")
 def set_role(user_id: int, body: RoleIn, db: Session = Depends(get_db),
              admin: Context = Depends(require_platform_admin)):

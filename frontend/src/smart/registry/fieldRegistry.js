@@ -13,7 +13,7 @@ export const OPTION_COLORS = [
   { key: 'gray', label: '灰', value: '#F0F1F3', text: '#646A73' },
 ]
 
-// 进度条颜色（参照 添加列/列-进度.png）：第一行 9 个纯色，第二行 9 个渐变/分段色；key 存 config.color
+// css 仅用于色板图标；单元格按进度比例从 colors 中取一种颜色。
 export const PROGRESS_COLORS = [
   { key: 'blue', css: '#4E8CF7' }, { key: 'cyan', css: '#5DD3C9' }, { key: 'green', css: '#3DC15E' },
   { key: 'red', css: '#F5554A' }, { key: 'orange', css: '#FA7D2E' }, { key: 'yellow', css: '#FCB900' },
@@ -26,10 +26,30 @@ export const PROGRESS_COLORS = [
   { key: 's-orange-blue', css: 'linear-gradient(90deg, #FA7D2E 50%, #4E8CF7 50%)' },
   { key: 's-ryg', css: 'linear-gradient(90deg, #F5554A 33%, #FCB900 33% 66%, #3DC15E 66%)' },
   { key: 's-gyr', css: 'linear-gradient(90deg, #3DC15E 33%, #FCB900 33% 66%, #F5554A 66%)' },
-  { key: 's-rainbow', css: 'linear-gradient(90deg, #F5554A 20%, #FA7D2E 20% 40%, #FCB900 40% 60%, #3DC15E 60% 80%, #8B5CF6 80%)' },
+  { key: 's-rainbow', css: 'linear-gradient(90deg, #F5554A 16.67%, #FA7D2E 16.67% 33.33%, #FCB900 33.33% 50%, #3DC15E 50% 66.67%, #4E8CF7 66.67% 83.33%, #8B5CF6 83.33%)' },
 ]
-export function progressColor(key) {
-  return PROGRESS_COLORS.find(c => c.key === key)?.css || key || '#3DC15E'
+const PROGRESS_SCHEMES = {
+  'g-blue': ['浅蓝到深蓝', ['#DCE8FD', '#4E8CF7']],
+  'g-cyan': ['浅青到深青', ['#E0F7F4', '#5DD3C9']],
+  's-green-red': ['绿 → 红', ['#3DC15E', '#F5554A']],
+  's-red-green': ['红 → 绿', ['#F5554A', '#3DC15E']],
+  's-blue-orange': ['蓝 → 橙', ['#4E8CF7', '#FA7D2E']],
+  's-orange-blue': ['橙 → 蓝', ['#FA7D2E', '#4E8CF7']],
+  's-ryg': ['红 → 黄 → 绿', ['#F5554A', '#FCB900', '#3DC15E']],
+  's-gyr': ['绿 → 黄 → 红', ['#3DC15E', '#FCB900', '#F5554A']],
+  's-rainbow': ['彩虹', ['#F5554A', '#FA7D2E', '#FCB900', '#3DC15E', '#4E8CF7', '#8B5CF6']],
+}
+PROGRESS_COLORS.forEach(c => { c.label = PROGRESS_SCHEMES[c.key]?.[0] || OPTION_COLORS.find(o => o.key === c.key)?.label || c.key })
+export function progressColor(key, ratio = 0) {
+  const colors = PROGRESS_SCHEMES[key]?.[1]
+  if (!colors) return PROGRESS_COLORS.find(c => c.key === key)?.css || key || '#3DC15E'
+  const p = Math.min(1, Math.max(0, Number(ratio) || 0))
+  if (key.startsWith('g-')) {
+    const channels = [1, 3, 5].map(i => Math.round(parseInt(colors[0].slice(i, i + 2), 16) * (1 - p)
+      + parseInt(colors[1].slice(i, i + 2), 16) * p).toString(16).padStart(2, '0'))
+    return `#${channels.join('')}`
+  }
+  return colors[Math.min(colors.length - 1, Math.floor(p * colors.length))]
 }
 
 // 填色色板（设计稿 PixPin_2026-10-15_20-26-47）：9 色 × 3 深浅档，按行浅→深
@@ -77,8 +97,6 @@ export const FIELD_REGISTRY = {
   date: { label: '日期', icon: '📅', group: '基础', editor: 'date', filterOps: OP_DATE, aggregations: ['count', 'max', 'min'], defaultConfig: () => ({ format: 'yyyy-MM-dd', includeTime: false, autoFillCreatedTime: false }) },
   checkbox: { label: '复选框', icon: '☑', group: '基础', editor: 'checkbox', filterOps: ['eq', 'isEmpty', 'isNotEmpty'], aggregations: ['count'], defaultConfig: () => ({ defaultChecked: false }) },
   url: { label: '链接', icon: '🔗', group: '标识', editor: 'url', filterOps: OP_TEXT, aggregations: ['count'], defaultConfig: () => ({ displayStyle: 'iconText' }) },
-  phone: { label: '电话', icon: '📞', group: '标识', editor: 'inline', filterOps: OP_TEXT, aggregations: ['count'], defaultConfig: () => ({}) },
-  email: { label: '邮箱', icon: '✉', group: '标识', editor: 'inline', filterOps: OP_TEXT, aggregations: ['count'], defaultConfig: () => ({}) },
   member: { label: '人员', icon: '👤', group: '协作', editor: 'member', filterOps: OP_ENUM, aggregations: ['count'], defaultConfig: () => ({ multiple: true, notifyOnAdd: true }) },
   // V2
   progress: { label: '进度', icon: '▱', group: '基础', editor: 'progress', filterOps: OP_NUMBER, aggregations: ['count', 'sum', 'avg', 'max', 'min'], defaultConfig: () => ({ color: 'green', numberFormat: 'value', range: { min: 0, max: 100 }, showNumber: true }) },

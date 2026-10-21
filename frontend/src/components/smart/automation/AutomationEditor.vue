@@ -55,10 +55,24 @@
       <!-- 记录内容变更时 -->
       <div v-else class="ae-line">
         <span>在</span><TableChip :name="tableName" /><span>里，当记录的</span>
-        <el-select :model-value="trig.watchFields || []" multiple collapse-tags placeholder="任意列" class="ae-sel-m"
-                   :teleported="false" @update:model-value="(v) => patchTrig({ watchFields: v })">
-          <el-option v-for="f in fields" :key="f.field_name" :value="f.field_name" :label="f.label" />
-        </el-select>
+        <el-popover trigger="click" placement="bottom-start" :width="480" popper-class="ae-watch-popover" :show-arrow="false" :hide-after="0"
+                    :popper-style="{ maxWidth: 'calc(100vw - 24px)' }">
+          <template #reference>
+            <button type="button" class="ae-pill ae-watch-trigger">{{ watchMode === 'specified' ? '指定列' : '任意列' }}</button>
+          </template>
+          <div class="ae-watch-panel">
+            <el-radio-group :model-value="watchMode" class="ae-watch-modes" @update:model-value="setWatchMode">
+              <el-radio value="any">任意列</el-radio>
+              <el-radio value="specified">指定列</el-radio>
+            </el-radio-group>
+            <div v-if="watchMode === 'specified'" class="ae-watch-conditions">
+              <div>满足以下任意条件</div>
+              <PermCondRow v-for="(c, i) in watchConditions" :key="i" :cond="c" :fields="fields" allow-changed compact
+                           @update="c => setWatchCond(i, c)" @remove="removeWatchCond(i)" />
+              <button type="button" class="ae-find-add" @click="addWatchCond"><StIcon name="plus" :size="13" />添加条件</button>
+            </div>
+          </div>
+        </el-popover>
         <span>有变更时</span>
       </div>
     </div>
@@ -290,6 +304,16 @@ const READONLY = ['formula', 'lookup', 'autoNumber', 'ai', 'createdBy', 'lastMod
 const MEMBER_TYPES = ['member', 'createdBy', 'lastModifiedBy']
 
 const trig = computed(() => props.modelValue.trigger)
+const watchMode = computed(() => trig.value.watchMode || (trig.value.watchFields?.length || trig.value.watchConditions?.length ? 'specified' : 'any'))
+const watchConditions = computed(() => trig.value.watchConditions ?? (trig.value.watchFields || []).map(fieldId => ({ fieldId, operator: 'changed' })))
+function setWatchMode(mode) {
+  patchTrig({ watchMode: mode, watchFields: [], watchConditions: mode === 'specified'
+    ? (watchConditions.value.length ? watchConditions.value : [{ fieldId: null, operator: 'eq' }]) : [] })
+}
+function saveWatchConditions(conditions) { patchTrig({ watchMode: 'specified', watchFields: [], watchConditions: conditions }) }
+function addWatchCond() { saveWatchConditions([...watchConditions.value, { fieldId: null, operator: 'eq' }]) }
+function setWatchCond(i, condition) { saveWatchConditions(watchConditions.value.map((c, j) => j === i ? condition : c)) }
+function removeWatchCond(i) { saveWatchConditions(watchConditions.value.filter((_, j) => j !== i)) }
 const trigMeta = computed(() => TRIGGERS.find(t => t.type === trig.value.type) || TRIGGERS[0])
 const actMeta = (t) => ACTIONS.find(x => x.type === t) || ACTIONS[0]
 // 其他表的字段不套用本表编组（字段名 f_N 跨表重名）
@@ -318,7 +342,8 @@ function patchSchedule(obj) { patchTrig({ schedule: { ...trig.value.schedule, ..
 function setTriggerType(type) {
   const base = { type, filter: { match: 'all', conditions: [] } }
   if (type === 'schedule') base.schedule = { freq: 'daily', time: '09:00', weekdays: [1], monthDays: [1] }
-  if (type === 'recordCreated') base.rowConditions = []
+  if (type === 'recordCreated') base.rowConditions = props.fields[0]
+    ? [{ fieldId: props.fields[0].field_name, operator: 'isNotEmpty' }] : []
   if (type === 'recordUpdated') base.watchFields = []
   const actions = props.modelValue.actions.map(a => (type === 'schedule' && a.type === 'updateRecords' && a.target === 'triggered'
     ? { ...a, target: 'all' } : a))
@@ -491,6 +516,26 @@ const TableSelect = defineComponent({
 .ae-find-trigger:hover { border-color: var(--el-border-color-hover); }
 .ae-config-count { margin-left: 8px; color: var(--st-text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
 .ae-find-conditions { display: flex; flex-direction: column; gap: 14px; padding: 4px; }
+.ae-watch-panel { color: var(--st-text-1); font-size: 14px; padding: 4px; }
+.ae-watch-trigger { min-height: 34px; font-family: inherit; cursor: pointer; }
+.ae-watch-modes { display: flex; flex-direction: column; align-items: flex-start; padding: 0 4px 8px; }
+.ae-watch-modes :deep(.el-radio) { margin-right: 0; height: 36px; }
+.ae-watch-conditions { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--st-border); padding: 16px 0 0; }
+.ae-watch-conditions :deep(.pcr) { gap: 8px; }
+.ae-watch-conditions :deep(.pcr-field) { width: 132px; }
+.ae-watch-conditions :deep(.pcr-op) { width: 94px; }
+.ae-watch-conditions :deep(.tbfs),
+.ae-watch-conditions :deep(.el-input__wrapper),
+.ae-watch-conditions :deep(.el-select__wrapper) { min-height: 36px; height: 36px; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+.ae-watch-conditions :deep(.el-input__inner),
+.ae-watch-conditions :deep(.el-select__selected-item) { font-size: 14px; }
+.ae-watch-conditions :deep(.el-input-number) { width: 100%; height: 36px; }
+.ae-watch-conditions :deep(.el-input-number .el-input__inner) { text-align: left; }
+.ae-watch-conditions :deep(.enum-val) { min-height: 36px; box-sizing: border-box; }
+.ae-watch-conditions :deep(.pcr-del) { width: 28px; height: 28px; padding: 0; border: none; border-radius: 5px; background: transparent; justify-content: center; align-items: center; }
+.ae-watch-conditions :deep(.pcr-del:hover) { color: var(--st-text-1); background: var(--st-bg-hover, #f2f3f5); }
+.ae-watch-conditions .ae-find-add { display: inline-flex; align-items: center; gap: 6px; color: var(--st-text-2); border-radius: 5px; padding: 6px 8px; margin-left: -8px; cursor: pointer; }
+.ae-watch-conditions .ae-find-add:hover { background: var(--st-bg-hover, #f2f3f5); color: var(--st-text-1); }
 .ae-target-conditions { border-top: 1px solid var(--st-border); padding-top: 14px; }
 .ae-find-add { align-self: flex-start; border: 0; background: transparent; font: inherit; padding: 6px 0; }
 .ae-values { display: flex; flex-direction: column; gap: 10px; }

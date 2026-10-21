@@ -1,15 +1,15 @@
 <template>
   <!-- 编辑态挂载器：按字段类型分发编辑器（设计文档 §4：六类提交策略）。
        统一契约：props {field, record}，emit commit(value) / cancel() -->
-  <!-- 内联输入（数字/百分数/货币/电话/邮箱）：失焦/回车提交，Esc 取消 -->
+  <!-- 内联输入（数字/百分数/货币）：失焦/回车提交，Esc 取消 -->
   <el-input
     v-if="editorKind === 'inline' && ft !== 'text'" ref="inputRef" v-model="draft" size="small" class="cell-editor"
-    @blur="commitInline" @keyup.enter="commitInline" @keyup.esc="$emit('cancel')">
+    @blur="commitInline" @keydown.enter="enterInline" @keydown.tab="tabInline" @keyup.esc="$emit('cancel')">
     <template v-if="field.field_type === 'percent'" #suffix>%</template>
   </el-input>
 
   <!-- 文本：双击进入的浮层编辑（企微式）。边界=单元格（边框与选中态同款 2px 主色），
-       内容多时自动增高（上限 220px 后滚动）；Enter 换行、Ctrl+Enter/失焦提交、Esc 取消。
+       内容多时自动增高（上限 220px 后滚动）；Enter/Shift+Enter 提交后向下/向上，Alt+Enter 换行。
        preview（单击选中态）：同一浮层只读展示全文——用 div 而非 readonly textarea
        （Chrome 里 readonly textarea 的内容仍可被拖选），失焦/点外部/Esc 关闭，双击浮层进编辑 -->
   <template v-else-if="editorKind === 'inline'">
@@ -20,64 +20,45 @@
         <div v-if="preview" ref="taRef" class="cell-textarea preview-text" :style="taStyle">{{ draft }}</div>
         <textarea v-else ref="taRef" v-model="draft" class="cell-textarea" :style="taStyle" rows="1"
                   @input="autoGrow" @keydown.esc="discard"
-                  @keydown.ctrl.enter="commitInline" @blur="commitInline" />
+                  @keydown.enter="enterInline" @keydown.tab="tabInline" @blur="commitInline" />
       </div>
     </teleport>
   </template>
 
   <!-- 单选/多选：自定义下拉面板（设计稿：单元格输入-单选.png；搜索/创建选项/联动过滤） -->
   <SelectCellPanel
-    v-else-if="editorKind === 'select'" :field="field" :record="record" :frozen="frozen"
+    v-else-if="editorKind === 'select'" :field="field" :record="record" :frozen="frozen" :initial-query="initialInput" :advance-on-enter="advanceOnEnter" @advance="direction => $emit('advance', direction)"
     @commit="(v) => $emit('commit', v)" @cancel="$emit('cancel')"
     @commit-soft="(v) => $emit('commit-soft', v)" @collapse="$emit('collapse')"
     @add-option="(label) => $emit('add-option', label)" />
 
   <!-- 日期（面板挂 body：teleported=false 会被单元格 overflow 裁掉，等于打不开） -->
+  <div v-else-if="editorKind === 'date'" class="cell-date-wrap" @keydown.enter.capture="markDateEnter" @keyup.enter="finishDateEnter" @keydown.tab.capture="tabDate">
   <el-date-picker
-    v-else-if="editorKind === 'date'" ref="dateRef" v-model="draft" size="small" class="cell-editor cell-date-editor"
+    ref="dateRef" v-model="draft" size="small" class="cell-editor cell-date-editor"
     :type="cfg.includeTime ? 'datetime' : 'date'" value-format="YYYY-MM-DD HH:mm:ss"
     :format="dateDisplayFormat" :prefix-icon="NoIcon"
     @change="commit" @visible-change="(vis) => !vis && $emit('cancel')" />
-
-  <!-- 人员：成员多选（V1 单层浮层，数据源=租户成员；面板挂 body 防单元格裁剪） -->
-  <el-select
-    v-else-if="editorKind === 'member'" ref="selectRef" v-model="draft" size="small" class="cell-editor"
-    :multiple="cfg.multiple !== false" filterable automatic-dropdown
-    @visible-change="(vis) => !vis && commit()">
-    <el-option v-for="m in memberList" :key="m.id" :value="m.id" :label="m.name" />
-  </el-select>
-
-  <!-- 链接：显式确认表单 -->
-  <div v-else-if="editorKind === 'url'" class="url-editor" @click.stop>
-    <el-input v-model="urlText" size="small" placeholder="显示文本" class="url-field" />
-    <el-input v-model="urlLink" size="small" placeholder="链接 https://…" class="url-field" />
-    <div class="url-ops">
-      <el-button size="small" @click="$emit('cancel')">取消</el-button>
-      <el-button size="small" type="primary" @click="commitUrl">确认</el-button>
-    </div>
   </div>
 
-  <!-- 进度：滑块 -->
-  <el-slider
-    v-else-if="editorKind === 'progress'" v-model="draft" size="small" class="cell-editor slider"
-    :min="cfg.range?.min ?? 0" :max="cfg.range?.max ?? 100" @change="commit" />
+  <PeoplePicker v-else-if="editorKind === 'member'" ref="selectRef" :model-value="draft" class="cell-editor"
+    :multiple="cfg.multiple !== false" :people="memberList" :initial-query="initialInput" :advance-on-enter="advanceOnEnter" @advance="direction => $emit('advance', direction)" @confirm="v => $emit('commit', v)"
+    @cancel="$emit('cancel')" @people-loaded="rememberPeople" />
 
-  <!-- 图片/文件：上传面板 -->
-  <div v-else-if="editorKind === 'upload'" class="upload-editor" @click.stop>
-    <el-upload :show-file-list="false" :http-request="onUpload" multiple
-               :accept="field.field_type === 'image' ? 'image/*' : undefined">
-      <el-button size="small" type="primary" plain>＋ 添加{{ field.field_type === 'image' ? '图片' : '文件' }}</el-button>
-    </el-upload>
-    <div v-if="uploading" class="hint">上传中…</div>
-  </div>
+  <LinkCellPanel v-else-if="editorKind === 'url'" ref="selectRef" :value="draft || null" selected :advance-on-enter="advanceOnEnter" @advance="direction => $emit('advance', direction)"
+    @commit="v => $emit('commit', v)" @cancel="$emit('cancel')" @collapse="$emit('cancel')" />
+
+  <!-- 进度：双击后输入原始数值，单击拖动由网格选中态负责。 -->
+  <el-input v-else-if="editorKind === 'progress'" ref="inputRef" v-model="draft" size="small" class="cell-editor progress-input"
+            inputmode="decimal" @blur="commitInline" @keydown.enter="enterInline" @keydown.tab="tabInline" @keydown.esc="discard" />
+
+  <ImageCellPanel v-else-if="ft === 'image'" ref="selectRef" :value="draft" @commit="v => { draft = v; $emit('commit-soft', v) }" @cancel="$emit('cancel')" @collapse="$emit('collapse')" />
+  <FileCellPanel v-else-if="ft === 'file'" ref="selectRef" :value="Array.isArray(draft) ? draft : []" selected
+    @commit="v => { draft = v; $emit('commit-soft', v) }" @cancel="$emit('cancel')" @collapse="$emit('cancel')" />
 
   <!-- 关联：目标表记录选择（面板挂 body 防单元格裁剪） -->
-  <el-select
-    v-else-if="editorKind === 'relation'" ref="selectRef" v-model="draft" size="small" class="cell-editor"
-    :multiple="cfg.multiple !== false" filterable automatic-dropdown
-    @visible-change="(vis) => !vis && commit()">
-    <el-option v-for="r in relationOptions" :key="r.id" :value="r.id" :label="r.label" />
-  </el-select>
+  <RelationCellPanel v-else-if="editorKind === 'relation'" ref="selectRef" :field="field" :record="record" :value="draft" selected
+    @commit="v => { draft = v; $emit('commit-soft', v) }" @cancel="$emit('cancel')" @collapse="$emit('cancel')" />
 
   <!-- 只读字段：提示气泡（BlockedEditor，设计文档 §4.3） -->
   <div v-else class="blocked" @click.stop>
@@ -88,24 +69,33 @@
 
 <script setup>
 import { computed, getCurrentInstance, h, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, dayjs } from 'element-plus'
 import { regOf } from '../../../smart/registry/fieldRegistry.js'
 import { dayjsDateFormat } from '../../../smart/utils/format.js'
-import { smartUploadFile, uploadImageFile } from '../../../api/index.js'
 import SelectCellPanel from './SelectCellPanel.vue'
+import PeoplePicker from '../../people/PeoplePicker.vue'
+import ImageCellPanel from './ImageCellPanel.vue'
+import FileCellPanel from './FileCellPanel.vue'
+import LinkCellPanel from './LinkCellPanel.vue'
+import RelationCellPanel from './RelationCellPanel.vue'
 import { afterFrame, isDisplayCell, visibleCellRect } from '../../../smart/utils/vxeCell.js'
 
 const props = defineProps({
+  advanceOnEnter: Boolean,
+  initialInput: { type: String, default: undefined },
   field: { type: Object, required: true },
   record: { type: Object, required: true },
   frozen: { type: Boolean, default: false },   // 列是否被冻结（判断显示副本在哪个 wrapper）
   preview: { type: Boolean, default: false },  // 单击选中的只读预览（仅文本浮层用）
 })
-const emit = defineEmits(['commit', 'commit-soft', 'cancel', 'open-config', 'add-option', 'enter-edit', 'collapse'])
+const emit = defineEmits(['advance', 'commit', 'commit-soft', 'cancel', 'open-config', 'add-option', 'enter-edit', 'collapse'])
 
 const memberList = inject('smartMembers', { value: [] })          // [{id, name}]
-const smartTableId = inject('smartTableId', { value: null })
-const relationRows = inject('smartRelationRows', { value: new Map() })  // targetTableId → [{id,label}]
+function rememberPeople(people) {
+  const merged = new Map((memberList.value || []).map(p => [p.id, p]))
+  people.forEach(p => merged.set(p.id, p))
+  memberList.value = [...merged.values()]
+}
 
 const cfg = computed(() => props.field.options || {})
 // 日期编辑框的显示格式与查看态 formatDate 一致（字段格式 yyyy… → dayjs 格式），双击进编辑文字不变
@@ -123,16 +113,15 @@ const blockedText = computed(() => ({
 
 const cur = props.record[props.field.field_name]
 const draft = ref(
-  ft.value === 'progress' ? Number(cur ?? cfg.value.range?.min ?? 0)
-    : Array.isArray(cur) ? [...cur]
+  Array.isArray(cur) ? [...cur]
     // 多选兜底包成数组（单选改多选后存量值仍是标量 id）
     : isMulti.value ? (cur == null || cur === '' ? [] : [cur])
     : (cur ?? ''))
 
-// 链接双字段
-const urlText = ref(cur?.text || '')
-const urlLink = ref(cur?.url || '')
 
+watch(() => props.initialInput, value => {
+  if (value != null && ['inline', 'progress'].includes(editorKind.value)) draft.value = value
+}, { immediate: true })
 const inputRef = ref(null)
 const selectRef = ref(null)
 const dateRef = ref(null)
@@ -196,6 +185,13 @@ onMounted(async () => {
   const hostTd = rootEl?.closest?.('td')
   if (hostTd && !isDisplayCell(hostTd)) return
   const el = inputRef.value?.focus?.() || selectRef.value?.focus?.() || dateRef.value?.focus?.()
+  // 键入进入时由 initialInput 提供新值；显式打开编辑器时保留原值。
+  const nativeInput = inputRef.value?.input || inputRef.value?.$el?.querySelector?.('input') || rootEl?.querySelector?.('.cell-date-editor input')
+  if (nativeInput && editorKind.value === 'date' && props.initialInput != null) {
+    nativeInput.value = props.initialInput
+    nativeInput.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  if (nativeInput) nativeInput.setSelectionRange?.(nativeInput.value.length, nativeInput.value.length)
   // 文本浮层：锚定单元格位置；编辑态聚焦，预览态（div）不可聚焦、由 Esc/点外部关闭
   if (anchorRef.value) {
     const td = anchorRef.value.closest('td') || anchorRef.value.parentElement
@@ -266,7 +262,18 @@ watch(() => props.preview, async (p) => {
   focusTextarea()
 })
 
-function commitInline() {
+function enterInline(event) {
+  if (event.isComposing || event.keyCode === 229) return
+  if (ft.value === 'text' && (!props.advanceOnEnter || event.altKey) && !event.ctrlKey) return
+  event.preventDefault(); event.stopPropagation()
+  commitInline(props.advanceOnEnter ? (event.shiftKey ? 'up' : 'down') : false)
+}
+function tabInline(event) {
+  if (!props.advanceOnEnter || event.isComposing || event.keyCode === 229) return
+  event.preventDefault(); event.stopPropagation()
+  commitInline(event.shiftKey ? 'left' : 'right')
+}
+function commitInline(advance = false) {
   if (discarded) return
   // vxe 重渲染会直接重建单元格 DOM（不走 Vue 卸载），textarea 被移除文档树触发 blur，
   // 这种"卸载性 blur"不是用户操作，不提交
@@ -277,18 +284,37 @@ function commitInline() {
     if (v === '' || v == null) v = null
     else if (Number.isNaN(Number(v))) { ElMessage.warning('请输入数字'); return }
     else v = Number(v)
+    if (ft.value === 'progress' && v != null) {
+      if (!Number.isFinite(v)) { ElMessage.warning('请输入有效数字'); return }
+      v = Math.min(Number(cfg.value.range?.max ?? 100), Math.max(Number(cfg.value.range?.min ?? 0), v))
+    }
   }
+  discarded = true
   emit('commit', v === '' ? null : v)
+  if (typeof advance === 'string') emit('advance', advance)
 }
-function commit() { emit('commit', draft.value === '' ? null : draft.value) }
+let dateEnter = false
+function markDateEnter(event) { dateEnter = props.advanceOnEnter && !event.isComposing && event.keyCode !== 229 ? (event.shiftKey ? 'up' : 'down') : false }
+function tabDate(event) {
+  if (!props.advanceOnEnter || event.isComposing || event.keyCode === 229) return
+  event.preventDefault(); event.stopPropagation()
+  const raw = event.target.value?.trim() || ''
+  const parsed = raw ? dayjs(raw, dateDisplayFormat.value, true) : null
+  if (parsed && !parsed.isValid()) { ElMessage.warning('请输入有效日期'); return }
+  draft.value = parsed ? parsed.format('YYYY-MM-DD HH:mm:ss') : null
+  dateEnter = event.shiftKey ? 'left' : 'right'
+  commit()
+}
+function finishDateEnter() { if (dateEnter && !discarded) commit() }
+function commit() {
+  if (discarded) return
+  discarded = true
+  emit('commit', draft.value === '' ? null : draft.value)
+  if (dateEnter) { const direction = dateEnter; dateEnter = false; emit('advance', direction) }
+}
 function discard() {
   discarded = true
   emit('cancel')
-}
-function commitUrl() {
-  if (!urlLink.value) { ElMessage.warning('链接不能为空'); return }
-  const url = /^https?:\/\//i.test(urlLink.value) ? urlLink.value : `https://${urlLink.value}`
-  emit('commit', { url, text: urlText.value || urlLink.value })
 }
 
 // Esc/取消时浮层卸载会触发 blur → 防误提交：取消置标志，提交跳过
@@ -301,33 +327,14 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onAnyScroll)
   cancelAnimationFrame(scrollRaf)
 })
-const uploading = ref(false)
-async function onUpload({ file }) {
-  uploading.value = true
-  try {
-    // 图片走图片库（返回 {files:[{id}]}）；文件走智能表附件存储（支持 PDF 等任意类型，V3）
-    const list = Array.isArray(draft.value) ? [...draft.value] : []
-    if (ft.value === 'image') {
-      const res = await uploadImageFile(file)
-      list.push(String(res?.files?.[0]?.id ?? res?.id))
-    } else {
-      const res = await smartUploadFile(smartTableId.value, file)
-      list.push({ id: res.id, name: res.name || file.name, size: res.size })
-    }
-    draft.value = list
-    commit()
-  } catch (e) {
-    ElMessage.error(e.message || '上传失败')
-  } finally {
-    uploading.value = false
-  }
-}
 
-const relationOptions = computed(() => relationRows.value.get(cfg.value.targetTableId) || [])
 </script>
 
 <style scoped>
+.cell-date-wrap { width: 100%; height: 100%; }
 .cell-editor { width: 100%; height: 100%; }
+.relation-editor :deep(.el-select__caret) { width: 24px; height: 24px; transform: none; }
+.progress-input :deep(.el-input__inner) { text-align: right; font-size: 13px; }
 /* 编辑态边框统一由 SmartGrid 画在 .vxe-cell 上，wrapper 自身不再描边（避免 EP content-box 高 2px 被裁） */
 .cell-editor :deep(.el-input__wrapper) { height: 100%; box-shadow: none; }
 .cell-anchor { display: block; width: 100%; height: 100%; }

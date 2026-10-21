@@ -30,7 +30,7 @@ const onlyEmpty = ref(true)
 const allowNew = ref(true)
 const loading = ref(false)
 const candidates = computed(() => props.fields.filter(f => f.field_name !== props.field?.field_name
-  && ['text', 'singleSelect', 'multiSelect', 'url', 'email', 'phone', 'ai', 'formula', 'lookup'].includes(f.field_type)))
+  && ['text', 'singleSelect', 'multiSelect', 'url', 'ai', 'formula', 'lookup'].includes(f.field_type)))
 watch(() => props.visible, (v) => {
   if (v) sources.value = candidates.value.filter(f => f.field_type === 'text').slice(0, 1).map(f => f.field_name)
 })

@@ -7,7 +7,7 @@
     <!-- AI 角标、筛选漏斗内联在字段名文字流末尾：紧跟最后一个字（字段名换行时也不会被推到最右侧） -->
     <span class="field-name" :style="{ '-webkit-line-clamp': lines }">{{ field.label }}<AiBadge v-if="isAi" class="ai-badge" /><span
       v-if="filtered" class="filter-dot st-icon-action" aria-label="编辑该列筛选" @click.stop="onFilterClick" @dblclick.stop><StIcon name="filter" :size="15" /></span></span>
-    <span class="st-dd head-menu" :class="{ open: menuOpen }" @click.stop="$emit('menu', $event)" @dblclick.stop />
+    <CellDropdown class="head-menu" :open="menuOpen" label="列菜单" @click="$emit('menu', $event)" />
   </span>
 </template>
 
@@ -17,6 +17,7 @@ import { isCondValueEmpty } from '../../../smart/utils/format.js'
 import { computed } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 import AiBadge from '../ai/AiBadge.vue'
+import CellDropdown from './CellDropdown.vue'
 
 const props = defineProps({
   field: Object,
@@ -56,8 +57,7 @@ const filtered = computed(() => (props.view?.config?.filters?.conditions || []).
 /* 下拉按钮：默认隐藏，hover / 单击选中列 / 菜单展开时出现；外观与单元格单选/多选的下拉按钮一致——
    常态只有灰三角（无底色），hover 按钮本身出现浅灰圆角方块（#E6E8E8，参照 PixPin_2026-10-17_17-37-46）。
    右缘对齐内容区（不能越出：.vxe-cell--title 裁剪，越出部分会被遮住） */
-.head-menu { position: absolute; right: 0; top: -2px; visibility: hidden; background: transparent; }   /* 竖直方向与字段名首行居中对齐（20px 行高 vs 24px 按钮）*/
-.head-menu:hover, .head-menu.open { background: #E6E8E8; }
+.head-menu { position: absolute; right: 0; top: -2px; visibility: hidden; }   /* 竖直方向与字段名首行居中对齐（20px 行高 vs 24px 按钮）*/
 .head-menu.open { visibility: visible; }
 .ai-badge { display: inline-flex; vertical-align: 1px; margin-left: 4px; }
 </style>

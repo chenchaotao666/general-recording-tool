@@ -11,7 +11,7 @@ const SKIP = Symbol('skip')   // 该条件无法通过预设满足
 const EMPTY = Symbol('empty') // 新记录保持为空即可满足
 const NUMBER_TYPES = ['number', 'percent', 'currency', 'progress']
 const DATE_TYPES = ['date']
-const TEXT_TYPES = ['text', 'phone', 'email']
+const TEXT_TYPES = ['text']
 const PLACEHOLDER = '新记录'
 
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`

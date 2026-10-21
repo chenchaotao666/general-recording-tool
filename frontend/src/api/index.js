@@ -129,6 +129,8 @@ export const uploadImage = (file) => {
   return http.post('/uploads/image', fd)
 }
 export const imageUrl = (id) => `/api/uploads/image/${id}?token=${localStorage.getItem('grt_token')}&tenant_id=${localStorage.getItem('grt_tenant_id') || ''}`
+export const imageMeta = (id) => http.get(`/uploads/image/${id}/meta`)
+export const renameImage = (id, filename) => http.patch(`/uploads/image/${id}/meta`, { filename })
 
 // 单文件图片上传（富文本编辑器插图用），返回 {files: [{id, filename, size, mime}]}
 export const uploadImageFile = (file) => {
@@ -167,6 +169,7 @@ export const deleteFriend = (id) => http.delete(`/friends/${id}`)
 
 // 用户搜索 / 我的组
 export const searchUsers = (q, scope) => http.get('/users/search', { params: { q, scope } })
+export const getUserDirectory = () => http.get('/users/directory')
 export const listMyGroups = () => http.get('/groups/mine')
 
 // 链接分享
@@ -394,6 +397,8 @@ export const smartDeleteViewPref = (vid) => http.delete(`/smart/views/${vid}/pre
 export const smartFieldDeps = (tid, fieldName) => http.get(`/smart/tables/${tid}/fields/${fieldName}/deps`)
 // 网格与记录
 export const smartGrid = (tid, params) => http.get(`/smart/tables/${tid}/grid`, { params })
+export const smartRelationRecords = (tid, params) => http.get(`/smart/tables/${tid}/relation-records`, { params })
+export const smartRecordsRevision = tid => http.get(`/smart/tables/${tid}/revision`)
 export const smartFieldStats = (tid, params) => http.get(`/smart/tables/${tid}/field-stats`, { params })
 export const smartCreateRecord = (tid, payload) => http.post(`/smart/tables/${tid}/records`, payload)
 export const smartInsertRecords = (tid, rid, payload) => http.post(`/smart/tables/${tid}/records/${rid}/insert`, payload)
@@ -467,6 +472,7 @@ export const smartUploadFile = (tid, file) => {
   fd.append('file', file)
   return http.post(`/smart/tables/${tid}/files`, fd)
 }
+export const smartRecentFiles = (tid) => http.get(`/smart/tables/${tid}/files/recent`)
 
 // ---------- 智能表：公式编辑器 ----------
 export const smartFormulaFunctions = () => http.get('/smart/formula/functions')

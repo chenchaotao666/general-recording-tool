@@ -109,14 +109,6 @@ FIELD_TYPES: dict[str, dict] = {
         "default_config": {"displayStyle": "iconText"},
         "filter_ops": OP_TEXT, "aggregations": ["count"],
     },
-    "phone": {
-        "label": "电话", "data_type": "varchar", "widget": "input",
-        "default_config": {}, "filter_ops": OP_TEXT, "aggregations": ["count"],
-    },
-    "email": {
-        "label": "邮箱", "data_type": "varchar", "widget": "input",
-        "default_config": {}, "filter_ops": OP_TEXT, "aggregations": ["count"],
-    },
     "member": {
         "label": "人员", "data_type": "json", "widget": "input",
         "default_config": {"multiple": True, "notifyOnAdd": True},

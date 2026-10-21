@@ -6,19 +6,10 @@
     <span v-else-if="aiState" class="ai-state err" :data-smart-tip="aiState.error || ''">生成失败 · {{ aiState.error || '原因未知' }}</span>
     <!-- 单选/多选：彩色标签胶囊；一行放不下时只渲染放得下的，末尾 +N 表示隐藏个数 -->
     <template v-else-if="ft === 'singleSelect' || ft === 'multiSelect'">
-      <span ref="enumBox" class="enum-box" :class="{ 'has-more': hiddenCount > 0 }">
-        <span v-for="t in visibleTags" :key="t.key" class="opt-tag" :class="{ raw: t.raw }"
-              :style="t.raw ? {} : { background: optionColor(t.color).value, color: optionColor(t.color).text }">{{ t.label }}</span>
-        <span v-if="hiddenCount > 0" class="enum-more">+{{ hiddenCount }}</span>
-        <!-- 徽标宽度测量幽灵（不入流、不可见） -->
-        <span ref="ghostRef" class="enum-more enum-ghost">+99</span>
-      </span>
+      <CompactCellTags :tags="enumTags" />
     </template>
     <!-- 进度条 -->
-    <span v-else-if="ft === 'progress'" class="progress-wrap">
-      <span class="progress-bar"><span class="progress-fill" :style="progressStyle"></span></span>
-      <span v-if="cfg.showNumber !== false" class="progress-num">{{ progressText }}</span>
-    </span>
+    <ProgressCell v-else-if="ft === 'progress'" :value="value" :config="cfg" />
     <!-- 人员：头像+姓名 -->
     <template v-else-if="ft === 'member'">
       <span v-for="m in members" :key="m.id" class="member-chip">
@@ -68,7 +59,9 @@
 <script setup>
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
-import { optionColor, progressColor } from '../../../smart/registry/fieldRegistry.js'
+import { optionColor } from '../../../smart/registry/fieldRegistry.js'
+import ProgressCell from './ProgressCell.vue'
+import CompactCellTags from './CompactCellTags.vue'
 import { imageUrl } from '../../../api/index.js'
 import { formatCurrency, formatDate, formatNumber } from '../../../smart/utils/format.js'
 
@@ -96,47 +89,10 @@ const cellStyle = computed(() => props.fillColor ? { background: props.fillColor
 // 单选/多选一行放不下时 +N。容器是 nowrap + overflow 裁剪，测量用 scrollWidth
 // （截断标签的自然宽度）；先按全量宽度判断能否全放下，放不下再预留徽标位
 // （ghost 实测）重算容量，只渲染放得下的 + 徽标（否则徽标自身会被挤出裁剪区）
-const enumBox = ref(null)
-const ghostRef = ref(null)
-const visibleCount = ref(Infinity)   // Infinity = 全渲染（测量态）
 const enumTags = computed(() => [
-  ...selectedOptions.value.map(o => ({ key: o.id, label: o.label, color: o.color, raw: false })),
+  ...selectedOptions.value.map(o => ({ key: o.id, label: o.label, style: { background: optionColor(o.color).value, color: optionColor(o.color).text } })),
   ...unmatchedValues.value.map((v, i) => ({ key: `raw-${i}`, label: v, raw: true })),
 ])
-const visibleTags = computed(() => Number.isFinite(visibleCount.value)
-  ? enumTags.value.slice(0, visibleCount.value) : enumTags.value)
-const hiddenCount = computed(() => Number.isFinite(visibleCount.value)
-  ? enumTags.value.length - visibleCount.value : 0)
-function countFit(tags, W) {
-  let used = 0, k = 0
-  for (const t of tags) {
-    used += Math.min(t.scrollWidth, W) + (k ? 4 : 0)   // gap 4px；截断标签按容量上限计
-    if (used > W + 1) break
-    k++
-  }
-  return k
-}
-async function measureEnum() {
-  visibleCount.value = Infinity
-  await nextTick()
-  const box = enumBox.value
-  if (!box) return
-  const tags = [...box.querySelectorAll('.opt-tag')]
-  if (!tags.length) return
-  if (countFit(tags, box.clientWidth) >= tags.length) return   // 全放得下
-  const W = box.clientWidth - ((ghostRef.value?.offsetWidth || 24) + 4)   // 预留徽标位
-  visibleCount.value = Math.max(1, countFit(tags, W))   // 至少显示 1 个（截断）+ 徽标
-}
-let enumRO = null
-onMounted(() => {
-  if (!enumBox.value) return
-  measureEnum()
-  // 列宽拖拽/窗口缩放都会改变容量
-  enumRO = new ResizeObserver(() => measureEnum())
-  enumRO.observe(enumBox.value)
-})
-watch(value, measureEnum)
-onBeforeUnmount(() => enumRO?.disconnect())
 
 const selectedOptions = computed(() => {
   const opts = cfg.value.options || []
@@ -155,23 +111,6 @@ const unmatchedValues = computed(() => {
   const ids = Array.isArray(v) ? v : [v]
   return ids.filter(id => id != null && id !== '' && !opts.some(o => o.id === id))
     .map((x) => (typeof x === 'object' ? JSON.stringify(x) : String(x)))
-})
-
-const progressStyle = computed(() => {
-  const range = cfg.value.range || { min: 0, max: 100 }
-  const pct = Math.min(1, Math.max(0, ((Number(value.value) || 0) - range.min) / (range.max - range.min)))
-  // 渐变/分段色按整条进度条铺开（填充部分只露出对应比例），而不是压缩进填充宽度
-  return { width: `${pct * 100}%`, background: progressColor(cfg.value.color), backgroundSize: pct > 0 ? `${100 / pct}% 100%` : undefined }
-})
-const progressText = computed(() => {
-  if (value.value == null) return ''
-  const prec = cfg.value.precision
-  const fix = (n) => (prec === 'default' || prec == null ? String(+n.toFixed(4)) : n.toFixed(prec))
-  if (cfg.value.numberFormat === 'percent') {
-    const range = cfg.value.range || { min: 0, max: 100 }
-    return `${fix(((Number(value.value) - range.min) / (range.max - range.min)) * 100)}%`
-  }
-  return fix(Number(value.value))
 })
 
 const members = computed(() => {
@@ -222,16 +161,6 @@ const lookupText = computed(() => {
 .enum-ghost { position: absolute; visibility: hidden; pointer-events: none; }
 .opt-tag { padding: 1px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; flex: none; }
 .opt-tag.raw { background: var(--el-fill-color-light); color: var(--el-text-color-regular); border: 1px dashed var(--el-border-color); }
-.progress-wrap { display: flex; align-items: center; gap: 6px; width: 100%; }
-.progress-bar { flex: 1; height: 8px; background: var(--el-fill-color); border-radius: 4px; position: relative; }
-.progress-fill { display: block; height: 100%; border-radius: 4px; position: relative; }
-/* 白色圆形滑块手柄（对齐参照 单元格输入-进度.png：填充段右端的拖拽暗示） */
-.progress-fill::after {
-  content: ''; position: absolute; right: -1px; top: 50%; transform: translateY(-50%);
-  width: 10px; height: 10px; border-radius: 50%; background: #fff;
-  border: 1px solid rgba(0, 0, 0, .12); box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
-}
-.progress-num { font-size: 12px; color: var(--el-text-color-secondary); }
 .member-chip { display: inline-flex; align-items: center; gap: 4px; }
 /* 方形圆角头像（对齐参照 单元格输入-人员.png） */
 .avatar { width: 20px; height: 20px; border-radius: 4px; background: var(--el-color-primary-light-5); color: #fff; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }

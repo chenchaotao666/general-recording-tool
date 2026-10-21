@@ -62,9 +62,11 @@ describe('撤销栈', () => {
 })
 
 describe('字段注册表', () => {
-  it('V1+V2 全部 24 种类型注册完整', () => {
+  it('支持的字段类型注册完整，已移除电话和邮箱类型', () => {
+    expect(FIELD_REGISTRY.phone).toBeUndefined()
+    expect(FIELD_REGISTRY.email).toBeUndefined()
     const expected = ['text', 'singleSelect', 'multiSelect', 'number', 'percent', 'currency', 'date',
-      'checkbox', 'url', 'phone', 'email', 'member', 'progress', 'image', 'file', 'autoNumber',
+      'checkbox', 'url', 'member', 'progress', 'image', 'file', 'autoNumber',
       'relation', 'lookup', 'formula', 'createdBy', 'lastModifiedBy', 'createdTime', 'lastModifiedTime']
     for (const ft of expected) {
       const reg = FIELD_REGISTRY[ft]

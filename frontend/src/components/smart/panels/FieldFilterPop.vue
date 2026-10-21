@@ -74,7 +74,7 @@ const ftype = computed(() => (props.field.field_type === 'ai' ? (props.field.opt
 const ops = computed(() => filterOpsOf(props.field))
 const isEnum = computed(() => ['singleSelect', 'multiSelect'].includes(ftype.value))
 const isMember = computed(() => ['member', 'createdBy', 'lastModifiedBy'].includes(ftype.value))
-const isTextLike = computed(() => ['text', 'url', 'email', 'phone', 'barcode', 'location', 'autoNumber', 'formula', 'lookup'].includes(ftype.value)
+const isTextLike = computed(() => ['text', 'url', 'barcode', 'location', 'autoNumber', 'formula', 'lookup'].includes(ftype.value)
   && !['isEmpty', 'isNotEmpty'].includes(op.value))
 
 const op = ref('contains')

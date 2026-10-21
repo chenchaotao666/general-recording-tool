@@ -55,6 +55,21 @@ def locate(file_id: str) -> tuple[Path, dict]:
     return path, meta
 
 
+def recent(table_id: int, uploader_id: int, limit: int = 30) -> list[dict]:
+    """只返回本人在当前表上传的附件，不扩展其他记录的可见范围。"""
+    found = []
+    for folder in _root().iterdir():
+        if not folder.is_dir() or not FILE_ID_RE.fullmatch(folder.name):
+            continue
+        try:
+            path, meta = locate(folder.name)
+            if meta.get('table_id') == table_id and meta.get('uploader_id') == uploader_id:
+                found.append((path.stat().st_mtime, {"id": folder.name, "name": meta['filename'], "size": meta.get('size', 0)}))
+        except (SmartFileError, OSError, ValueError, KeyError):
+            continue
+    return [item for _, item in sorted(found, key=lambda pair: pair[0], reverse=True)[:limit]]
+
+
 def pdf_text(file_id: str, max_chars: int = 20000) -> str:
     """PDF → 纯文本（pypdf，可选依赖；未安装时给出明确错误）。"""
     path, meta = locate(file_id)

@@ -30,7 +30,7 @@
       </div>
     </div>
   </div>
-  <el-input-number v-else-if="isNumber" v-model="val" size="small" class="val-editor"
+  <el-input-number v-else-if="isNumber" v-model="val" size="small" class="val-editor" :controls="numberControls"
                    @change="$emit('update', val)" />
   <!-- 日期（参照 PixPin_2026-10-18_00-16-20）：左侧日期模式（具体日期 / 今天 / 本周 / 过去 7 天内…），
        选「具体日期」时右侧出日期选择。值 = { mode, date? }，相对模式查询时按当天换算（后端 pyquery.date_mode_range）。
@@ -48,7 +48,7 @@
                     :format="dateFormat" placeholder="选择日期" size="small" class="dv-date" :teleported="false"
                     :popper-options="FIXED_POPPER" @update:model-value="onExactDate" />
   </div>
-  <el-input-number v-else-if="isRelativeDate" v-model="val" size="small" class="val-editor"
+  <el-input-number v-else-if="isRelativeDate" v-model="val" size="small" class="val-editor" :controls="numberControls"
                    :min="1" placeholder="天数" @change="$emit('update', val)" />
   <el-input v-else v-model="val" size="small" class="val-editor" placeholder="请输入"
             @input="$emit('update', val)" />
@@ -60,7 +60,7 @@ import StIcon from '../icons/StIcon.vue'
 import { optionColor } from '../../../smart/registry/fieldRegistry.js'
 import { dateModesFor, dayjsDateFormat, isDateModeValue } from '../../../smart/utils/format.js'
 
-const props = defineProps({ field: Object, operator: String, value: [String, Number, Array] })
+const props = defineProps({ field: Object, operator: String, value: [String, Number, Array], numberControls: { type: Boolean, default: true } })
 const emit = defineEmits(['update'])
 
 const members = inject('smartMembers', { value: [] })

@@ -91,6 +91,25 @@ def validate_rule(db: Session, mt: MetaTable, payload: dict) -> tuple[dict, list
             out_t["rowConditions"] = _clean_conds(trig.get("rowConditions"))
         if ttype == "recordUpdated":
             out_t["watchFields"] = [x for x in (trig.get("watchFields") or []) if x in names]
+            mode = trig.get("watchMode") or ("specified" if trig.get("watchFields") or trig.get("watchConditions") else "any")
+            if mode not in ("any", "specified"):
+                raise HTTPException(400, "变更列范围不支持")
+            conditions = _clean_conds(trig.get("watchConditions")) if "watchConditions" in trig else [
+                {"fieldId": fn, "operator": "changed"} for fn in (trig.get("watchFields") or [])]
+            if mode == "specified" and payload.get("enabled", True):
+                raw_conditions = trig.get("watchConditions") if "watchConditions" in trig else trig.get("watchFields")
+                if not conditions or len(conditions) != len(raw_conditions or []) or any(c["fieldId"] not in names for c in conditions):
+                    raise HTTPException(400, "请为指定列添加有效的变更条件")
+                from .view_config import OP_MAP
+                for c in conditions:
+                    if c["operator"] != "changed" and c["operator"] not in OP_MAP:
+                        raise HTTPException(400, "指定列条件运算符不支持")
+                    if c["operator"] not in ("changed", "isEmpty", "isNotEmpty") and c.get("value") in (None, "", []):
+                        raise HTTPException(400, "请填写指定列条件的值")
+            out_t["watchMode"] = mode
+            out_t["watchConditions"] = conditions if mode == "specified" else []
+            if mode == "any":
+                out_t["watchFields"] = []
     actions = payload.get("actions") or []
     if not isinstance(actions, list) or not actions:
         raise HTTPException(400, "至少需要一个执行操作")
@@ -99,10 +118,9 @@ def validate_rule(db: Session, mt: MetaTable, payload: dict) -> tuple[dict, list
     if payload.get("enabled", True):
         if isinstance(actions[-1], dict) and actions[-1].get("type") == "findRecords":
             raise HTTPException(400, "最后一步不能为查找记录，请调整后再启用。")
-        loop_action = {"recordCreated": "createRecord", "recordUpdated": "updateRecords"}.get(ttype)
-        for index, action in enumerate(actions):
-            if loop_action and action.get("type") == loop_action and str(action.get("tableId") or mt.id) == str(mt.id):
-                raise HTTPException(400, f"当前流程的触发器和第 {index + 2} 步存在循环执行的关系，请调整后再启用。")
+        # 同表写入不等于循环：自动化来源默认被 _trigger_matches 拒绝；
+        # 开启再次触发时仍需实际字段发生变化且满足条件，并受 smart_events 的深度限制。
+        # 变量、条件与多步动作的运行结果无法只凭表 ID 静态判断，不能据此禁止启用。
     out_a = []
     for i, a in enumerate(actions):
         at = a.get("type")
@@ -454,9 +472,16 @@ def _trigger_matches(db: Session, rule: SmartAutomation, event: dict) -> bool:
     except HTTPException:
         return False   # 记录已被删除
     if event["type"] == "recordUpdated":
-        watch = trig.get("watchFields") or []
-        if watch and not set(watch) & set(event.get("changed") or []):
-            return False
+        mode = trig.get("watchMode") or ("specified" if trig.get("watchFields") or trig.get("watchConditions") else "any")
+        if mode == "specified":
+            conditions = trig.get("watchConditions") if "watchConditions" in trig else [
+                {"fieldId": fn, "operator": "changed"} for fn in (trig.get("watchFields") or [])]
+            changed = set(event.get("changed") or [])
+            names = {f.field_name for f in fields}
+            if not any(c.get("fieldId") in changed & names and (
+                c.get("operator") == "changed" or match_conditions(rec, fields, [c], "all")
+            ) for c in (conditions or [])):
+                return False
     if trig.get("type") == "recordCreated" and not match_conditions(rec, fields, trig.get("rowConditions"), "all"):
         return False
     flt = trig.get("filter") or {}

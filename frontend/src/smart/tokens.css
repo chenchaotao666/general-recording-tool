@@ -147,11 +147,11 @@ body:has(.smart-home, .st-page, .dash-page) .vxe-tooltip--arrow { display: none;
   --st-icon-hover-radius: 4px;
 }
 :is(.st-icon-action, .st-dd, .st-row-expand,
-    .sel-anchor .tag-x, .ev-x, .fc-x, .aic-chip-x, .me-chip-x) {
+    .ev-x, .fc-x, .aic-chip-x, .me-chip-x) {
   border-radius: var(--st-icon-hover-radius);
 }
 :is(.st-icon-action, .st-dd, .st-row-expand,
-    .sel-anchor .tag-x, .ev-x, .fc-x, .aic-chip-x, .me-chip-x):is(:hover, :focus-visible):not(:disabled):not([aria-disabled="true"]):not(.disabled):not(.off):not(.is-disabled) {
+    .ev-x, .fc-x, .aic-chip-x, .me-chip-x):is(:hover, :focus-visible):not(:disabled):not([aria-disabled="true"]):not(.disabled):not(.off):not(.is-disabled) {
   background: var(--st-icon-hover-bg) !important;
   border-radius: var(--st-icon-hover-radius) !important;
   color: #30343B;

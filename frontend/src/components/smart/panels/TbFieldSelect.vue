@@ -3,23 +3,23 @@
        点开为统一的「选择字段」面板（FieldPickList：编组为可折叠节点，参照 docs/PixPin_2026-10-18_01-05-36.png）。
        :teleported="false"：面板渲染在外层工具栏面板内部，点选字段不会被当成"点击外部"而关掉外层面板；
        strategy fixed：不被外层面板的滚动区裁剪 -->
-  <el-popover :hide-after="0" v-model:visible="open" trigger="click" placement="bottom-start" :width="324" :teleported="false"
-              :show-arrow="false" :popper-options="{ strategy: 'fixed' }" popper-class="st-tbpanel st-pick-pop">
+  <el-popover :hide-after="0" v-model:visible="open" trigger="click" :placement="placement" :width="324" :teleported="false"
+              :show-arrow="false" :popper-options="popperOptions" popper-class="st-tbpanel st-pick-pop">
     <template #reference>
-      <div class="tbfs" :class="{ borderless, open }">
+      <div ref="trigger" class="tbfs" :class="{ borderless, open }">
         <StIcon v-if="current" :name="fieldIconName(current)" :size="16" class="tbfs-ico" />
         <span class="tbfs-label" :class="{ ph: !hasSelection }">{{ selectionLabel || placeholder }}</span>
         <span v-if="clearable && hasSelection" class="tbfs-clear st-icon-action" data-smart-tip="清除" @click.stop="emit('update:modelValue', multiple ? [] : null)"><StIcon name="close" :size="12" /></span>
         <StIcon :name="open ? 'chevron-up' : 'chevron-down'" :size="14" class="tbfs-caret" />
       </div>
     </template>
-    <FieldPickList :fields="fields" :column-groups="columnGroups" :selected="modelValue" @pick="pick" />
+    <FieldPickList :fields="fields" :column-groups="columnGroups" :selected="modelValue" :max-height="listHeight" @pick="pick" />
   </el-popover>
 </template>
 
 <script setup>
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
-import { computed, ref } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 import FieldPickList from './FieldPickList.vue'
 
@@ -34,6 +34,45 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 const open = ref(false)
+const trigger = ref(null)
+const placement = ref('bottom-start')
+const listHeight = ref(420)
+const popperOptions = {
+  strategy: 'fixed',
+  modifiers: [
+    { name: 'flip', enabled: false },
+    { name: 'preventOverflow', options: { boundary: [], rootBoundary: 'viewport', padding: 12, altAxis: true, tether: false } },
+  ],
+}
+// 两侧都放不下完整列表时，选可用空间较大的一侧，列表内部滚动。
+function fitToViewport() {
+  if (!trigger.value) return
+  const rect = trigger.value.getBoundingClientRect()
+  const viewport = window.visualViewport
+  const top = viewport?.offsetTop || 0
+  const bottom = top + (viewport?.height || window.innerHeight)
+  const below = bottom - rect.bottom
+  const above = rect.top - top
+  placement.value = below >= 490 || below >= above ? 'bottom-start' : 'top-start'
+  // 面板内边距、标题、触发框间距和视口安全间距共预留 70px。
+  listHeight.value = Math.max(0, Math.min(420, (placement.value === 'bottom-start' ? below : above) - 70))
+}
+function stopTracking() {
+  window.removeEventListener('resize', fitToViewport)
+  window.removeEventListener('scroll', fitToViewport, true)
+  window.visualViewport?.removeEventListener('resize', fitToViewport)
+  window.visualViewport?.removeEventListener('scroll', fitToViewport)
+}
+watch(open, visible => {
+  stopTracking()
+  if (!visible) return
+  fitToViewport()
+  window.addEventListener('resize', fitToViewport)
+  window.addEventListener('scroll', fitToViewport, true)
+  window.visualViewport?.addEventListener('resize', fitToViewport)
+  window.visualViewport?.addEventListener('scroll', fitToViewport)
+}, { flush: 'post' })
+onBeforeUnmount(stopTracking)
 const current = computed(() => props.fields.find(f => f.field_name === props.modelValue))
 const multiple = computed(() => Array.isArray(props.modelValue))
 const hasSelection = computed(() => multiple.value ? props.modelValue.length > 0 : !!current.value)

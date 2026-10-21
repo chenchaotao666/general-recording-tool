@@ -81,7 +81,7 @@ S("translate", "翻译为中文", "recommend", "text", "text", "将英文文本�
       ["This is an English paragraph", "这是一个英文段落"], ["Hello world", "你好世界"], ["Artificial Intelligence", "人工智能"]]})
 S("markDuplicate", "标记重复值", "recommend", "checkbox", "text", "当值与其他记录重复时自动勾选。",
   desc="{input} 列的值与其他记录重复时自动勾选。", local=True,
-  sample={"in": "手机号", "inType": "phone", "out": "是否重复", "rows": [
+  sample={"in": "手机号", "inType": "text", "out": "是否重复", "rows": [
       ["13800000001", True], ["13900000002", False], ["13800000001", True]]})
 S("qrcode", "生成二维码图片", "recommend", "text", "text", "根据内容生成二维码图片。", disabled=True)
 S("fxLive", "查询实时汇率", "recommend", "number", "text", "查询币种的实时汇率。", disabled=True)
