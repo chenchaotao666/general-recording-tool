@@ -68,6 +68,7 @@
 </template>
 
 <script setup>
+import { useGridScrollCollapse } from '../../../smart/utils/useGridScrollCollapse.js'
 import { computed, getCurrentInstance, h, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, dayjs } from 'element-plus'
 import { regOf } from '../../../smart/registry/fieldRegistry.js'
@@ -319,6 +320,10 @@ function discard() {
 
 // Esc/取消时浮层卸载会触发 blur → 防误提交：取消置标志，提交跳过
 let discarded = false
+useGridScrollCollapse(() => ['inline', 'progress', 'date', 'member'].includes(editorKind.value), () => {
+  if (editorKind.value === 'inline' || editorKind.value === 'progress') commitInline()
+  else emit('collapse')
+})
 // 组件被卸载（如 vxe 重渲染重建单元格 DOM）时 textarea 的 blur 会误触发提交，一律禁止
 onBeforeUnmount(() => {
   discarded = true

@@ -1,18 +1,16 @@
 <template>
   <div class="relation-anchor" @mousedown.stop @click.stop @dblclick.stop @mouseenter="ensureLoaded">
-    <el-popover :visible="opened" placement="bottom-start" :width="420" :show-arrow="false" popper-class="relation-pop">
-      <template #reference>
-        <div ref="anchor" class="relation-trigger" :class="{ selected }" @click="toggle">
-          <CompactCellTags v-if="!selected" :tags="compactTags" />
-          <div v-else class="relation-chips">
-            <el-popover v-for="id in ids" :key="id" trigger="hover" :show-after="450" :width="270" placement="right" :show-arrow="false">
-              <template #reference><span class="relation-chip" @click.stop="clickRecord(id)"><StIcon name="relation" :size="14" class="relation-symbol" /><span class="relation-title">{{ label(id) }}</span><button v-if="selected && !readonly" class="relation-icon" aria-label="移除关联" @click.stop="remove(id)">×</button></span></template>
-              <div class="relation-preview" @mousedown.stop><strong @click="showDetail(id)">{{ label(id) }} <button class="relation-icon" aria-label="展开记录">↗</button></strong><div v-for="f in previewFields" :key="f.id"><label>{{ f.label }}</label><SmartCell :field="f" :record="records.get(id) || {}" /></div></div>
-            </el-popover>
-          </div>
-          <CellDropdown v-if="selected" overlay bordered :open="opened" label="关联记录" @click="toggle" />
-        </div>
-      </template>
+    <div ref="anchor" class="relation-trigger" :class="{ selected }" @click="toggle">
+      <CompactCellTags v-if="!selected" :tags="compactTags" />
+      <div v-else class="relation-chips">
+        <el-popover v-for="id in ids" :key="id" trigger="hover" :show-after="450" :width="270" placement="right" :show-arrow="false">
+          <template #reference><span class="relation-chip" @click.stop="clickRecord(id)"><StIcon name="relation" :size="14" class="relation-symbol" /><span class="relation-title">{{ label(id) }}</span><button v-if="selected && !readonly" class="relation-icon" aria-label="移除关联" @click.stop="remove(id)">×</button></span></template>
+          <div class="relation-preview" @mousedown.stop><strong @click="showDetail(id)">{{ label(id) }} <button class="relation-icon" aria-label="展开记录">↗</button></strong><div v-for="f in previewFields" :key="f.id"><label>{{ f.label }}</label><SmartCell :field="f" :record="records.get(id) || {}" /></div></div>
+        </el-popover>
+      </div>
+      <CellDropdown v-if="selected" overlay bordered :open="opened" label="关联记录" @click="toggle" />
+    </div>
+    <el-popover v-if="opened" :visible="opened" virtual-triggering :virtual-ref="anchor" placement="bottom-start" :width="420" :show-arrow="false" popper-class="relation-pop">
       <div ref="panel" class="relation-panel" @mousedown.stop @click.stop>
         <div v-if="error" class="relation-error">{{ error }}</div>
         <div class="relation-cards" v-loading="loading">
@@ -25,7 +23,7 @@
         <div v-else-if="!ids.length" class="relation-add">暂无关联记录</div>
       </div>
     </el-popover>
-    <el-dialog v-model="picker" :title="`${sourceTitle} · ${field.label}`" width="900px" append-to-body class="relation-picker" @mousedown.stop @click.stop>
+    <el-dialog v-if="picker" v-model="picker" :title="`${sourceTitle} · ${field.label}`" width="900px" append-to-body class="relation-picker" @mousedown.stop @click.stop>
       <div class="relation-source">来自 ▦ {{ tableName || '关联表' }}</div>
       <el-input v-model="search" clearable placeholder="搜索关联记录" class="relation-search" @input="searchChanged" />
       <div v-if="error" class="relation-error">{{ error }}</div>
@@ -44,7 +42,8 @@
   </div>
 </template>
 <script setup>
-import { computed, defineAsyncComponent, inject, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { useGridScrollCollapse } from '../../../smart/utils/useGridScrollCollapse.js'
+import { computed, defineAsyncComponent, inject, onBeforeUnmount, provide, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { smartRelationRecords, smartUpdateView, smartUpdateRecord } from '../../../api/index.js'
 import CellDropdown from './CellDropdown.vue'
@@ -118,9 +117,17 @@ async function setTitleField(fieldName) {
   } catch { ElMessage.error('记录标题保存失败，请重试') }
 }
 function outside(event) { if (opened.value && !anchor.value?.contains(event.target) && !panel.value?.contains(event.target)) close(false) }
-onMounted(() => document.addEventListener('mousedown', outside, true))
+watch(opened, (visible, _, onCleanup) => {
+  if (!visible) return
+  document.addEventListener('mousedown', outside, true)
+  onCleanup(() => document.removeEventListener('mousedown', outside, true))
+}, { flush: 'sync' })
 onBeforeUnmount(() => { epoch++; listEpoch++; clearTimeout(timer); document.removeEventListener('mousedown', outside, true) })
 defineExpose({ focus })
+useGridScrollCollapse(() => opened.value, () => {
+  opened.value = false
+  emit('collapse')
+})
 </script>
 <style>
 .el-popper.relation-pop { padding: 0; border-radius: 8px; border: 1px solid #e0e2e6; box-shadow: 0 4px 16px #0002; max-width: calc(100vw - 24px); }

@@ -11,6 +11,7 @@ test('first click selects, batch upload appends and gallery list deletion preser
   const wrapper = mount(FileCellPanel, { props: { value: [{ id: 'a'.repeat(32), name: 'old.pdf', size: 10 }], upload, loadRecent: async () => [] }, global: { plugins: [ElementPlus], provide: { smartTableId: ref(1) }, stubs: { 'el-popover': { template: '<div><slot name="reference" /><slot /></div>' } } } })
   await wrapper.find('.file-cell-trigger').trigger('click')
   expect(wrapper.emitted('open')).toBeUndefined()
+  expect(wrapper.find('.file-panel').exists()).toBe(false)
   await wrapper.setProps({ selected: true })
   await wrapper.find('.file-cell-trigger').trigger('click')
   await wrapper.find('.file-panel').trigger('drop', { dataTransfer: { files: [new File(['1'], 'sheet.xlsx'), new File(['2'], 'fail.pdf')] } })

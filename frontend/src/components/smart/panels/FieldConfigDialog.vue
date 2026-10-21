@@ -4,7 +4,7 @@
        底部：左侧 AI 入口（使用 AI 生成/计算/判断/匹配标签/生成公式），右侧 确定 / 取消。
        无标题栏；所有入口均非模态，at 存在时锚定在打开位置（anchoredDialogAttrs），点击外部收起 -->
   <el-dialog :model-value="visible" :width="isNumberFamily ? '322px' : '470px'" :show-close="false" class="st-fcd" :class="{ 'st-fcd-number': isNumberFamily }" append-to-body
-             v-bind="anchoredDialogAttrs(at, isNumberFamily ? 322 : 470, 560)" @opened="placeEditor" @update:model-value="$emit('close')" destroy-on-close>
+             v-bind="anchoredDialogAttrs(at, isNumberFamily ? 322 : 470, 560)" :close-on-press-escape="!fxEditor && !aiFormula" @opened="placeEditor" @update:model-value="$emit('close')" destroy-on-close>
     <div ref="editorBody" class="fcd">
       <input ref="nameRef" v-model="form.label" class="fcd-input fcd-name" placeholder="字段名称" maxlength="100"
              @keydown.enter="save" @keydown.esc="$emit('close')" />
@@ -171,8 +171,10 @@
         <!-- ========== 日期 / 创建时间 / 最后编辑时间 ========== -->
         <template v-if="isDateFamily">
           <div class="fcd-label">格式设置</div>
-          <el-select v-model="form.config.format" class="fcd-select" popper-class="fcd-pop">
-            <el-option v-for="d in DATE_FORMATS" :key="d.v" :value="d.v" :label="d.l" />
+          <el-select v-model="form.config.format" class="fcd-select" popper-class="fcd-pop fcd-date-pop">
+            <el-option v-for="d in DATE_FORMATS" :key="d.v" :value="d.v" :label="d.l">
+              <span class="fcd-date-check"><StIcon v-if="form.config.format === d.v" name="check" :size="16" /></span>{{ d.l }}
+            </el-option>
           </el-select>
           <el-checkbox v-if="form.field_type === 'date'" v-model="form.config.autoFillCreatedTime" class="fcd-ck">默认填充创建时间</el-checkbox>
         </template>
@@ -225,6 +227,7 @@
           <el-select v-model="form.config.numberType" class="fcd-select" popper-class="fcd-pop">
             <el-option value="autoIncrement" label="自增数字" /><el-option value="custom" label="自定义编号" />
           </el-select>
+          <div v-if="form.config.numberType === 'autoIncrement'" class="fcd-hint">从 1 开始连续递增的数字编号，如：1、2、3</div>
           <template v-if="form.config.numberType === 'custom'">
             <div class="fcd-hint">自定义格式和规则的编号</div>
             <div class="fcd-segbox">
@@ -257,7 +260,7 @@
               </el-dropdown>
             </div>
           </template>
-          <el-checkbox v-if="field" v-model="form.config.applyToExisting" class="fcd-ck">将修改应用于已有编号</el-checkbox>
+          <div v-if="field" class="fcd-hint">修改编号格式后，已有记录保留原序号，仅更新编号格式。</div>
         </template>
 
         <!-- ========== 公式 ========== -->
@@ -282,9 +285,9 @@
           <div class="fcd-label">要引用的字段</div>
           <div class="fcd-row2">
             <el-select v-model="form.config.sourceTableId" class="fcd-select" placeholder="选择表" filterable popper-class="fcd-pop"
-                       @change="form.config.sourceFieldId = null">
+                       @change="form.config.sourceFieldId = null" @visible-change="open => { if (open) refreshLookupOptions() }">
               <template #prefix><StIcon name="table" :size="16" class="fcd-pre" /></template>
-              <el-option v-for="t in tables" :key="t.id" :value="t.id" :label="t.label" />
+              <el-option v-for="t in lookupTables" :key="t.id" :value="t.id" :label="t.label" />
             </el-select>
             <FieldSel v-model="form.config.sourceFieldId" :fields="srcFields" placeholder="选择字段" />
           </div>
@@ -361,17 +364,20 @@ const props = defineProps({
   preset: { type: Object, default: null },   // 新增预设 {field_type, label}（AddFieldPop 类型网格跳入）
   fields: { type: Array, default: () => [] },   // 本表字段（lookup 条件右值用）
   tables: { type: Array, default: () => [] },   // 可选的关联/引用目标表
+  lookupTables: { type: Array, default: () => [] },   // 当前文档内的智能表
   sourceFieldsOf: { type: Function, default: () => () => [] },  // (tableId) => Promise<fields[]>
   tableId: { type: Number, default: null },     // AI 写公式需要表上下文
   sampleRecordId: { type: Number, default: null },   // 公式试算用的当前视图首行
   at: { type: Object, default: null },   // {x,y} 打开位置 → 非模态、在该位置弹出
 })
-const emit = defineEmits(['close', 'save', 'ai-tags', 'ai-field'])
-useNonModalOutsideClose(() => props.visible, () => emit('close'))
+const emit = defineEmits(['close', 'save', 'ai-tags', 'ai-field', 'refresh-lookup-tables'])
 const editorBody = ref(null)
 const placeEditor = useButtonAnchoredDialog(() => editorBody.value, () => props.at, () => props.visible)
 const aiFormula = ref(false)
 const fxEditor = ref(false)
+// The formula editor is teleported outside this dialog. Its interactions and
+// dismissal belong to the child, not to the field configuration underneath it.
+useNonModalOutsideClose(() => props.visible && !fxEditor.value && !aiFormula.value, () => emit('close'))
 const nameRef = ref(null)
 
 // ---------- 常量（对齐参照） ----------
@@ -394,8 +400,7 @@ const CURRENCIES = { CNY: { s: '￥', name: '人民币' }, USD: { s: '$', name: 
                      JPY: { s: '¥', name: '日元' }, HKD: { s: 'HK$', name: '港币' }, GBP: { s: '£', name: '英镑' } }
 const PRECISIONS = [{ v: 'default', l: '默认' }, { v: 0, l: '整数' }, { v: 1, l: '1 位小数' }, { v: 2, l: '2 位小数' },
                     { v: 3, l: '3 位小数' }, { v: 4, l: '4 位小数' }]
-const DATE_FORMATS = [{ v: 'yyyy年M月d日', l: '2018年4月20日' }, { v: 'yyyy-MM-dd', l: '2018-04-20' }, { v: 'yyyy/MM/dd', l: '2018/4/20' },
-                      { v: 'yyyy年M月d日 HH:mm', l: '2018年4月20日 14:00' }, { v: 'yyyy-MM-dd HH:mm', l: '2018-04-20 14:00' }]
+import { DATE_FORMATS } from '../../../smart/utils/format.js'
 const SEG_LABELS = { autoIncrement: '自增数字', fixedText: '固定字符', createDate: '创建日期' }
 const LOOKUP_AGGS = { raw: '原样引用', rawDistinct: '去重引用', sum: '求和', count: '计数', countDistinct: '去重计数', avg: '平均值', max: '最大值', min: '最小值' }
 const AI_ACTIONS = { text: '使用 AI 生成', image: '使用 AI 生成', number: '使用 AI 计算', percent: '使用 AI 计算', currency: '使用 AI 计算',
@@ -588,7 +593,26 @@ const fxTokens = computed(() => tokenize(form.config.formula || '', props.fields
 
 // ---------- 查找引用 ----------
 const srcFields = ref([])
-watch(() => form.config?.sourceTableId, async (tid) => { srcFields.value = tid ? await props.sourceFieldsOf(tid) : [] })
+let sourceFieldsRequest = 0
+async function refreshSourceFields() {
+  const request = ++sourceFieldsRequest
+  const tid = form.config?.sourceTableId
+  srcFields.value = []
+  try {
+    const fields = tid ? await props.sourceFieldsOf(tid) : []
+    if (request === sourceFieldsRequest) srcFields.value = fields
+  } catch (error) {
+    if (request === sourceFieldsRequest) ElMessage.error(error.message || '引用字段加载失败')
+  }
+}
+function refreshLookupOptions() {
+  emit('refresh-lookup-tables')
+  refreshSourceFields()
+}
+watch(() => form.config?.sourceTableId, refreshSourceFields)
+watch(() => [props.visible, form.field_type], ([visible, type]) => {
+  if (visible && type === 'lookup') refreshLookupOptions()
+}, { flush: 'post' })
 const lookupMode = ref('cond')
 const lookupMatch = computed({ get: () => (form.config.conditionLogic === 'or' ? 'any' : 'all'), set: (v) => { form.config.conditionLogic = v === 'any' ? 'or' : 'and' } })
 function toggleCondValue(c) {
@@ -788,6 +812,9 @@ function save() {
 .el-dialog.st-fcd-number .fcd-foot.sep { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
 /* 下拉：选项 16px、带图标；类型下拉分组之间用分隔线 */
 .fcd-pop .el-select-dropdown__item { font-size: 15px; height: 40px; line-height: 40px; }
+.fcd-date-pop .el-select-dropdown__wrap { max-height: min(380px, calc(100vh - 32px)); }
+.fcd-date-pop .el-select-dropdown__item { display: flex; align-items: center; font-weight: normal; color: var(--st-text-1); }
+.fcd-date-check { display: inline-flex; width: 26px; flex-shrink: 0; color: var(--el-color-primary); }
 .fcd-pop .el-select-group__wrap:not(:last-of-type)::after { left: 12px; right: 12px; background: #EBECEE; }
 .fcd-pop .el-select-group__title { display: none; }
 .fcd-color-pop.el-popover { padding: 12px; }

@@ -2,23 +2,23 @@
   <!-- SmartGrid：智能表网格（vxe-table 封装）。
        flatten 行序列：分组标题行 / 数据行（树形缩进）。添加一行入口在统计行左侧「＋」。
        视图配置（显隐/列序/列宽/冻结/行高/填色）纯前端应用，数据层不动（设计文档 §1.3 原则 1）。 -->
-  <div class="smart-grid" :class="{ 'is-empty': !gridRows.length }" :style="{ maxWidth: `${gridContentWidth}px` }" @contextmenu.prevent @mouseover="onRowOver" @mouseleave="scheduleExpandHide" @wheel.capture="onGridWheel">
+  <div class="smart-grid" :class="{ 'is-empty': !gridRows.length }" :style="{ maxWidth: `${gridContentWidth}px` }" @contextmenu.prevent @contextmenu.capture="onHeaderContextMenu" @mouseover.capture="suppressDragHover" @mouseenter.capture="suppressDragHover" @mouseover="onRowOver" @mouseleave="scheduleExpandHide" @wheel.capture="onGridWheel">
     <textarea ref="typingBuffer" class="grid-typing-buffer" tabindex="-1" aria-label="输入以替换选中单元格" @input="onSelectedInput" @compositionstart="typingComposing = true" @compositionend="finishSelectedComposition" />
-    <!-- :key="t_colSig"：列序/列集变化时整表重挂载。vxe 列注册只在挂载时按 DOM 位次进行，
-         增量重挂载会与静态列/编组竞态导致顺序错乱，整表重挂载保证按 headerTree 顺序干净注册 -->
+    <!-- 新增/重排列时重建注册；仅删除列保留表格和其余列，避免滚动条归零。 -->
     <vxe-table
       ref="gridRef"
-      :key="`t_${colSig}`"
+      :key="tableRenderKey"
       class="smart-vxe"
       :class="{ 'rh-tall': rowHeightPx > 36 }"
       :style="{ '--rh-lines': rowLines, '--header-row-height': `${headerRowHeight}px`, '--image-cell-height': `${rowHeightPx - 1}px` }"
       :data="gridRows"
       :max-height="height"
       border
+      show-overflow
       :row-config="{ height: rowHeightPx, isHover: true, keyField: '__key' }"
       :column-config="{ resizable: true }"
-      :scroll-y="{ enabled: true, gt: 100 }"
-      :scroll-x="{ enabled: true, gt: 20 }"
+      :virtual-y-config="virtualYConfig"
+      :virtual-x-config="virtualXConfig"
       :show-footer="true"
       :footer-method="footerMethod"
       :footer-cell-config="{ height: 45 }"
@@ -53,8 +53,8 @@
         </template>
       </vxe-column>
 
-      <!-- 编组（两级表头）+ 散列字段列（key 带 colSig：列序变化时重挂载以触发 vxe 重注册） -->
-      <template v-for="node in headerTree" :key="`${node.key}:${colSig}`">
+      <!-- 编组（两级表头）+ 散列字段列；删除时保持剩余列的 key 稳定。 -->
+      <template v-for="node in headerTree" :key="`${node.key}:${tableRenderKey}`">
         <vxe-colgroup v-if="node.isGroup" :title="node.name" :fixed="node.fixed" header-align="center" :params="{ group: node.group }">
           <template #header>
             <span class="colgroup-title">
@@ -96,7 +96,7 @@
       :can-create="canCreate" :can-delete="canDelete" :readonly="readonly"
       @action="onMenuAction" @close="cellMenu = null" />
     <!-- AI 列 / AI 单元格选中时：右侧浮出「✦ | ▾」生成按钮 -->
-    <AiRunButton v-if="aiBtn && !readonly" :x="aiBtn.x" :y="aiBtn.y" :mode="aiBtn.mode" @run="onAiBtnRun" />
+    <GridAiButton />
     <!-- 双击不可编辑的单元格：单元格下方提示（参照 PixPin_2026-10-17_16-22-09）「自动编号不可直接编辑 修改设置」 -->
     <teleport to="body">
       <div v-if="blockedHint" class="st-blocked-hint" :style="{ left: `${blockedHint.x}px`, top: `${blockedHint.y}px` }" @mousedown.stop>
@@ -108,7 +108,19 @@
 </template>
 
 <script setup>
-import { Teleport, computed, h, nextTick, onActivated, onDeactivated, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { Teleport, computed, defineComponent, h, nextTick, onActivated, onDeactivated, onMounted, onBeforeUnmount, provide, ref, watch } from 'vue'
+import { createGridLayoutQueue } from '../../../smart/utils/gridLayoutQueue.js'
+import { reconcileRows } from '../../../smart/utils/reconcileRows.js'
+import { applyColumnWidths } from '../../../smart/utils/applyColumnWidths.js'
+import { isColumnRemoval, isColumnInsertion } from '../../../smart/utils/columnRemoval.js'
+import { installHorizontalScrollbar, installVerticalScrollbar } from '../../../smart/utils/horizontalScrollbar.js'
+const layoutQueue = createGridLayoutQueue()
+provide('smartGridLayoutQueue', layoutQueue)
+const scrollCollapses = new Set()
+provide('smartGridScrollCollapse', collapse => {
+  scrollCollapses.add(collapse)
+  return () => scrollCollapses.delete(collapse)
+})
 import SmartCell from './SmartCell.vue'
 import CellContextMenu from './CellContextMenu.vue'
 import SmartCellEditor from './SmartCellEditor.vue'
@@ -154,6 +166,17 @@ const emit = defineEmits(['cell-commit', 'add-row', 'add-field', 'cell-menu', 'f
                           'field-edit', 'field-filter', 'group-edit', 'expand-row'])
 
 const gridRef = ref(null)
+watch(gridRef, async (table, _, onCleanup) => {
+  let cancelled = false
+  const cleanups = []
+  onCleanup(() => { cancelled = true; cleanups.forEach(cleanup => cleanup()) })
+  await nextTick()
+  if (cancelled || !table) return
+  const handle = table.$el?.querySelector('.vxe-table--scroll-x-handle')
+  if (handle) cleanups.push(installHorizontalScrollbar(handle, { onStart: onDocMouseDown, onEnd: onScrollPointerUp }))
+  const vertical = table.$el?.querySelector('.vxe-table--scroll-y-handle')
+  if (vertical) cleanups.push(installVerticalScrollbar(vertical, { onStart: onDocMouseDown, onEnd: onScrollPointerUp }))
+}, { flush: 'post' })
 const editingCell = ref(null)   // {key, fieldName}
 
 const viewConfig = computed(() => props.view?.config || {})
@@ -185,11 +208,42 @@ const visibleFields = computed(() => {
 const headerTree = computed(() => buildColumnLayout(
   visibleFields.value, props.columnGroups, viewConfig.value.frozenFieldId))
 const displayedFields = computed(() => headerTree.value.flatMap(n => n.isGroup ? n.fields : [n.field]))
+const virtualYConfig = { enabled: true, gt: 0, preSize: 3, oSize: 3 }
+const virtualXConfig = { enabled: true, gt: 0, preSize: 6, oSize: 6 }
+const fieldsByName = computed(() => new Map(props.fields.map(f => [f.field_name, f])))
 // VXE 的边框绘制在列宽之内，无需额外加宽，否则末列右侧会露出第二条边框。
 const gridContentWidth = computed(() => 36 + 39 + 48 + displayedFields.value.reduce((sum, f) => sum + Number(colWidths.value[f.field_name] || 160), 0))
 const colSig = computed(() => JSON.stringify(headerTree.value.map(n => [
   n.key, n.fixed, n.isGroup ? n.fields.map(f => f.field_name) : n.field.field_name,
 ])))
+
+// Pure additions/removals retain the table and its scroll containers.
+const tableRenderKey = ref(0)
+let columnRestoreVersion = 0
+let columnScrollSnapshot = null
+let scrollToEndAfterColumns = false
+watch([colSig, () => props.view?.id], async ([signature, viewId], [oldSignature, oldViewId]) => {
+  const version = ++columnRestoreVersion
+  if (viewId !== oldViewId) { tableRenderKey.value++; columnScrollSnapshot = null; scrollToEndAfterColumns = false; return }
+  const before = JSON.parse(oldSignature)
+  const after = JSON.parse(signature)
+  if (!isColumnRemoval(before, after) && !isColumnInsertion(before, after)) tableRenderKey.value++
+  const oldTable = gridRef.value
+  if (!oldTable) return
+  columnScrollSnapshot ||= oldTable.getScroll()
+  const snapshot = columnScrollSnapshot
+  await nextTick()
+  const table = gridRef.value
+  if (!table || version !== columnRestoreVersion) return
+  // refreshColumn waits for registered columns and their virtual scroll dimensions.
+  await table.refreshColumn()
+  if (version !== columnRestoreVersion || table !== gridRef.value) return
+  clearTimeout(rowSnapTimer)
+  locatingUntil = Date.now() + 500
+  await table.scrollTo(scrollToEndAfterColumns ? Number.MAX_SAFE_INTEGER : snapshot.scrollLeft, snapshot.scrollTop)
+  if (version === columnRestoreVersion) { columnScrollSnapshot = null; scrollToEndAfterColumns = false }
+}, { flush: 'pre' })
+onBeforeUnmount(() => { columnRestoreVersion++; columnScrollSnapshot = null })
 
 // 表头行高（参照 表头样式.png）：无编组单层 46px（字段名可放 2 行）；
 // 有编组每层 44px——编组内字段 1 行，散列字段纵跨两层 88px 可放 3 行。放不下才省略
@@ -231,18 +285,23 @@ const selectedColNames = computed(() => {
     .flatMap(n => n.fields.map(f => f.field_name))
 })
 // 选中范围内的列：返回其需要画的左/右边框（整组只在首列画左边、末列画右边），不在范围内返回 null
-function selEdges(fieldName) {
+const selectedColEdges = computed(() => {
   const names = selectedColNames.value
-  const i = fieldName ? names.indexOf(fieldName) : -1
-  if (i < 0) return null
-  return [...(i === 0 || isFrozen(names[i - 1]) !== isFrozen(fieldName) ? ['sel-l'] : []),
-    ...(i === names.length - 1 || isFrozen(names[i + 1]) !== isFrozen(fieldName) ? ['sel-r'] : [])]
+  const edges = new Map()
+  names.forEach((name, i) => {
+    edges.set(name, [...(i === 0 || isFrozen(names[i - 1]) !== isFrozen(name) ? ['sel-l'] : []),
+      ...(i === names.length - 1 || isFrozen(names[i + 1]) !== isFrozen(name) ? ['sel-r'] : [])])
+  })
+  return edges
+})
+function selEdges(fieldName) {
+  return selectedColEdges.value.get(fieldName) || null
 }
 function clearColSelection() {
   if (!selectedCol.value && selectedGroupId.value == null) return
   selectedCol.value = null
   selectedGroupId.value = null
-  gridRef.value?.refreshColumn?.()
+  gridRef.value?.$forceUpdate?.()
 }
 function onHeaderClick({ column, $event }) {
   if (column.params?.addField) { emit('add-field', $event); return }
@@ -253,7 +312,21 @@ function onHeaderClick({ column, $event }) {
   editingCell.value = null
   selectedCol.value = group ? null : column.field
   selectedGroupId.value = group ? group.id : null
-  gridRef.value?.refreshColumn?.()
+  // Selection only affects rendered classes; column registration/layout is unchanged.
+  gridRef.value?.$forceUpdate?.()
+}
+function onHeaderContextMenu(event) {
+  const header = event.target?.closest?.('.vxe-header--column[colid]')
+  if (!header) return
+  const column = gridRef.value?.getColumnById?.(header.getAttribute('colid'))
+  const group = !column?.field && column?.params?.group
+  const field = props.fields.find(f => f.field_name === column?.field)
+  if (!group && !field) return
+  event.preventDefault()
+  event.stopPropagation()
+  onHeaderClick({ column })
+  if (group) emit('group-menu', group, event)
+  else emit('field-menu', field, event)
 }
 function onFooterClick({ column }) {
   if (column.params?.rowNumber && props.canCreate) emit('add-row')
@@ -263,12 +336,19 @@ function onHeaderDblClick({ column, $event }) {
   const at = $event ? { x: $event.clientX, y: $event.clientY } : null   // 面板在双击位置弹出
   if (!column?.field && column?.params?.group) { emit('group-edit', column.params.group, at); return }
   if (!column?.field || $event?.target?.closest?.('.head-menu, .filter-dot')) return
-  const f = props.fields.find(x => x.field_name === column.field)
+  const f = fieldsByName.value.get(column.field)
   if (f) emit('field-edit', f, at)
 }
 
 // ---------- AI 生成按钮：选中 AI 列 → 浮在列头右侧；选中 AI 单元格 → 浮在单元格右侧 ----------
 const aiBtn = ref(null)   // {x, y, mode, field, row}
+const GridAiButton = {
+  name: 'GridAiButton',
+  setup: () => () => {
+    const b = aiBtn.value
+    return b && !props.readonly ? h(AiRunButton, { x: b.x, y: b.y, mode: b.mode, onRun: onAiBtnRun }) : null
+  },
+}
 function locateAiBtn() {
   aiBtn.value = null
   if (props.readonly) return
@@ -293,14 +373,15 @@ function locateAiBtn() {
 }
 let locateRaf = 0
 function scheduleLocate() {
-  cancelAnimationFrame(locateRaf)
-  locateRaf = requestAnimationFrame(() => requestAnimationFrame(locateAiBtn))
+  if (scrollPointerDown || scrollIdleTimer || locateRaf) return
+  locateRaf = requestAnimationFrame(() => { locateRaf = 0; locateAiBtn() })
 }
 // ---------- 展开记录按钮：hover 行优先，否则当前行（选中/编辑单元格所在行、详情打开的记录） ----------
 const hoverKey = ref(null)
 let expandHideTimer = 0
 // 原生 mouseover 定位 hover 行（vxe 的 cell-mouseenter 只在配置了 tooltip 时才派发）
 function onRowOver(e) {
+  if (scrollPointerDown || scrollIdleTimer) return
   const tr = e.target.closest?.('tr.vxe-body--row')
   if (!tr) { scheduleExpandHide(); return }
   cancelExpandHide()
@@ -310,6 +391,7 @@ function onRowOver(e) {
 }
 // 离开行时延迟收起：鼠标从行移到骑在边框外侧的按钮上，中途会短暂离开表格
 function scheduleExpandHide() {
+  if (scrollPointerDown) return
   cancelExpandHide()
   expandHideTimer = setTimeout(() => { hoverKey.value = null }, 120)
 }
@@ -353,12 +435,13 @@ function locateExpandBtn() {
 }
 let expandRaf = 0
 function scheduleExpandLocate() {
-  cancelAnimationFrame(expandRaf)
-  expandRaf = requestAnimationFrame(locateExpandBtn)
+  if (scrollPointerDown || scrollIdleTimer || expandRaf) return
+  expandRaf = requestAnimationFrame(() => { expandRaf = 0; locateExpandBtn() })
 }
 
 let rowSnapTimer = null
 let scrollPointerDown = false
+let scrollbarEditingCell = null
 let locatingUntil = 0
 let wheelRemainder = 0
 let lastWheelTime = 0
@@ -384,13 +467,9 @@ function onGridWheel(event) {
   const direction = Math.sign(wheelRemainder)
   wheelRemainder %= 40
   const top = body.scrollTop
-  const viewportTop = body.getBoundingClientRect().top + body.clientTop
-  const offsets = [...body.querySelectorAll('.vxe-body--row')]
-    .map(row => top + row.getBoundingClientRect().top - viewportTop)
-    .filter(offset => direction > 0 ? offset > top + .5 : offset < top - .5)
-    .sort((a, b) => direction * (a - b))
-  const target = offsets[Math.min(steps, offsets.length) - 1]
-  if (target != null) table.scrollTo(undefined, Math.max(0, Math.min(target, body.scrollHeight - body.clientHeight)))
+  // 滚动过程中不逐行读取布局；停止后由 snapToRow 校正编组等可变高度行。
+  const target = top + direction * steps * rowHeightPx.value
+  table.scrollTo(undefined, Math.max(0, Math.min(target, body.scrollHeight - body.clientHeight)))
 }
 function scheduleRowSnap() {
   clearTimeout(rowSnapTimer)
@@ -414,32 +493,52 @@ function snapToRow() {
   const target = offsets.reduce((best, offset) => Math.abs(offset - top) < Math.abs(best - top) ? offset : best)
   if (Math.abs(target - top) > .5) table.scrollTo(undefined, target)
 }
+function suppressDragHover(event) {
+  if (scrollPointerDown) event.stopPropagation()
+}
 function onScrollPointerDown(event) {
   if (gridRef.value?.$el?.contains(event.target)) {
+    scrollbarEditingCell = event.target.closest?.('.vxe-table--scroll-x-wrapper, .vxe-table--scroll-y-wrapper')
+      && editingCell.value ? { ...editingCell.value } : null
+    layoutQueue.pause()
     scrollPointerDown = true
     clearTimeout(rowSnapTimer)
+    cancelExpandHide()
+    cancelAnimationFrame(locateRaf); locateRaf = 0
+    cancelAnimationFrame(expandRaf); expandRaf = 0
   }
 }
 function onScrollPointerUp() {
   if (!scrollPointerDown) return
   scrollPointerDown = false
+  if (!scrollIdleTimer) layoutQueue.resume()
   scheduleRowSnap()
+  scheduleExpandLocate()
+  scheduleLocate()
 }
 let lastScrollTop = 0
 let lastScrollLeft = 0
-function onGridScroll() {
-  scheduleExpandLocate()
+let scrollIdleTimer = 0
+function onGridScroll(scroll) {
+  layoutQueue.pause()
+  // 连续滚动期间不定位悬浮控件、不处理 hover；只在停止后恢复一次。
+  expandBtn.value = null
+  aiBtn.value = null
+  cancelAnimationFrame(locateRaf); locateRaf = 0
+  cancelAnimationFrame(expandRaf); expandRaf = 0
+  clearTimeout(scrollIdleTimer)
+  scrollIdleTimer = setTimeout(() => {
+    scrollIdleTimer = 0
+    if (!scrollPointerDown) { layoutQueue.resume(); scheduleExpandLocate(); scheduleLocate() }
+  }, 120)
   if (blockedHint.value) hideBlockedHint()
-  if (aiBtn.value || selectedCol.value || selectedCell.value) scheduleLocate()
-  const scroll = gridRef.value?.getScroll?.() || {}
   const top = scroll.scrollTop ?? 0
   const left = scroll.scrollLeft ?? 0
-  if ((top !== lastScrollTop || left !== lastScrollLeft) && editingCell.value) {
-    const field = props.fields.find(f => f.field_name === editingCell.value.fieldName)
-    if (typeOf(field) === 'date') {
-      selectedCell.value = { ...editingCell.value }
-      editingCell.value = null
-    }
+  if ((top !== lastScrollTop || left !== lastScrollLeft) && (editingCell.value || scrollCollapses.size)) {
+    const cell = editingCell.value || selectedCell.value
+    for (const collapse of [...scrollCollapses]) collapse()
+    if (cell) selectedCell.value = { key: cell.key, fieldName: cell.fieldName }
+    editingCell.value = null
   }
   lastScrollLeft = left
   if (top !== lastScrollTop) {
@@ -454,12 +553,13 @@ function onAiBtnRun(scope) {
   else emit('ai-run', b.field, scope)
 }
 
-const isFrozen = (name) => headerTree.value.some(n => n.fixed === 'left'
-  && (n.isGroup ? n.fields.some(f => f.field_name === name) : n.field.field_name === name))
+const frozenNames = computed(() => new Set(headerTree.value.filter(n => n.fixed === 'left')
+  .flatMap(n => n.isGroup ? n.fields : [n.field]).map(f => f.field_name)))
+const isFrozen = name => frozenNames.value.has(name)
 
 // 行序列：折叠分组过滤 + 树形缩进标记 + 行号（添加一行入口在统计行左侧「＋」，不再虚拟数据行）；
 // 每个展开组的末尾插一条 group-add 伪行（组内「+」添加，带全部分组条件预设）
-const gridRows = computed(() => {
+const gridRows = computed(previous => {
   const out = []
   let no = 0
   const hiddenUnder = []   // 折叠组的 key 前缀栈
@@ -493,7 +593,7 @@ const gridRows = computed(() => {
     out.push({ ...r, __key: `r_${r.id}`, __no: no, __indent: depth })
   }
   closeTo(-1)
-  return out
+  return reconcileRows(previous || [], out, row => row.__key)
 })
 
 // 树形子记录计数（父行首列的徽标：树形图标 + 子记录数）
@@ -552,16 +652,16 @@ function cellClass({ row, column }) {
     cls.push('cell-indent')
   }
   // 单击选中态（企微式：边框与单元格同大，与编辑态边框同款）。
-  if (!row.__rowType && ['image', 'url', 'relation'].includes(typeOf(props.fields.find(f => f.field_name === column.field)))) cls.push('cell-image')
+  if (!row.__rowType && ['image', 'url', 'relation'].includes(typeOf(fieldsByName.value.get(column.field)))) cls.push('cell-image')
   // 单选/多选用独立类名：选中框由锚点自绘（标签换行展开时随内容增高），不走 td inset 阴影
   if (selectedCell.value && row.__key === selectedCell.value.key && column.field === selectedCell.value.fieldName) {
-    const f = props.fields.find(x => x.field_name === column.field)
+    const f = fieldsByName.value.get(column.field)
     cls.push(['singleSelect', 'multiSelect', 'file', 'relation'].includes(typeOf(f)) ? 'cell-selected-enum' : 'cell-selected')
   }
   // 编辑态：去单元格内边距，编辑器与单元格严格同边界。
   // 单选/多选追加 cell-editing-enum：锚点换行展开（同选中态），边框由锚点自绘
   if (editingCell.value && row.__key === editingCell.value.key && column.field === editingCell.value.fieldName) {
-    const f = props.fields.find(x => x.field_name === column.field)
+    const f = fieldsByName.value.get(column.field)
     if (!['image', 'file', 'url', 'relation'].includes(typeOf(f))) cls.push('cell-editing')
     if (['singleSelect', 'multiSelect'].includes(typeOf(f))) cls.push('cell-editing-enum')
   }
@@ -586,7 +686,12 @@ function canEdit(row, field) {
 }
 
 // 单元格渲染（含填色命中 + 编辑态分发）
-function CellSlot(props2) {
+const CellSlot = defineComponent({
+  name: 'GridCellContent',
+  props: { row: Object, field: Object },
+  setup: cellProps => () => renderCell(cellProps),
+})
+function renderCell(props2) {
   const { row, field } = props2
   const firstField = visibleFields.value[0]?.field_name
   // 组内「+」行：仅首字段列可点（带上该组全部条件预设添加记录）
@@ -730,14 +835,26 @@ function groupValueNodes(row) {
 }
 
 // 填色在 td 级着底色（整格铺满，企微式）
+const fillCache = computed(() => {
+  // 配置或数据变化时失效；滚动重绘复用同一份结果。
+  void fillRules.value; void fieldsByName.value; void gridRows.value; void rowFills.value
+  return new WeakMap()
+})
 function cellFillStyle({ row, column }) {
   if (!row || row.__rowType) return null
   if (searchMatchKeys.value.has(findCellKey(row.id, column.field))
       || (column.params?.rowNumber && searchRowIds.value.has(row.id))) return { backgroundColor: '#FFFCEB', '--st-cell-fill': '#FFFCEB' }
-  const f = props.fields.find(x => x.field_name === column.field)
+  const f = fieldsByName.value.get(column.field)
   if (!f) return null
+  let cache = fillCache.value.get(row)
+  if (!cache) { cache = new Map(); fillCache.value.set(row, cache) }
+  const previous = cache.get(f.field_name)
+  const value = row[f.field_name]
+  if (previous && previous.value === value) return previous.style
   const fill = evalFillRules(fillRules.value, f, row[f.field_name]) || rowFills.value.get(row.__key) || null
-  return fill ? { backgroundColor: fill, '--st-cell-fill': fill } : null
+  const style = fill ? { backgroundColor: fill, '--st-cell-fill': fill } : null
+  cache.set(f.field_name, { value, style })
+  return style
 }
 
 // 整列填色之「为字段名称填色」：表头单元格着底色
@@ -783,7 +900,7 @@ let typingComposing = false
 watch(selectedCell, async cell => {
   if (!cell) return
   await nextTick()
-  if (selectedCell.value !== cell || editingCell.value) return
+  if (selectedCell.value !== cell || editingCell.value || scrollPointerDown) return
   typingBuffer.value.value = ''
   typingBuffer.value.focus({ preventScroll: true })
 })
@@ -833,10 +950,10 @@ watch([selectedCol, selectedCell, () => props.rows], scheduleLocate)   // 选中
 watch([hoverKey, currentRowKey, () => props.rows, () => props.view?.config?.rowHeight], scheduleExpandLocate)
 let lastClick = { key: null, fieldName: null, t: 0 }   // 自检测双击用
 
-function onCellClick({ row, column }) {
+function onCellClick({ row, column, $event }) {
   if (props.readonly) return
   if (!row || row.__rowType) return
-  const f = props.fields.find(x => x.field_name === column.field)
+  const f = fieldsByName.value.get(column.field)
   if (!f) return
   // 切换目标时结束旧编辑态；新选中必须在同一次 click 中落下。
   if (editingCell.value && (editingCell.value.key !== row.__key || editingCell.value.fieldName !== f.field_name)) {
@@ -844,8 +961,11 @@ function onCellClick({ row, column }) {
   }
   clearColSelection()
   if (IMMEDIATE.includes(typeOf(f))) {
-    if (!canEdit(row, f)) return
-    emit('cell-commit', { row, field: f, value: !row[f.field_name] })
+    lastClick = { key: null, fieldName: null, t: 0 }
+    if ($event?.target?.closest?.('.smart-cell.cell-checkbox .checkbox')) {
+      selectedCell.value = null
+      if (canEdit(row, f)) emit('cell-commit', { row, field: f, value: !row[f.field_name] })
+    } else selectedCell.value = { key: row.__key, fieldName: f.field_name }
     return
   }
   // 自检测双击：同一单元格 400ms 内的第二击直接进编辑。原生 dblclick 不可靠——
@@ -865,7 +985,7 @@ function onCellClick({ row, column }) {
 
 function onCellDblClick({ row, column }) {
   if (!row || row.__rowType) return
-  const f = props.fields.find(x => x.field_name === column.field)
+  const f = fieldsByName.value.get(column.field)
   if (!f) return
   // 附件组件自己处理单击、预览及面板开关；快速连点箭头产生的 dblclick
   // 不应再进入通用编辑流程，否则会清掉组件仍在使用的选中状态。
@@ -926,8 +1046,7 @@ function onDocKeydown(e) {
   }
   if (e.key === 'Escape' && selectedCell.value && !editingCell.value) {
     selectedCell.value = null
-    // vxe 的 cell-class-name 只在渲染周期重算：Esc 清选中不走数据流，手动触发列重渲染
-    gridRef.value?.refreshColumn?.()
+    gridRef.value?.$forceUpdate?.()
   }
 }
 
@@ -935,15 +1054,26 @@ function onDocKeydown(e) {
 // 它会重建鼠标下的目标 DOM，导致 mouseup/click 丢失，用户被迫再点一次。
 function onDocMouseDown(e) {
   if (e.target.closest?.('.el-image-viewer__wrapper')) return
-  const cell = e.target.closest?.('td, th')
-  if (cell && gridRef.value?.$el?.contains(cell)) return
+  if (scrollbarEditingCell) {
+    const cell = scrollbarEditingCell
+    scrollbarEditingCell = null
+    // Panel capture handlers have already applied their normal outside-close
+    // behavior. Blur inline inputs before unmounting so valid drafts commit.
+    document.activeElement?.blur?.()
+    editingCell.value = null
+    selectedCell.value = { key: cell.key, fieldName: cell.fieldName }
+    return
+  }
+  // Scrollbar presses are inside the table too. Clearing selection here would
+  // refresh columns and recalculate layout just as a scrollbar drag starts.
+  if (gridRef.value?.$el?.contains(e.target)) return
   if ((selectedCol.value || selectedGroupId.value != null) && !e.target.closest?.('th.th-col-selected, .arb')) clearColSelection()
   if (!selectedCell.value || editingCell.value) return
   if (e.target.closest?.('.arb')) return   // AI 生成按钮（浮在单元格右侧）
   if (e.target.closest?.('td.cell-selected, td.cell-selected-enum')) return
   if (e.target.closest?.('.cell-overlay')) return   // 文本预览浮层 teleport 在 body，它自己管外部关闭
   selectedCell.value = null
-  gridRef.value?.refreshColumn?.()
+  gridRef.value?.$forceUpdate?.()
 }
 
 // 通过 vxe 菜单钩子获取行列上下文，使用独立浮层统一菜单样式。
@@ -958,7 +1088,7 @@ const menuConfig = computed(() => ({
       clearColSelection()
       selectedCell.value = { key: row.__key, fieldName: field.field_name }
     }
-    cellMenu.value = { row, field, x: $event.clientX, y: $event.clientY }
+    cellMenu.value = { row, field, x: $event.clientX + 6, y: $event.clientY + 6 }
     return false
   },
 }))
@@ -974,6 +1104,7 @@ function dataRowSelection() {
 }
 
 function attachGlobalEvents() {
+  layoutQueue.resume()
   window.addEventListener('resize', scheduleLocate)
   window.addEventListener('resize', scheduleExpandLocate)
   document.addEventListener('keydown', onDocKeydown)
@@ -983,7 +1114,15 @@ function attachGlobalEvents() {
   document.addEventListener('mousedown', onDocMouseDown)
 }
 function detachGlobalEvents() {
+  layoutQueue.pause()
+  scrollPointerDown = false
   clearTimeout(rowSnapTimer)
+  clearTimeout(scrollIdleTimer)
+  scrollIdleTimer = 0
+  cancelAnimationFrame(locateRaf)
+  cancelAnimationFrame(expandRaf)
+  locateRaf = 0
+  expandRaf = 0
   document.removeEventListener('pointerdown', onScrollPointerDown, true)
   document.removeEventListener('pointerup', onScrollPointerUp, true)
   document.removeEventListener('pointercancel', onScrollPointerUp, true)
@@ -997,7 +1136,7 @@ function detachGlobalEvents() {
 onMounted(attachGlobalEvents)
 onActivated(() => { attachGlobalEvents(); scheduleLocate(); scheduleExpandLocate() })
 onDeactivated(() => { detachGlobalEvents(); editingCell.value = null })
-onBeforeUnmount(detachGlobalEvents)
+onBeforeUnmount(() => { detachGlobalEvents(); layoutQueue.dispose() })
 
 // 定位到指定记录：新增行默认选中首个可见列；查找定位可指定字段且只滚动、不弹出选中/编辑浮层。
 // 记录不在当前行序列（被筛选掉 / 在折叠分组里）时返回 false；隐藏字段退化为只定位记录。
@@ -1039,6 +1178,12 @@ function orderSearchMatches(matches) {
 }
 
 defineExpose({
+  requestScrollToEnd: () => { scrollToEndAfterColumns = true },
+  applyColumnWidths: async widths => {
+    await nextTick()
+    await applyColumnWidths(gridRef.value, widths)
+  },
+  isScrolling: () => scrollPointerDown || !!scrollIdleTimer,
   isEditing: () => !!editingCell.value || (document.activeElement?.matches?.('.progress-slider')
     && gridRef.value?.$el?.contains(document.activeElement)),
   orderSearchMatches,
@@ -1051,6 +1196,16 @@ defineExpose({
 <style scoped>
 .grid-typing-buffer { position: fixed; left: -100px; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .smart-grid { width: 100%; }
+.smart-vxe :deep(.st-horizontal-track) { position: absolute; inset: 0; z-index: 2; touch-action: none; user-select: none; }
+.smart-vxe :deep(.st-horizontal-thumb) { position: absolute; left: 0; top: 3px; bottom: 3px; border-radius: 6px; background: rgba(31, 45, 61, .25); }
+.smart-vxe :deep(.st-horizontal-track:hover .st-horizontal-thumb),
+.smart-vxe :deep(.st-horizontal-track.dragging .st-horizontal-thumb) { top: 1px; bottom: 1px; background: rgba(31, 45, 61, .4); }
+.smart-vxe :deep(.st-horizontal-track:focus-visible) { outline: 1px solid var(--st-primary); outline-offset: -1px; }
+.smart-vxe :deep(.st-vertical-track) { position: absolute; inset: 0; z-index: 2; touch-action: none; user-select: none; }
+.smart-vxe :deep(.st-vertical-thumb) { position: absolute; top: 0; left: 3px; right: 3px; border-radius: 6px; background: rgba(31, 45, 61, .25); }
+.smart-vxe :deep(.st-vertical-track:hover .st-vertical-thumb),
+.smart-vxe :deep(.st-vertical-track.dragging .st-vertical-thumb) { left: 1px; right: 1px; background: rgba(31, 45, 61, .4); }
+.smart-vxe :deep(.st-vertical-track:focus-visible) { outline: 1px solid var(--st-primary); outline-offset: -1px; }
 .add-col { display: block; width: 100%; text-align: center; color: var(--st-text-3); font-weight: 600; cursor: pointer; font-size: 15px; }
 /* 末尾添加列：浅灰底方块 + 灰「＋」（对齐参照 添加一列-按钮.png） */
 /* 末尾「+」列与列外空白区：白底（vxe 表头容器默认灰底，列不满宽时右侧会露出灰条） */
@@ -1175,7 +1330,7 @@ defineExpose({
 .smart-vxe :deep(.vxe-body--column.cell-image .vxe-cell--wrapper) { height: 100%; width: 100%; margin: 0 !important; transform: none !important; align-items: center; }
 /* 查看/选中态禁止选中文字（企微式：单击只是选中单元格，双击才进编辑态，编辑器内不受影响） */
 .smart-vxe :deep(.vxe-body--column:not(.cell-editing) .vxe-cell) { user-select: none; }
-/* 行选 checkbox（设计稿 PixPin_2026-10-15_00-02-56 风格：细边圆角小方框；选中主色底+白勾）。
+/* 行选 checkbox 与数据复选框一致：18px 内容、4px 圆角、绿色底和白勾。
    复选框列去内边距、内容水平居中（vxe 默认左右 padding 不对称，方框会偏左） */
 .smart-vxe :deep(.col-ck .vxe-cell) { padding-left: 0 !important; padding-right: 0 !important; display: flex; align-items: center; justify-content: center; }
 .smart-vxe :deep(.col-ck .vxe-cell--wrapper) { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; transform: none !important; }
@@ -1185,22 +1340,20 @@ defineExpose({
   font-size: 0;   /* 隐藏 vxe 图标字体的字形，自绘方框 */
   display: inline-block;   /* inline 元素不吃 width/height，必须转 inline-block */
   vertical-align: middle;
-  width: 15px; height: 15px; box-sizing: border-box; position: relative;
-  border: 1px solid var(--el-border-color-dark); border-radius: 3px; background: #fff;
+  width: 18px; height: 18px; box-sizing: content-box; position: relative; cursor: pointer;
+  border: 1px solid var(--el-border-color); border-radius: 4px; background: transparent;
   transition: background-color .15s, border-color .15s;
 }
-.smart-vxe :deep(.vxe-cell--checkbox:hover .vxe-checkbox--icon) { border-color: var(--st-primary); }
 .smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-checked-fill),
 .smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-checked),
 .smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-indeterminate-fill),
 .smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-indeterminate) {
-  background: var(--st-primary); border-color: var(--st-primary);
+  background: var(--st-success); border-color: var(--st-success);
 }
 .smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-checked-fill)::after,
 .smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-checked)::after {
-  /* 勾以方框中心定位（固定 left/top 偏移在不同缩放下会偏） */
-  content: ''; position: absolute; left: 50%; top: 50%; width: 3.5px; height: 7.5px; box-sizing: content-box;
-  border: solid #fff; border-width: 0 1.6px 1.6px 0; transform: translate(-50%, -62%) rotate(45deg);
+  content: '✓'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font: normal 13px var(--el-font-family); color: #fff;
 }
 .smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-indeterminate-fill)::after,
 .smart-vxe :deep(.vxe-checkbox--icon.vxe-table-icon-checkbox-indeterminate)::after {
@@ -1242,10 +1395,10 @@ defineExpose({
 .smart-vxe :deep(.col-selected),
 .smart-vxe :deep(.tf-col-selected) {
   --cs-l: 0px; --cs-r: 0px; --cs-t: 0px; --cs-b: 0px; }
-.smart-vxe :deep(.sel-l) { --cs-l: 1px; }
-.smart-vxe :deep(.sel-r) { --cs-r: 1px; }
-.smart-vxe :deep(.sel-t) { --cs-t: 1px; }
-.smart-vxe :deep(.sel-b) { --cs-b: 1px; }
+.smart-vxe :deep(.sel-l) { --cs-l: 2px; }
+.smart-vxe :deep(.sel-r) { --cs-r: 2px; }
+.smart-vxe :deep(.sel-t) { --cs-t: 2px; }
+.smart-vxe :deep(.sel-b) { --cs-b: 2px; }
 /* 选中底色 = 在原底色上盖一层半透明主色（::before 贴膜），而不是替换底色：填色（td 内联 background-color）选中后
    仍可见、只是泛蓝（替换会把填色盖掉，参照 PixPin_2026-10-18_00-57-11）。不用 background-image：vxe 用背景渐变画单元格
    边线并设了 background-size，叠加的渐变会被压成 1px 细线、还会冲掉边线。白底上叠出的颜色即原来的 #EEF3FD / #E9EFFC */
@@ -1259,7 +1412,7 @@ defineExpose({
   box-sizing: border-box; border-style: solid; border-color: var(--st-primary);
   border-width: var(--cs-t) var(--cs-r) var(--cs-b) var(--cs-l); }
 .smart-vxe :deep(.vxe-header--column.th-col-selected)::before { background: rgba(46, 107, 230, .105); }
-/* 表头、数据行、统计行统一用 1px border 绘制；首尾轮廓整体内缩，侧边不会突出。 */
+/* 表头、数据行、统计行统一用 2px border 绘制；首尾轮廓整体内缩，侧边不会突出。 */
 .smart-vxe :deep(.vxe-header--row:first-child .vxe-header--column.th-col-selected.sel-t)::before { top: 1px; }
 .smart-vxe :deep(.vxe-footer--column.tf-col-selected.sel-b)::before { bottom: 1px; }
 .smart-vxe :deep(.vxe-header--column.th-col-selected:hover) { background-color: #fff; }   /* 不叠表头 hover 灰（表头填色是内联样式，不受影响） */

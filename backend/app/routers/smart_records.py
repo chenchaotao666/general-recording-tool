@@ -384,6 +384,7 @@ def update_record(table_id: int, record_id: int, payload: dict, db: Session = De
         rec = json_store.update_record(db, access.table, fields, record_id, data,
                                        user=access.ctx.user.username, editor_id=access.ctx.user.id)
         smart_events.record_updated(db, access.table, before, rec, list(data), actor_id=access.ctx.user.id)
+        _inject_system_and_lookup(db, fields, [rec])
         return {"record": rec}
     rec = db.get(Record, record_id)
     fbn = {f.field_name: f for f in fields}

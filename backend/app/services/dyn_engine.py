@@ -269,6 +269,16 @@ def list_records(db: Session, table_id: int, page: int, page_size: int,
             "items": [_expand_json_fields(row_to_dict(r), fields) for r in rows]}
 
 
+def with_checkbox_defaults(fields: list[MetaField], data: dict) -> dict:
+    result = dict(data or {})
+    for field in fields:
+        if field.field_type == "checkbox" and field.field_name not in result:
+            config = field.options or {}
+            if "defaultChecked" in config:
+                result[field.field_name] = bool(config["defaultChecked"])
+    return result
+
+
 def coerce_payload(fields: list[MetaField], data: dict, partial: bool = False):
     """按字段元数据校验并转换提交的数据。返回 (cleaned, errors)。公式字段忽略客户端提交值（保存时服务端重算）。"""
     by_name = {f.field_name: f for f in fields}
@@ -322,6 +332,25 @@ def _render_serial(pattern: str, now: datetime, seq: int) -> str:
     if "{SEQ}" in out:
         out = out.replace("{SEQ}", str(seq).zfill(4))
     return _SEQ_ZEROS_RE.sub(lambda m: str(seq).zfill(len(m.group(1))), out)
+
+
+def serial_sequence(pattern: str, value) -> int | None:
+    """Recover the sequence from its old format, excluding literal/date digits."""
+    parts = []
+    cursor = 0
+    captured = False
+    for match in re.finditer(r"\{(?:0+|SEQ|YYYY|YY|MM|DD)\}", pattern):
+        parts.append(re.escape(pattern[cursor:match.start()]))
+        token = match.group()[1:-1]
+        if token == "SEQ" or set(token) == {"0"}:
+            parts.append(r"(?P<seq>\d+)" if not captured else r"\d+")
+            captured = True
+        else:
+            parts.append(r"\d{" + str(4 if token == "YYYY" else 2) + "}")
+        cursor = match.end()
+    parts.append(re.escape(pattern[cursor:]))
+    match = re.fullmatch("".join(parts), str(value)) if captured else None
+    return int(match.group("seq")) if match else None
 
 
 def _next_seq(db: Session, table_id: int, field_name: str, period_key: str) -> int:
@@ -385,6 +414,13 @@ def formula_context(fields: list, ctx: dict) -> dict:
         if ft in ("singleSelect", "multiSelect"):
             labels = {str(o.get("id")): o.get("label") for o in (f.options or {}).get("options") or [] if isinstance(o, dict)}
             out[name] = [labels.get(str(x), x) for x in v] if isinstance(v, list) else labels.get(str(v), v)
+        elif ft in ("member", "createdBy", "lastModifiedBy"):
+            from .formula_tables import USER_NAME_RESOLVER
+            resolver = USER_NAME_RESOLVER.get()
+            def display_user(user):
+                actor = {"__ai__": "AI 生成", "__automation__": "自动化"}.get(str(user))
+                return actor or (resolver(user) if resolver else user)
+            out[name] = [display_user(user) for user in v] if isinstance(v, list) else display_user(v)
         elif f.data_type in ("date", "datetime") or ft in ("createdTime", "lastModifiedTime"):
             if isinstance(v, str):
                 try:
@@ -511,7 +547,7 @@ def create_record(db: Session, table_id: int, data: dict, user: str | None = Non
         _sync_images(db, table_id, record["id"], fields, {}, record)
         return record
     _, fields, table = load_business(db, table_id)
-    cleaned, errors = coerce_payload(fields, data)
+    cleaned, errors = coerce_payload(fields, with_checkbox_defaults(fields, data))
     if errors:
         raise HTTPException(422, detail=errors)
     for f in fields:

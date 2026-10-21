@@ -22,7 +22,7 @@ export const FIELD_TYPE_ICONS = {
   checkbox: '<rect x="3" y="3" width="10" height="10" rx="2"/><path d="M5.5 8.2l1.8 1.8 3.4-4"/>',
   // 标识
   url: '<path d="M6.5 9.5l3-3"/><path d="M8.7 5.3l1.4-1.4a2.5 2.5 0 013.5 3.5L12.2 8.8"/><path d="M7.3 10.7l-1.4 1.4a2.5 2.5 0 01-3.5-3.5l1.4-1.4"/>',
-  autoNumber: T('1↓', 8.5, 2, 12.5),
+  autoNumber: '<path d="M2.5 5l2-2v10M2.5 13h4M11 3v10M8.5 10.5L11 13l2.5-2.5"/>',
   barcode: '<path d="M2.5 3v10M5 3v10M7.5 3v10M10 3v10M12 3v10M13.5 3v10"/>',
   location: '<path d="M8 14.2s-4.6-4.1-4.6-7.7a4.6 4.6 0 019.2 0c0 3.6-4.6 7.7-4.6 7.7z"/><circle cx="8" cy="6.4" r="1.6"/>',
   // 协作

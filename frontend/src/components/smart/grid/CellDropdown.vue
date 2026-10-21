@@ -21,10 +21,10 @@ function click(event) {
 </script>
 <style scoped>
 .cell-dropdown.st-dd { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px;
-  padding: 0; border: 0; border-radius: 4px; box-sizing: border-box; color: #30343B; background: transparent; appearance: none; cursor: pointer; }
+  padding: 0; border: 0; border-radius: 4px; box-sizing: border-box; color: #808792; background: transparent; appearance: none; cursor: pointer; }
 .cell-dropdown::before { content: ''; width: 0; height: 0; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 5px solid currentColor; }
 .cell-dropdown.up::before { border-top: 0; border-bottom: 5px solid currentColor; }
-.cell-dropdown:hover, .cell-dropdown:focus-visible, .cell-dropdown.open { background: #E6E8E8; color: #30343B; }
+.cell-dropdown:hover, .cell-dropdown:focus-visible, .cell-dropdown.open { background: #E6E8E8; color: #808792; }
 .cell-dropdown:focus-visible { outline: 1px solid var(--st-primary, #3370ff); outline-offset: -1px; }
 .cell-dropdown.cell-dropdown-hidden { visibility: hidden; pointer-events: none; }
 .cell-dropdown:disabled { opacity: .45; cursor: not-allowed; background: transparent; }

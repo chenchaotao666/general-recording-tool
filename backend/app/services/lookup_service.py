@@ -3,6 +3,18 @@
 MVP 口径：读时计算不落库（≤1 万行约定下，源表记录一次载入内存，逐行匹配）。
 """
 from __future__ import annotations
+from decimal import Decimal, InvalidOperation
+
+
+def _equal(left, right):
+    # Numeric fields may be floats while serials are zero-padded strings.
+    if any(isinstance(v, (int, float, Decimal)) and not isinstance(v, bool) for v in (left, right)):
+        try:
+            a, b = Decimal(str(left)), Decimal(str(right))
+            return a.is_finite() and b.is_finite() and a == b
+        except (InvalidOperation, ValueError):
+            pass
+    return left == right or str(left) == str(right)
 
 from . import json_store
 from .field_registry import LOOKUP_AGGS
@@ -23,9 +35,9 @@ def _match(row: dict, src: dict, conditions: list, logic: str) -> bool:
             return bool({str(x) for x in sv} & {str(x) for x in want})
         try:
             if op == "eq":
-                return sv == rv or str(sv) == str(rv)
+                return _equal(sv, rv)
             if op == "ne":
-                return not (sv == rv or str(sv) == str(rv))
+                return not _equal(sv, rv)
             if op == "contains":
                 return str(rv).casefold() in str(sv).casefold()
             if op == "gt":

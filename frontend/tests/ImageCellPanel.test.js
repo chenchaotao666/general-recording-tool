@@ -11,6 +11,8 @@ function setup(upload) {
 test('drop uploads all images once without losing existing values or accepting other files', async () => {
   const upload = vi.fn().mockResolvedValueOnce({ files: [{ id: 11 }] }).mockResolvedValueOnce({ files: [{ id: 12 }] })
   const wrapper = setup(upload)
+  expect(wrapper.find('.image-upload-panel').exists()).toBe(false)
+  await wrapper.vm.focus()
   await wrapper.find('.image-drop-wrap').trigger('drop', { dataTransfer: { files: [
     new File(['a'], 'a.png', { type: 'image/png' }), new File(['b'], 'b.jpg', { type: 'image/jpeg' }),
     new File(['x'], 'x.txt', { type: 'text/plain' }),
@@ -23,6 +25,7 @@ test('drop uploads all images once without losing existing values or accepting o
 test('failed upload remains retryable and produces no invalid image IDs', async () => {
   const upload = vi.fn().mockRejectedValueOnce(new Error('Network error')).mockResolvedValueOnce({ files: [{ id: 13 }] })
   const wrapper = setup(upload)
+  await wrapper.vm.focus()
   const event = { dataTransfer: { files: [new File(['a'], 'a.png', { type: 'image/png' })] } }
   await wrapper.find('.image-drop-wrap').trigger('drop', event)
   await flushPromises()

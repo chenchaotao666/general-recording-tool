@@ -47,7 +47,8 @@ def infer_select_options(values: list) -> list[dict] | None:
 
 CURRENCY_CODES = {"CNY": "￥", "USD": "$", "EUR": "€", "JPY": "¥", "HKD": "HK$", "GBP": "£"}
 
-DATE_FORMATS = ["yyyy-MM-dd", "yyyy/MM/dd", "yyyy年M月d日", "yyyy-MM-dd HH:mm", "yyyy年M月d日 HH:mm"]
+DATE_FORMATS = ["yyyy年M月d日", "yyyy-MM-dd", "yyyy/MM/dd", "M月d日", "yyyy年M月d日 EEEE",
+                "yyyy年M月d日 HH:mm", "yyyy-MM-dd HH:mm", "M/d/yyyy", "d/M/yyyy"]
 
 ROW_HEIGHTS = {"default", "medium", "tall", "extraTall"}
 
@@ -318,7 +319,8 @@ def to_field_in(field_type: str, label: str, field_name: str, config: dict | Non
     cfg = config if config is not None else default_config(field_type)
     options = dict(cfg)
     if field_type == "autoNumber":
-        options["serial"] = {"pattern": autonumber_segments_to_pattern(cfg.get("segments")),
+        pattern = autonumber_segments_to_pattern(cfg.get("segments")) if cfg.get("numberType") == "custom" else "{0}"
+        options["serial"] = {"pattern": pattern,
                              "reset": "never", "allow_manual": False}
     if field_type == "formula":
         options["formula"] = cfg.get("formula", "")

@@ -1,12 +1,10 @@
 <template>
   <span class="image-cell-anchor" :class="{ 'can-preview': selected || opened }" @mousedown.stop @click.stop @dblclick.stop>
-    <el-popover :visible="opened" placement="bottom-start" :width="current.length ? 400 : 480" :show-arrow="false" popper-class="image-cell-pop" :persistent="false">
-      <template #reference>
-        <div ref="anchor" class="image-cell-trigger" @click="toggle">
-          <span class="image-cell-thumbs"><img v-for="(item, index) in current.slice(0, 3)" :key="idOf(item)" :src="src(item)" alt="预览图片" role="button" tabindex="0" @click.stop="preview(index)" @keydown.enter.stop="preview(index)" /><span v-if="current.length > 3">+{{ current.length - 3 }}</span></span>
-          <CellDropdown v-if="!readonly" class="image-cell-arrow" overlay :visible="selected || opened" :open="opened" label="展开或收起图片面板" @click="toggle" />
-        </div>
-      </template>
+    <div ref="anchor" class="image-cell-trigger" @click="toggle">
+      <span class="image-cell-thumbs"><img v-for="(item, index) in current.slice(0, 3)" :key="idOf(item)" :src="src(item)" alt="预览图片" role="button" tabindex="0" @click.stop="preview(index)" @keydown.enter.stop="preview(index)" /><span v-if="current.length > 3">+{{ current.length - 3 }}</span></span>
+      <CellDropdown v-if="!readonly" class="image-cell-arrow" overlay :visible="selected || opened" :open="opened" label="展开或收起图片面板" @click="toggle" />
+    </div>
+    <el-popover v-if="opened" :visible="opened" virtual-triggering :virtual-ref="anchor" placement="bottom-start" :width="current.length ? 400 : 480" :show-arrow="false" popper-class="image-cell-pop" :persistent="false">
       <div ref="panel" class="image-upload-panel" tabindex="-1" @mousedown.stop @click.stop @keydown.esc.stop.prevent="close">
         <div class="image-drop-wrap" :class="{ 'has-images': current.length, dragging: dragDepth > 0 }"
             @dragenter.prevent="dragDepth++" @dragover.prevent="onDragOver" @dragleave.prevent="dragDepth = Math.max(0, dragDepth - 1)" @drop.prevent="drop">
@@ -49,7 +47,8 @@
   </span>
 </template>
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useGridScrollCollapse } from '../../../smart/utils/useGridScrollCollapse.js'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Loading, Picture, MoreFilled, Close } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { imageUrl, uploadImageFile, imageMeta, renameImage } from '../../../api/index.js'
@@ -146,9 +145,17 @@ function outside(event) {
     else close(false)
   }
 }
-onMounted(() => document.addEventListener('mousedown', outside, true))
+watch(opened, (visible, _, onCleanup) => {
+  if (!visible) return
+  document.addEventListener('mousedown', outside, true)
+  onCleanup(() => document.removeEventListener('mousedown', outside, true))
+}, { flush: 'sync' })
 onBeforeUnmount(() => document.removeEventListener('mousedown', outside, true))
 defineExpose({ focus })
+useGridScrollCollapse(() => opened.value, () => {
+  opened.value = false
+  emit('collapse')
+})
 </script>
 <style>
 .el-popper.image-cell-pop { padding: 0; max-width: calc(100vw - 24px); border: 1px solid #dcdfe4; border-radius: 6px; box-shadow: 0 4px 14px #0002; }

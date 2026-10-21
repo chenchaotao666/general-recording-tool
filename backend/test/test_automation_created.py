@@ -13,6 +13,23 @@ from app.routers import smart_automation as api
 
 
 class CreatedAutomationTests(unittest.TestCase):
+    def test_new_record_checkbox_default_and_explicit_false(self):
+        from app.services import json_store, dyn_engine
+        table = self.db.get(MetaTable, self.rule.table_id)
+        field = MetaField(table_id=table.id, field_name="checked", label="Checked", data_type="bool",
+                          field_type="checkbox", nullable=True, options={"defaultChecked": True})
+        self.db.add(field)
+        self.db.flush()
+        fields = [field]
+        self.assertTrue(json_store.create_record(self.db, table, fields, {})["checked"])
+        self.assertFalse(json_store.create_record(self.db, table, fields, {"checked": False})["checked"])
+        field.options = {"defaultChecked": False}
+        self.assertFalse(json_store.create_record(self.db, table, fields, {})["checked"])
+        self.assertTrue(json_store.create_record(self.db, table, fields, {"checked": True})["checked"])
+        cleaned, errors = dyn_engine.coerce_payload(fields, {}, partial=True)
+        self.assertEqual(cleaned, {})
+        self.assertEqual(errors, {})
+
     def test_background_update_changes_grid_revision(self):
         from app.routers.smart_records import _records_revision
         from app.services import json_store

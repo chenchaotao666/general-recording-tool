@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import re
 from contextlib import contextmanager
+from contextvars import ContextVar
 
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,25 @@ from . import expr
 
 log = logging.getLogger(__name__)
 _REF_RE = re.compile(r"\[#(\d+)(?:\.[^\]]+)?\]")
+USER_NAME_RESOLVER = ContextVar("formula_user_name_resolver", default=None)
+
+
+def _user_loader(db: Session, tenant_id: int | None):
+    from ..models import User, TenantMember
+    cache = {}
+
+    def load(value):
+        try:
+            user_id = int(value)
+        except (TypeError, ValueError):
+            return str(value)
+        if user_id not in cache:
+            query = db.query(User.username).filter(User.id == user_id)
+            if tenant_id is not None:
+                query = query.join(TenantMember, TenantMember.user_id == User.id).filter(TenantMember.tenant_id == tenant_id)
+            cache[user_id] = query.scalar() or '未知用户'
+        return cache[user_id]
+    return load
 
 
 def table_refs_of(formula: str) -> set[int]:
@@ -48,9 +68,11 @@ def _loader(db: Session, tenant_id: int | None):
 @contextmanager
 def scope(db: Session, tenant_id: int | None):
     token = expr.TABLE_RESOLVER.set(_loader(db, tenant_id))
+    user_token = USER_NAME_RESOLVER.set(_user_loader(db, tenant_id))
     try:
         yield
     finally:
+        USER_NAME_RESOLVER.reset(user_token)
         expr.TABLE_RESOLVER.reset(token)
 
 

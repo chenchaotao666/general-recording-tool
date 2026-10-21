@@ -196,7 +196,7 @@ def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dic
                   parent_id: int | None = None, actor_type: str = "user",
                   anonymous: bool = False, commit: bool = True) -> dict:
     """anonymous=True：公开表单的匿名外部填写者（创建人为空）；actor_type：user / ai / automation。"""
-    cleaned, errors = dyn_engine.coerce_payload(fields, _strip_readonly(fields, data))
+    cleaned, errors = dyn_engine.coerce_payload(fields, dyn_engine.with_checkbox_defaults(fields, _strip_readonly(fields, data)))
     if errors:
         raise HTTPException(422, detail=errors)
     for f in fields:

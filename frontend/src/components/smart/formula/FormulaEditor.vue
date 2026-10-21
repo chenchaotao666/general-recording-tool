@@ -4,7 +4,7 @@
        下（主体）：当前函数签名条 → 三栏：字段（搜索 + 第 1 行取值）｜ 函数（搜索 + 分类）｜ 说明（签名 / 示例，可一键插入）
        输入框内打字时在光标处弹出联想（函数 + 字段），↑↓ 选择，Tab / ⏎ 插入 -->
   <teleport to="body">
-    <div v-if="visible" class="fxe-mask" @mousedown.self="emit('close')">
+    <div v-if="visible" v-show="!aiVisible" class="fxe-mask" @click.self="emit('close')">
       <div class="fxe">
         <div class="fxe-top">
           <div class="fxe-head">
@@ -18,7 +18,7 @@
           </div>
           <div ref="editorRef" class="fxe-editor" contenteditable="true" spellcheck="false"
                data-placeholder="从下方点选字段和函数，或直接输入，如 IF([状态]=&quot;完成&quot;, 1, 0)"
-               @input="onInput" @keydown="onKeydown" @keyup="onKeyup" @mouseup="onCaretMove" @blur="onBlur"
+               @input="onInput" @keydown="onKeydown" @keyup="onKeyup" @mousedown="onEditorMouseDown" @mouseup="onCaretMove" @blur="onBlur"
                @paste="onPaste" />
           <div class="fxe-ops">
             <span v-for="op in OPS" :key="op.v" class="fxe-op" :data-smart-tip="op.tip" @mousedown.prevent @click="insertText(op.v, op.back)">{{ op.label }}</span>
@@ -55,36 +55,11 @@
           <!-- 字段：本表字段 | 整表引用 -->
           <div class="fxe-col fxe-col-fields">
             <div class="fxe-col-head">
-              <span class="fxe-tabs">
-                <span class="fxe-tab-btn" :class="{ on: leftTab === 'fields' }" @click="leftTab = 'fields'">本表字段</span>
-                <span class="fxe-tab-btn" :class="{ on: leftTab === 'tables' }" @click="leftTab = 'tables'">整表引用</span>
-              </span>
-              <span v-if="leftTab === 'fields'" class="fxe-col-sub">第 {{ result?.row_no || 1 }} 行取值</span>
+              <span>本表字段</span>
+              <span class="fxe-col-sub">第 {{ result?.row_no || 1 }} 行取值</span>
             </div>
-            <el-input v-model="fieldKw" size="small" :placeholder="leftTab === 'fields' ? '搜索字段' : '搜索表或字段'" clearable class="fxe-search" />
-            <div v-if="leftTab === 'tables'" class="fxe-col-list">
-              <template v-for="t in tableList" :key="t.id">
-                <div class="fxe-item" :class="{ on: hover?.key === `t:${t.id}` }" @mouseenter="hover = tableItem(t)"
-                     @mousedown.prevent @click="insertItem(tableItem(t))">
-                  <span class="fxe-caret st-icon-action" :class="{ open: expanded.has(t.id) }" @click.stop="toggleTable(t)"><StIcon name="chevron-right" :size="12" /></span>
-                  <StIcon name="view-grid" :size="14" class="fxe-item-ico" />
-                  <span class="fxe-item-name">{{ t.label }}</span>
-                  <span v-if="t.self" class="fxe-self">本表</span>
-                </div>
-                <template v-if="expanded.has(t.id)">
-                  <div v-for="f in tableFieldsOf(t)" :key="`${t.id}.${f.field_name}`" class="fxe-item fxe-sub"
-                       :class="{ on: hover?.key === `tc:${t.id}.${f.field_name}` }" @mouseenter="hover = tcolItem(t, f)"
-                       @mousedown.prevent @click="insertItem(tcolItem(t, f))">
-                    <StIcon :name="fieldIconName(f)" :size="13" class="fxe-item-ico" />
-                    <span class="fxe-item-name">{{ f.label }}</span>
-                    <span class="fxe-item-val">整列</span>
-                  </div>
-                  <div v-if="!t.fields" class="fxe-none fxe-sub">加载中…</div>
-                </template>
-              </template>
-              <div v-if="!tableList.length" class="fxe-none">没有匹配的表</div>
-            </div>
-            <div v-else class="fxe-col-list">
+            <el-input v-model="fieldKw" size="small" placeholder="搜索字段" clearable class="fxe-search" />
+            <div class="fxe-col-list">
               <div v-for="f in fieldList" :key="f.field_name" class="fxe-item" :class="{ on: hover?.key === `f:${f.field_name}` }"
                    @mouseenter="hover = fieldItem(f)" @mousedown.prevent @click="insertItem(fieldItem(f))">
                 <StIcon :name="fieldIconName(f)" :size="14" class="fxe-item-ico" />
@@ -97,6 +72,7 @@
           <!-- 函数 -->
           <div class="fxe-col fxe-col-funcs">
             <div class="fxe-col-head">函数</div>
+            <div v-if="catalogError" class="fxe-none">函数加载失败，<button @click="loadCatalog">重新加载</button></div>
             <el-input v-model="fnKw" size="small" placeholder="搜索函数，如 日期 / 拼接 / IF" clearable class="fxe-search" />
             <div v-if="!fnKw" class="fxe-cats">
               <span v-for="c in ['全部', ...catalog.categories, '运算符']" :key="c" class="fxe-cat" :class="{ on: fnCat === c }"
@@ -173,7 +149,7 @@
       </div>
 
       <!-- 光标处联想 -->
-      <div v-if="acItems.length" class="fxe-ac" :style="{ left: `${ac.x}px`, top: `${ac.y}px` }" @mousedown.prevent>
+      <div v-if="acItems.length && !aiVisible" class="fxe-ac" :style="{ left: `${ac.x}px`, top: `${ac.y}px` }" @mousedown.prevent>
         <div v-for="(it, i) in acItems" :key="it.key" class="fxe-ac-item" :class="{ on: i === ac.index }"
              @mouseenter="ac.index = i" @click="insertItem(it)">
           <StIcon v-if="it.kind === 'field'" :name="fieldIconName(it.field)" :size="14" class="fxe-item-ico" />
@@ -190,12 +166,13 @@
 </template>
 
 <script setup>
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { updateFormulaSelection } from '../../../smart/utils/formulaSelection.js'
 import StIcon from '../icons/StIcon.vue'
 import AiFormulaDialog from '../ai/AiFormulaDialog.vue'
 import { FIELD_REGISTRY } from '../../../smart/registry/fieldRegistry.js'
 import { fieldTypeIconSvg, fieldIconName } from '../../../smart/registry/fieldIcons.js'
-import { callContext, formatFormula, referencedTableIds, splitSignature, tokenize } from '../../../smart/utils/formula.js'
+import { callContext, formatFormula, functionInsertion, referencedTableIds, splitSignature, tokenize } from '../../../smart/utils/formula.js'
 import { getTable, smartFormulaFunctions, smartFormulaPreview, smartGetDoc, smartGetTree } from '../../../api/index.js'
 
 const props = defineProps({
@@ -220,10 +197,14 @@ const OPS = [
 
 const editorRef = ref(null)
 const catalog = ref({ categories: [], functions: [], operators: [] })
+const catalogError = ref(false)
+async function loadCatalog() {
+  catalogError.value = false
+  try { catalog.value = await smartFormulaFunctions() }
+  catch { catalogError.value = true }
+}
 // 整表引用：文档内的表（sheet / 收集表单），字段按需加载
 const tableMap = ref(new Map())     // id → {id, label, fields|null, self}
-const leftTab = ref('fields')
-const expanded = ref(new Set())
 const token = ref('')
 const ctx = ref(null)
 const hover = ref(null)          // 字段/函数栏悬停项（说明栏优先展示）
@@ -244,17 +225,6 @@ const fieldItem = (f) => ({ kind: 'field', key: `f:${f.field_name}`, label: f.la
 const tableItem = (t) => ({ kind: 'table', key: `t:${t.id}`, label: t.label, table: t })
 const tcolItem = (t, f) => ({ kind: 'tcol', key: `tc:${t.id}.${f.field_name}`, label: `${t.label}.${f.label}`, table: t, field: f })
 const opItem = (o) => ({ kind: 'op', key: `op:${o.op}`, label: o.op, op: o })
-const tableList = computed(() => {
-  const k = fieldKw.value.trim().toLowerCase()
-  const all = [...tableMap.value.values()].sort((a, b) => Number(b.self) - Number(a.self))
-  if (!k) return all
-  return all.filter(t => t.label.toLowerCase().includes(k) || (t.fields || []).some(f => f.label.toLowerCase().includes(k)))
-})
-function tableFieldsOf(t) {
-  const k = fieldKw.value.trim().toLowerCase()
-  const fs = (t.fields || []).filter(f => !(t.self && f.field_name === props.fieldName))
-  return k && !t.label.toLowerCase().includes(k) ? fs.filter(f => f.label.toLowerCase().includes(k)) : fs
-}
 async function ensureFields(id) {
   const t = tableMap.value.get(id)
   if (!t || t.fields) return
@@ -265,12 +235,6 @@ async function ensureFields(id) {
     t.fields = []
   }
   tableMap.value = new Map(tableMap.value)
-}
-function toggleTable(t) {
-  const next = new Set(expanded.value)
-  if (next.has(t.id)) next.delete(t.id)
-  else { next.add(t.id); ensureFields(t.id) }
-  expanded.value = next
 }
 async function loadTables() {
   const doc = await smartGetDoc()
@@ -347,8 +311,7 @@ const acItems = computed(() => {
   const fns = uniq.filter(f => f.name.startsWith(k))
     .sort((a, b) => a.name.length - b.name.length || a.name.localeCompare(b.name))
     .concat(uniq.filter(f => !f.name.startsWith(k) && f.name.includes(k)))
-  const fs = [...refFields.value.filter(f => f.label.toUpperCase().includes(k)).map(fieldItem),
-              ...[...tableMap.value.values()].filter(t => t.label.toUpperCase().includes(k)).map(tableItem)]
+  const fs = refFields.value.filter(f => f.label.toUpperCase().includes(k)).map(fieldItem)
   // 中文开头的输入更可能是字段名：字段排前
   const fieldFirst = /[一-龥]/.test(k[0])
   const list = fieldFirst ? [...fs, ...fns.map(fnItem)] : [...fns.map(fnItem), ...fs]
@@ -485,8 +448,23 @@ function placeAc() {
   ac.x = Math.min(rect.left, window.innerWidth - 380)
   ac.y = Math.min(rect.bottom + 6, window.innerHeight - 320)
 }
+function onEditorMouseDown(event) {
+  const chip = event.target.closest?.('.fxe-chip')
+  if (!chip || event.button !== 0) return
+  event.preventDefault()
+  editorRef.value.focus()
+  const range = document.createRange()
+  range.selectNode(chip)
+  const selection = window.getSelection()
+  selection.removeAllRanges()
+  selection.addRange(range)
+  onCaretMove()
+}
+onBeforeUnmount(() => globalThis.CSS?.highlights?.delete('formula-brackets'))
+watch(() => props.visible, visible => { if (!visible) globalThis.CSS?.highlights?.delete('formula-brackets') })
 function onCaretMove() {
   saveRange()
+  if (editorRef.value) updateFormulaSelection(editorRef.value)
   token.value = currentToken()
   ctx.value = callContext(textBeforeCaret())
   if (token.value) placeAc()
@@ -532,9 +510,10 @@ function insertItem(it) {
     range.setStartAfter(chip)
   } else {
     const takesArgs = !it.fn.signature.includes('()')
-    const text = document.createTextNode(`${it.fn.name}()`)
+    const insertion = functionInsertion(textBeforeCaret(), it.fn.name, takesArgs)
+    const text = document.createTextNode(insertion.text)
     range.insertNode(text)
-    range.setStart(text, takesArgs ? it.fn.name.length + 1 : text.length)
+    range.setStart(text, insertion.caret)
   }
   finishInsert(sel, range)
 }
@@ -651,7 +630,7 @@ function fieldHint(f) {
 
 watch(() => props.visible, async (v) => {
   if (!v) return
-  if (!catalog.value.functions.length) catalog.value = await smartFormulaFunctions()
+  if (!catalog.value.functions.length) void loadCatalog()
   Object.assign(preview, { loading: false, data: null })
   rowValues.value = {}
   token.value = ''
@@ -659,16 +638,17 @@ watch(() => props.visible, async (v) => {
   fieldKw.value = ''
   fnKw.value = ''
   fnCat.value = '全部'
-  leftTab.value = 'fields'
-  expanded.value = new Set()
-  await loadTables().catch(() => {})
-  await Promise.all(referencedTableIds(props.formula).map(ensureFields))
+  const tableIds = referencedTableIds(props.formula)
+  if (tableIds.length) {
+    await loadTables().catch(() => {})
+    await Promise.all(tableIds.map(ensureFields))
+  }
   await nextTick()
   render(props.formula || '')
   placeCaretEnd()
   ctx.value = callContext(serialize())
   runPreview()   // 空公式也调用：拿第 1 行各字段取值
-})
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -691,6 +671,9 @@ watch(() => props.visible, async (v) => {
 .fxe-editor :deep(.fxe-chip) { display: inline-flex; align-items: center; gap: 3px; padding: 0 8px; margin: 0 1px; height: 24px; vertical-align: middle;
   border: 1px solid #3D7BF2; border-radius: 12px; background: #EAF1FE; color: var(--st-text-1); font-family: var(--el-font-family); font-size: 13px; user-select: none; }
 .fxe-editor :deep(.fxe-chip-t) { border-color: #2BB3A3; background: #E3F7F3; }
+.fxe-editor :deep(.fxe-chip) { cursor: pointer; }
+.fxe-editor :deep(.fxe-chip.is-selected) { background: #DCE9FF; outline: 2px solid #83ACFF; outline-offset: 1px; }
+:global(::highlight(formula-brackets)) { background: #FFE6A3; color: #20242B; }
 .fxe-ops { display: flex; align-items: center; gap: 4px; padding: 8px 20px 0; flex-wrap: wrap; }
 .fxe-op { min-width: 30px; height: 26px; padding: 0 6px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
           border: 1px solid var(--st-border); border-radius: 5px; font-size: 13px; color: var(--st-text-1); cursor: pointer; background: #fff; font-family: Menlo, Consolas, monospace; }

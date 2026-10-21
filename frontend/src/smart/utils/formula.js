@@ -99,6 +99,13 @@ function lex(s) {
   return toks
 }
 
+export function functionInsertion(beforeCaret, name, takesArgs = true) {
+  const last = lex(beforeCaret || '').at(-1)
+  const chained = takesArgs && last && ['ref', ')', 'str', 'id'].includes(last.k)
+  const text = `${chained ? '.' : ''}${name}()`
+  return { text, caret: takesArgs ? text.length - 1 : text.length }
+}
+
 export function formatFormula(src, funcNames = []) {
   const names = new Set(funcNames.map(n => n.toUpperCase()))
   const toks = lex(src || '')

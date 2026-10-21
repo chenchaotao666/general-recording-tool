@@ -1,15 +1,13 @@
 <template>
   <span class="file-cell-anchor" @mousedown.stop @click.stop @dblclick.stop>
-    <el-popover :visible="opened" placement="bottom-end" :width="mode === 'pick' ? 280 : 400" :show-arrow="false" popper-class="file-cell-pop" :persistent="false">
-      <template #reference>
-        <div ref="anchor" class="file-cell-trigger" :class="{ selected }" @click="toggle('pick')">
-          <span class="file-cell-chips">
-            <button v-for="(file, index) in shownFiles" :key="keyOf(file)" class="file-cell-chip" :data-smart-tip="file.name" data-smart-tip-overflow=".file-chip-name" @click.stop="clickFile(index)"><FileTypeIcon :file="file" /><span class="file-chip-name">{{ file.name || '文件' }}</span></button>
-            <span v-if="!selected && files.length > 1" class="file-cell-more">+{{ files.length - 1 }}</span>
-          </span>
-          <CellDropdown v-if="!readonly" class="file-cell-arrow" overlay :bordered="selected" :visible="selected || opened" :open="opened" label="展开或收起文件面板" @click="toggle('pick')" />
-        </div>
-      </template>
+    <div ref="anchor" class="file-cell-trigger" :class="{ selected }" @click="toggle('pick')">
+      <span class="file-cell-chips">
+        <button v-for="(file, index) in shownFiles" :key="keyOf(file)" class="file-cell-chip" :data-smart-tip="file.name" data-smart-tip-overflow=".file-chip-name" @click.stop="clickFile(index)"><FileTypeIcon :file="file" /><span class="file-chip-name">{{ file.name || '文件' }}</span></button>
+        <span v-if="!selected && files.length > 1" class="file-cell-more">+{{ files.length - 1 }}</span>
+      </span>
+      <CellDropdown v-if="!readonly" class="file-cell-arrow" overlay :bordered="selected" :visible="selected || opened" :open="opened" label="展开或收起文件面板" @click="toggle('pick')" />
+    </div>
+    <el-popover v-if="opened" :visible="opened" virtual-triggering :virtual-ref="anchor" placement="bottom-end" :width="mode === 'pick' ? 280 : 400" :show-arrow="false" popper-class="file-cell-pop" :persistent="false">
       <div ref="panel" class="file-panel" tabindex="-1" @mousedown.stop @click.stop @keydown.esc.stop.prevent="close(true)" @dragover.prevent @drop.prevent="drop">
         <template v-if="mode === 'pick'">
           <input ref="search" v-model="query" class="file-search" placeholder="搜索文件或粘贴链接" aria-label="搜索文件或粘贴链接" @keydown.enter.prevent="addLink" />
@@ -46,7 +44,8 @@
   </span>
 </template>
 <script setup>
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useGridScrollCollapse } from '../../../smart/utils/useGridScrollCollapse.js'
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Check, Upload, List, Grid, Plus, MoreFilled, Delete } from '@element-plus/icons-vue'
 import { smartUploadFile, smartRecentFiles } from '../../../api/index.js'
 import { fileKind, fileSize, fileUrl } from './fileDisplay.js'
@@ -104,9 +103,17 @@ async function uploadFiles(chosen) {
   if (next.length > files.value.length) { publish(next); mode.value = 'files' }
 }
 function outside(event) { if (event.target.closest?.('.file-item-menu, .el-image-viewer__wrapper')) return; if (opened.value && !anchor.value?.contains(event.target) && !panel.value?.contains(event.target)) close(false) }
-onMounted(() => document.addEventListener('mousedown', outside, true))
+watch(opened, (visible, _, onCleanup) => {
+  if (!visible) return
+  document.addEventListener('mousedown', outside, true)
+  onCleanup(() => document.removeEventListener('mousedown', outside, true))
+}, { flush: 'sync' })
 onBeforeUnmount(() => document.removeEventListener('mousedown', outside, true))
 defineExpose({ focus })
+useGridScrollCollapse(() => opened.value, () => {
+  opened.value = false
+  emit('collapse')
+})
 </script>
 <style>
 .el-popper.file-cell-pop { padding: 0; border: 1px solid #e0e2e6; border-radius: 8px; box-shadow: 0 4px 16px #0002; max-width: calc(100vw - 24px); }

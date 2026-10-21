@@ -2,12 +2,12 @@
 import re
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Column, DateTime, Integer, MetaData, Table, func, inspect, select, text
+from sqlalchemy import BigInteger, Column, DateTime, Integer, MetaData, Table, delete, func, inspect, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateColumn
 
 from ..database import engine
-from ..models import ImportBatch, MetaField, MetaTable
+from ..models import ImportBatch, MetaField, MetaTable, SerialCounter
 from ..schemas import FieldIn, TableCreate
 from ..utils.naming import slugify
 from .typemap import coerce_value, default_widget, sa_column
@@ -291,6 +291,10 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
             db.flush()
             fields.append(f)
             by_name[f.field_name] = f
+            # A new column may reuse a deleted field name, but not its old counter.
+            db.execute(delete(SerialCounter).where(
+                SerialCounter.table_id == mt.id, SerialCounter.field_name == f.field_name))
+            _backfill_serial_field(db, mt, f)
             changes.append(f"新增字段「{f.label}」({f.field_name}, {f.data_type})")
             continue
 
@@ -354,11 +358,23 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
         new_widget = op.get("widget") or f.widget
         new_options = op.get("options") if op.get("options") is not None else (f.options or {})
         new_field_type = op.get("field_type") or f.field_type
+        old_options = f.options or {}
+        converting_to_serial = new_field_type == "autoNumber" and not (
+            f.data_type == "serial" or bool(old_options.get("serial")))
+        regenerate_serial = new_field_type == "autoNumber" and op.get("options") is not None and (
+            bool(new_options.get("applyToExisting"))
+            or old_options.get("serial") != new_options.get("serial")
+            or old_options.get("numberType") != new_options.get("numberType"))
+        if new_field_type == "autoNumber" and op.get("options") is not None:
+            # This is a one-shot command, not a persistent column setting.
+            new_options = dict(new_options)
+            new_options.pop("applyToExisting", None)
+            op["options"] = new_options
         validate_field_options(db, op.get("data_type") or f.data_type, new_widget, new_options,
                                set(by_name), f.label, new_field_type)
         new_type = op.get("data_type")
         if new_type and new_type != f.data_type:
-            if new_type not in ("varchar", "text", "int", "decimal", "date", "datetime", "bool", "json"):
+            if new_type not in ("varchar", "text", "int", "decimal", "date", "datetime", "bool", "json", "serial"):
                 raise MetaError(f"不支持的字段类型：{new_type}")
             if not is_json:
                 raise MetaError("physical 模式表暂不支持修改字段类型（可导出数据后重建表，或联系管理员）")
@@ -408,9 +424,66 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
             changes.append(f"字段 {name} 显示名改为「{op['label']}」")
         db.flush()
 
+        if converting_to_serial:
+            # Ordinary field values are not previously assigned serial numbers.
+            # Start a new sequence, even when an old counter reused this field name.
+            db.execute(delete(SerialCounter).where(
+                SerialCounter.table_id == mt.id, SerialCounter.field_name == name))
+            if is_json:
+                def _clear_previous_value(data, fname=name):
+                    if fname not in data:
+                        return None
+                    data.pop(fname)
+                    return data
+                _json_records_rewrite(db, mt.id, _clear_previous_value)
+            else:
+                db.execute(text(f"UPDATE {mt.name} SET {name} = NULL"))
+        _backfill_serial_field(db, mt, f, regenerate=regenerate_serial and not converting_to_serial,
+                               old_pattern=(old_options.get("serial") or {}).get("pattern"))
+
     mt.updated_at = datetime.now()
     db.commit()
     return {"changes": changes, "warnings": warnings}
+
+
+def _backfill_serial_field(db: Session, mt: MetaTable, field: MetaField, *, regenerate: bool = False,
+                           old_pattern: str | None = None) -> None:
+    """Fill missing serials; format changes preserve each record's assigned sequence."""
+    from . import dyn_engine
+    from ..models import Record
+    if not dyn_engine.is_serial_field(field):
+        return
+    name = field.field_name
+    # Concurrent configuration saves must not fill the same missing values twice.
+    db.execute(select(MetaField.id).where(MetaField.id == field.id).with_for_update())
+    def generate(previous):
+        if regenerate and previous not in (None, ""):
+            seq = dyn_engine.serial_sequence(old_pattern or dyn_engine.DEFAULT_SERIAL_PATTERN, previous)
+            if seq is None:
+                raise MetaError(f"字段「{field.label}」的已有编号无法匹配原编号规则，未重新分配序号")
+            pattern = (field.options or {}).get("serial", {}).get("pattern") or dyn_engine.DEFAULT_SERIAL_PATTERN
+            return dyn_engine._render_serial(pattern, datetime.now(), seq)
+        data = {}
+        dyn_engine.apply_serials(db, mt.id, [field], data)
+        return data[name]
+    if mt.storage_mode == "json":
+        # Match the table's default display order, including manually moved rows.
+        records = db.scalars(select(Record).where(Record.table_id == mt.id).order_by(
+            func.coalesce(Record.sort_index, Record.id).desc(), Record.id.desc()))
+        for record in records:
+            data = dict(record.data or {})
+            if not regenerate and data.get(name) not in (None, ""):
+                continue
+            data[name] = generate(data.get(name))
+            record.data = data
+    else:
+        if not PHYSICAL_NAME_RE.fullmatch(mt.name) or not FIELD_NAME_RE.fullmatch(name):
+            raise MetaError("自动编号字段标识无效")
+        condition = "" if regenerate else f" WHERE {name} IS NULL OR {name} = ''"
+        rows = db.execute(text(f"SELECT id, {name} FROM {mt.name}{condition} ORDER BY id DESC")).all()
+        for rid, previous in rows:
+            db.execute(text(f"UPDATE {mt.name} SET {name} = :value WHERE id = :id"),
+                       {"value": generate(previous), "id": rid})
 
 
 # ---------- 智能表：字段改类型为单选/多选时的存量收编 ----------

@@ -120,10 +120,10 @@ export const FIELD_TYPE_GROUPS = ['基础', '协作', '媒体', '标识', '关�
 // BLOCKED_CONFIGURABLE 可通过提示里的「修改设置」调整规则
 export const BLOCKED_EDIT_TEXT = {
   formula: '公式计算结果不可直接编辑', lookup: '查找引用内容不可直接编辑', autoNumber: '自动编号不可直接编辑',
-  createdBy: '创建人由系统自动记录，不可编辑', lastModifiedBy: '最后编辑人由系统自动记录，不可编辑',
-  createdTime: '创建时间由系统自动记录，不可编辑', lastModifiedTime: '最后编辑时间由系统自动记录，不可编辑',
+  createdBy: '创建人由系统自动记录，不可直接编辑', lastModifiedBy: '最后编辑人由系统自动记录，不可直接编辑',
+  createdTime: '创建时间由系统自动记录，不可直接编辑', lastModifiedTime: '最后编辑时间由系统自动记录，不可直接编辑',
 }
-export const BLOCKED_CONFIGURABLE = ['formula', 'lookup', 'autoNumber']
+export const BLOCKED_CONFIGURABLE = ['formula', 'lookup', 'autoNumber', 'createdBy', 'lastModifiedBy', 'createdTime', 'lastModifiedTime']
 
 export function regOf(field) {
   return FIELD_REGISTRY[field?.field_type] || FIELD_REGISTRY.text

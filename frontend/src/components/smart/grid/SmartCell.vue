@@ -6,7 +6,8 @@
     <span v-else-if="aiState" class="ai-state err" :data-smart-tip="aiState.error || ''">生成失败 · {{ aiState.error || '原因未知' }}</span>
     <!-- 单选/多选：彩色标签胶囊；一行放不下时只渲染放得下的，末尾 +N 表示隐藏个数 -->
     <template v-else-if="ft === 'singleSelect' || ft === 'multiSelect'">
-      <CompactCellTags :tags="enumTags" />
+      <span v-if="enumTags.length === 1" class="opt-tag" :class="{ raw: enumTags[0].raw }" :style="enumTags[0].style">{{ enumTags[0].label }}</span>
+      <CompactCellTags v-else-if="enumTags.length > 1" :tags="enumTags" />
     </template>
     <!-- 进度条 -->
     <ProgressCell v-else-if="ft === 'progress'" :value="value" :config="cfg" />
@@ -42,6 +43,12 @@
       <span v-for="(r, i) in relationLabels" :key="i" class="rel-chip">🔗 {{ r }}</span>
     </span>
     <!-- 查找引用 -->
+    <template v-else-if="ft === 'lookup' && lookupDisplayField">
+      <template v-for="(item, i) in lookupValues" :key="i">
+        <span v-if="i" class="lookup-separator">、</span>
+        <SmartCell :field="lookupDisplayField" :record="{ [lookupDisplayField.field_name]: item }" class="lookup-value" />
+      </template>
+    </template>
     <span v-else-if="ft === 'lookup'">{{ lookupText }}</span>
     <!-- 复选框 -->
     <span v-else-if="ft === 'checkbox'" class="checkbox" :class="{ checked: !!value }">{{ value ? '✓' : '' }}</span>
@@ -57,9 +64,9 @@
 </template>
 
 <script setup>
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject } from 'vue'
 import StIcon from '../icons/StIcon.vue'
-import { optionColor } from '../../../smart/registry/fieldRegistry.js'
+import { resolveEnumTags } from '../../../smart/utils/enumTags.js'
 import ProgressCell from './ProgressCell.vue'
 import CompactCellTags from './CompactCellTags.vue'
 import { imageUrl } from '../../../api/index.js'
@@ -89,29 +96,7 @@ const cellStyle = computed(() => props.fillColor ? { background: props.fillColor
 // 单选/多选一行放不下时 +N。容器是 nowrap + overflow 裁剪，测量用 scrollWidth
 // （截断标签的自然宽度）；先按全量宽度判断能否全放下，放不下再预留徽标位
 // （ghost 实测）重算容量，只渲染放得下的 + 徽标（否则徽标自身会被挤出裁剪区）
-const enumTags = computed(() => [
-  ...selectedOptions.value.map(o => ({ key: o.id, label: o.label, style: { background: optionColor(o.color).value, color: optionColor(o.color).text } })),
-  ...unmatchedValues.value.map((v, i) => ({ key: `raw-${i}`, label: v, raw: true })),
-])
-
-const selectedOptions = computed(() => {
-  const opts = cfg.value.options || []
-  const v = value.value
-  if (v == null) return []
-  const ids = Array.isArray(v) ? v : [v]
-  return ids.map(id => opts.find(o => o.id === id)).filter(Boolean)
-})
-
-// 未匹配到选项的原始值（改类型/导入场景）兜底原样展示
-const unmatchedValues = computed(() => {
-  if (!['singleSelect', 'multiSelect'].includes(ft.value)) return []
-  const opts = cfg.value.options || []
-  const v = value.value
-  if (v == null) return []
-  const ids = Array.isArray(v) ? v : [v]
-  return ids.filter(id => id != null && id !== '' && !opts.some(o => o.id === id))
-    .map((x) => (typeof x === 'object' ? JSON.stringify(x) : String(x)))
-})
+const enumTags = computed(() => resolveEnumTags(cfg.value.options, value.value))
 
 const members = computed(() => {
   const ids = Array.isArray(value.value) ? value.value : (value.value ? [value.value] : [])
@@ -147,12 +132,29 @@ const lookupText = computed(() => {
   if (v == null) return ''
   return Array.isArray(v) ? v.join('、') : String(v)
 })
+const lookupDisplayField = computed(() => {
+  if (ft.value !== 'lookup') return null
+  const agg = cfg.value.aggregation || 'raw'
+  if (!['raw', 'rawDistinct'].includes(agg)) return { field_name: '_lookup', field_type: 'number', options: {} }
+  const source = props.field.lookupDisplayField
+  return source && source.field_type !== 'lookup' ? source : null
+})
+const lookupValues = computed(() => {
+  if (value.value == null) return []
+  if (!['raw', 'rawDistinct'].includes(cfg.value.aggregation || 'raw')) return [value.value]
+  const values = Array.isArray(value.value) ? value.value : [value.value]
+  const type = lookupDisplayField.value?.field_type
+  // List-valued source fields share one renderer (tags, members, images/files).
+  return ['singleSelect', 'multiSelect', 'member', 'image', 'file', 'relation'].includes(type) ? [values.flat()] : values
+})
 </script>
 
 <style scoped>
 .smart-cell { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow: hidden; white-space: nowrap; font-size: 13px; min-height: 20px; width: 100%; }
 /* 纯文本单行省略号（flex 容器里的文本节点吃不到 ellipsis，须包一层） */
 .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lookup-value { width: auto; flex: 0 1 auto; min-width: 0; }
+.lookup-separator { flex: none; }
 /* 单选/多选查看态：一行展示，放不下的由 +N 徽标报数（只渲染放得下的）；
    单个标签超宽时自身省略号截断；有徽标时标签再让出徽标位 */
 .enum-box { position: relative; display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow: hidden; max-height: 22px; width: 100%; }
@@ -171,7 +173,8 @@ const lookupText = computed(() => {
 .more { font-size: 12px; color: var(--el-text-color-secondary); }
 .file-chip { text-decoration: none; color: inherit; }
 .file-chip, .rel-chip { background: var(--el-fill-color-light); border-radius: 4px; padding: 1px 6px; font-size: 12px; white-space: nowrap; }
-.checkbox { width: 18px; height: 18px; border: 1px solid var(--el-border-color); border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; color: #fff; }
+.smart-cell.cell-checkbox { justify-content: center; }
+.checkbox { width: 18px; height: 18px; flex: none; border: 1px solid var(--el-border-color); border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; }
 .checkbox.checked { background: var(--st-success); border-color: var(--st-success); }
 .cell-currency, .cell-number, .cell-percent, .cell-progress { justify-content: flex-end; }
 /* AI 字段状态 */

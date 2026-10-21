@@ -4,12 +4,14 @@ import { test, expect, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import RelationCellPanel from '../src/components/smart/grid/RelationCellPanel.vue'
 import { smartRelationRecords, smartUpdateView } from '../src/api/index.js'
-vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
 vi.mock('../src/api/index.js', () => ({ smartRelationRecords: vi.fn(), smartUpdateView: vi.fn(), smartUpdateRecord: vi.fn(), imageUrl: vi.fn() }))
 test('does not request per-cell data until interaction and preserves selection when removing a relation', async () => {
   smartRelationRecords.mockResolvedValue({ fields: [{ id: 1, field_name: 'title', field_type: 'text', label: 'Title' }], items: [{ id: 201, title: 'Beyond first page' }, { id: 3, title: 'Third' }], my_perms: {}, content_perm: {}, view: { config: {} } })
   const wrapper = mount(RelationCellPanel, { props: { value: [201, 3], field: { label: 'Related', options: { targetTableId: 2 } }, selected: false }, global: { plugins: [ElementPlus], stubs: { 'el-popover': { template: '<div><slot name="reference"/><slot/></div>' } } } })
   expect(smartRelationRecords).not.toHaveBeenCalled()
+  expect(wrapper.find('.relation-panel').exists()).toBe(false)
+  expect(wrapper.findComponent({ name: 'ElDialog' }).exists()).toBe(false)
   await wrapper.find('.relation-trigger').trigger('click')
   expect(wrapper.emitted('select')).toHaveLength(1)
   expect(wrapper.emitted('open')).toBeUndefined()

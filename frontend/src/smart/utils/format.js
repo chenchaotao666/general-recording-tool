@@ -17,6 +17,18 @@ export function formatCurrency(v, cfg = {}) {
   return `${cfg.currencySymbol || '￥'}${formatNumber(v, { precision: cfg.precision ?? 2, thousandSeparator: cfg.thousandSeparator !== false })}`
 }
 
+export const DATE_FORMATS = [
+  { v: 'yyyy年M月d日', l: '2018年4月20日' },
+  { v: 'yyyy-MM-dd', l: '2018-04-20' },
+  { v: 'yyyy/MM/dd', l: '2018/4/20' },
+  { v: 'M月d日', l: '4月20日' },
+  { v: 'yyyy年M月d日 EEEE', l: '2018年4月20日 星期五' },
+  { v: 'yyyy年M月d日 HH:mm', l: '2018年4月20日 14:00' },
+  { v: 'yyyy-MM-dd HH:mm', l: '2018-04-20 14:00' },
+  { v: 'M/d/yyyy', l: '4/20/2018' },
+  { v: 'd/M/yyyy', l: '20/4/2018' },
+]
+
 export function formatDate(v, cfg = {}) {
   if (!v) return ''
   const s = String(v)
@@ -28,6 +40,10 @@ export function formatDate(v, cfg = {}) {
     'yyyy-MM-dd': `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
     'yyyy/MM/dd': `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`,
     'yyyy年M月d日': `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`,
+    'M月d日': `${d.getMonth() + 1}月${d.getDate()}日`,
+    'yyyy年M月d日 EEEE': `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 星期${'日一二三四五六'[d.getDay()]}`,
+    'M/d/yyyy': `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`,
+    'd/M/yyyy': `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`,
     'yyyy-MM-dd HH:mm': `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
     'yyyy年M月d日 HH:mm': `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`,
   }
@@ -38,6 +54,8 @@ export function formatDate(v, cfg = {}) {
 const DAYJS_DATE_FORMATS = {
   'yyyy-MM-dd': 'YYYY-MM-DD', 'yyyy/MM/dd': 'YYYY/M/D', 'yyyy年M月d日': 'YYYY年M月D日',
   'yyyy-MM-dd HH:mm': 'YYYY-MM-DD HH:mm', 'yyyy年M月d日 HH:mm': 'YYYY年M月D日 HH:mm',
+  'M月d日': 'M月D日', 'yyyy年M月d日 EEEE': 'YYYY年M月D日 dddd',
+  'M/d/yyyy': 'M/D/YYYY', 'd/M/yyyy': 'D/M/YYYY',
 }
 export function dayjsDateFormat(cfg = {}) {
   return DAYJS_DATE_FORMATS[cfg.format || 'yyyy-MM-dd'] || (cfg.includeTime ? 'YYYY-MM-DD HH:mm' : 'YYYY-MM-DD')

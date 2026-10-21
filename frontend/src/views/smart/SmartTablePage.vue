@@ -90,7 +90,11 @@
         </button>
       </FillPanel>
 
-      <!-- 批量操作（勾选行后出现，紧跟填色右侧）：已选 N 条 · 批量删除 · 取消 -->
+      <button class="tb-btn" :disabled="!view || !fields.length" title="自动调整所有列宽" @click="autoFitAllFields">
+        <StIcon name="autofit" :size="15" />自动列宽
+      </button>
+
+      <!-- 批量操作（勾选行后出现）：已选 N 条 · 批量删除 · 取消 -->
       <template v-if="selection.length">
         <span class="tb-sep" />
         <span class="tb-selected">已选 {{ selection.length }} 条</span>
@@ -180,7 +184,7 @@
     <!-- 面板与弹窗 -->
     <FieldConfigDialog :visible="fieldDialog.visible" :field="fieldDialog.field" :preset="fieldDialog.preset" :fields="fields" :at="fieldDialog.at"
                        :table-id="tableId" :sample-record-id="dataRows[0]?.id || null"
-                       :tables="allTables" :source-fields-of="loadFieldsOf"
+                       :tables="allTables" :lookup-tables="lookupTables" :source-fields-of="loadFieldsOf" @refresh-lookup-tables="loadDocEntries"
                        @close="fieldDialog.visible = false" @save="onFieldSave"
                        @ai-tags="(f) => { fieldDialog.visible = false; Object.assign(aiTags, { visible: true, field: f }) }" />
     <FindReplaceDialog ref="findDialogRef" :visible="findVisible" :table-id="tableId" :view-id="view?.id" :at="findAt"
@@ -223,9 +227,8 @@
 
     <!-- 字段列头菜单 -->
     <teleport to="body">
-      <div v-if="fieldMenu.visible" class="fm-mask" @click="fieldMenu.visible = false"
-           @contextmenu.prevent="fieldMenu.visible = false">
-        <div class="fm" :style="{ left: `${fieldMenu.x}px`, top: `${fieldMenu.y}px` }" @click.stop>
+      <div v-if="fieldMenu.visible" class="fm-mask field-menu-layer">
+        <div v-menu-bounds="fieldMenu" class="fm" @click.stop>
           <div class="mi" @click="fieldAct('edit')"><StIcon name="pencil" :size="15" />修改字段</div>
           <div class="mi has-sub">
             <StIcon name="move-into" :size="15" />插入字段 <span class="sub-caret"><StIcon name="chevron-right" :size="12" /></span>
@@ -307,8 +310,8 @@
             <el-tooltip :hide-after="0" content="自动调整列宽" placement="top" :show-after="150" :z-index="3100">
               <span class="fb-item st-icon-action" @click="fieldAct('autoFit')"><StIcon name="autofit" :size="16" /></span>
             </el-tooltip>
-            <el-tooltip :hide-after="0" :content="menuFieldFrozen ? '取消冻结' : '冻结至此列'" placement="top" :show-after="150" :z-index="3100">
-              <span class="fb-item st-icon-action" @click="fieldAct('freeze')"><StIcon :name="menuFieldFrozen ? 'unfreeze' : 'freeze'" :size="16" /></span>
+            <el-tooltip :hide-after="0" :content="menuFieldFrozen ? '取消冻结' : menuFreezeBlocked ? '无法冻结，窗口宽度不足' : '冻结至此列'" placement="top" :show-after="150" :z-index="3100">
+              <span class="fb-item st-icon-action" :class="{ 'freeze-disabled': menuFreezeBlocked }" :aria-disabled="menuFreezeBlocked" @click="fieldAct('freeze')"><StIcon :name="menuFieldFrozen ? 'unfreeze' : 'freeze'" :size="16" /></span>
             </el-tooltip>
             <el-tooltip :hide-after="0" content="隐藏" placement="top" :show-after="150" :z-index="3100">
               <span class="fb-item st-icon-action" @click="fieldAct('hide')"><StIcon name="eye-off" :size="16" /></span>
@@ -323,9 +326,8 @@
 
     <!-- 编组组头菜单（设计稿 PixPin_2026-10-16_00-40-59） -->
     <teleport to="body">
-      <div v-if="groupMenu.visible" class="fm-mask" @click="groupMenu.visible = false"
-           @contextmenu.prevent="groupMenu.visible = false">
-        <div class="fm" :style="{ left: `${groupMenu.x}px`, top: `${groupMenu.y}px` }" @click.stop>
+      <div v-if="groupMenu.visible" class="fm-mask group-menu-layer">
+        <div v-menu-bounds="groupMenu" class="fm" @click.stop>
           <div class="mi" @click="groupAct('edit')"><StIcon name="pencil" :size="15" />修改编组</div>
           <div class="mi has-sub">
             <StIcon name="move-into" :size="15" />插入字段 <span class="sub-caret"><StIcon name="chevron-right" :size="12" /></span>
@@ -336,7 +338,7 @@
             </div>
           </div>
           <div class="mi" @click="groupAct('duplicate')"><StIcon name="copy" :size="15" />创建副本</div>
-          <div class="mi" @click="groupAct('freeze')"><StIcon name="freeze" :size="15" />冻结至此编组</div>
+          <div class="mi" :class="{ disabled: !freezeFits(groupMenu.group?.field_names?.at(-1)) }" :title="freezeFits(groupMenu.group?.field_names?.at(-1)) ? '' : '无法冻结，窗口宽度不足'" @click="groupAct('freeze')"><StIcon name="freeze" :size="15" />冻结至此编组</div>
           <div class="mi" @click="groupAct('autoFit')"><StIcon name="autofit" :size="15" />自动调整列宽</div>
           <div class="mi" @click="groupAct('hide')"><StIcon name="eye-off" :size="15" />隐藏</div>
           <div class="mi danger" @click="groupAct('dissolve')">解散编组</div>
@@ -409,6 +411,7 @@
 
 <script setup>
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
+import vMenuBounds from '../../smart/utils/menuBounds'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import SmartGrid from '../../components/smart/grid/SmartGrid.vue'
@@ -437,9 +440,11 @@ import AiMatchTagsDialog from '../../components/smart/ai/AiMatchTagsDialog.vue'
 import { FIELD_REGISTRY, filterOpsOf, OP_LABELS, OPTION_COLORS, sortDirectionLabels,
          footerStatsOf, STAT_LABELS, formatStatValue } from '../../smart/registry/fieldRegistry.js'
 import { anchoredDialogAttrs, useNonModalOutsideClose } from '../../smart/utils/anchorDialog.js'
-import { isRuleComplete, isCondValueEmpty, createUndoStack } from '../../smart/utils/format.js'
+import { isRuleComplete, isCondValueEmpty, createUndoStack, formatDate } from '../../smart/utils/format.js'
 import { resolveRefOptions } from '../../smart/utils/refOptions.js'
 import { buildColumnLayout } from '../../smart/utils/columnLayout.js'
+import { waitForGridIdle } from '../../smart/utils/waitForGridIdle.js'
+import { reconcileRows } from '../../smart/utils/reconcileRows.js'
 import { presetFromFilters } from '../../smart/utils/newRowPreset.js'
 import {
   alterTable, getTable, listMembers, listTables, getUserDirectory,
@@ -482,6 +487,8 @@ const docEntries = ref([])
 const dashboards = computed(() => docEntries.value.filter(e => e.type === 'dashboard'))
 const smartTables = computed(() => docEntries.value.filter(e => e.ref_table_id && ['sheet', 'form'].includes(e.type))
   .map(e => ({ id: e.ref_table_id, label: e.name })))
+const lookupTables = computed(() => docEntries.value.filter(e => e.type === 'sheet' && e.ref_table_id)
+  .map(e => ({ id: e.ref_table_id, label: e.name })))
 const columnGroups = ref([])
 provide('smartColumnGroups', columnGroups)   // 统一字段选择面板（FieldPickList）按编组展示字段
 const collapsedGroups = ref(new Set())
@@ -520,24 +527,47 @@ const refRowsCache = ref(new Map())
 const isRefSelect = (f) => ['singleSelect', 'multiSelect'].includes(f.field_type)
   && f.options?.optionSource === 'reference' && f.options?.reference?.tableId
 
-async function loadRefSources() {
-  for (const f of fields.value.filter(isRefSelect)) {
+let referenceLoadVersion = 0
+async function prepareRefSources(fieldList) {
+  const fieldCache = new Map(refFieldsCache.value)
+  const rowCache = new Map(refRowsCache.value)
+  const lookupSources = new Set(fieldList.filter(f => f.field_type === 'lookup').map(f => f.options?.sourceTableId).filter(Boolean))
+  await Promise.all([...lookupSources].map(async tid => {
+    try {
+      const meta = await getTable(tid)
+      fieldCache.set(tid, meta.fields)
+    } catch { /* 无权访问或源表已删除时保留文本兜底 */ }
+  }))
+  for (const f of fieldList.filter(isRefSelect)) {
     const tid = f.options.reference.tableId
     try {
-      if (!refFieldsCache.value.has(tid)) {
+      if (!fieldCache.has(tid)) {
         const meta = await getTable(tid)
-        refFieldsCache.value = new Map(refFieldsCache.value).set(tid, meta.fields)
+        fieldCache.set(tid, meta.fields)
       }
-      if (f.options.optionLinkage?.enabled && !refRowsCache.value.has(tid)) {
+      if (f.options.optionLinkage?.enabled && !rowCache.has(tid)) {
         const g = await smartGrid(tid, { page_size: 200 })
-        refRowsCache.value = new Map(refRowsCache.value).set(tid, g.items.filter(r => !r.__rowType))
+        rowCache.set(tid, g.items.filter(r => !r.__rowType))
       }
     } catch { /* 引用表无权访问/已删除：兜底本地 options */ }
   }
+  return { fieldCache, rowCache }
+}
+async function loadRefSources() {
+  const version = ++referenceLoadVersion
+  const tid = tableId.value
+  const sources = await prepareRefSources(fields.value)
+  if (version !== referenceLoadVersion || tid !== tableId.value) return
+  refFieldsCache.value = sources.fieldCache
+  refRowsCache.value = sources.rowCache
 }
 
 // 渲染用字段：reference 模式的选项集实时取自引用字段（源表变更自动同步）
 const resolvedFields = computed(() => fields.value.map(f => {
+  if (f.field_type === 'lookup') {
+    const source = (refFieldsCache.value.get(f.options?.sourceTableId) || []).find(x => x.field_name === f.options?.sourceFieldId)
+    return { ...f, lookupDisplayField: source }
+  }
   if (!isRefSelect(f)) return f
   const ref = f.options.reference
   const refField = (refFieldsCache.value.get(ref.tableId) || []).find(x => x.field_name === ref.fieldId)
@@ -567,12 +597,14 @@ const dataRows = computed(() => rows.value.filter(r => r.__rowType !== 'group'))
 const showPager = computed(() => viewType.value === 'grid' && !grouped.value && total.value > pageSize)
 const gridAreaRef = ref(null)
 const gridAreaHeight = ref(0)
+const gridAreaWidth = ref(0)
 let gridAreaObserver = null
 watch(gridAreaRef, element => {
   gridAreaObserver?.disconnect()
   if (!element) return
   gridAreaHeight.value = element.clientHeight
-  gridAreaObserver = new ResizeObserver(() => { gridAreaHeight.value = element.clientHeight })
+  gridAreaWidth.value = element.clientWidth
+  gridAreaObserver = new ResizeObserver(() => { gridAreaHeight.value = element.clientHeight; gridAreaWidth.value = element.clientWidth })
   gridAreaObserver.observe(element)
 }, { flush: 'post' })
 const gridHeight = computed(() => Math.max(100, (gridAreaHeight.value || window.innerHeight - 176) - (showPager.value ? 32 : 0)))
@@ -599,7 +631,7 @@ async function pollRevision() {
   revisionPolling = true
   const tid = tableId.value
   try {
-    if (!pageActive || document.hidden || loading.value || pendingCellWrites || gridRef.value?.isEditing?.()) return
+    if (!pageActive || document.hidden || loading.value || pendingCellWrites || gridRef.value?.isEditing?.() || gridRef.value?.isScrolling?.()) return
     const result = await smartRecordsRevision(tid)
     if (pageActive && tid === tableId.value && !pendingCellWrites && !gridRef.value?.isEditing?.()
         && result.revision !== recordsRevision) {
@@ -661,6 +693,10 @@ async function loadGrid(viewId, { silent = false, focusId = null } = {}) {
     const g = await smartGrid(requestedTableId, { view_id: viewId, page: page.value, page_size: pageSize,
                                          ...(focusId != null ? { focus_id: focusId } : {}) })
     if (requestedTableId !== tableId.value || requestId !== loadRequestId) return
+    if (silent && !await waitForGridIdle(
+      () => gridRef.value?.isScrolling?.(),
+      () => pageActive && requestedTableId === tableId.value && requestId === loadRequestId,
+    )) return
     if (silent && (pendingCellWrites || gridRef.value?.isEditing?.())) return
     await applyGridResult(g)
   } finally {
@@ -671,7 +707,7 @@ async function loadGrid(viewId, { silent = false, focusId = null } = {}) {
 async function applyGridResult(g) {
   recordsRevision = g.revision ?? null
   if (g.page) page.value = g.page
-  rows.value = g.items
+  rows.value = reconcileRows(rows.value, g.items)
   loadRelationRows()
   total.value = g.total
   aggregations.value = g.aggregations || {}
@@ -1167,6 +1203,7 @@ function openFieldConfig(f, insertCtx = null, at = null) {
   }
   fieldDialog.field = f
   fieldDialog.insertCtx = insertCtx
+  fieldDialog.scrollToEnd = false
   fieldDialog.preset = null
   fieldDialog.addAgain = false
   fieldDialog.at = at
@@ -1176,20 +1213,21 @@ function openFieldConfig(f, insertCtx = null, at = null) {
 // 添加列类型网格浮层（AddFieldPop）：表格末尾「+」/表格设置「新增字段」/列头「插入字段」之外的统一入口
 const addFieldPop = reactive({ visible: false, x: 0, y: 0 })
 const lastAddFieldPos = { x: 200, y: 100 }
-function openAddFieldPop(x, y) {
-  Object.assign(addFieldPop, { visible: true, x, y })
+function openAddFieldPop(x, y, scrollToEnd = false) {
+  Object.assign(addFieldPop, { visible: true, x, y, scrollToEnd })
   lastAddFieldPos.x = x; lastAddFieldPos.y = y
 }
 function onAddFieldAt(e) {
   // 事件可能来自网格表头（MouseEvent）或设置面板（同样透传 MouseEvent）
   const x = e?.clientX ?? window.innerWidth - 520
   const y = e?.clientY ?? 120
-  openAddFieldPop(x, y)
+  openAddFieldPop(x, y, !!e?.target?.closest?.('.th-add-col'))
 }
 function onTypePick({ field_type, label }, again = false) {
   addFieldPop.visible = false
   fieldDialog.field = null
   fieldDialog.insertCtx = null
+  fieldDialog.scrollToEnd = !!addFieldPop.scrollToEnd
   fieldDialog.preset = { field_type, label }
   fieldDialog.addAgain = again
   fieldDialog.visible = true
@@ -1214,7 +1252,7 @@ function buildFieldPayload(field_type, label, config) {
   const options = { ...config }
   if (field_type === 'autoNumber') {
     // segments → serial pattern（与后端 autonumber_segments_to_pattern 同规则）
-    const pattern = (config.segments || []).map(s => {
+    const pattern = config.numberType !== 'custom' ? '{0}' : (config.segments || []).map(s => {
       if (s.type === 'autoIncrement') return `{${'0'.repeat(s.digits || 3)}}`
       if (s.type === 'fixedText') return s.text || ''
       return { yyyyMMdd: '{YYYY}{MM}{DD}', 'yyyy-MM-dd': '{YYYY}-{MM}-{DD}', yyyyMM: '{YYYY}{MM}', yyyy: '{YYYY}' }[s.format] || '{YYYY}{MM}{DD}'
@@ -1239,8 +1277,25 @@ function nextFieldName() {
 async function onFieldSave({ label, field_type, config }) {
   if (fieldDialog.field) {
     const f = fieldDialog.field
-    const op = { op: 'update_field', field_name: f.field_name, label, options: config, field_type }
+    const options = field_type === 'autoNumber' ? buildFieldPayload(field_type, label, config).options : config
+    const op = { op: 'update_field', field_name: f.field_name, label, options, field_type }
     if (f.field_type !== field_type) op.data_type = DATA_TYPE_MAP[field_type]
+    if (field_type === 'lookup' || f.field_type === 'lookup') {
+      ++loadRequestId
+      ++referenceLoadVersion
+      pendingCellWrites++
+      try {
+        await alterTable(tableId.value, [op])
+        fieldDialog.visible = false
+        await reloadLookupGrid()
+      } catch (error) {
+        ElMessage.error(error.message || '引用设置保存失败')
+      } finally {
+        pendingCellWrites--
+        scheduleRevisionPoll()
+      }
+      return
+    }
     await alterTable(tableId.value, [op])
     fieldDialog.visible = false
     await reloadMeta()
@@ -1249,14 +1304,20 @@ async function onFieldSave({ label, field_type, config }) {
     const payload = buildFieldPayload(field_type, label, config)
     await alterTable(tableId.value, [{ op: 'add_field', field: payload }])
     fieldDialog.visible = false
+    if (fieldDialog.scrollToEnd && !fieldDialog.insertCtx) gridRef.value?.requestScrollToEnd?.()
     await reloadMeta()
     // 插入上下文定位（编组菜单/列头菜单「插入字段」；AddFieldPop 无上下文保持末尾）
     if (fieldDialog.insertCtx) await placeNewField(payload.field_name, fieldDialog.insertCtx)
     // 表单「添加新字段到表单」：同步建表列 + 加入表单题目（双向绑定，§12.1）
     if (pendingFormAdd) { pendingFormAdd = false; formRef.value?.addItem(payload.field_name) }
-    loadGrid(view.value?.id)
+    // 普通新增列没有已有数据，只更新列结构，保留当前行与滚动位置。
+    // 服务端计算/系统字段仍需读取实际值，但不触发整表 loading。
+    if (['formula', 'lookup', 'autoNumber', 'createdTime', 'lastModifiedTime', 'createdBy', 'lastModifiedBy', 'ai'].includes(field_type)
+      || config.formula || config.serial) {
+      await loadGrid(view.value?.id, { silent: true })
+    }
     // AddFieldPop 的「Tab 再添加一列」：保存完成后重新打开类型网格
-    if (fieldDialog.addAgain) { fieldDialog.addAgain = false; openAddFieldPop(lastAddFieldPos.x, lastAddFieldPos.y) }
+    if (fieldDialog.addAgain) { fieldDialog.addAgain = false; openAddFieldPop(lastAddFieldPos.x, lastAddFieldPos.y, fieldDialog.scrollToEnd) }
   }
 }
 
@@ -1264,6 +1325,31 @@ async function reloadMeta() {
   const meta = await getTable(tableId.value)
   fields.value = meta.fields
   loadRefSources()   // 字段增删改后引用选项/联动源可能变化
+}
+
+async function reloadLookupGrid() {
+  const tid = tableId.value
+  const requestId = ++loadRequestId
+  const referenceVersion = ++referenceLoadVersion
+  pendingCellWrites++
+  try {
+    // Keep the old cells visible until metadata, source formats and values are ready.
+    const [meta, grid] = await Promise.all([
+      getTable(tid), smartGrid(tid, { view_id: view.value?.id, page: page.value, page_size: pageSize }),
+    ])
+    const sources = await prepareRefSources(meta.fields)
+    if (tid !== tableId.value || requestId !== loadRequestId || referenceVersion !== referenceLoadVersion) return
+    // Vue batches these assignments into one render; no old/new format mismatch.
+    refFieldsCache.value = sources.fieldCache
+    refRowsCache.value = sources.rowCache
+    fields.value = meta.fields
+    await applyGridResult(grid)
+  } catch (error) {
+    ElMessage.error(error.message || '引用结果刷新失败，请重试')
+  } finally {
+    pendingCellWrites--
+    scheduleRevisionPoll()
+  }
 }
 
 // 列头菜单
@@ -1276,8 +1362,19 @@ const menuSortDir = computed(() =>
   (cfg.value.sorts || []).find(s => s.fieldId === fieldMenu.field?.field_name)?.direction || null)
 const menuSortInline = computed(() => menuSortDir.value ? dirLabels.value[menuSortDir.value === 'desc' ? 1 : 0] : '')
 function onFieldMenu(field, event) {
-  Object.assign(fieldMenu, { visible: true, x: event.clientX, y: event.clientY, field })
+  groupMenu.visible = false
+  const offset = event.type === 'contextmenu' ? 6 : 0
+  Object.assign(fieldMenu, { visible: true, x: event.clientX + offset, y: event.clientY + offset, field })
 }
+watch(() => fieldMenu.visible, (visible, _, onCleanup) => {
+  if (!visible) return
+  const closeOutside = event => {
+    if (!event.target?.closest?.('.field-menu-layer .fm')) fieldMenu.visible = false
+  }
+  // Observe outside presses without intercepting the cell's native interaction.
+  document.addEventListener('pointerdown', closeOutside, true)
+  onCleanup(() => document.removeEventListener('pointerdown', closeOutside, true))
+}, { flush: 'sync' })
 
 // 列头「筛选」：贴列头的单字段筛选浮层（与 pin 胶囊共用 FieldFilterPop）
 const fieldFilter = reactive({ visible: false, x: 0, y: 0, field: null })
@@ -1328,7 +1425,7 @@ async function fieldAct(cmd) {
     const sorts = (cfg.value.sorts || []).filter(s => s.fieldId !== f.field_name)
     sorts.push({ fieldId: f.field_name, direction: cmd === 'sortDesc' ? 'desc' : 'asc' })
     patchConfig({ sorts })
-  } else if (cmd === 'freeze') { fieldMenu.visible = false; patchConfig({ frozenFieldId: menuFieldFrozen.value ? null : f.field_name }, { reload: false }) }
+  } else if (cmd === 'freeze') { if (menuFreezeBlocked.value) return; fieldMenu.visible = false; patchConfig({ frozenFieldId: menuFieldFrozen.value ? null : f.field_name }, { reload: false }) }
   else if (cmd === 'hide') { fieldMenu.visible = false; patchConfig({ fieldVisibility: { ...(cfg.value.fieldVisibility || {}), [f.field_name]: false } }, { reload: false }) }
   else if (cmd === 'autoFit') { fieldMenu.visible = false; autoFitFields([f.field_name]) }
   else if (cmd === 'duplicate') { fieldMenu.visible = false; await smartDuplicateField(tableId.value, f.field_name); reloadMeta(); loadGrid(view.value?.id) }
@@ -1340,14 +1437,21 @@ async function fieldAct(cmd) {
 }
 
 // ================= V3：协作与智能 =================
-const menuFieldFrozen = computed(() => {
+const menuFieldFrozen = computed(() => Boolean(cfg.value.frozenFieldId)
+  && cfg.value.frozenFieldId === fieldMenu.field?.field_name)
+function freezeFits(fieldName) {
+  if (!fieldName || !gridAreaWidth.value) return false
   const order = new Map((cfg.value.fieldOrder || []).map((name, i) => [name, i]))
   const visible = fields.value.filter(f => cfg.value.fieldVisibility?.[f.field_name] !== false)
     .sort((a, b) => (order.get(a.field_name) ?? 999) - (order.get(b.field_name) ?? 999))
-  return buildColumnLayout(visible, columnGroups.value, cfg.value.frozenFieldId)
-    .some(n => n.fixed === 'left' && (n.isGroup ? n.fields : [n.field])
-      .some(f => f.field_name === fieldMenu.field?.field_name))
-})
+  const layout = buildColumnLayout(visible, columnGroups.value, fieldName)
+  const frozenWidth = layout.filter(n => n.fixed === 'left')
+    .flatMap(n => n.isGroup ? n.fields : [n.field])
+    .reduce((sum, f) => sum + Number(cfg.value.colWidths?.[f.field_name] || 160), 75)
+  // 留出至少 120px 用于滚动列与滚动条，避免冻结区域遮住右侧内容。
+  return frozenWidth <= gridAreaWidth.value - 120
+}
+const menuFreezeBlocked = computed(() => !menuFieldFrozen.value && !freezeFits(fieldMenu.field?.field_name))
 const menuIsSelect = computed(() => ['singleSelect', 'multiSelect'].includes(fieldMenu.field?.field_type))
 const menuIsSingleSelect = computed(() => fieldMenu.field?.field_type === 'singleSelect')
 const VIZ_CHARTS = [
@@ -1659,8 +1763,10 @@ async function deleteField(f) {
     : ''
   await ElMessageBox.confirm(`删除字段「${f.label}」？存量数据将一并清除。${depText}`, '删除字段', { type: 'warning' })
   await alterTable(tableId.value, [{ op: 'delete_field', field_name: f.field_name }])
-  reloadMeta()
-  loadGrid(view.value?.id)
+  await reloadMeta()
+  // Keep the mounted grid while synchronizing any affected filters/groups/data.
+  // The column-signature watcher restores its viewport after column registration.
+  await loadGrid(view.value?.id, { silent: true })
 }
 
 // ---------- 表格设置面板回调 ----------
@@ -1678,8 +1784,18 @@ async function onFieldAction(cmd, f) {
 // ---------- 编组组头菜单（设计稿 PixPin_2026-10-16_00-40-59） ----------
 const groupMenu = reactive({ visible: false, x: 0, y: 0, group: null })
 function onGroupMenu(group, e) {
-  Object.assign(groupMenu, { visible: true, x: e.clientX, y: e.clientY, group })
+  fieldMenu.visible = false
+  const offset = e.type === 'contextmenu' ? 6 : 0
+  Object.assign(groupMenu, { visible: true, x: e.clientX + offset, y: e.clientY + offset, group })
 }
+watch(() => groupMenu.visible, (visible, _, onCleanup) => {
+  if (!visible) return
+  const closeOutside = event => {
+    if (!event.target?.closest?.('.group-menu-layer .fm')) groupMenu.visible = false
+  }
+  document.addEventListener('pointerdown', closeOutside, true)
+  onCleanup(() => document.removeEventListener('pointerdown', closeOutside, true))
+}, { flush: 'sync' })
 
 async function groupAct(cmd) {
   const g = groupMenu.group
@@ -1690,7 +1806,10 @@ async function groupAct(cmd) {
   else if (cmd === 'insertRight' || cmd === 'insertLeft' || cmd === 'insertInside') {
     openFieldConfig(null, { mode: { insertRight: 'right', insertLeft: 'left', insertInside: 'inside' }[cmd], group: g })
   } else if (cmd === 'duplicate') await duplicateGroup(g)
-  else if (cmd === 'freeze') patchConfig({ frozenFieldId: members[members.length - 1] }, { reload: false })
+  else if (cmd === 'freeze') {
+    if (!freezeFits(members[members.length - 1])) { ElMessage.warning('无法冻结，窗口宽度不足'); return }
+    patchConfig({ frozenFieldId: members[members.length - 1] }, { reload: false })
+  }
   else if (cmd === 'autoFit') autoFitGroup(g)
   else if (cmd === 'hide') {
     const vis = { ...(cfg.value.fieldVisibility || {}) }
@@ -1752,23 +1871,36 @@ async function duplicateGroup(g) {
   loadGrid(view.value?.id)
 }
 
-// 自动调整列宽：按表头与内容文本宽度估算（canvas 测量，80–400px）；编组菜单与列头菜单共用
+// 自动调整列宽：按表头与内容文本宽度估算（canvas 测量，80–300px）；编组菜单与列头菜单共用
 function autoFitFields(names) {
   const ctx = document.createElement('canvas').getContext('2d')
   ctx.font = '13px "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif'
   const widths = { ...(cfg.value.colWidths || {}) }
+  const sampleRows = dataRows.value.slice(0, 200)
+  const fieldsByName = new Map(fields.value.map(field => [field.field_name, field]))
   for (const fn of names) {
-    const f = fields.value.find(x => x.field_name === fn)
+    const f = fieldsByName.get(fn)
     if (!f) continue
+    const type = f.field_type === 'ai' ? f.options?.outputType : f.field_type
+    if (type === 'checkbox') { widths[fn] = 80; continue }
+    const isDate = ['date', 'createdTime', 'lastModifiedTime'].includes(type)
     let w = ctx.measureText(f.label).width + 56   // 图标/排序标/▾/内边距
-    for (const r of dataRows.value.slice(0, 200)) {
+    // Also size empty date columns for their selected format; use double-digit month/day.
+    if (isDate) w = Math.max(w, 120, ctx.measureText(formatDate('2026-12-28T23:59:00', f.options || {})).width + 24)
+    for (const r of sampleRows) {
       const v = r[fn]
-      const text = v == null ? '' : (Array.isArray(v) ? v.join('、') : String(v))
+      const text = v == null ? '' : isDate ? formatDate(v, f.options || {}) : (Array.isArray(v) ? v.join('、') : String(v))
       w = Math.max(w, ctx.measureText(text).width + 24)
     }
-    widths[fn] = Math.round(Math.min(Math.max(w, 80), 400))
+    widths[fn] = Math.round(Math.min(Math.max(w, 80), 300))
   }
   patchConfig({ colWidths: widths }, { reload: false })
+  gridRef.value?.applyColumnWidths?.(Object.fromEntries(names.map(name => [name, widths[name]])))
+    ?.catch(error => ElMessage.error(error.message || '列宽调整失败'))
+}
+function autoFitAllFields() {
+  activePanel.value = null
+  autoFitFields(fields.value.map(field => field.field_name))
 }
 function autoFitGroup(g) { autoFitFields(g.field_names || []) }
 
@@ -1899,6 +2031,8 @@ onUnmounted(() => {
 /* 分页条：紧凑（36px），紧跟表格 */
 .pager { height: 32px; flex: 0 0 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
 .fm-mask { position: fixed; inset: 0; z-index: 3000; }
+.field-menu-layer, .group-menu-layer { pointer-events: none; }
+.field-menu-layer > .fm, .group-menu-layer > .fm { pointer-events: auto; }
 .fm { position: fixed; background: #fff; border-radius: 8px; box-shadow: var(--st-shadow-pop); padding: 4px; min-width: 170px; }
 .mi {
   display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13px;
@@ -1917,6 +2051,7 @@ onUnmounted(() => {
 }
 .mi.has-sub:hover > .fm-sub { display: block; }
 .mi.disabled { color: var(--st-disabled); cursor: not-allowed; }
+.fb-item.freeze-disabled { color: var(--st-disabled); cursor: not-allowed; }
 .mi.disabled .st-icon { color: var(--st-disabled); }
 /* V3「根据此列…」分节 + 数据可视化飞出（双行项：标题 + 灰色说明） */
 .fm-group-t { font-size: 12px; color: var(--st-text-3); padding: 6px 12px 2px; }

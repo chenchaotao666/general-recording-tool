@@ -1,12 +1,10 @@
 <template>
   <span class="link-cell-anchor" :class="{ selected }" @mousedown.stop @click.stop @dblclick.stop>
-    <el-popover :visible="opened" placement="bottom-start" :width="420" :show-arrow="false" popper-class="link-cell-pop" :persistent="false">
-      <template #reference>
-        <div ref="anchor" class="link-cell-trigger" @click="toggle">
-          <a v-if="value?.url" :href="safeHref" target="_blank" rel="noopener noreferrer" class="link-cell-text" @click.stop="clickLink">{{ value.text || value.url }}</a>
-          <CellDropdown v-if="!readonly" class="link-cell-arrow" overlay :visible="selected || opened" :open="opened" label="编辑链接" @click="toggle" />
-        </div>
-      </template>
+    <div ref="anchor" class="link-cell-trigger" @click="toggle">
+      <a v-if="value?.url" :href="safeHref" target="_blank" rel="noopener noreferrer" class="link-cell-text" @click.stop="clickLink">{{ value.text || value.url }}</a>
+      <CellDropdown v-if="!readonly" class="link-cell-arrow" overlay :visible="selected || opened" :open="opened" label="编辑链接" @click="toggle" />
+    </div>
+    <el-popover v-if="opened" :visible="opened" virtual-triggering :virtual-ref="anchor" placement="bottom-start" :width="420" :show-arrow="false" popper-class="link-cell-pop" :persistent="false">
       <form ref="panel" class="link-cell-panel" @submit.prevent="confirm" @keydown.enter="enterConfirm" @keydown.tab="enterConfirm" @mousedown.stop @click.stop @keydown.esc.stop.prevent="close(true)">
         <label class="link-edit-row"><span>显示文本</span><el-input ref="textInput" v-model="text" placeholder="显示文本" aria-label="显示文本" /></label>
         <label class="link-edit-row"><span>链接</span><el-input v-model="url" placeholder="https://" aria-label="链接" @input="error = ''" /></label>
@@ -17,7 +15,8 @@
   </span>
 </template>
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useGridScrollCollapse } from '../../../smart/utils/useGridScrollCollapse.js'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import CellDropdown from './CellDropdown.vue'
 const props = defineProps({ value: Object, selected: Boolean, readonly: Boolean, advanceOnEnter: Boolean, initialInput: String })
 const emit = defineEmits(['select', 'open', 'collapse', 'cancel', 'commit', 'advance'])
@@ -62,9 +61,17 @@ function confirm(advance = false) {
   if (typeof advance === 'string') emit('advance', advance)
 }
 function outside(event) { if (opened.value && !anchor.value?.contains(event.target) && !panel.value?.contains(event.target)) close(false) }
-onMounted(() => document.addEventListener('mousedown', outside, true))
+watch(opened, (visible, _, onCleanup) => {
+  if (!visible) return
+  document.addEventListener('mousedown', outside, true)
+  onCleanup(() => document.removeEventListener('mousedown', outside, true))
+}, { flush: 'sync' })
 onBeforeUnmount(() => document.removeEventListener('mousedown', outside, true))
 defineExpose({ focus })
+useGridScrollCollapse(() => opened.value, () => {
+  opened.value = false
+  emit('collapse')
+})
 </script>
 <style>
 .el-popper.link-cell-pop { padding: 0; border: 1px solid #e0e2e6; border-radius: 10px; box-shadow: 0 4px 16px #0002; max-width: calc(100vw - 24px); }

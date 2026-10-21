@@ -4,17 +4,19 @@
       <StIcon v-if="tag.icon" :name="tag.icon" :size="14" /><span class="compact-label">{{ tag.label }}</span>
     </span>
     <span v-if="hiddenCount" class="compact-more">+{{ hiddenCount }}</span>
-    <span ref="ghost" class="compact-more compact-ghost">+99</span>
+    <span v-if="tags.length > 1" ref="ghost" class="compact-more compact-ghost">+99</span>
   </span>
 </template>
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { createGridLayoutQueue } from '../../../smart/utils/gridLayoutQueue.js'
 import StIcon from '../icons/StIcon.vue'
 const props = defineProps({ tags: { type: Array, default: () => [] } })
 const box = ref(), ghost = ref(), count = ref(Infinity)
 const visibleTags = computed(() => props.tags.slice(0, count.value))
 const hiddenCount = computed(() => Math.max(0, props.tags.length - visibleTags.value.length))
-let observer, revision = 0
+const layoutQueue = inject('smartGridLayoutQueue', null) || createGridLayoutQueue()
+let stopObserving, revision = 0
 function countFit(tags, width) {
   let used = 0, fit = 0
   for (const tag of tags) {
@@ -25,17 +27,30 @@ function countFit(tags, width) {
   return fit
 }
 async function measure() {
+  if (layoutQueue.paused) { layoutQueue.enqueue(measure); return }
   const current = ++revision
   count.value = Infinity
   await nextTick()
   if (!box.value || current !== revision) return
+  if (layoutQueue.paused) { layoutQueue.enqueue(measure); return }
   const tags = [...box.value.querySelectorAll('.compact-tag')]
   if (countFit(tags, box.value.clientWidth) >= tags.length) return
   count.value = Math.max(1, countFit(tags, box.value.clientWidth - (ghost.value?.offsetWidth || 24) - 4))
 }
-onMounted(() => { measure(); observer = new ResizeObserver(measure); observer.observe(box.value) })
-watch(() => props.tags, measure, { deep: true })
-onBeforeUnmount(() => { revision++; observer?.disconnect() })
+function scheduleMeasure() {
+  if (props.tags.length <= 1) {
+    revision++
+    layoutQueue.cancel(measure)
+    count.value = Infinity
+    stopObserving?.(); stopObserving = null
+    return
+  }
+  if (!stopObserving && box.value) stopObserving = layoutQueue.observeWidth(box.value, scheduleMeasure)
+  layoutQueue.enqueue(measure)
+}
+onMounted(scheduleMeasure)
+watch(() => props.tags, scheduleMeasure, { deep: true })
+onBeforeUnmount(() => { revision++; layoutQueue.cancel(measure); stopObserving?.() })
 </script>
 <style scoped>
 .compact-cell-tags { position: relative; display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow: hidden; max-height: 22px; width: 100%; min-width: 0; }

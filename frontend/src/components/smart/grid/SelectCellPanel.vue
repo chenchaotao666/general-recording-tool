@@ -37,6 +37,7 @@
 
 <script setup>
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useGridScrollCollapse } from '../../../smart/utils/useGridScrollCollapse.js'
 import StIcon from '../icons/StIcon.vue'
 import CellDropdown from './CellDropdown.vue'
 import { optionColor } from '../../../smart/registry/fieldRegistry.js'
@@ -168,6 +169,7 @@ function close() {
   else emit('cancel')
 }
 function onEsc() { close() }
+useGridScrollCollapse(() => !props.closed, close)
 
 // ---------- 浮层定位与外部点击关闭（复用文本浮层模式） ----------
 const anchorRef = ref(null)

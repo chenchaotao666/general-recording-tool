@@ -8,6 +8,7 @@ const SCOPE = '.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-pan
 let hot = null   // {el, axis}
 let raf = 0
 let lastEvt = null
+let mouseDown = false
 
 // 切换 overflow 让浏览器重建滚动条（滚动位置先记下再还原，避免跳动）
 function repaint(el) {
@@ -21,6 +22,8 @@ function repaint(el) {
 }
 
 function setHot(next) {
+  // Rebuilding a native scrollbar during a held press loses its drag capture.
+  if (mouseDown) return
   if (hot?.el === next?.el) return
   if (hot) { hot.el.classList.remove('sb-hot'); repaint(hot.el) }
   hot = next
@@ -43,7 +46,7 @@ function check() {
   raf = 0
   const e = lastEvt
   if (!e) return
-  if (e.buttons && hot) return   // 拖动滑块途中保持加粗，松开再判定
+  if (mouseDown || e.buttons) return
   const el = e.target instanceof Element ? e.target : null
   const inScope = el?.closest?.(SCOPE)
   setHot(inScope && scrollbarHit(el, e.clientX, e.clientY) ? { el } : null)
@@ -51,15 +54,32 @@ function check() {
 
 function onMove(e) {
   lastEvt = e
+  if (mouseDown || e.buttons) return
   if (!raf) raf = requestAnimationFrame(check)
 }
-function onUp(e) { lastEvt = e; check() }
+function onDown() {
+  mouseDown = true
+  cancelAnimationFrame(raf)
+  raf = 0
+}
+function onUp(e) {
+  mouseDown = false
+  lastEvt = e
+  // Wait until the browser has finished releasing the native scrollbar.
+  if (!raf) raf = requestAnimationFrame(check)
+}
 
 let installed = false
 export function installScrollbarHover() {
   if (installed || typeof document === 'undefined') return
   installed = true
+  document.addEventListener('mousedown', onDown, true)
   document.addEventListener('mousemove', onMove, { passive: true })
   document.addEventListener('mouseup', onUp, true)
   document.addEventListener('mouseleave', () => setHot(null))
+  window.addEventListener('blur', () => {
+    mouseDown = false
+    cancelAnimationFrame(raf); raf = 0; lastEvt = null
+    setHot(null)
+  })
 }
