@@ -1,0 +1,1751 @@
+{
+  "date": "2026-10-22T17:16:26.243Z",
+  "environment": {
+    "browser": "153.0.8010.12",
+    "viewport": "1200x760",
+    "rows": 5000,
+    "columns": 60,
+    "durationMs": 2400,
+    "note": "Headless Chromium dev build; simulated captured thumb movement, x scroll=3200; 2/3 columns multi-select; CPU throttle is synthetic."
+  },
+  "configProbe": {
+    "before": {
+      "store": {
+        "preloadSize": 6,
+        "offsetSize": 6,
+        "visibleSize": 10,
+        "visibleStartIndex": 19,
+        "visibleEndIndex": 31,
+        "startIndex": 7,
+        "endIndex": 42
+      },
+      "cells": 1044,
+      "tags": 800,
+      "elements": 9444,
+      "left": 3200,
+      "top": 3600
+    },
+    "after": {
+      "store": {
+        "preloadSize": 6,
+        "offsetSize": 6,
+        "visibleSize": 10,
+        "visibleStartIndex": 19,
+        "visibleEndIndex": 31,
+        "startIndex": 7,
+        "endIndex": 42
+      },
+      "cells": 1044,
+      "tags": 800,
+      "elements": 9444,
+      "left": 3200,
+      "top": 3600
+    }
+  },
+  "results": [
+    {
+      "throttle": 1,
+      "round": 0,
+      "mode": "fixed",
+      "before": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1080,
+        "tags": 800,
+        "elements": 9518,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 0,
+      "restoreMs": 0,
+      "drag": {
+        "count": 20,
+        "p95": 200.09999999999945,
+        "max": 200.09999999999945,
+        "over25": 17
+      },
+      "settle": {
+        "count": 29,
+        "p95": 116.60000000000036,
+        "max": 133.30000000000018,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 3372.10000000149,
+          "duration": 190
+        },
+        {
+          "start": 3562.699999999255,
+          "duration": 133
+        },
+        {
+          "start": 3697.800000000745,
+          "duration": 134
+        },
+        {
+          "start": 3832.5,
+          "duration": 136
+        },
+        {
+          "start": 3968.5,
+          "duration": 134
+        },
+        {
+          "start": 4103,
+          "duration": 134
+        },
+        {
+          "start": 4237.10000000149,
+          "duration": 140
+        },
+        {
+          "start": 4377.800000000745,
+          "duration": 129
+        },
+        {
+          "start": 4507.699999999255,
+          "duration": 132
+        },
+        {
+          "start": 4639.89999999851,
+          "duration": 125
+        },
+        {
+          "start": 4765.39999999851,
+          "duration": 129
+        },
+        {
+          "start": 4895.10000000149,
+          "duration": 193
+        },
+        {
+          "start": 5088.5,
+          "duration": 135
+        },
+        {
+          "start": 5224,
+          "duration": 142
+        },
+        {
+          "start": 5366.89999999851,
+          "duration": 134
+        },
+        {
+          "start": 5501.5,
+          "duration": 151
+        },
+        {
+          "start": 5653.199999999255,
+          "duration": 186
+        },
+        {
+          "start": 5839.699999999255,
+          "duration": 131
+        },
+        {
+          "start": 5973.60000000149,
+          "duration": 130
+        },
+        {
+          "start": 6382.89999999851,
+          "duration": 124
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 24,
+        "RecalcStyleCount": 65,
+        "LayoutDuration": 0.076089,
+        "RecalcStyleDuration": 1.32831,
+        "ScriptDuration": 0.012505000000000002,
+        "TaskDuration": 2.9138160000000006
+      },
+      "errors": []
+    },
+    {
+      "throttle": 1,
+      "round": 0,
+      "mode": "dynamic",
+      "before": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 3,
+          "offsetSize": 3,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 13,
+          "endIndex": 36
+        },
+        "cells": 696,
+        "tags": 600,
+        "elements": 7586,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1080,
+        "tags": 800,
+        "elements": 9518,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 76.89999999850988,
+      "restoreMs": 117.10000000149012,
+      "drag": {
+        "count": 25,
+        "p95": 150,
+        "max": 150,
+        "over25": 23
+      },
+      "settle": {
+        "count": 30,
+        "p95": 116.60000000000036,
+        "max": 183.30000000000018,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 1992.5,
+          "duration": 77
+        },
+        {
+          "start": 2091.10000000149,
+          "duration": 97
+        },
+        {
+          "start": 2188.60000000149,
+          "duration": 104
+        },
+        {
+          "start": 2292.89999999851,
+          "duration": 140
+        },
+        {
+          "start": 2433.199999999255,
+          "duration": 98
+        },
+        {
+          "start": 2531.5,
+          "duration": 101
+        },
+        {
+          "start": 2633.60000000149,
+          "duration": 147
+        },
+        {
+          "start": 2780.89999999851,
+          "duration": 104
+        },
+        {
+          "start": 2885.89999999851,
+          "duration": 98
+        },
+        {
+          "start": 2984.39999999851,
+          "duration": 104
+        },
+        {
+          "start": 3088.5,
+          "duration": 115
+        },
+        {
+          "start": 3203.60000000149,
+          "duration": 146
+        },
+        {
+          "start": 3349.800000000745,
+          "duration": 101
+        },
+        {
+          "start": 3451.199999999255,
+          "duration": 144
+        },
+        {
+          "start": 3595.699999999255,
+          "duration": 104
+        },
+        {
+          "start": 3700.60000000149,
+          "duration": 97
+        },
+        {
+          "start": 3797.800000000745,
+          "duration": 103
+        },
+        {
+          "start": 3901,
+          "duration": 145
+        },
+        {
+          "start": 4046.199999999255,
+          "duration": 100
+        },
+        {
+          "start": 4146.89999999851,
+          "duration": 101
+        },
+        {
+          "start": 4248.699999999255,
+          "duration": 119
+        },
+        {
+          "start": 4368.60000000149,
+          "duration": 104
+        },
+        {
+          "start": 4473.10000000149,
+          "duration": 100
+        },
+        {
+          "start": 4579.10000000149,
+          "duration": 99
+        },
+        {
+          "start": 4679.300000000745,
+          "duration": 101
+        },
+        {
+          "start": 4987.199999999255,
+          "duration": 117
+        },
+        {
+          "start": 5104.300000000745,
+          "duration": 79
+        },
+        {
+          "start": 5184.199999999255,
+          "duration": 71
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 35,
+        "RecalcStyleCount": 88,
+        "LayoutDuration": 0.08504500000000001,
+        "RecalcStyleDuration": 1.470856,
+        "ScriptDuration": 0.013554999999999998,
+        "TaskDuration": 3.087908
+      },
+      "errors": []
+    },
+    {
+      "throttle": 1,
+      "round": 1,
+      "mode": "dynamic",
+      "before": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 3,
+          "offsetSize": 3,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 13,
+          "endIndex": 36
+        },
+        "cells": 696,
+        "tags": 600,
+        "elements": 7586,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1080,
+        "tags": 800,
+        "elements": 9518,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 77.5,
+      "restoreMs": 108.60000000149012,
+      "drag": {
+        "count": 24,
+        "p95": 150,
+        "max": 150,
+        "over25": 22
+      },
+      "settle": {
+        "count": 29,
+        "p95": 149.90000000000055,
+        "max": 183.39999999999964,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 1994,
+          "duration": 78
+        },
+        {
+          "start": 2087.60000000149,
+          "duration": 146
+        },
+        {
+          "start": 2234.60000000149,
+          "duration": 105
+        },
+        {
+          "start": 2340.400000002235,
+          "duration": 104
+        },
+        {
+          "start": 2444.7000000029802,
+          "duration": 98
+        },
+        {
+          "start": 2543.2000000029802,
+          "duration": 111
+        },
+        {
+          "start": 2655,
+          "duration": 146
+        },
+        {
+          "start": 2801.400000002235,
+          "duration": 108
+        },
+        {
+          "start": 2909.60000000149,
+          "duration": 102
+        },
+        {
+          "start": 3011.7000000029802,
+          "duration": 105
+        },
+        {
+          "start": 3116.900000002235,
+          "duration": 103
+        },
+        {
+          "start": 3220.7000000029802,
+          "duration": 109
+        },
+        {
+          "start": 3330.60000000149,
+          "duration": 105
+        },
+        {
+          "start": 3436.300000000745,
+          "duration": 97
+        },
+        {
+          "start": 3534.2000000029802,
+          "duration": 151
+        },
+        {
+          "start": 3685.900000002235,
+          "duration": 97
+        },
+        {
+          "start": 3783.60000000149,
+          "duration": 151
+        },
+        {
+          "start": 3935.2000000029802,
+          "duration": 103
+        },
+        {
+          "start": 4039.10000000149,
+          "duration": 101
+        },
+        {
+          "start": 4140.900000002235,
+          "duration": 99
+        },
+        {
+          "start": 4240.400000002235,
+          "duration": 153
+        },
+        {
+          "start": 4394.300000000745,
+          "duration": 108
+        },
+        {
+          "start": 4503,
+          "duration": 142
+        },
+        {
+          "start": 4646.70000000298,
+          "duration": 99
+        },
+        {
+          "start": 4953.60000000149,
+          "duration": 108
+        },
+        {
+          "start": 5062.20000000298,
+          "duration": 75
+        },
+        {
+          "start": 5137.60000000149,
+          "duration": 69
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 35,
+        "RecalcStyleCount": 86,
+        "LayoutDuration": 0.08062499999999999,
+        "RecalcStyleDuration": 1.4810049999999997,
+        "ScriptDuration": 0.019351999999999994,
+        "TaskDuration": 3.0469920000000004
+      },
+      "errors": []
+    },
+    {
+      "throttle": 1,
+      "round": 1,
+      "mode": "fixed",
+      "before": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1080,
+        "tags": 800,
+        "elements": 9518,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 0,
+      "restoreMs": 0,
+      "drag": {
+        "count": 20,
+        "p95": 200,
+        "max": 200,
+        "over25": 16
+      },
+      "settle": {
+        "count": 30,
+        "p95": 133.30000000000018,
+        "max": 133.30000000000018,
+        "over25": 3
+      },
+      "longTasks": [
+        {
+          "start": 2055.5,
+          "duration": 191
+        },
+        {
+          "start": 2247.2000000029802,
+          "duration": 141
+        },
+        {
+          "start": 2389.300000000745,
+          "duration": 182
+        },
+        {
+          "start": 2571.300000000745,
+          "duration": 136
+        },
+        {
+          "start": 2708,
+          "duration": 133
+        },
+        {
+          "start": 2841.900000002235,
+          "duration": 133
+        },
+        {
+          "start": 2975.7000000029802,
+          "duration": 130
+        },
+        {
+          "start": 3106.60000000149,
+          "duration": 134
+        },
+        {
+          "start": 3240.900000002235,
+          "duration": 132
+        },
+        {
+          "start": 3373.10000000149,
+          "duration": 192
+        },
+        {
+          "start": 3566,
+          "duration": 135
+        },
+        {
+          "start": 3701.60000000149,
+          "duration": 135
+        },
+        {
+          "start": 3836.7000000029802,
+          "duration": 129
+        },
+        {
+          "start": 3965.900000002235,
+          "duration": 125
+        },
+        {
+          "start": 4091.10000000149,
+          "duration": 192
+        },
+        {
+          "start": 4283.900000002235,
+          "duration": 140
+        },
+        {
+          "start": 4424.5,
+          "duration": 133
+        },
+        {
+          "start": 4559.70000000298,
+          "duration": 130
+        },
+        {
+          "start": 4972,
+          "duration": 120
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 24,
+        "RecalcStyleCount": 64,
+        "LayoutDuration": 0.074419,
+        "RecalcStyleDuration": 1.310459,
+        "ScriptDuration": 0.01084700000000001,
+        "TaskDuration": 2.816166
+      },
+      "errors": []
+    },
+    {
+      "throttle": 1,
+      "round": 2,
+      "mode": "fixed",
+      "before": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1080,
+        "tags": 800,
+        "elements": 9518,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 0,
+      "restoreMs": 0,
+      "drag": {
+        "count": 19,
+        "p95": 199.99999999999955,
+        "max": 199.99999999999955,
+        "over25": 16
+      },
+      "settle": {
+        "count": 30,
+        "p95": 133.19999999999982,
+        "max": 133.30000000000018,
+        "over25": 3
+      },
+      "longTasks": [
+        {
+          "start": 2064,
+          "duration": 190
+        },
+        {
+          "start": 2254.800000000745,
+          "duration": 135
+        },
+        {
+          "start": 2390.300000000745,
+          "duration": 183
+        },
+        {
+          "start": 2573.699999999255,
+          "duration": 134
+        },
+        {
+          "start": 2708.10000000149,
+          "duration": 136
+        },
+        {
+          "start": 2844.60000000149,
+          "duration": 136
+        },
+        {
+          "start": 2981.300000000745,
+          "duration": 132
+        },
+        {
+          "start": 3114.199999999255,
+          "duration": 123
+        },
+        {
+          "start": 3237.89999999851,
+          "duration": 131
+        },
+        {
+          "start": 3369.199999999255,
+          "duration": 188
+        },
+        {
+          "start": 3557.60000000149,
+          "duration": 132
+        },
+        {
+          "start": 3689.60000000149,
+          "duration": 136
+        },
+        {
+          "start": 3826.60000000149,
+          "duration": 148
+        },
+        {
+          "start": 3974.699999999255,
+          "duration": 190
+        },
+        {
+          "start": 4165.5,
+          "duration": 133
+        },
+        {
+          "start": 4304.39999999851,
+          "duration": 134
+        },
+        {
+          "start": 4439,
+          "duration": 128
+        },
+        {
+          "start": 4568.60000000149,
+          "duration": 133
+        },
+        {
+          "start": 4997.800000000745,
+          "duration": 123
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 24,
+        "RecalcStyleCount": 63,
+        "LayoutDuration": 0.070672,
+        "RecalcStyleDuration": 1.325163,
+        "ScriptDuration": 0.01042599999999999,
+        "TaskDuration": 2.8087860000000004
+      },
+      "errors": []
+    },
+    {
+      "throttle": 1,
+      "round": 2,
+      "mode": "dynamic",
+      "before": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 3,
+          "offsetSize": 3,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 13,
+          "endIndex": 36
+        },
+        "cells": 696,
+        "tags": 600,
+        "elements": 7586,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1080,
+        "tags": 800,
+        "elements": 9518,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 77.89999999850988,
+      "restoreMs": 112.80000000074506,
+      "drag": {
+        "count": 24,
+        "p95": 150,
+        "max": 150,
+        "over25": 22
+      },
+      "settle": {
+        "count": 29,
+        "p95": 150,
+        "max": 183.30000000000018,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 1882.5,
+          "duration": 78
+        },
+        {
+          "start": 1988.699999999255,
+          "duration": 102
+        },
+        {
+          "start": 2091,
+          "duration": 154
+        },
+        {
+          "start": 2245.300000000745,
+          "duration": 101
+        },
+        {
+          "start": 2346.800000000745,
+          "duration": 99
+        },
+        {
+          "start": 2446,
+          "duration": 108
+        },
+        {
+          "start": 2554.800000000745,
+          "duration": 103
+        },
+        {
+          "start": 2658.300000000745,
+          "duration": 105
+        },
+        {
+          "start": 2764,
+          "duration": 120
+        },
+        {
+          "start": 2884.199999999255,
+          "duration": 150
+        },
+        {
+          "start": 3034.5,
+          "duration": 100
+        },
+        {
+          "start": 3134.699999999255,
+          "duration": 146
+        },
+        {
+          "start": 3280.699999999255,
+          "duration": 110
+        },
+        {
+          "start": 3390.89999999851,
+          "duration": 102
+        },
+        {
+          "start": 3493.5,
+          "duration": 101
+        },
+        {
+          "start": 3594.5,
+          "duration": 96
+        },
+        {
+          "start": 3691.39999999851,
+          "duration": 152
+        },
+        {
+          "start": 3844.099999997765,
+          "duration": 105
+        },
+        {
+          "start": 3949.800000000745,
+          "duration": 98
+        },
+        {
+          "start": 4048.39999999851,
+          "duration": 145
+        },
+        {
+          "start": 4194,
+          "duration": 119
+        },
+        {
+          "start": 4313.39999999851,
+          "duration": 102
+        },
+        {
+          "start": 4416.199999999255,
+          "duration": 95
+        },
+        {
+          "start": 4512.800000000745,
+          "duration": 143
+        },
+        {
+          "start": 4870.099999997765,
+          "duration": 112
+        },
+        {
+          "start": 4982.89999999851,
+          "duration": 75
+        },
+        {
+          "start": 5058.699999999255,
+          "duration": 68
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 35,
+        "RecalcStyleCount": 86,
+        "LayoutDuration": 0.08406299999999998,
+        "RecalcStyleDuration": 1.493036,
+        "ScriptDuration": 0.012440000000000007,
+        "TaskDuration": 3.058681
+      },
+      "errors": []
+    },
+    {
+      "throttle": 4,
+      "round": 0,
+      "mode": "fixed",
+      "before": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1080,
+        "tags": 800,
+        "elements": 9518,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 0,
+      "restoreMs": 0,
+      "drag": {
+        "count": 7,
+        "p95": 1149.9,
+        "max": 1149.9,
+        "over25": 4
+      },
+      "settle": {
+        "count": 17,
+        "p95": 1166.6999999999998,
+        "max": 1166.6999999999998,
+        "over25": 3
+      },
+      "longTasks": [
+        {
+          "start": 2157.400000002235,
+          "duration": 1152
+        },
+        {
+          "start": 3309.800000000745,
+          "duration": 800
+        },
+        {
+          "start": 4110.900000002235,
+          "duration": 787
+        },
+        {
+          "start": 4898.800000000745,
+          "duration": 782
+        },
+        {
+          "start": 5691.800000000745,
+          "duration": 1156
+        },
+        {
+          "start": 6857.800000000745,
+          "duration": 672
+        },
+        {
+          "start": 7785.699999999255,
+          "duration": 368
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 9,
+        "RecalcStyleCount": 23,
+        "LayoutDuration": 0.12750699999999998,
+        "RecalcStyleDuration": 2.605733,
+        "ScriptDuration": 0.024206000000000005,
+        "TaskDuration": 5.9661360000000005
+      },
+      "errors": []
+    },
+    {
+      "throttle": 4,
+      "round": 0,
+      "mode": "dynamic",
+      "before": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 3,
+          "offsetSize": 3,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 13,
+          "endIndex": 36
+        },
+        "cells": 696,
+        "tags": 600,
+        "elements": 7586,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1080,
+        "tags": 800,
+        "elements": 9518,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 473.5,
+      "restoreMs": 702.0999999977648,
+      "drag": {
+        "count": 6,
+        "p95": 1033.4,
+        "max": 1033.4,
+        "over25": 4
+      },
+      "settle": {
+        "count": 6,
+        "p95": 1133.3000000000002,
+        "max": 1133.3000000000002,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 2074.5,
+          "duration": 478
+        },
+        {
+          "start": 2553,
+          "duration": 62
+        },
+        {
+          "start": 2639.400000002235,
+          "duration": 788
+        },
+        {
+          "start": 3427.60000000149,
+          "duration": 1027
+        },
+        {
+          "start": 4455.900000002235,
+          "duration": 624
+        },
+        {
+          "start": 5081.10000000149,
+          "duration": 632
+        },
+        {
+          "start": 5721.800000000745,
+          "duration": 637
+        },
+        {
+          "start": 6363.800000000745,
+          "duration": 566
+        },
+        {
+          "start": 6968.20000000298,
+          "duration": 702
+        },
+        {
+          "start": 7670.60000000149,
+          "duration": 438
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 14,
+        "RecalcStyleCount": 29,
+        "LayoutDuration": 0.20667400000000002,
+        "RecalcStyleDuration": 2.9487750000000004,
+        "ScriptDuration": 0.027699,
+        "TaskDuration": 6.51115
+      },
+      "errors": []
+    },
+    {
+      "throttle": 4,
+      "round": 1,
+      "mode": "dynamic",
+      "before": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 3,
+          "offsetSize": 3,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 13,
+          "endIndex": 36
+        },
+        "cells": 696,
+        "tags": 600,
+        "elements": 7586,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1080,
+        "tags": 800,
+        "elements": 9518,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 455.79999999701977,
+      "restoreMs": 626.1000000014901,
+      "drag": {
+        "count": 6,
+        "p95": 950,
+        "max": 950,
+        "over25": 5
+      },
+      "settle": {
+        "count": 6,
+        "p95": 1066.6999999999998,
+        "max": 1066.6999999999998,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 2071.60000000149,
+          "duration": 460
+        },
+        {
+          "start": 2532.300000000745,
+          "duration": 63
+        },
+        {
+          "start": 2621.5,
+          "duration": 736
+        },
+        {
+          "start": 3357.900000002235,
+          "duration": 955
+        },
+        {
+          "start": 4313.699999999255,
+          "duration": 869
+        },
+        {
+          "start": 5183.10000000149,
+          "duration": 663
+        },
+        {
+          "start": 5855.300000000745,
+          "duration": 599
+        },
+        {
+          "start": 6464,
+          "duration": 512
+        },
+        {
+          "start": 7018.800000000745,
+          "duration": 626
+        },
+        {
+          "start": 7645.10000000149,
+          "duration": 429
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 15,
+        "RecalcStyleCount": 30,
+        "LayoutDuration": 0.18109999999999998,
+        "RecalcStyleDuration": 3.101579,
+        "ScriptDuration": 0.027629,
+        "TaskDuration": 6.469619
+      },
+      "errors": []
+    },
+    {
+      "throttle": 4,
+      "round": 1,
+      "mode": "fixed",
+      "before": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1080,
+        "tags": 800,
+        "elements": 9518,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 0,
+      "restoreMs": 0,
+      "drag": {
+        "count": 6,
+        "p95": 1116.5,
+        "max": 1116.5,
+        "over25": 3
+      },
+      "settle": {
+        "count": 18,
+        "p95": 833.3000000000002,
+        "max": 833.3000000000002,
+        "over25": 3
+      },
+      "longTasks": [
+        {
+          "start": 2108.10000000149,
+          "duration": 1114
+        },
+        {
+          "start": 3222.89999999851,
+          "duration": 807
+        },
+        {
+          "start": 4031.5,
+          "duration": 799
+        },
+        {
+          "start": 4831.5,
+          "duration": 820
+        },
+        {
+          "start": 5661.60000000149,
+          "duration": 811
+        },
+        {
+          "start": 6477,
+          "duration": 685
+        },
+        {
+          "start": 7416.5,
+          "duration": 378
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 8,
+        "RecalcStyleCount": 21,
+        "LayoutDuration": 0.120742,
+        "RecalcStyleDuration": 2.333385,
+        "ScriptDuration": 0.022883999999999988,
+        "TaskDuration": 5.616779999999999
+      },
+      "errors": []
+    },
+    {
+      "throttle": 4,
+      "round": 2,
+      "mode": "fixed",
+      "before": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1080,
+        "tags": 800,
+        "elements": 9518,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 0,
+      "restoreMs": 0,
+      "drag": {
+        "count": 6,
+        "p95": 1149.9,
+        "max": 1149.9,
+        "over25": 3
+      },
+      "settle": {
+        "count": 17,
+        "p95": 816.5999999999995,
+        "max": 816.5999999999995,
+        "over25": 3
+      },
+      "longTasks": [
+        {
+          "start": 2125.10000000149,
+          "duration": 780
+        },
+        {
+          "start": 2905.60000000149,
+          "duration": 1153
+        },
+        {
+          "start": 4060.300000000745,
+          "duration": 808
+        },
+        {
+          "start": 4869.20000000298,
+          "duration": 803
+        },
+        {
+          "start": 5683.20000000298,
+          "duration": 810
+        },
+        {
+          "start": 6498.300000000745,
+          "duration": 680
+        },
+        {
+          "start": 7427,
+          "duration": 373
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 8,
+        "RecalcStyleCount": 21,
+        "LayoutDuration": 0.112655,
+        "RecalcStyleDuration": 2.3394109999999997,
+        "ScriptDuration": 0.022667000000000007,
+        "TaskDuration": 5.604191999999999
+      },
+      "errors": []
+    },
+    {
+      "throttle": 4,
+      "round": 2,
+      "mode": "dynamic",
+      "before": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1044,
+        "tags": 800,
+        "elements": 9444,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 3,
+          "offsetSize": 3,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 13,
+          "endIndex": 36
+        },
+        "cells": 696,
+        "tags": 600,
+        "elements": 7586,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 6,
+          "offsetSize": 6,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 7,
+          "endIndex": 42
+        },
+        "cells": 1080,
+        "tags": 800,
+        "elements": 9518,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 453.69999999925494,
+      "restoreMs": 626.9000000022352,
+      "drag": {
+        "count": 7,
+        "p95": 983.2999999999997,
+        "max": 983.2999999999997,
+        "over25": 5
+      },
+      "settle": {
+        "count": 6,
+        "p95": 1050,
+        "max": 1050,
+        "over25": 5
+      },
+      "longTasks": [
+        {
+          "start": 2066.300000000745,
+          "duration": 458
+        },
+        {
+          "start": 2524.699999999255,
+          "duration": 61
+        },
+        {
+          "start": 2607.60000000149,
+          "duration": 735
+        },
+        {
+          "start": 3343.5,
+          "duration": 975
+        },
+        {
+          "start": 4319.89999999851,
+          "duration": 578
+        },
+        {
+          "start": 4898.39999999851,
+          "duration": 596
+        },
+        {
+          "start": 5495.10000000149,
+          "duration": 670
+        },
+        {
+          "start": 6173.300000000745,
+          "duration": 583
+        },
+        {
+          "start": 6766.199999999255,
+          "duration": 506
+        },
+        {
+          "start": 7315.199999999255,
+          "duration": 627
+        },
+        {
+          "start": 7942.39999999851,
+          "duration": 422
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 15,
+        "RecalcStyleCount": 32,
+        "LayoutDuration": 0.188338,
+        "RecalcStyleDuration": 3.0796010000000003,
+        "ScriptDuration": 0.031036999999999995,
+        "TaskDuration": 6.754874999999999
+      },
+      "errors": []
+    }
+  ]
+}

@@ -1,0 +1,1615 @@
+{
+  "date": "2026-10-22T17:32:52.446Z",
+  "environment": {
+    "wide": 35,
+    "variants": [
+      "fixed",
+      "narrow3",
+      "narrow12"
+    ],
+    "browser": "153.0.8010.12",
+    "viewport": "1200x760",
+    "rows": 5000,
+    "columns": 60,
+    "durationMs": 2400,
+    "note": "Headless Chromium dev build; simulated captured thumb movement, x scroll=3200; 2/3 columns multi-select; CPU throttle is synthetic."
+  },
+  "configProbe": {
+    "before": {
+      "store": {
+        "preloadSize": 35,
+        "offsetSize": 35,
+        "visibleSize": 10,
+        "visibleStartIndex": 19,
+        "visibleEndIndex": 31,
+        "startIndex": 0,
+        "endIndex": 80
+      },
+      "cells": 1827,
+      "tags": 2000,
+      "elements": 17883,
+      "left": 3200,
+      "top": 3600
+    },
+    "after": {
+      "store": {
+        "preloadSize": 35,
+        "offsetSize": 35,
+        "visibleSize": 10,
+        "visibleStartIndex": 19,
+        "visibleEndIndex": 31,
+        "startIndex": 0,
+        "endIndex": 80
+      },
+      "cells": 1827,
+      "tags": 2000,
+      "elements": 17883,
+      "left": 3200,
+      "top": 3600
+    }
+  },
+  "results": [
+    {
+      "throttle": 1,
+      "round": 0,
+      "mode": "fixed",
+      "before": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1827,
+        "tags": 2000,
+        "elements": 17883,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1827,
+        "tags": 2000,
+        "elements": 17883,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1890,
+        "tags": 2000,
+        "elements": 18010,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 0,
+      "restoreMs": 0,
+      "drag": {
+        "count": 11,
+        "p95": 383.3000000000002,
+        "max": 383.3000000000002,
+        "over25": 8
+      },
+      "settle": {
+        "count": 20,
+        "p95": 400,
+        "max": 400,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 4789.199999999255,
+          "duration": 373
+        },
+        {
+          "start": 5162.5,
+          "duration": 286
+        },
+        {
+          "start": 5448.699999999255,
+          "duration": 258
+        },
+        {
+          "start": 5711.800000000745,
+          "duration": 251
+        },
+        {
+          "start": 5963,
+          "duration": 253
+        },
+        {
+          "start": 6220.699999999255,
+          "duration": 384
+        },
+        {
+          "start": 6605.39999999851,
+          "duration": 248
+        },
+        {
+          "start": 6853.89999999851,
+          "duration": 375
+        },
+        {
+          "start": 7229.39999999851,
+          "duration": 258
+        },
+        {
+          "start": 7492.300000000745,
+          "duration": 382
+        },
+        {
+          "start": 7875.800000000745,
+          "duration": 217
+        },
+        {
+          "start": 8339.099999997765,
+          "duration": 118
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 16,
+        "RecalcStyleCount": 39,
+        "LayoutDuration": 0.08793199999999998,
+        "RecalcStyleDuration": 1.7043349999999997,
+        "ScriptDuration": 0.008878999999999998,
+        "TaskDuration": 3.4825729999999995
+      },
+      "errors": []
+    },
+    {
+      "throttle": 1,
+      "round": 0,
+      "mode": "narrow3",
+      "before": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1827,
+        "tags": 2000,
+        "elements": 17883,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 3,
+          "offsetSize": 3,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 13,
+          "endIndex": 36
+        },
+        "cells": 696,
+        "tags": 600,
+        "elements": 7586,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1890,
+        "tags": 2000,
+        "elements": 18010,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 106.20000000298023,
+      "restoreMs": 304.5,
+      "drag": {
+        "count": 24,
+        "p95": 150,
+        "max": 150.10000000000036,
+        "over25": 22
+      },
+      "settle": {
+        "count": 18,
+        "p95": 500,
+        "max": 500,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 3268.60000000149,
+          "duration": 107
+        },
+        {
+          "start": 3392,
+          "duration": 153
+        },
+        {
+          "start": 3545.5,
+          "duration": 107
+        },
+        {
+          "start": 3652.800000000745,
+          "duration": 154
+        },
+        {
+          "start": 3807.2000000029802,
+          "duration": 125
+        },
+        {
+          "start": 3932.60000000149,
+          "duration": 100
+        },
+        {
+          "start": 4033.400000002235,
+          "duration": 110
+        },
+        {
+          "start": 4144.10000000149,
+          "duration": 115
+        },
+        {
+          "start": 4259.300000000745,
+          "duration": 111
+        },
+        {
+          "start": 4371.20000000298,
+          "duration": 148
+        },
+        {
+          "start": 4520,
+          "duration": 102
+        },
+        {
+          "start": 4622.900000002235,
+          "duration": 131
+        },
+        {
+          "start": 4754.70000000298,
+          "duration": 106
+        },
+        {
+          "start": 4861,
+          "duration": 148
+        },
+        {
+          "start": 5014.70000000298,
+          "duration": 109
+        },
+        {
+          "start": 5124.5,
+          "duration": 102
+        },
+        {
+          "start": 5231.70000000298,
+          "duration": 104
+        },
+        {
+          "start": 5335.900000002235,
+          "duration": 99
+        },
+        {
+          "start": 5439,
+          "duration": 105
+        },
+        {
+          "start": 5544.10000000149,
+          "duration": 101
+        },
+        {
+          "start": 5645.70000000298,
+          "duration": 102
+        },
+        {
+          "start": 5748.60000000149,
+          "duration": 97
+        },
+        {
+          "start": 5846.5,
+          "duration": 107
+        },
+        {
+          "start": 5955.800000000745,
+          "duration": 113
+        },
+        {
+          "start": 6274.400000002235,
+          "duration": 304
+        },
+        {
+          "start": 6578.900000002235,
+          "duration": 214
+        },
+        {
+          "start": 6794.10000000149,
+          "duration": 134
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 33,
+        "RecalcStyleCount": 84,
+        "LayoutDuration": 0.118611,
+        "RecalcStyleDuration": 1.574784,
+        "ScriptDuration": 0.018433999999999992,
+        "TaskDuration": 3.489685
+      },
+      "errors": []
+    },
+    {
+      "throttle": 1,
+      "round": 0,
+      "mode": "narrow12",
+      "before": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1827,
+        "tags": 2000,
+        "elements": 17883,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 1,
+          "offsetSize": 2,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 16,
+          "endIndex": 33
+        },
+        "cells": 522,
+        "tags": 500,
+        "elements": 6582,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1890,
+        "tags": 2000,
+        "elements": 18010,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 88,
+      "restoreMs": 284.20000000298023,
+      "drag": {
+        "count": 28,
+        "p95": 133.30000000000018,
+        "max": 133.40000000000055,
+        "over25": 27
+      },
+      "settle": {
+        "count": 19,
+        "p95": 483.39999999999964,
+        "max": 483.39999999999964,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 3272.60000000149,
+          "duration": 88
+        },
+        {
+          "start": 3389,
+          "duration": 121
+        },
+        {
+          "start": 3510.900000002235,
+          "duration": 85
+        },
+        {
+          "start": 3596.800000000745,
+          "duration": 81
+        },
+        {
+          "start": 3677.800000000745,
+          "duration": 125
+        },
+        {
+          "start": 3803.10000000149,
+          "duration": 83
+        },
+        {
+          "start": 3886.300000000745,
+          "duration": 81
+        },
+        {
+          "start": 3967.699999999255,
+          "duration": 120
+        },
+        {
+          "start": 4088,
+          "duration": 82
+        },
+        {
+          "start": 4170.800000000745,
+          "duration": 82
+        },
+        {
+          "start": 4253.400000002235,
+          "duration": 79
+        },
+        {
+          "start": 4333.300000000745,
+          "duration": 121
+        },
+        {
+          "start": 4455,
+          "duration": 83
+        },
+        {
+          "start": 4538.10000000149,
+          "duration": 142
+        },
+        {
+          "start": 4681.10000000149,
+          "duration": 83
+        },
+        {
+          "start": 4769.800000000745,
+          "duration": 124
+        },
+        {
+          "start": 4893.900000002235,
+          "duration": 81
+        },
+        {
+          "start": 4980.400000002235,
+          "duration": 123
+        },
+        {
+          "start": 5103.400000002235,
+          "duration": 89
+        },
+        {
+          "start": 5194.800000000745,
+          "duration": 120
+        },
+        {
+          "start": 5315.60000000149,
+          "duration": 82
+        },
+        {
+          "start": 5398.10000000149,
+          "duration": 84
+        },
+        {
+          "start": 5482.5,
+          "duration": 81
+        },
+        {
+          "start": 5564.400000002235,
+          "duration": 78
+        },
+        {
+          "start": 5642.699999999255,
+          "duration": 121
+        },
+        {
+          "start": 5764.10000000149,
+          "duration": 81
+        },
+        {
+          "start": 5845.699999999255,
+          "duration": 82
+        },
+        {
+          "start": 5929.699999999255,
+          "duration": 81
+        },
+        {
+          "start": 6220.199999999255,
+          "duration": 284
+        },
+        {
+          "start": 6504.5,
+          "duration": 201
+        },
+        {
+          "start": 6707.10000000149,
+          "duration": 114
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 42,
+        "RecalcStyleCount": 101,
+        "LayoutDuration": 0.103663,
+        "RecalcStyleDuration": 1.636153,
+        "ScriptDuration": 0.015828999999999996,
+        "TaskDuration": 3.395814
+      },
+      "errors": []
+    },
+    {
+      "throttle": 1,
+      "round": 1,
+      "mode": "narrow12",
+      "before": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1827,
+        "tags": 2000,
+        "elements": 17883,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 1,
+          "offsetSize": 2,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 16,
+          "endIndex": 33
+        },
+        "cells": 522,
+        "tags": 500,
+        "elements": 6582,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1890,
+        "tags": 2000,
+        "elements": 18010,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 85.40000000223517,
+      "restoreMs": 277.30000000074506,
+      "drag": {
+        "count": 29,
+        "p95": 133.30000000000018,
+        "max": 133.30000000000018,
+        "over25": 27
+      },
+      "settle": {
+        "count": 21,
+        "p95": 100,
+        "max": 466.6999999999998,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 3231.89999999851,
+          "duration": 85
+        },
+        {
+          "start": 3343.199999999255,
+          "duration": 122
+        },
+        {
+          "start": 3465.39999999851,
+          "duration": 85
+        },
+        {
+          "start": 3551.199999999255,
+          "duration": 82
+        },
+        {
+          "start": 3633.39999999851,
+          "duration": 87
+        },
+        {
+          "start": 3721.300000000745,
+          "duration": 87
+        },
+        {
+          "start": 3808.5,
+          "duration": 83
+        },
+        {
+          "start": 3892,
+          "duration": 83
+        },
+        {
+          "start": 3975.10000000149,
+          "duration": 79
+        },
+        {
+          "start": 4055.10000000149,
+          "duration": 81
+        },
+        {
+          "start": 4137,
+          "duration": 127
+        },
+        {
+          "start": 4264.5,
+          "duration": 82
+        },
+        {
+          "start": 4347.300000000745,
+          "duration": 82
+        },
+        {
+          "start": 4429.60000000149,
+          "duration": 85
+        },
+        {
+          "start": 4515.199999999255,
+          "duration": 85
+        },
+        {
+          "start": 4600.800000000745,
+          "duration": 90
+        },
+        {
+          "start": 4691.800000000745,
+          "duration": 84
+        },
+        {
+          "start": 4775.800000000745,
+          "duration": 80
+        },
+        {
+          "start": 4855.89999999851,
+          "duration": 123
+        },
+        {
+          "start": 4979.300000000745,
+          "duration": 121
+        },
+        {
+          "start": 5101.199999999255,
+          "duration": 82
+        },
+        {
+          "start": 5184,
+          "duration": 80
+        },
+        {
+          "start": 5269.199999999255,
+          "duration": 85
+        },
+        {
+          "start": 5354.699999999255,
+          "duration": 121
+        },
+        {
+          "start": 5480.89999999851,
+          "duration": 81
+        },
+        {
+          "start": 5562.800000000745,
+          "duration": 84
+        },
+        {
+          "start": 5650.39999999851,
+          "duration": 79
+        },
+        {
+          "start": 5730.10000000149,
+          "duration": 79
+        },
+        {
+          "start": 5811.10000000149,
+          "duration": 83
+        },
+        {
+          "start": 6109.39999999851,
+          "duration": 277
+        },
+        {
+          "start": 6386.800000000745,
+          "duration": 203
+        },
+        {
+          "start": 6591.10000000149,
+          "duration": 117
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 38,
+        "RecalcStyleCount": 99,
+        "LayoutDuration": 0.101719,
+        "RecalcStyleDuration": 1.4971689999999998,
+        "ScriptDuration": 0.016168000000000002,
+        "TaskDuration": 3.286399
+      },
+      "errors": []
+    },
+    {
+      "throttle": 1,
+      "round": 1,
+      "mode": "fixed",
+      "before": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1827,
+        "tags": 2000,
+        "elements": 17883,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1827,
+        "tags": 2000,
+        "elements": 17883,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1890,
+        "tags": 2000,
+        "elements": 18010,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 0,
+      "restoreMs": 0,
+      "drag": {
+        "count": 12,
+        "p95": 383.40000000000055,
+        "max": 383.40000000000055,
+        "over25": 9
+      },
+      "settle": {
+        "count": 21,
+        "p95": 249.89999999999964,
+        "max": 266.6999999999998,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 3318.89999999851,
+          "duration": 379
+        },
+        {
+          "start": 3698.099999997765,
+          "duration": 270
+        },
+        {
+          "start": 3968.7999999970198,
+          "duration": 275
+        },
+        {
+          "start": 4244.699999999255,
+          "duration": 271
+        },
+        {
+          "start": 4516.5,
+          "duration": 268
+        },
+        {
+          "start": 4784.5,
+          "duration": 289
+        },
+        {
+          "start": 5074.199999999255,
+          "duration": 261
+        },
+        {
+          "start": 5335.39999999851,
+          "duration": 277
+        },
+        {
+          "start": 5618.099999997765,
+          "duration": 371
+        },
+        {
+          "start": 5989.099999997765,
+          "duration": 258
+        },
+        {
+          "start": 6251.699999999255,
+          "duration": 258
+        },
+        {
+          "start": 6516,
+          "duration": 216
+        },
+        {
+          "start": 6985.599999997765,
+          "duration": 113
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 15,
+        "RecalcStyleCount": 40,
+        "LayoutDuration": 0.09430899999999999,
+        "RecalcStyleDuration": 1.64375,
+        "ScriptDuration": 0.009334999999999996,
+        "TaskDuration": 3.578601
+      },
+      "errors": []
+    },
+    {
+      "throttle": 1,
+      "round": 1,
+      "mode": "narrow3",
+      "before": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1827,
+        "tags": 2000,
+        "elements": 17883,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 3,
+          "offsetSize": 3,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 13,
+          "endIndex": 36
+        },
+        "cells": 696,
+        "tags": 600,
+        "elements": 7586,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1890,
+        "tags": 2000,
+        "elements": 18010,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 96.69999999925494,
+      "restoreMs": 268.19999999925494,
+      "drag": {
+        "count": 25,
+        "p95": 150,
+        "max": 150.0999999999999,
+        "over25": 23
+      },
+      "settle": {
+        "count": 18,
+        "p95": 466.6999999999998,
+        "max": 466.6999999999998,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 3275.5,
+          "duration": 97
+        },
+        {
+          "start": 3388.099999997765,
+          "duration": 153
+        },
+        {
+          "start": 3541.39999999851,
+          "duration": 98
+        },
+        {
+          "start": 3640.39999999851,
+          "duration": 99
+        },
+        {
+          "start": 3740,
+          "duration": 102
+        },
+        {
+          "start": 3842.39999999851,
+          "duration": 144
+        },
+        {
+          "start": 3986.699999999255,
+          "duration": 101
+        },
+        {
+          "start": 4088.39999999851,
+          "duration": 102
+        },
+        {
+          "start": 4190.599999997765,
+          "duration": 107
+        },
+        {
+          "start": 4298.5,
+          "duration": 99
+        },
+        {
+          "start": 4398.199999999255,
+          "duration": 100
+        },
+        {
+          "start": 4498.89999999851,
+          "duration": 127
+        },
+        {
+          "start": 4626.39999999851,
+          "duration": 99
+        },
+        {
+          "start": 4726,
+          "duration": 140
+        },
+        {
+          "start": 4871.699999999255,
+          "duration": 97
+        },
+        {
+          "start": 4969.599999997765,
+          "duration": 99
+        },
+        {
+          "start": 5073.89999999851,
+          "duration": 99
+        },
+        {
+          "start": 5173.300000000745,
+          "duration": 99
+        },
+        {
+          "start": 5274.699999999255,
+          "duration": 151
+        },
+        {
+          "start": 5425.800000000745,
+          "duration": 96
+        },
+        {
+          "start": 5522.599999997765,
+          "duration": 145
+        },
+        {
+          "start": 5668,
+          "duration": 97
+        },
+        {
+          "start": 5765.800000000745,
+          "duration": 103
+        },
+        {
+          "start": 5868.89999999851,
+          "duration": 104
+        },
+        {
+          "start": 5975.89999999851,
+          "duration": 98
+        },
+        {
+          "start": 6276.800000000745,
+          "duration": 268
+        },
+        {
+          "start": 6545.199999999255,
+          "duration": 220
+        },
+        {
+          "start": 6765.699999999255,
+          "duration": 106
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 35,
+        "RecalcStyleCount": 88,
+        "LayoutDuration": 0.11376899999999998,
+        "RecalcStyleDuration": 1.5836780000000001,
+        "ScriptDuration": 0.01716899999999999,
+        "TaskDuration": 3.4664970000000004
+      },
+      "errors": []
+    },
+    {
+      "throttle": 1,
+      "round": 2,
+      "mode": "narrow3",
+      "before": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1827,
+        "tags": 2000,
+        "elements": 17883,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 3,
+          "offsetSize": 3,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 13,
+          "endIndex": 36
+        },
+        "cells": 696,
+        "tags": 600,
+        "elements": 7586,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1890,
+        "tags": 2000,
+        "elements": 18010,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 96.60000000149012,
+      "restoreMs": 263.8999999985099,
+      "drag": {
+        "count": 25,
+        "p95": 150,
+        "max": 150.09999999999945,
+        "over25": 23
+      },
+      "settle": {
+        "count": 19,
+        "p95": 449.90000000000055,
+        "max": 449.90000000000055,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 3235,
+          "duration": 97
+        },
+        {
+          "start": 3348,
+          "duration": 106
+        },
+        {
+          "start": 3454.699999999255,
+          "duration": 140
+        },
+        {
+          "start": 3595.2999999970198,
+          "duration": 99
+        },
+        {
+          "start": 3695,
+          "duration": 106
+        },
+        {
+          "start": 3801.7999999970198,
+          "duration": 99
+        },
+        {
+          "start": 3901,
+          "duration": 97
+        },
+        {
+          "start": 3998.5,
+          "duration": 161
+        },
+        {
+          "start": 4159.699999999255,
+          "duration": 111
+        },
+        {
+          "start": 4270.89999999851,
+          "duration": 146
+        },
+        {
+          "start": 4417.39999999851,
+          "duration": 101
+        },
+        {
+          "start": 4519,
+          "duration": 122
+        },
+        {
+          "start": 4641.89999999851,
+          "duration": 151
+        },
+        {
+          "start": 4793.29999999702,
+          "duration": 103
+        },
+        {
+          "start": 4902.199999999255,
+          "duration": 98
+        },
+        {
+          "start": 5000.699999999255,
+          "duration": 98
+        },
+        {
+          "start": 5104.699999999255,
+          "duration": 97
+        },
+        {
+          "start": 5202.099999997765,
+          "duration": 97
+        },
+        {
+          "start": 5301.099999997765,
+          "duration": 104
+        },
+        {
+          "start": 5405.89999999851,
+          "duration": 96
+        },
+        {
+          "start": 5502.599999997765,
+          "duration": 139
+        },
+        {
+          "start": 5642.5,
+          "duration": 97
+        },
+        {
+          "start": 5739.599999997765,
+          "duration": 145
+        },
+        {
+          "start": 5885.29999999702,
+          "duration": 98
+        },
+        {
+          "start": 5985.599999997765,
+          "duration": 99
+        },
+        {
+          "start": 6285.599999997765,
+          "duration": 264
+        },
+        {
+          "start": 6549.699999999255,
+          "duration": 208
+        },
+        {
+          "start": 6758.099999997765,
+          "duration": 111
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 36,
+        "RecalcStyleCount": 89,
+        "LayoutDuration": 0.111177,
+        "RecalcStyleDuration": 1.6355259999999998,
+        "ScriptDuration": 0.017869999999999997,
+        "TaskDuration": 3.506352
+      },
+      "errors": []
+    },
+    {
+      "throttle": 1,
+      "round": 2,
+      "mode": "narrow12",
+      "before": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1827,
+        "tags": 2000,
+        "elements": 17883,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 1,
+          "offsetSize": 2,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 16,
+          "endIndex": 33
+        },
+        "cells": 522,
+        "tags": 500,
+        "elements": 6582,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1890,
+        "tags": 2000,
+        "elements": 18010,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 89.70000000298023,
+      "restoreMs": 309.5,
+      "drag": {
+        "count": 29,
+        "p95": 133.39999999999964,
+        "max": 133.4000000000001,
+        "over25": 28
+      },
+      "settle": {
+        "count": 20,
+        "p95": 500,
+        "max": 500,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 3277.7000000029802,
+          "duration": 90
+        },
+        {
+          "start": 3397.400000002235,
+          "duration": 124
+        },
+        {
+          "start": 3521.400000002235,
+          "duration": 87
+        },
+        {
+          "start": 3608.800000000745,
+          "duration": 83
+        },
+        {
+          "start": 3692.10000000149,
+          "duration": 125
+        },
+        {
+          "start": 3817.400000002235,
+          "duration": 89
+        },
+        {
+          "start": 3906.60000000149,
+          "duration": 113
+        },
+        {
+          "start": 4019.900000002235,
+          "duration": 123
+        },
+        {
+          "start": 4143.400000002235,
+          "duration": 80
+        },
+        {
+          "start": 4228.5,
+          "duration": 124
+        },
+        {
+          "start": 4353.400000002235,
+          "duration": 84
+        },
+        {
+          "start": 4442.900000002235,
+          "duration": 86
+        },
+        {
+          "start": 4529.300000000745,
+          "duration": 79
+        },
+        {
+          "start": 4609.60000000149,
+          "duration": 83
+        },
+        {
+          "start": 4692.900000002235,
+          "duration": 86
+        },
+        {
+          "start": 4779.10000000149,
+          "duration": 87
+        },
+        {
+          "start": 4866.900000002235,
+          "duration": 95
+        },
+        {
+          "start": 4962.70000000298,
+          "duration": 80
+        },
+        {
+          "start": 5043.400000002235,
+          "duration": 121
+        },
+        {
+          "start": 5165.400000002235,
+          "duration": 83
+        },
+        {
+          "start": 5249.300000000745,
+          "duration": 79
+        },
+        {
+          "start": 5328.300000000745,
+          "duration": 84
+        },
+        {
+          "start": 5413.10000000149,
+          "duration": 82
+        },
+        {
+          "start": 5495.800000000745,
+          "duration": 84
+        },
+        {
+          "start": 5580.60000000149,
+          "duration": 81
+        },
+        {
+          "start": 5662.10000000149,
+          "duration": 80
+        },
+        {
+          "start": 5742.5,
+          "duration": 120
+        },
+        {
+          "start": 5863.10000000149,
+          "duration": 95
+        },
+        {
+          "start": 5959.900000002235,
+          "duration": 80
+        },
+        {
+          "start": 6242.800000000745,
+          "duration": 309
+        },
+        {
+          "start": 6552.400000002235,
+          "duration": 210
+        },
+        {
+          "start": 6763.20000000298,
+          "duration": 113
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 40,
+        "RecalcStyleCount": 101,
+        "LayoutDuration": 0.11246500000000001,
+        "RecalcStyleDuration": 1.6054639999999998,
+        "ScriptDuration": 0.016670000000000004,
+        "TaskDuration": 3.4277170000000003
+      },
+      "errors": []
+    },
+    {
+      "throttle": 1,
+      "round": 2,
+      "mode": "fixed",
+      "before": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1827,
+        "tags": 2000,
+        "elements": 17883,
+        "left": 3200,
+        "top": 3600
+      },
+      "during": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1827,
+        "tags": 2000,
+        "elements": 17883,
+        "left": 3200,
+        "top": 3600
+      },
+      "after": {
+        "store": {
+          "preloadSize": 35,
+          "offsetSize": 35,
+          "visibleSize": 10,
+          "visibleStartIndex": 19,
+          "visibleEndIndex": 31,
+          "startIndex": 0,
+          "endIndex": 100
+        },
+        "cells": 1890,
+        "tags": 2000,
+        "elements": 18010,
+        "left": 3200,
+        "top": 72216
+      },
+      "switchMs": 0,
+      "restoreMs": 0,
+      "drag": {
+        "count": 11,
+        "p95": 366.7000000000003,
+        "max": 366.7000000000003,
+        "over25": 8
+      },
+      "settle": {
+        "count": 21,
+        "p95": 266.59999999999945,
+        "max": 266.6999999999998,
+        "over25": 4
+      },
+      "longTasks": [
+        {
+          "start": 3296.699999999255,
+          "duration": 374
+        },
+        {
+          "start": 3670.89999999851,
+          "duration": 276
+        },
+        {
+          "start": 3947.800000000745,
+          "duration": 256
+        },
+        {
+          "start": 4204.699999999255,
+          "duration": 253
+        },
+        {
+          "start": 4458.599999997765,
+          "duration": 270
+        },
+        {
+          "start": 4729.699999999255,
+          "duration": 366
+        },
+        {
+          "start": 5101,
+          "duration": 251
+        },
+        {
+          "start": 5352.5,
+          "duration": 370
+        },
+        {
+          "start": 5728.199999999255,
+          "duration": 266
+        },
+        {
+          "start": 5997.89999999851,
+          "duration": 251
+        },
+        {
+          "start": 6250.5,
+          "duration": 213
+        },
+        {
+          "start": 6713.89999999851,
+          "duration": 110
+        }
+      ],
+      "metrics": {
+        "LayoutCount": 15,
+        "RecalcStyleCount": 38,
+        "LayoutDuration": 0.082866,
+        "RecalcStyleDuration": 1.572118,
+        "ScriptDuration": 0.008862000000000009,
+        "TaskDuration": 3.3346159999999996
+      },
+      "errors": []
+    }
+  ]
+}

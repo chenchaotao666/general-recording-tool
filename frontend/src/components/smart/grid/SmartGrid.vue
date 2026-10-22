@@ -113,6 +113,7 @@ import { updateGridDisplayRows } from '../../../smart/utils/gridDisplayRows.js'
 import { applyColumnWidths } from '../../../smart/utils/applyColumnWidths.js'
 import { isColumnRemoval, isColumnInsertion } from '../../../smart/utils/columnRemoval.js'
 import { installHorizontalScrollbar, installVerticalScrollbar } from '../../../smart/utils/horizontalScrollbar.js'
+import { createAdaptiveColumnBuffer, WIDE_COLUMN_BUFFER } from '../../../smart/utils/adaptiveColumnBuffer.js'
 const layoutQueue = createGridLayoutQueue()
 provide('smartGridLayoutQueue', layoutQueue)
 const scrollCollapses = new Set()
@@ -182,9 +183,14 @@ watch(gridRef, async (table, _, onCleanup) => {
   if (cancelled || !table) return
   if (table.$el) cleanups.push(installVirtualTablePosition(table.$el))
   const handle = table.$el?.querySelector('.vxe-table--scroll-x-handle')
-  if (handle) cleanups.push(installHorizontalScrollbar(handle, { onStart: onDocMouseDown, onEnd: onScrollPointerUp }))
+  if (handle) cleanups.push(installHorizontalScrollbar(handle, {
+    onStart: event => { columnBuffer.horizontal(); onDocMouseDown(event) }, onEnd: onScrollPointerUp,
+  }))
   const vertical = table.$el?.querySelector('.vxe-table--scroll-y-handle')
-  if (vertical) cleanups.push(installVerticalScrollbar(vertical, { onStart: onDocMouseDown, onEnd: onScrollPointerUp }))
+  if (vertical) cleanups.push(installVerticalScrollbar(vertical, {
+    onStart: event => { columnBuffer.beginVerticalDrag(); onDocMouseDown(event) },
+    onEnd: () => { columnBuffer.endVerticalDrag(); onScrollPointerUp() },
+  }))
 }, { flush: 'post' })
 const editingCell = ref(null)   // {key, fieldName}
 
@@ -214,8 +220,16 @@ const visibleFields = computed(() => {
 const headerTree = computed(() => buildColumnLayout(
   visibleFields.value, props.columnGroups, viewConfig.value.frozenFieldId))
 const displayedFields = computed(() => headerTree.value.flatMap(n => n.isGroup ? n.fields : [n.field]))
-const virtualYConfig = { enabled: true, gt: 0, preSize: 3, oSize: 3 }
-const virtualXConfig = { enabled: true, gt: 0, preSize: 6, oSize: 6 }
+const virtualYConfig = { enabled: true, gt: 0, preSize: 4, oSize: 4 }
+const virtualXConfig = ref({ enabled: true, gt: 0, preSize: WIDE_COLUMN_BUFFER, oSize: WIDE_COLUMN_BUFFER })
+const columnBuffer = createAdaptiveColumnBuffer({
+  getTable: () => gridRef.value,
+  setConfig: size => {
+    if (virtualXConfig.value.preSize !== size) virtualXConfig.value = { enabled: true, gt: 0, preSize: size, oSize: size }
+  },
+})
+watch(gridRef, () => { columnBuffer.dispose(); virtualXConfig.value = { enabled: true, gt: 0, preSize: WIDE_COLUMN_BUFFER, oSize: WIDE_COLUMN_BUFFER } })
+onBeforeUnmount(() => columnBuffer.dispose())
 const fieldsByName = computed(() => new Map(props.fields.map(f => [f.field_name, f])))
 // VXE 的边框绘制在列宽之内，无需额外加宽，否则末列右侧会露出第二条边框。
 const gridContentWidth = computed(() => 39 + 48 + displayedFields.value.reduce((sum, f) => sum + Number(colWidths.value[f.field_name] || 160), 0))
@@ -451,7 +465,45 @@ let scrollbarEditingCell = null
 let locatingUntil = 0
 let wheelRemainder = 0
 let lastWheelTime = 0
+let wheelLogSequence = 0
+let wheelIdleLogTimer = 0
+function logWheelDom(event) {
+  if (event.ctrlKey) return
+  const sequence = ++wheelLogSequence
+  const direction = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY) ? '横向' : '纵向'
+  printWheelDom(sequence, direction, '滚动中')
+  clearTimeout(wheelIdleLogTimer)
+  wheelIdleLogTimer = setTimeout(() => {
+    wheelIdleLogTimer = 0
+    printWheelDom(sequence, direction, '停止滚动 1.5 秒后')
+  }, 1500)
+}
+function printWheelDom(sequence, direction, phase) {
+  // Diagnostic sampling after the event's rendering work; numbers are snapshots,
+  // not live DOM objects whose console representation could change afterwards.
+  requestAnimationFrame(() => nextTick(() => {
+    if (phase !== '滚动中' && sequence !== wheelLogSequence) return
+    const table = gridRef.value
+    const root = table?.$el
+    if (!root?.isConnected) return
+    const buffer = table.internalData?.scrollXStore
+    const scroll = table.getScroll()
+    console.log('[智能表格 DOM]', {
+      次数: sequence,
+      阶段: phase,
+      方向: direction,
+      表格DOM元素数: root.querySelectorAll('*').length + 1,
+      表体单元格数: root.querySelectorAll('td.vxe-body--column').length,
+      横向preSize: buffer?.preloadSize,
+      横向oSize: buffer?.offsetSize,
+      scrollLeft: scroll.scrollLeft,
+      scrollTop: scroll.scrollTop,
+    })
+  }))
+}
 function onGridWheel(event) {
+  logWheelDom(event)
+  if (!event.ctrlKey && (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY))) columnBuffer.horizontal()
   // 横向手势、缩放和编辑器内滚动仍由原控件处理。
   if (event.ctrlKey || event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)
       || !event.deltaY || !event.cancelable
@@ -545,6 +597,8 @@ function onGridScroll(scroll) {
   const top = scroll.scrollTop ?? 0
   const left = scroll.scrollLeft ?? 0
   if (top === lastScrollTop && left === lastScrollLeft) return
+  if (left !== lastScrollLeft) columnBuffer.horizontal()
+  else if (top !== lastScrollTop) columnBuffer.vertical()
   if (!scrollActive) {
     scrollActive = true
     layoutQueue.pause()
@@ -1231,6 +1285,10 @@ function attachGlobalEvents() {
   document.addEventListener('mousedown', onDocMouseDown)
 }
 function detachGlobalEvents() {
+  clearTimeout(wheelIdleLogTimer)
+  wheelIdleLogTimer = 0
+  wheelLogSequence++
+  columnBuffer.restore()
   cellRange.detach()
   layoutQueue.pause()
   scrollPointerDown = false
