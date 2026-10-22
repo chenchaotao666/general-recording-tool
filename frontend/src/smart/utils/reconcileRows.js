@@ -9,6 +9,14 @@ export function sameRecordValue(a, b) {
 }
 
 const recordKey = row => row.__rowType ? `${row.__rowType}:${row.key}` : row.id
+// Replace changed source records without mutating the grid's cached display rows.
+// In-place writes to those plain objects can make reconciliation reuse a stale render.
+export function mergeUpdatedRows(previous, records) {
+  const updates = new Map(records.map(row => [row.id, row]))
+  return reconcileRows(previous, previous.map(row =>
+    !row.__rowType && updates.has(row.id) ? { ...row, ...updates.get(row.id) } : row))
+}
+
 export function reconcileRows(previous, incoming, keyOf = recordKey) {
   const byKey = new Map(previous.map(row => [keyOf(row), row]))
   let unchanged = previous.length === incoming.length

@@ -1,7 +1,9 @@
 <template>
   <span class="people-picker" @mousedown.stop @click.stop>
     <el-popover :visible="opened && !contacts" placement="bottom-start" :width="300" :show-arrow="false" popper-class="people-picker-pop" :persistent="false">
-      <template #reference><div ref="trigger" class="people-trigger" @click="opened ? finish() : focus()"><span>{{ selectedNames }}</span><CellDropdown overlay flush :open="opened && !contacts" label="选择人员" @click="opened ? finish() : focus()" /></div></template>
+      <template #reference><div ref="trigger" class="people-trigger" :class="{ 'grid-people-trigger': gridCell }" @click="opened ? finish() : focus()">
+        <div v-if="gridCell" class="people-cell-tags"><span v-for="p in selectedPeople" :key="p.id" class="people-cell-tag"><PersonAvatar :person="p" /><span class="people-cell-name">{{ p.name }}</span><button class="people-cell-remove" aria-label="移除人员" @click.stop="removePerson(p.id)">×</button></span></div>
+        <span v-else>{{ selectedNames }}</span><CellDropdown overlay :flush="!gridCell" :bordered="gridCell" :open="opened && !contacts" label="选择人员" @click="opened ? finish() : focus()" /></div></template>
       <div ref="panel" @mousedown.stop @click.stop @keydown.esc.stop.prevent="cancel">
         <div class="people-search"><el-input ref="search" v-model="query" placeholder="搜索成员" clearable aria-label="搜索成员" @keydown.enter="onEnter" @keydown.tab="onEnter" /></div>
         <div class="people-heading">企业成员</div>
@@ -27,7 +29,7 @@ import { getUserDirectory } from '../../api/index.js'
 import ContactPickerDialog from './ContactPickerDialog.vue'
 import PersonAvatar from './PersonAvatar.vue'
 import { person, selectedIds, togglePerson } from './people.js'
-const props = defineProps({ advanceOnEnter: Boolean, initialQuery: String, modelValue: [Array, Number, String], multiple: { type: Boolean, default: true }, people: { type: Array, default: () => [] }, loadDirectory: { type: Function, default: getUserDirectory } })
+const props = defineProps({ gridCell: Boolean, advanceOnEnter: Boolean, initialQuery: String, modelValue: [Array, Number, String], multiple: { type: Boolean, default: true }, people: { type: Array, default: () => [] }, loadDirectory: { type: Function, default: getUserDirectory } })
 const emit = defineEmits(['advance', 'update:modelValue', 'confirm', 'cancel', 'people-loaded'])
 const opened = ref(false), contacts = ref(false), query = ref(''), chosen = ref([]), directory = ref(null), loading = ref(false), error = ref('')
 watch(() => props.initialQuery, value => { if (value != null) query.value = value })
@@ -36,6 +38,7 @@ watch(() => props.modelValue, v => { if (!opened.value) chosen.value = selectedI
 const enterprise = computed(() => (directory.value?.enterprise?.members || props.people).map(person))
 const allPeople = computed(() => [...props.people, ...enterprise.value, ...(directory.value?.friends || []), ...(directory.value?.groups || []).flatMap(g => g.members || [])].map(person))
 const selectedNames = computed(() => chosen.value.map(id => allPeople.value.find(p => p.id === id)?.name || `#${id}`).join('、'))
+const selectedPeople = computed(() => chosen.value.map(id => allPeople.value.find(p => p.id === id) || { id, name: `#${id}` }))
 const filtered = computed(() => enterprise.value.filter(p => p.name.toLowerCase().includes(query.value.trim().toLowerCase())))
 async function load() {
   if (loading.value) return
@@ -54,6 +57,10 @@ function finish() {
   opened.value = false; emit('update:modelValue', value); emit('confirm', value)
 }
 function pick(p) { chosen.value = togglePerson(chosen.value, p.id, props.multiple); if (!props.multiple) finish() }
+function removePerson(id) {
+  chosen.value = chosen.value.filter(value => value !== id)
+  if (!opened.value) finish()
+}
 function onEnter(event) {
   if (event.key === 'Tab' && !props.advanceOnEnter) return
   if (event.isComposing || event.keyCode === 229) return
@@ -78,7 +85,19 @@ defineExpose({ focus })
 .people-picker { display: block; width: 100%; }
 button { font: inherit; color: inherit; cursor: pointer; }
 .people-trigger { position: relative; width: 100%; height: 100%; min-height: 28px; box-sizing: border-box; display: flex; align-items: center; border: 0; background: transparent; padding: 0 8px; color: #7f8590; }
-.people-trigger span { flex: 1; text-align: left; color: #30343b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people-trigger > span:not(.cell-dropdown) { flex: 1; text-align: left; color: #30343b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grid-people-trigger { height: auto; min-height: 100%; align-items: flex-start; padding: 4px 26px 4px 6px; border: 2px solid var(--st-primary); background: white; box-shadow: 0 4px 16px #0000001f; }
+.people-cell-tags { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; width: 100%; container: people-tags / inline-size; }
+.people-cell-tag { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; box-sizing: border-box; padding: 1px 8px 1px 4px; line-height: 22px; font-size: 12px; border-radius: 4px; background: #f0f1f3; color: #646a73; }
+.people-cell-tag .person-avatar { width: 20px; height: 20px; font-size: 12px; }
+.people-cell-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people-cell-remove { flex: none; border: 0; border-radius: 4px; background: transparent; color: #9298a1; cursor: pointer; padding: 0 4px; font-size: 16px; }
+/* 极窄列优先保留省略文本与完整删除按钮，头像不挤占操作区。 */
+@container people-tags (max-width: 64px) {
+  .people-cell-tag { padding-left: 4px; padding-right: 4px; }
+  .people-cell-tag .person-avatar { display: none; }
+  .people-cell-remove { padding: 0; width: 16px; }
+}
 .people-search { padding: 12px 16px; border-bottom: 1px solid #edeef0; }
 .people-search :deep(.el-input__wrapper) { box-shadow: none; padding: 0; }
 .people-heading { padding: 12px 18px 6px; color: #969da8; font-size: 13px; }

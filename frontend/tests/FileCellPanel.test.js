@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { mount, flushPromises } from '@vue/test-utils'
 import { ref } from 'vue'
-import { expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import FileCellPanel from '../src/components/smart/grid/FileCellPanel.vue'
 import { fileUrl } from '../src/components/smart/grid/fileDisplay.js'
+beforeEach(() => vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }))
+afterEach(() => vi.unstubAllGlobals())
 
 test('first click selects, batch upload appends and gallery list deletion preserves other files', async () => {
   const upload = vi.fn().mockResolvedValueOnce({ id: 'b'.repeat(32), name: 'sheet.xlsx', size: 1024 }).mockRejectedValueOnce(new Error('Network'))

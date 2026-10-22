@@ -80,7 +80,7 @@ useGridScrollCollapse(() => opened.value, () => {
 .link-cell-anchor { display: block; width: 100%; height: 100%; }
 .link-cell-trigger { position: relative; display: flex; align-items: center; height: 100%; min-height: 28px; cursor: default; }
 .link-cell-anchor.selected .link-cell-trigger { cursor: pointer; }
-.link-cell-text { color: #3370ff; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; cursor: default; }
+.link-cell-text { color: #3370ff; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; cursor: default; font-size: 13px; line-height: 22px; }
 .link-cell-anchor.selected .link-cell-text { cursor: pointer; }
 .link-cell-anchor.selected .link-cell-text:hover { text-decoration: underline; }
 .link-cell-panel { padding: 26px; }

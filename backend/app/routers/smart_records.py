@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from hashlib import sha256
 import re
+from uuid import uuid4
 
 from ..database import get_db
 from ..models import MetaField, MetaTable, MetaView, MetaViewPref, Record
@@ -343,7 +344,106 @@ def insert_records(table_id: int, record_id: int, payload: dict, db: Session = D
                                         access.ctx.user.username, access.ctx.user.id)
     for record in records:
         smart_events.record_created(db, access.table, record, actor_id=access.ctx.user.id)
-    return {"ids": [r["id"] for r in records]}
+    # Restricted views continue through grid's row/field permission projection.
+    visible_records = records if eff.managed else []
+    _inject_system_and_lookup(db, fields, visible_records)
+    return {"ids": [r["id"] for r in records], "records": visible_records}
+
+
+@router.post("/tables/{table_id}/records:batch-update")
+def batch_update(table_id: int, payload: dict, db: Session = Depends(get_db),
+                 access: TableAccess = Depends(require_table("edit"))):
+    """Validate cells independently when requested; commit accepted values/options together."""
+    cells = payload.get("cells")
+    if not isinstance(cells, list) or not cells or len(cells) > 10000:
+        raise HTTPException(422, "粘贴单元格数量必须为 1 至 10000")
+    fields = get_meta_fields(db, table_id)
+    by_name = {f.field_name: f for f in fields}
+    eff = _effective(db, access)
+    if not eff.managed:
+        perm_service.require_level(eff, "EDIT", "没有编辑记录的权限")
+    rights = eff.field_rights_map(fields)
+    changes, before, updated_fields = {}, {}, {}
+    skipped = []
+    skip_invalid = payload.get("skipInvalid") is True
+
+    def prepare_cell(cell):
+        if not isinstance(cell, dict) or type(cell.get("id")) is not int:
+            raise HTTPException(422, "无效的粘贴单元格")
+        field = by_name.get(cell.get("field"))
+        if field is None:
+            raise HTTPException(422, "字段不存在")
+        cfg = dict(field.options or {})
+        new_options = None
+        if field.field_type in READONLY_TYPES - {"ai"} or cfg.get("formula") or dyn_engine.is_serial_field(field):
+            raise HTTPException(422, "此列类型由系统自动生成，不支持手动修改。")
+        rid = cell["id"]
+        if rid not in before:
+            before[rid] = _normalized_one(db, table_id, rid, fields)
+        if not eff.managed:
+            _require_row_editable(eff, before[rid], fields)
+        if not eff.managed and not rights.get(field.field_name, {}).get("edit"):
+            raise HTTPException(403, "没有编辑该单元格的权限")
+        value = cell.get("value")
+        ft = cfg.get("outputType", "text") if field.field_type == "ai" else field.field_type
+        if "labels" in cell:
+            labels = cell["labels"]
+            if ft not in ("singleSelect", "multiSelect") or not isinstance(labels, list) or any(not isinstance(x, str) or not x for x in labels):
+                raise HTTPException(422, "粘贴内容与类型不符，请修改列类型后再试。")
+            if cfg.get("optionSource") == "reference":
+                raise HTTPException(422, "引用选项列不能新增选项，请先在来源列中添加。")
+            options = list(cfg.get("options") or [])
+            ids = []
+            for label in labels:
+                option = next((o for o in options if o.get("label") == label), None)
+                if option is None:
+                    if cfg.get("allowAddOptionWhenEditing") is False:
+                        raise HTTPException(422, "此列不允许在编辑时新增选项，请先在列设置中添加。")
+                    if not eff.schema_edit:
+                        raise HTTPException(403, "没有新增选项的权限")
+                    option = {"id": "opt_" + uuid4().hex, "label": label, "color": "blue", "order": len(options)}
+                    options.append(option)
+                    new_options = {**cfg, "options": options}
+                ids.append(option["id"])
+            value = (ids[0] if ids else None) if ft == "singleSelect" else list(dict.fromkeys(ids))
+        elif "value" not in cell:
+            raise HTTPException(422, "缺少粘贴内容")
+        return rid, field, value, new_options
+    try:
+        for cell in cells:
+            try:
+                rid, field, value, new_options = prepare_cell(cell)
+                _, errors = dyn_engine.coerce_payload(fields, {field.field_name: value}, partial=True)
+                if errors:
+                    raise HTTPException(422, "粘贴内容与类型不符，请修改列类型后再试。")
+            except HTTPException as error:
+                if not skip_invalid or error.status_code not in (400, 403, 404, 422):
+                    raise
+                skipped.append({"id": cell.get("id") if isinstance(cell, dict) else None,
+                                "field": cell.get("field") if isinstance(cell, dict) else None,
+                                "reason": error.detail})
+                continue
+            if new_options is not None:
+                field.options = new_options
+                updated_fields[field.field_name] = new_options
+            changes.setdefault(rid, {})[field.field_name] = value
+        records = []
+        for rid, data in changes.items():
+            _, errors = dyn_engine.coerce_payload(fields, data, partial=True)
+            if errors:
+                raise HTTPException(422, "粘贴内容与类型不符，请修改列类型后再试。")
+            records.append(json_store.update_record(db, access.table, fields, rid, data,
+                user=access.ctx.user.username, editor_id=access.ctx.user.id, commit=False))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    for record in records:
+        smart_events.record_updated(db, access.table, before[record["id"]], record,
+                                    list(changes[record["id"]]), actor_id=access.ctx.user.id)
+    _inject_system_and_lookup(db, fields, records)
+    return {"records": records, "fieldOptions": updated_fields, "skipped": skipped,
+            "applied": [{"id": rid, "field": name} for rid, data in changes.items() for name in data]}
 
 
 @router.patch("/tables/{table_id}/records/{record_id}")
@@ -459,10 +559,10 @@ def duplicate_record(table_id: int, record_id: int, db: Session = Depends(get_db
             for f in fields if (f.field_type or "") not in READONLY_TYPES
             and (rights[f.field_name]["firstSubmit"] or rights[f.field_name]["edit"])}
     data = {k: v for k, v in data.items() if v is not None}
-    new_rec = json_store.create_record(db, access.table, fields, data,
-                                       user=access.ctx.user.username, owner_id=access.ctx.user.id,
-                                       parent_id=rec.parent_id)
+    new_rec = json_store.insert_records(db, access.table, fields, rec, "down", 1, data,
+                                       user=access.ctx.user.username, owner_id=access.ctx.user.id)[0]
     smart_events.record_created(db, access.table, new_rec, actor_id=access.ctx.user.id)
+    _inject_system_and_lookup(db, fields, [new_rec])
     return {"record": new_rec}
 
 

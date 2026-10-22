@@ -134,15 +134,20 @@ useGridScrollCollapse(() => opened.value, () => {
 .relation-picker { max-width: calc(100vw - 32px); border-radius: 10px; }
 </style>
 <style scoped>
-.relation-anchor, .relation-trigger { width: 100%; height: 100%; min-width: 0; min-height: 0; }
+.relation-anchor, .relation-trigger { width: 100%; height: auto; min-width: 0; min-height: 0; }
 .relation-trigger { position: relative; display: flex; align-items: center; cursor: default; }
-.relation-trigger.selected { height: auto; min-height: var(--file-row-height, 36px); box-sizing: border-box; background: white; border: 2px solid var(--st-primary, #3370ff); border-radius: 2px; padding: 3px 26px 3px 6px; z-index: 2; align-self: flex-start; box-shadow: 0 4px 16px #0000001f; cursor: pointer; }
-.relation-chips { display: flex; flex-wrap: wrap; align-items: center; align-content: safe center; gap: 4px; width: 100%; min-width: 0; box-sizing: border-box; }
+.relation-trigger.selected { height: auto; min-height: var(--file-row-height, 36px); box-sizing: border-box; background: white; border: 2px solid var(--st-primary, #3370ff); border-radius: 0; padding: 3px 26px 3px 6px; z-index: 2; align-self: flex-start; box-shadow: 0 4px 16px #0000001f; cursor: pointer; }
+.relation-chips { display: flex; flex-wrap: wrap; align-items: center; align-content: safe center; gap: 4px; width: 100%; min-width: 0; box-sizing: border-box; container: relation-tags / inline-size; }
 .relation-chip { display: inline-flex; align-items: center; max-width: 100%; box-sizing: border-box; background: #f0f1f3; color: #646a73; border-radius: 4px; padding: 1px 8px; margin: 0; line-height: 22px; font-size: 12px; gap: 4px; }
-.relation-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.relation-symbol { color: #969ca5; }
+.relation-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.relation-symbol { color: #969ca5; flex: none; }
 .relation-icon { flex: none; border: 0; border-radius: 4px; background: transparent; color: #9298a1; cursor: pointer; padding: 0 4px; font-size: 16px; }
-.relation-icon:hover { background: #e5e7e9; }
+.relation-icon:not([aria-label="移除关联"]):hover { background: #e5e7e9; }
+@container relation-tags (max-width: 64px) {
+  .relation-chip { padding-left: 4px; padding-right: 4px; }
+  .relation-symbol { display: none; }
+  .relation-chip .relation-icon { padding: 0; width: 16px; }
+}
 .relation-cards { max-height: 340px; overflow: auto; }
 .relation-card { border-bottom: 1px solid #eceef1; padding: 14px 18px; cursor: pointer; }
 .relation-card:hover { background: #f8f9fa; }

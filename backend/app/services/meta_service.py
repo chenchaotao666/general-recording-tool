@@ -321,6 +321,9 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
                 delete_field_images(db, mt.id, name)   # 级联删除该字段的全部图片文件
             db.delete(f)
             db.flush()
+            if is_json and f.field_type == "image":
+                from .images import sync_smart_images
+                sync_smart_images(db)
             fields.remove(f)
             by_name.pop(name)
             changes.append(f"删除字段「{f.label}」({name})" + (f"，清理 {n} 条存量数据" if n else ""))

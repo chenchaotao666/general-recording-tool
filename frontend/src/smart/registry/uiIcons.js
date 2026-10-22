@@ -34,7 +34,6 @@ export const UI_ICONS = {
   drag: '<circle cx="6" cy="4" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="4" r="1.1" fill="currentColor" stroke="none"/><circle cx="6" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="6" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="12" r="1.1" fill="currentColor" stroke="none"/>',
   expand: '<path d="M9.2 2.8h4v4M13.2 2.8L8.8 7.2M6.8 13.2h-4v-4M2.8 13.2l4.4-4.4"/>',
   tree: '<path d="M4 2.8v6.4a2 2 0 002 2h5.4"/><path d="M8.6 8.4l3 2.8-3 2.8"/>',
-  'child-record': '<path d="M3 2v9a2 2 0 002 2h5M3 6h7"/><rect x="10" y="4" width="4" height="4" rx="1"/><rect x="10" y="11" width="4" height="4" rx="1"/>',
   'arrow-up': '<path d="M8 14V2M3 7l5-5 5 5"/>',
   'arrow-down': '<path d="M8 2v12M3 9l5 5 5-5"/>',
   'insert-up': '<path d="M8 9.8V3.4M8 3.4L5.4 6M8 3.4L10.6 6"/><path d="M2.8 12.6h10.4"/>',

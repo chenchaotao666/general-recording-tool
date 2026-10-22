@@ -31,7 +31,7 @@
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import StIcon from '../icons/StIcon.vue'
-const props = defineProps({ x: Number, y: Number, hasField: Boolean, canCreate: Boolean, canDelete: Boolean, readonly: Boolean })
+const props = defineProps({ x: Number, y: Number, hasField: Boolean, canCreate: Boolean, canDelete: Boolean, readonly: Boolean, rowOnly: Boolean, rangeRowCount: { type: Number, default: 0 } })
 const emit = defineEmits(['action', 'close'])
 const menuEl = ref(null)
 const active = ref(null)
@@ -39,7 +39,8 @@ const counts = ref({ 'insert-up': 1, 'insert-down': 1 })
 const position = ref({ left: '0px', top: '0px', visibility: 'hidden' })
 const opensLeft = ref(false)
 const submenuTop = ref(0)
-const groups = computed(() => [
+const groups = computed(() => props.rangeRowCount > 0 && !props.rowOnly
+  ? [[{ code: 'delete-rows', label: `删除 ${props.rangeRowCount} 行`, icon: 'trash', disabled: !props.canDelete }]] : [
   [{ code: 'expand', label: '展开记录', icon: 'expand' }],
   [{ code: 'only', label: '只看此内容', icon: 'filter', disabled: !props.hasField }, { code: 'exclude', label: '不看此内容', icon: 'filter', disabled: !props.hasField }],
   [{ code: 'viz', label: '数据可视化', icon: 'magic', disabled: !props.hasField || props.readonly, children: [
@@ -47,13 +48,13 @@ const groups = computed(() => [
   ] }, { code: 'reminders', label: '设置提醒', icon: 'play-circle', disabled: !props.hasField || props.readonly, children: [
     { code: 'reminder', label: '内容变更提醒', icon: 'bell' }, { code: 'automation', label: '更多自动化设置', icon: 'automation' },
   ] }],
-  [{ code: 'add-child', label: '添加子记录', icon: 'child-record', disabled: !props.canCreate }],
   [{ code: 'duplicate', label: '创建副本', icon: 'copy', disabled: !props.canCreate },
     { code: 'insert-up', label: '向上插入', icon: 'arrow-up', insert: true, disabled: !props.canCreate },
     { code: 'insert-down', label: '向下插入', icon: 'arrow-down', insert: true, disabled: !props.canCreate }],
   [{ code: 'delete', label: '删除', icon: 'trash', disabled: !props.canDelete }],
-])
+].filter((_, index) => !props.rowOnly || ![1, 2].includes(index)))
 function choose(code) {
+  if (code === 'delete-rows' && !props.canDelete) return
   const count = counts.value[code]
   if (code.startsWith('insert-')) {
     if (!props.canCreate) return

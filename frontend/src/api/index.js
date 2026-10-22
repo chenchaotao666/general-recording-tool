@@ -403,6 +403,7 @@ export const smartFieldStats = (tid, params) => http.get(`/smart/tables/${tid}/f
 export const smartCreateRecord = (tid, payload) => http.post(`/smart/tables/${tid}/records`, payload)
 export const smartInsertRecords = (tid, rid, payload) => http.post(`/smart/tables/${tid}/records/${rid}/insert`, payload)
 export const smartUpdateRecord = (tid, rid, payload) => http.patch(`/smart/tables/${tid}/records/${rid}`, payload)
+export const smartBatchUpdate = (tid, cells, skipInvalid = false) => http.post(`/smart/tables/${tid}/records:batch-update`, { cells, skipInvalid })
 export const smartDeleteRecord = (tid, rid) => http.delete(`/smart/tables/${tid}/records/${rid}`)
 export const smartBatchDelete = (tid, ids) => http.post(`/smart/tables/${tid}/records:batch-delete`, { ids })
 export const smartDuplicateRecord = (tid, rid) => http.post(`/smart/tables/${tid}/records/${rid}/duplicate`)

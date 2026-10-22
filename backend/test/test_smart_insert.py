@@ -93,6 +93,36 @@ class InsertTests(unittest.TestCase):
                 api.insert_records(self.table.id, self.original[0].id, {"direction": "down"}, self.db, access)
             self.assertEqual(error.exception.status_code, 404)
 
+    def test_duplicate_inserts_below_source_and_keeps_explicit_sorting(self):
+        field = MetaField(table_id=self.table.id, field_name="title", label="Title",
+                          data_type="text", field_type="text", nullable=True, options={})
+        self.db.add(field)
+        anchor = self.original[1]
+        anchor.data = {"title": "original"}
+        anchor.parent_id = self.original[0].id
+        self.db.commit()
+        timestamp = anchor.updated_at
+        access = NS(table=self.table, ctx=NS(user=NS(id=1, username="test")))
+        eff = NS(can_add_record=True, field_rights_map=lambda fs: {
+            "title": {"firstSubmit": True, "edit": True}})
+        with patch.object(api, "_effective", return_value=eff), \
+             patch.object(api.smart_events, "record_created") as event:
+            first = api.duplicate_record(self.table.id, anchor.id, self.db, access)["record"]
+            second = api.duplicate_record(self.table.id, anchor.id, self.db, access)["record"]
+        self.db.expire_all()
+        order = self.order()
+        self.assertEqual(order[order.index(anchor.id) + 1:order.index(anchor.id) + 3],
+                         [second["id"], first["id"]])
+        for record in [first, second]:
+            stored = self.db.get(Record, record["id"])
+            self.assertEqual(stored.data["title"], "original")
+            self.assertEqual(stored.parent_id, anchor.parent_id)
+        self.assertEqual(anchor.updated_at, timestamp)
+        self.assertEqual(event.call_count, 2)
+        rows = json_store.all_dicts(self.db, self.table.id, [field], normalized=True)
+        sorted_rows = sort_records_multi(rows, [{"fieldId": "id", "direction": "asc"}], {})
+        self.assertEqual([r["id"] for r in sorted_rows], sorted(order))
+
     def test_api_preserves_group_and_emits_after_commit(self):
         field = MetaField(table_id=self.table.id, field_name="team", label="Team",
                           data_type="text", field_type="text", options={})
@@ -111,6 +141,8 @@ class InsertTests(unittest.TestCase):
         self.assertEqual(event.call_count, 2)
         self.db.expire_all()
         self.assertTrue(all(self.db.get(Record, rid).data["team"] == "A" for rid in result["ids"]))
+        self.assertEqual([r['id'] for r in result['records']], result['ids'])
+        self.assertTrue(all(r['team'] == 'A' for r in result['records']))
         order = self.order()
         start = order.index(anchor.id) + 1
         self.assertEqual(order[start:start + 2], result["ids"])

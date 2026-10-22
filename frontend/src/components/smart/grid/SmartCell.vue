@@ -13,9 +13,7 @@
     <ProgressCell v-else-if="ft === 'progress'" :value="value" :config="cfg" />
     <!-- 人员：头像+姓名 -->
     <template v-else-if="ft === 'member'">
-      <span v-for="m in members" :key="m.id" class="member-chip">
-        <span class="avatar">{{ (m.name || '?')[0] }}</span>{{ m.name }}
-      </span>
+      <CompactCellTags :tags="members.map(m => ({ key: m.id, label: m.name, person: m, style: { background: '#f0f1f3', color: '#646a73' } }))" />
     </template>
     <!-- 系统人员字段 -->
     <template v-else-if="ft === 'createdBy' || ft === 'lastModifiedBy'">

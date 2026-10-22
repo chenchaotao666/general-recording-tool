@@ -144,6 +144,7 @@
       :fields="resolvedFields" :rows="rows" :grouped="grouped" :total="total" :aggregations="aggregations"
       :view="view" :column-groups="columnGroups" :collapsed-groups="collapsedGroups"
       :height="gridHeight" :readonly="!perms.can_edit" :can-edit-cell="canEditCell"
+      :paste-cells="onPasteCells"
       :menu-field="fieldMenu.visible ? fieldMenu.field?.field_name : null"
       :active-row-id="detail.visible ? detailRecord?.id : null"
       :search-matches="findHighlight.matches" :search-current-index="findHighlight.currentIndex"
@@ -442,15 +443,19 @@ import { FIELD_REGISTRY, filterOpsOf, OP_LABELS, OPTION_COLORS, sortDirectionLab
 import { anchoredDialogAttrs, useNonModalOutsideClose } from '../../smart/utils/anchorDialog.js'
 import { isRuleComplete, isCondValueEmpty, createUndoStack, formatDate } from '../../smart/utils/format.js'
 import { resolveRefOptions } from '../../smart/utils/refOptions.js'
+import { resolveEnumTags } from '../../smart/utils/enumTags.js'
+import { rowHeightPixels, wrappedTextWidth, wrappedTagWidth } from '../../smart/utils/autoColumnWidth.js'
 import { buildColumnLayout } from '../../smart/utils/columnLayout.js'
 import { waitForGridIdle } from '../../smart/utils/waitForGridIdle.js'
-import { reconcileRows } from '../../smart/utils/reconcileRows.js'
+import { mergeUpdatedRows, reconcileRows } from '../../smart/utils/reconcileRows.js'
+import { previewCells, rollbackCells } from '../../smart/utils/optimisticCells.js'
+import { canInsertLocally, insertViewRows } from '../../smart/utils/insertViewRows.js'
 import { presetFromFilters } from '../../smart/utils/newRowPreset.js'
 import {
   alterTable, getTable, listMembers, listTables, getUserDirectory,
   smartGrid, smartRelationRecords, smartRecordsRevision, smartListViews, smartCreateView, smartUpdateView, smartDeleteView,
   smartDuplicateView, smartSetDefaultView, smartPutViewPref, smartDeleteViewPref,
-  smartCreateRecord, smartInsertRecords, smartUpdateRecord, smartDeleteRecord, smartBatchDelete,
+  smartCreateRecord, smartInsertRecords, smartUpdateRecord, smartDeleteRecord, smartBatchDelete, smartBatchUpdate,
   smartDuplicateRecord, smartDuplicateField, smartFieldDeps, smartFieldStats,
   smartListColumnGroups, smartCreateColumnGroup, smartUpdateColumnGroup, smartDeleteColumnGroup,
   smartGetDoc, smartGetTree, smartDocMembers, smartCreateEntry, smartCreateWidget, smartAiRun, handleBillingError,
@@ -997,24 +1002,77 @@ function fieldAffectsView(field) {
     || aggregations.value[name] != null   // 汇总行/分组求和展示了该字段，编辑后数值会过期
 }
 
+async function onPasteCells(changes) {
+  const tid = tableId.value
+  const cells = changes.map(({ row, field, labels, value }) => ({ id: row.id, field: field.field_name,
+    ...(labels ? { labels } : { value }) }))
+  const old = changes.map(({ row, field }) => ({ id: row.id, field: field.field_name, value: row[field.field_name] ?? null }))
+  const preview = previewCells(rows.value, changes)
+  rows.value = preview.rows
+  ++loadRequestId
+  pendingCellWrites++
+  let result
+  try {
+    result = await smartBatchUpdate(tid, cells, true)
+    if (tid !== tableId.value) return
+    for (const [name, options] of Object.entries(result.fieldOptions || {})) {
+      const field = fields.value.find(f => f.field_name === name)
+      if (field) field.options = options
+    }
+    const records = new Map(result.records.map(row => [row.id, row]))
+    const appliedKeys = new Set(result.applied.map(cell => `${cell.id}:${cell.field}`))
+    rows.value = mergeUpdatedRows(rollbackCells(rows.value, preview.snapshots, appliedKeys), result.records)
+    const appliedOld = old.filter(cell => appliedKeys.has(`${cell.id}:${cell.field}`))
+    const saved = result.applied.map(cell => ({ id: cell.id, field: cell.field, value: records.get(cell.id)?.[cell.field] ?? null }))
+    if (saved.length) undoStack.push({ label: '粘贴单元格',
+      undo: async () => { await smartBatchUpdate(tid, appliedOld); await loadGrid(view.value?.id, { silent: true }) },
+      redo: async () => { await smartBatchUpdate(tid, saved); await loadGrid(view.value?.id, { silent: true }) },
+    })
+  } catch (error) {
+    if (tid === tableId.value) rows.value = rollbackCells(rows.value, preview.snapshots)
+    throw error
+  } finally {
+    pendingCellWrites--
+    scheduleRevisionPoll()
+  }
+  if (result.applied.length && changes.some(({ field }) => fieldAffectsView(field))) {
+    loadGrid(view.value?.id, { silent: true }).catch(() => ElMessage.error('已保存，视图更新失败，请刷新重试'))
+  }
+  return result
+}
+
 async function onCellCommit({ row, field, value }) {
   const old = row[field.field_name]
   if (sameCellValue(old, value)) return   // 未修改：不写库、不刷新
+  const tid = tableId.value, viewId = view.value?.id
   ++loadRequestId
   pendingCellWrites++
+  // 网格展示行与页面源数据独立：两者同时更新，后续填充不能拿旧源数据覆盖已输入值。
+  const preview = previewCells(rows.value, [{ row, field, value }])
+  rows.value = preview.rows
   row[field.field_name] = value   // 乐观更新
   try {
-    const r = await smartUpdateRecord(tableId.value, row.id, { data: { [field.field_name]: value } })
+    const r = await smartUpdateRecord(tid, row.id, { data: { [field.field_name]: value } })
+    if (tid !== tableId.value) return
+    rows.value = mergeUpdatedRows(rows.value, [r.record])
     Object.assign(row, r.record)
     undoStack.push({
       label: `编辑 ${field.label}`,
-      undo: async () => { await smartUpdateRecord(tableId.value, row.id, { data: { [field.field_name]: old } }); loadGrid(view.value?.id) },
-      redo: async () => { await smartUpdateRecord(tableId.value, row.id, { data: { [field.field_name]: value } }); loadGrid(view.value?.id) },
+      undo: async () => { await smartUpdateRecord(tid, row.id, { data: { [field.field_name]: old } }); await loadGrid(viewId, { silent: true }) },
+      redo: async () => { await smartUpdateRecord(tid, row.id, { data: { [field.field_name]: value } }); await loadGrid(viewId, { silent: true }) },
     })
     // 只在改动影响排序/筛选/分组/聚合结果时重查；否则乐观更新即可（公式/查找由 PATCH 响应带回）
-    if (field.field_type !== 'checkbox' && fieldAffectsView(field)) loadGrid(view.value?.id)
+    // 后台同步视图结果，复用未变化的行；单元格保存不显示整表加载遮罩。
+    if (field.field_type !== 'checkbox' && fieldAffectsView(field)) {
+      loadGrid(view.value?.id, { silent: true }).catch(() => {
+        ElMessage.error('已保存，视图更新失败，请刷新重试')
+      })
+    }
   } catch (e) {
-    row[field.field_name] = old
+    if (tid === tableId.value) {
+      rows.value = rollbackCells(rows.value, preview.snapshots)
+      if (sameCellValue(row[field.field_name], value)) row[field.field_name] = old
+    }
     ElMessage.error(e.message || '保存失败')
   } finally {
     pendingCellWrites--
@@ -1045,6 +1103,8 @@ async function onAddOption({ row, field, label }) {
 // 添加一行：按当前筛选条件预设初始值（让新记录能命中筛选而显示出来），groupPreset（组内「+」的分组值）优先；
 // 新记录按视图排序落位，翻到所在页并编辑它的第一个可见单元格
 async function addRow(groupPreset = {}) {
+  if (insertingRows.value || !perms.value.can_create) return
+  const tid = tableId.value, viewId = view.value?.id
   const preset = {
     ...presetFromFilters({
       conditions: panelConditions.value, conjunction: cfg.value.filters?.conjunction || 'and',
@@ -1052,15 +1112,25 @@ async function addRow(groupPreset = {}) {
     }),
     ...groupPreset,
   }
-  const r = await smartCreateRecord(tableId.value, { data: preset })
-  const newId = r.record.id
+  insertingRows.value = true
+  ++loadRequestId
+  pendingCellWrites++
+  let r
+  try {
+    r = await smartCreateRecord(tid, { data: preset })
+  } finally {
+    pendingCellWrites--
+    insertingRows.value = false
+    scheduleRevisionPoll()
+  }
+  if (tid !== tableId.value || viewId !== view.value?.id) return
+  let newId = r.record.id
   undoStack.push({
     label: '添加行',
-    undo: async () => { await smartDeleteRecord(tableId.value, newId); loadGrid(view.value?.id) },
-    redo: async () => { await smartCreateRecord(tableId.value, { data: preset }); loadGrid(view.value?.id) },
+    undo: async () => { await smartDeleteRecord(tid, newId); await loadGrid(viewId, { silent: true }) },
+    redo: async () => { const result = await smartCreateRecord(tid, { data: preset }); newId = result.record.id; await loadGrid(viewId, { silent: true }) },
   })
-  await loadGrid(view.value?.id, { focusId: newId })
-  const shown = await gridRef.value?.focusRecord?.(newId, null, { edit: true })
+  const shown = await applyInsertedRows([r.record], null, 'up', tid, viewId, newId)
   if (shown === false) ElMessage.info('已添加一行，但它不符合当前筛选条件，暂未显示')
   else ElMessage.success('已添加一行')
 }
@@ -1075,8 +1145,12 @@ function addRowInGroup(groupConds) {
 }
 
 async function batchDelete() {
-  await ElMessageBox.confirm(`删除选中的 ${selection.value.length} 条记录？`, '批量删除', { type: 'warning' })
-  const snapshot = selection.value.map(r => ({ ...r }))
+  return deleteSelectedRows(selection.value)
+}
+async function deleteSelectedRows(selectedRows) {
+  if (!perms.value.can_delete || !selectedRows?.length) return
+  const snapshot = [...new Map(selectedRows.map(r => [r.id, { ...r }])).values()]
+  await ElMessageBox.confirm(`删除选中的 ${snapshot.length} 条记录？`, '批量删除', { type: 'warning' })
   const ids = snapshot.map(r => r.id)
   await smartBatchDelete(tableId.value, ids)
   undoStack.push({
@@ -1094,6 +1168,7 @@ async function batchDelete() {
     redo: async () => { await smartBatchDelete(tableId.value, ids); loadGrid(view.value?.id) },
   })
   selection.value = []
+  gridRef.value?.clearSelection()
   ElMessage.success('已删除')
   loadGrid(view.value?.id)
 }
@@ -1110,9 +1185,10 @@ function onKeydown(e) {
 
 // ---------- 单元格右键菜单操作 ----------
 const ctx = reactive({ row: null, field: null })
-function onCellMenu({ row, field, cmd, count }) {
+function onCellMenu({ row, field, rows: rangeRows, cmd, count }) {
   Object.assign(ctx, { row, field })
-  onCtxAction(cmd, count).catch(e => {
+  const action = cmd === 'delete-rows' ? deleteSelectedRows(rangeRows) : onCtxAction(cmd, count)
+  action.catch(e => {
     if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '操作失败')
   })
 }
@@ -1128,8 +1204,7 @@ function openDetail(r) {
 // 详情面板 ⋯：生成记录副本 / 删除记录（删除后切到下一条，没有则收起）
 async function onDetailAction(cmd, rec) {
   if (cmd === 'duplicate') {
-    await smartDuplicateRecord(tableId.value, rec.id)
-    loadGrid(view.value?.id)
+    await duplicateRow(rec)
   } else if (cmd === 'delete') {
     await ElMessageBox.confirm('删除这条记录？', '删除', { type: 'warning' })
     const i = detailIdx.value
@@ -1142,26 +1217,69 @@ async function onDetailAction(cmd, rec) {
 }
 
 const insertingRows = ref(false)
+async function applyInsertedRows(records, anchorId, direction, tid, viewId, focusId = null) {
+  if (tid !== tableId.value || viewId !== view.value?.id) return
+  if (focusId != null) gridRef.value?.clearEditing()
+  const local = (anchorId != null || page.value === 1) && canInsertLocally(cfg.value, grouped.value, contentPerm.value.managed, viewType.value)
+    ? insertViewRows(rows.value, records || [], anchorId, direction, pageSize) : null
+  if (local) {
+    rows.value = local
+    total.value += records.length
+  }
+  // Sorting/filtering/grouping and summaries are authoritative on the server.
+  // Silent loading reconciles changed rows and retains the existing grid instance.
+  if (!local || (focusId != null && !local.some(row => row.id === focusId)) || Object.keys(cfg.value.aggregations || {}).length) {
+    await loadGrid(viewId, { silent: true, focusId })
+  }
+  if (focusId != null && tid === tableId.value && viewId === view.value?.id) {
+    return gridRef.value?.focusRecord?.(focusId, null, { edit: true })
+  }
+}
+async function duplicateRow(row) {
+  if (insertingRows.value || !perms.value.can_create) return
+  const tid = tableId.value, viewId = view.value?.id
+  insertingRows.value = true
+  ++loadRequestId
+  pendingCellWrites++
+  let result
+  try {
+    result = await smartDuplicateRecord(tid, row.id)
+  } finally {
+    pendingCellWrites--
+    insertingRows.value = false
+    scheduleRevisionPoll()
+  }
+  await applyInsertedRows([result.record], row.id, 'down', tid, viewId)
+}
 async function onCtxAction(cmd, count = 1) {
   const { row, field } = ctx
   if (cmd === 'expand') {
     openDetail(row)
   } else if (cmd === 'insert-up' || cmd === 'insert-down') {
     if (insertingRows.value || !perms.value.can_create) return
+    const tid = tableId.value, viewId = view.value?.id
     insertingRows.value = true
+    ++loadRequestId
+    pendingCellWrites++
+    let result
     try {
-      const result = await smartInsertRecords(tableId.value, row.id, {
-        direction: cmd === 'insert-up' ? 'up' : 'down', count, view_id: view.value?.id,
+      result = await smartInsertRecords(tid, row.id, {
+        direction: cmd === 'insert-up' ? 'up' : 'down', count, view_id: viewId,
         data: presetFromFilters({
           conditions: panelConditions.value, conjunction: cfg.value.filters?.conjunction || 'and',
           fields: resolvedFields.value, viewerId: me?.id ?? null, members: members.value, relationRows: relationRows.value,
         }),
       })
-      await loadGrid(view.value?.id, { focusId: result.ids[0] })
-      const shown = await gridRef.value?.focusRecord?.(result.ids[0])
-      if (shown === false) ElMessage.info(`已插入 ${result.ids.length} 行，但不符合当前筛选条件，暂未显示`)
-      else ElMessage.success(`已插入 ${result.ids.length} 行${cfg.value.sorts?.length ? '，当前视图仍按排序规则显示' : ''}`)
-    } finally { insertingRows.value = false }
+    } finally {
+      pendingCellWrites--
+      insertingRows.value = false
+      scheduleRevisionPoll()
+    }
+    const shown = await applyInsertedRows(result.records, row.id, cmd === 'insert-up' ? 'up' : 'down', tid, viewId, result.ids[0])
+    if (tid === tableId.value && viewId === view.value?.id) {
+      if (shown === false) ElMessage.info(`已插入 ${result.ids.length} 行，但在当前筛选或折叠分组中不可见`)
+      else ElMessage.success(`已插入 ${result.ids.length} 行`)
+    }
   } else if (cmd.startsWith('viz-')) {
     fieldMenu.field = field
     if (cmd === 'viz-more') await addMoreCharts()
@@ -1176,11 +1294,7 @@ async function onCtxAction(cmd, count = 1) {
     const c = { id: `c_${Date.now()}`, fieldId: field.field_name, operator: op, value: row[field.field_name] }
     onFiltersChange([...panelConditions.value, c])
   } else if (cmd === 'duplicate') {
-    await smartDuplicateRecord(tableId.value, row.id)
-    loadGrid(view.value?.id)
-  } else if (cmd === 'add-child') {
-    await smartCreateRecord(tableId.value, { data: {}, parent_id: row.id })
-    loadGrid(view.value?.id)
+    await duplicateRow(row)
   } else if (cmd === 'delete') {
     await ElMessageBox.confirm('删除这条记录？', '删除', { type: 'warning' })
     await smartDeleteRecord(tableId.value, row.id)
@@ -1871,28 +1985,56 @@ async function duplicateGroup(g) {
   loadGrid(view.value?.id)
 }
 
-// 自动调整列宽：按表头与内容文本宽度估算（canvas 测量，80–300px）；编组菜单与列头菜单共用
+// 自动调整列宽：结合当前行高估算文本换行和标签排布；各入口共用。
 function autoFitFields(names) {
   const ctx = document.createElement('canvas').getContext('2d')
-  ctx.font = '13px "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif'
+  const measured = new Map()
+  const measure = (text, size = 13) => {
+    const key = `${size}:${text}`
+    if (!measured.has(key)) {
+      ctx.font = `${size}px "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif`
+      measured.set(key, ctx.measureText(String(text)).width)
+    }
+    return measured.get(key)
+  }
+  const height = rowHeightPixels(cfg.value.rowHeight)
   const widths = { ...(cfg.value.colWidths || {}) }
   const sampleRows = dataRows.value.slice(0, 200)
-  const fieldsByName = new Map(fields.value.map(field => [field.field_name, field]))
+  const fieldsByName = new Map(resolvedFields.value.map(field => [field.field_name, field]))
   for (const fn of names) {
     const f = fieldsByName.get(fn)
     if (!f) continue
     const type = f.field_type === 'ai' ? f.options?.outputType : f.field_type
     if (type === 'checkbox') { widths[fn] = 80; continue }
     const isDate = ['date', 'createdTime', 'lastModifiedTime'].includes(type)
-    let w = ctx.measureText(f.label).width + 56   // 图标/排序标/▾/内边距
+    let w = measure(f.label) + 56   // 图标/排序标/▾/内边距
     // Also size empty date columns for their selected format; use double-digit month/day.
-    if (isDate) w = Math.max(w, 120, ctx.measureText(formatDate('2026-12-28T23:59:00', f.options || {})).width + 24)
+    if (isDate) w = Math.max(w, 120, measure(formatDate('2026-12-28T23:59:00', f.options || {})) + 24)
     for (const r of sampleRows) {
       const v = r[fn]
-      const text = v == null ? '' : isDate ? formatDate(v, f.options || {}) : (Array.isArray(v) ? v.join('、') : String(v))
-      w = Math.max(w, ctx.measureText(text).width + 24)
+      if (v == null || v === '') continue
+      const values = Array.isArray(v) ? v : [v]
+      let contentWidth
+      if (['singleSelect', 'multiSelect'].includes(type)) {
+        const tags = resolveEnumTags(f.options?.options, v)
+        contentWidth = wrappedTagWidth(tags.map(tag => measure(tag.label, 12) + (tags.length === 1 ? 16 : 12)), height)
+      } else if (type === 'member') {
+        contentWidth = wrappedTagWidth(values.map(id => measure(memberDir.value.get(Number(id))?.name || `#${id}`, 12) + 36), height)
+      } else if (type === 'relation') {
+        const labels = relationDir.value.get(f.options?.targetTableId)
+        contentWidth = wrappedTagWidth(values.map(id => measure(labels?.get(id) ?? labels?.get(Number(id)) ?? `#${id}`, 12) + 30), height)
+      } else if (type === 'file') {
+        contentWidth = wrappedTagWidth(values.map(file => measure(file.name || '文件', 12) + 34), height)
+      } else if (type === 'text' || type === 'url') {
+        contentWidth = wrappedTextWidth(type === 'url' ? (v.text || v.url || '') : v, height, measure)
+      } else {
+        const text = isDate ? formatDate(v, f.options || {}) : (Array.isArray(v) ? v.join('、') : String(v))
+        contentWidth = measure(text)
+      }
+      w = Math.max(w, contentWidth + 24)
     }
-    widths[fn] = Math.round(Math.min(Math.max(w, 80), 300))
+    const minWidth = type === 'progress' ? 180 : type === 'member' ? 120 : 80
+    widths[fn] = Math.round(Math.min(Math.max(w, minWidth), 300))
   }
   patchConfig({ colWidths: widths }, { reload: false })
   gridRef.value?.applyColumnWidths?.(Object.fromEntries(names.map(name => [name, widths[name]])))

@@ -66,6 +66,11 @@ const cur = props.record[props.field.field_name]
 const draft = ref(isMulti.value
   ? (Array.isArray(cur) ? [...cur] : (cur == null || cur === '' ? [] : [cur]))
   : (cur ?? null))
+// 保存响应、失败回滚也同步标签；展开中的多选仍保留尚未提交的草稿。
+watch(() => props.record[props.field.field_name], value => {
+  if (!isMulti.value) draft.value = value ?? null
+  else if (props.closed) draft.value = Array.isArray(value) ? [...value] : (value == null || value === '' ? [] : [value])
+}, { deep: true })
 
 // 可用选项：引用模式 + 启用联动时按当前行过滤（选项集本身已由 SmartTablePage 解析进 field.options.options）
 const baseOptions = computed(() => {
@@ -135,10 +140,10 @@ function removeOption(id) {
     draft.value = draft.value.filter(x => x !== id)
     // 选中态（面板未展开）：✕ 直接生效；展开态：只改草稿不关面板，关闭时统一提交
     if (props.closed) emit('commit', draft.value.length ? [...draft.value] : null)
-  } else if (props.closed) {
-    emit('commit', null)
   } else {
-    draft.value = null   // 展开态单选：✕ 只清空草稿，面板保持打开，关闭时按草稿提交
+    draft.value = null
+    // 标签立即消失并保存；展开时用软提交保留面板和当前选中状态。
+    emit(props.closed ? 'commit' : 'commit-soft', null)
   }
 }
 function create() {
@@ -165,7 +170,7 @@ function onEnter(event) {
 function close() {
   if (isMulti.value) emit('commit', draft.value.length ? [...draft.value] : null)
   // 展开态单选：✕ 清空过草稿（与当前值不同）则提交，否则视为取消
-  else if (!props.closed && draft.value !== cur) emit('commit', draft.value)
+  else if (!props.closed && draft.value !== (props.record[props.field.field_name] ?? null)) emit('commit', draft.value)
   else emit('cancel')
 }
 function onEsc() { close() }
@@ -261,7 +266,7 @@ onUnmounted(() => {
      单行内容垂直居中（与查看态一致不跳），多行溢出时自动回落顶对齐 */
   display: flex; align-items: center; gap: 4px; flex-wrap: wrap; align-content: safe center;
   width: 100%; min-height: 100%; box-sizing: border-box;
-  background: #fff; border: 2px solid var(--st-primary); border-radius: 2px;
+  background: #fff; border: 2px solid var(--st-primary); border-radius: 0;
   padding: 3px 26px 3px 6px;   /* 右侧 26px 给 ▼/▲ 留位 */
   position: relative; z-index: 2; align-self: flex-start;
   box-shadow: 0 4px 16px rgba(0, 0, 0, .12);

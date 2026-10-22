@@ -13,7 +13,7 @@ from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..models import ImageFile, MetaTable, User
+from ..models import ImageFile, MetaTable, MetaField, Record, User
 
 MAX_SIZE = 5 * 1024 * 1024          # 单张 5MB（前端已压缩，这里兜底）
 MAX_PER_UPLOAD = 5
@@ -97,10 +97,45 @@ def _tenant_of_image(db: Session, row: ImageFile) -> int | None:
     return None
 
 
+def _smart_references(db: Session) -> dict:
+    """以实际单元格为准；一个附件可以被多条记录/多个字段引用。"""
+    db.flush()
+    fields = {}
+    for tid, name in db.query(MetaField.table_id, MetaField.field_name).join(
+        MetaTable, MetaTable.id == MetaField.table_id
+    ).filter(MetaTable.storage_mode == "json", MetaField.field_type == "image"):
+        fields.setdefault(tid, []).append(name)
+    refs = {}
+    if fields:
+        for rec in db.query(Record).filter(Record.table_id.in_(fields)):
+            for name in fields[rec.table_id]:
+                for fid in (rec.data or {}).get(name) or []:
+                    if isinstance(fid, str):
+                        refs.setdefault(fid, (rec.table_id, rec.id, name))
+    return refs
+
+
+def sync_smart_images(db: Session) -> None:
+    """在调用方事务内同步归属；最后一个引用移除后保留 24 小时供撤销。"""
+    refs = _smart_references(db)
+    smart_tables = {tid for (tid,) in db.query(MetaTable.id).filter(MetaTable.storage_mode == "json")}
+    for row in db.query(ImageFile):
+        if row.id in refs:
+            row.table_id, row.record_id, row.field_name = refs[row.id]
+        elif row.table_id in smart_tables and row.record_id is not None:
+            # 保留表归属，供宽限期访问校验和清理时扣减正确租户的存储用量。
+            row.record_id = row.field_name = None
+            row.created_at = datetime.now()
+
+
 def _delete_rows(db: Session, rows: list[ImageFile]) -> int:
     from . import entitlement
     n = 0
+    refs = _smart_references(db)
     for row in rows:
+        if row.id in refs:
+            row.table_id, row.record_id, row.field_name = refs[row.id]
+            continue
         try:
             (images_dir() / row.id).unlink(missing_ok=True)
         except OSError:
@@ -142,6 +177,11 @@ def delete_field_images(db: Session, table_id: int, field_name: str) -> None:
 
 
 def delete_table_images(db: Session, table_id: int) -> None:
+    mt = db.get(MetaTable, table_id)
+    if mt and mt.storage_mode == "json":
+        # 调用方已移除记录；仅解绑，提交失败时文件仍然可用。
+        sync_smart_images(db)
+        return
     rows = db.query(ImageFile).filter_by(table_id=table_id).all()
     _delete_rows(db, rows)
 
@@ -176,12 +216,19 @@ def delete_note_images(db: Session, note_id: int) -> None:
 
 def cleanup_orphans(db: Session) -> int:
     """清理超期未关联记录/笔记的临时图片（上传后最终没保存进任何地方）。"""
+    # 先修复历史智能表归属，防止已使用的旧图片被当作孤儿删除。
+    sync_smart_images(db)
+    # 已删除的表也不能留下永久归属。
+    table_ids = {tid for (tid,) in db.query(MetaTable.id)}
+    for row in db.query(ImageFile).filter(ImageFile.table_id.isnot(None)):
+        if row.table_id not in table_ids:
+            row.table_id = row.record_id = row.field_name = None
+    db.flush()
     deadline = datetime.now() - timedelta(hours=ORPHAN_TTL_HOURS)
     rows = db.query(ImageFile).filter(
         ImageFile.record_id.is_(None), ImageFile.note_id.is_(None),
         ImageFile.created_at < deadline,
     ).all()
     n = _delete_rows(db, rows)
-    if n:
-        db.commit()
+    db.commit()
     return n

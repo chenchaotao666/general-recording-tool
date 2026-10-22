@@ -3,9 +3,9 @@
        统一契约：props {field, record}，emit commit(value) / cancel() -->
   <!-- 内联输入（数字/百分数/货币）：失焦/回车提交，Esc 取消 -->
   <el-input
-    v-if="editorKind === 'inline' && ft !== 'text'" ref="inputRef" v-model="draft" size="small" class="cell-editor"
+    v-if="editorKind === 'inline' && ft !== 'text'" ref="inputRef" v-model="draft" size="small" class="cell-editor numeric-input" :class="{ 'percent-input': ft === 'percent' }"
     @blur="commitInline" @keydown.enter="enterInline" @keydown.tab="tabInline" @keyup.esc="$emit('cancel')">
-    <template v-if="field.field_type === 'percent'" #suffix>%</template>
+    <template v-if="ft === 'percent'" #suffix><span class="numeric-suffix">%</span></template>
   </el-input>
 
   <!-- 文本：双击进入的浮层编辑（企微式）。边界=单元格（边框与选中态同款 2px 主色），
@@ -41,16 +41,18 @@
     @change="commit" @visible-change="(vis) => !vis && $emit('cancel')" />
   </div>
 
-  <PeoplePicker v-else-if="editorKind === 'member'" ref="selectRef" :model-value="draft" class="cell-editor"
+  <PeoplePicker v-else-if="editorKind === 'member'" ref="selectRef" :model-value="draft" class="cell-editor" grid-cell
     :multiple="cfg.multiple !== false" :people="memberList" :initial-query="initialInput" :advance-on-enter="advanceOnEnter" @advance="direction => $emit('advance', direction)" @confirm="v => $emit('commit', v)"
     @cancel="$emit('cancel')" @people-loaded="rememberPeople" />
 
   <LinkCellPanel v-else-if="editorKind === 'url'" ref="selectRef" :value="draft || null" selected :advance-on-enter="advanceOnEnter" @advance="direction => $emit('advance', direction)"
     @commit="v => $emit('commit', v)" @cancel="$emit('cancel')" @collapse="$emit('cancel')" />
 
-  <!-- 进度：双击后输入原始数值，单击拖动由网格选中态负责。 -->
-  <el-input v-else-if="editorKind === 'progress'" ref="inputRef" v-model="draft" size="small" class="cell-editor progress-input"
-            inputmode="decimal" @blur="commitInline" @keydown.enter="enterInline" @keydown.tab="tabInline" @keydown.esc="discard" />
+  <!-- 进度：百分比格式输入百分数，保存时换算回原始范围值。 -->
+  <el-input v-else-if="editorKind === 'progress'" ref="inputRef" v-model="draft" size="small" class="cell-editor numeric-input progress-input" :class="{ 'percent-input': progressPercent }"
+            inputmode="decimal" @blur="commitInline" @keydown.enter="enterInline" @keydown.tab="tabInline" @keydown.esc="discard">
+    <template v-if="progressPercent" #suffix><span class="numeric-suffix">%</span></template>
+  </el-input>
 
   <ImageCellPanel v-else-if="ft === 'image'" ref="selectRef" :value="draft" @commit="v => { draft = v; $emit('commit-soft', v) }" @cancel="$emit('cancel')" @collapse="$emit('collapse')" />
   <FileCellPanel v-else-if="ft === 'file'" ref="selectRef" :value="Array.isArray(draft) ? draft : []" selected
@@ -105,6 +107,9 @@ const NoIcon = { render: () => h('span') }   // 去掉日期框前置日历图�
 const ft = computed(() => props.field.field_type || 'text')
 const editorKind = computed(() => regOf(props.field).editor)
 const isMulti = computed(() => ft.value === 'multiSelect')
+const progressPercent = computed(() => ft.value === 'progress' && cfg.value.numberFormat === 'percent')
+const progressMin = computed(() => Number(cfg.value.range?.min ?? 0))
+const progressMax = computed(() => Math.max(progressMin.value + 1, Number(cfg.value.range?.max ?? 100)))
 const blockedText = computed(() => ({
   formula: '公式计算结果不可直接编辑', lookup: '查找引用内容不可直接编辑',
   createdBy: '创建人字段不可直接编辑', lastModifiedBy: '最后编辑人字段不可直接编辑',
@@ -118,6 +123,9 @@ const draft = ref(
     // 多选兜底包成数组（单选改多选后存量值仍是标量 id）
     : isMulti.value ? (cur == null || cur === '' ? [] : [cur])
     : (cur ?? ''))
+if (progressPercent.value && cur != null && cur !== '') {
+  draft.value = +(((Number(cur) - progressMin.value) / (progressMax.value - progressMin.value)) * 100).toFixed(10)
+}
 
 
 watch(() => props.initialInput, value => {
@@ -132,6 +140,7 @@ const selfInst = getCurrentInstance()   // 必须在 setup 顶层捕获，回调
 const anchorRef = ref(null)
 const taRef = ref(null)
 const overlayRect = ref(null)
+const textFont = ref({})
 const overlayStyle = computed(() => {
   const r = overlayRect.value
   if (!r) return {}
@@ -139,15 +148,14 @@ const overlayStyle = computed(() => {
   return {
     left: `${r.left}px`, top: `${r.top}px`,
     width: `${r.width}px`, minHeight: `${r.height}px`,
+    ...textFont.value,
   }
 })
-// 文字排版与查看态逐像素对齐。实测查看态文字 top 偏移 = max(6, (H-26)/2)
-// （52/76/100 按公式，36px 默认行高因 vxe 取整多 1px——硬公式会让文字上移 1px 被感知为抖动）；
-// 浮层 2px 边框吞掉的 2px 从 padding-top 里扣回，padBottom 补齐使单行 scrollHeight 恰等于内容盒高。
+// 与查看态的首行行框对齐；扣除浮层的 2px 边框后计算输入框内边距。
 const taStyle = computed(() => {
   const r = overlayRect.value
-  // 查看态文字顶部偏移：默认行高 6（垂直居中实测）；行高变大时内容顶对齐（上内边距 7 - 光学上移 2，22px 行高）→ 3
-  const viewTop = (r?.height || 36) > 36 ? 4 : 6
+  // 默认行高居中时行框偏移 6px；高行顶对齐时为上内边距 7px - 光学上移 2px。
+  const viewTop = (r?.height || 36) > 36 ? 5 : 6
   const padTop = Math.max(0, viewTop - 2)
   // 底部留白封顶 6px：内容盒最小高度由 autoGrow 的 min（= 单元格高）兜住；若按行高补齐底部留白，
   // 行高变大时多行文本会把浮层撑出单元格（内容明明放得下，参照 PixPin_2026-10-17_16-53-48）
@@ -197,6 +205,11 @@ onMounted(async () => {
   if (anchorRef.value) {
     const td = anchorRef.value.closest('td') || anchorRef.value.parentElement
     overlayRect.value = td?.getBoundingClientRect() || null
+    // 浮层挂到 body 后不再继承表格字体，显式保留宿主字体，避免字形和基线跳动。
+    if (td) {
+      const style = getComputedStyle(td)
+      textFont.value = { fontFamily: style.fontFamily, color: style.color }
+    }
     // 表格滚动时浮层跟随单元格；单元格滚出可视区（或被表头/统计行遮住）时隐藏
     document.addEventListener('scroll', onAnyScroll, true)
     window.addEventListener('resize', onAnyScroll)
@@ -287,7 +300,8 @@ function commitInline(advance = false) {
     else v = Number(v)
     if (ft.value === 'progress' && v != null) {
       if (!Number.isFinite(v)) { ElMessage.warning('请输入有效数字'); return }
-      v = Math.min(Number(cfg.value.range?.max ?? 100), Math.max(Number(cfg.value.range?.min ?? 0), v))
+      if (progressPercent.value) v = progressMin.value + v / 100 * (progressMax.value - progressMin.value)
+      v = Math.min(progressMax.value, Math.max(progressMin.value, v))
     }
   }
   discarded = true
@@ -339,9 +353,18 @@ onBeforeUnmount(() => {
 .cell-date-wrap { width: 100%; height: 100%; }
 .cell-editor { width: 100%; height: 100%; }
 .relation-editor :deep(.el-select__caret) { width: 24px; height: 24px; transform: none; }
-.progress-input :deep(.el-input__inner) { text-align: right; font-size: 13px; }
+.progress-input :deep(.el-input__inner) { font-variant-numeric: tabular-nums; }
 /* 编辑态边框统一由 SmartGrid 画在 .vxe-cell 上，wrapper 自身不再描边（避免 EP content-box 高 2px 被裁） */
 .cell-editor :deep(.el-input__wrapper) { height: 100%; box-shadow: none; }
+/* 数值编辑与查看态共用字号和右侧留白，避免 small 输入框默认左对齐、12px 字号造成跳动。 */
+.numeric-input :deep(.el-input__wrapper) { padding: 0 8px; }
+.numeric-input :deep(.el-input__inner) {
+  text-align: right; font-size: 13px; font-family: inherit;
+  color: var(--el-text-color-primary); transform: translateY(-2px);
+}
+.numeric-input :deep(.el-input__suffix) { font-size: 13px; font-family: inherit; color: var(--el-text-color-primary); transform: translateY(-1px); }
+.numeric-suffix { line-height: 22px; color: var(--st-text-3, #8f959e); }
+.numeric-input :deep(.el-input__suffix-inner > :first-child) { margin-left: 0; }
 .cell-anchor { display: block; width: 100%; height: 100%; }
 /* 文本浮层编辑（teleport 到 body）：边框与选中态同款 2px 主色，边界起于单元格 */
 .cell-overlay {

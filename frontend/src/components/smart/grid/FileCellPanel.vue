@@ -1,10 +1,9 @@
 <template>
   <span class="file-cell-anchor" @mousedown.stop @click.stop @dblclick.stop>
     <div ref="anchor" class="file-cell-trigger" :class="{ selected }" @click="toggle('pick')">
-      <span class="file-cell-chips">
-        <button v-for="(file, index) in shownFiles" :key="keyOf(file)" class="file-cell-chip" :data-smart-tip="file.name" data-smart-tip-overflow=".file-chip-name" @click.stop="clickFile(index)"><FileTypeIcon :file="file" /><span class="file-chip-name">{{ file.name || '文件' }}</span></button>
-        <span v-if="!selected && files.length > 1" class="file-cell-more">+{{ files.length - 1 }}</span>
-      </span>
+      <CompactCellTags class="file-compact-tags" :tags="fileTags" :expanded="selected" @tag-click="(_, event) => { event.stopPropagation(); clickFile() }">
+        <template #tag="{ tag }"><FileTypeIcon :file="tag.file" /><span class="file-chip-name">{{ tag.label }}</span></template>
+      </CompactCellTags>
       <CellDropdown v-if="!readonly" class="file-cell-arrow" overlay :bordered="selected" :visible="selected || opened" :open="opened" label="展开或收起文件面板" @click="toggle('pick')" />
     </div>
     <el-popover v-if="opened" :visible="opened" virtual-triggering :virtual-ref="anchor" placement="bottom-end" :width="mode === 'pick' ? 280 : 400" :show-arrow="false" popper-class="file-cell-pop" :persistent="false">
@@ -51,6 +50,7 @@ import { smartUploadFile, smartRecentFiles } from '../../../api/index.js'
 import { fileKind, fileSize, fileUrl } from './fileDisplay.js'
 import FileTypeIcon from './FileTypeIcon.vue'
 import CellDropdown from './CellDropdown.vue'
+import CompactCellTags from './CompactCellTags.vue'
 const props = defineProps({ value: Array, selected: Boolean, readonly: Boolean, upload: { type: Function, default: smartUploadFile }, loadRecent: { type: Function, default: smartRecentFiles } })
 const emit = defineEmits(['select', 'open', 'collapse', 'cancel', 'commit'])
 const tableId = inject('smartTableId', { value: null })
@@ -58,7 +58,7 @@ const files = ref([]), recent = ref([]), opened = ref(false), mode = ref('pick')
 const anchor = ref(null), panel = ref(null), search = ref(null), fileInput = ref(null)
 const keyOf = file => file.id || file.url || file.name
 watch(() => props.value, value => { files.value = [...(value || [])] }, { immediate: true })
-const shownFiles = computed(() => props.selected ? files.value : files.value.slice(0, 1))
+const fileTags = computed(() => files.value.map(file => ({ key: keyOf(file), file, label: file.name || '文件', style: { background: '#f2f3f5' } })))
 const filteredRecent = computed(() => [...new Map([...files.value, ...recent.value].map(f => [keyOf(f), f])).values()].filter(f => (f.name || '').toLowerCase().includes(query.value.trim().toLowerCase())))
 const link = computed(() => {
   try { const url = new URL(query.value.trim()); if (!['http:', 'https:'].includes(url.protocol)) return null; return { url: url.href, name: decodeURIComponent(url.pathname.split('/').pop() || url.hostname) } } catch { return null }
@@ -122,15 +122,8 @@ useGridScrollCollapse(() => opened.value, () => {
 button { font: inherit; color: inherit; cursor: pointer; }
 .file-cell-anchor { display: block; width: 100%; }
 .file-cell-trigger { position: relative; cursor: default; min-height: 28px; }
-.file-cell-trigger:not(.selected) .file-cell-chip { cursor: default; }
-.file-cell-trigger.selected { cursor: pointer; }
-.file-cell-trigger.selected { box-sizing: border-box; min-height: var(--file-row-height, 36px); border: 2px solid var(--st-primary, #3370ff); background: white; padding: 3px 6px; border-radius: 2px; }
-.file-cell-chips { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.file-cell-trigger.selected .file-cell-chips { flex-direction: column; align-items: flex-start; padding-right: 22px; }
-.file-cell-chip { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; border: 0; border-radius: 3px; background: #f2f3f5; padding: 2px 4px; font-size: 12px; }
-.file-cell-chip > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-cell-chip:hover { background: #e9ebee; }
-.file-cell-more { flex: none; border-radius: 3px; background: #f2f3f5; padding: 2px 4px; font-size: 12px; }
+.file-cell-trigger.selected { cursor: pointer; box-sizing: border-box; min-height: var(--file-row-height, 36px); border: 2px solid var(--st-primary, #3370ff); background: white; padding: 4px 26px 4px 6px; border-radius: 0; z-index: 2; box-shadow: 0 4px 16px #0000001f; }
+.file-compact-tags .file-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-panel { font-size: 13px; color: #30343b; outline: none; }
 .file-search { width: 100%; box-sizing: border-box; height: 44px; padding: 0 16px; border: 0; border-bottom: 1px solid #eceef0; border-radius: 8px 8px 0 0; outline: none; font: inherit; }
 .file-search::placeholder { color: #a0a5ae; }

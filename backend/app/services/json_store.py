@@ -219,6 +219,9 @@ def create_record(db: Session, mt: MetaTable, fields: list[MetaField], data: dic
                  owner_id=owner, parent_id=parent_id, updated_by=owner, updated_by_type=actor_type,
                  data=serialize_data(cleaned), created_at=now, updated_at=now)
     db.add(rec)
+    if any(f.field_type == "image" for f in fields):
+        from .images import sync_smart_images
+        sync_smart_images(db)
     db.commit() if commit else db.flush()
     db.refresh(rec)
     _post_insert_formulas(db, mt, fields, rec, commit=commit)
@@ -253,7 +256,8 @@ def insert_records(db: Session, mt: MetaTable, fields: list[MetaField], anchor: 
 
 def update_record(db: Session, mt: MetaTable, fields: list[MetaField], record_id: int, data: dict,
                   user: str | None = None, editor_id: int | None = None,
-                  actor_type: str = "user", allow_fields: set[str] | None = None) -> dict:
+                  actor_type: str = "user", allow_fields: set[str] | None = None,
+                  commit: bool = True, preserve_editor: bool = False) -> dict:
     """allow_fields：额外放行的只读字段（AI 字段由 AI 服务回写，普通提交一律拦截）。"""
     rec = db.execute(
         select(Record).where(Record.table_id == mt.id, Record.id == record_id)
@@ -277,14 +281,19 @@ def update_record(db: Session, mt: MetaTable, fields: list[MetaField], record_id
     merged.update(serialize_data(cleaned))
     rec.data = merged
     rec.updated_at = datetime.now()
-    if editor_id is not None:
-        rec.updated_by = editor_id
-    rec.updated_by_type = actor_type
-    db.commit()
+    if not preserve_editor:
+        if editor_id is not None:
+            rec.updated_by = editor_id
+        rec.updated_by_type = actor_type
+    if any(f.field_type == "image" and f.field_name in cleaned
+           and before.get(f.field_name) != cleaned[f.field_name] for f in fields):
+        from .images import sync_smart_images
+        sync_smart_images(db)
+    db.commit() if commit else db.flush()
     after = _row_to_client(rec, fbn)
     dyn_engine.log_audit(db, "update", mt.id, record_id, before=before, after=after, user=user,
                          tenant_id=mt.tenant_id)
-    db.commit()
+    db.commit() if commit else db.flush()
     return after
 
 
@@ -297,6 +306,8 @@ def delete_record(db: Session, table_id: int, record_id: int, fields: list[MetaF
     before = _row_to_client(rec, {f.field_name: f for f in (fields or [])})
     tenant_id = rec.tenant_id
     db.delete(rec)
+    from .images import sync_smart_images
+    sync_smart_images(db)
     db.commit()
     dyn_engine.log_audit(db, "delete", table_id, record_id, before=before, user=user,
                          tenant_id=tenant_id)
@@ -319,5 +330,7 @@ def bulk_insert(db: Session, table_id: int, items: list[dict]) -> None:
         for item in items
     ]
     db.add_all(rows)
+    from .images import sync_smart_images
+    sync_smart_images(db)
     entitlement.bump_usage(db, mt.tenant_id, "row_count", len(rows))
     db.commit()

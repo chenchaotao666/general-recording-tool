@@ -1,7 +1,7 @@
 """智能表 AI 字段（设计文档 §10）+ AI 生成公式 / AI 匹配标签（§18 V3）。
 
 场景 = 提示词模板 + 输入字段 + 输出类型；AI 字段值落 records.data（与普通字段同存储），
-单元格状态（生成中/失败）落 smart_ai_runs；回写的记录「最后编辑人」= AI 生成（updated_by_type=ai）。
+单元格状态（生成中/失败）落 smart_ai_runs；手动生成标记「AI 生成」，自动重算保留记录原操作人。
 
 执行：单线程后台队列（smart_events.submit），触发 = 新增行 / 输入字段变更（config.autoUpdate）/ 手动刷新。
 配额：套餐权益 smart_ai_calls_monthly（缺省=不限），按租户自然月计调用大模型的单元格次数。
@@ -261,7 +261,7 @@ def _run_row(db: Session, table_id: int, fn: str, rid: int) -> SmartAiRun:
     return row
 
 
-def process(db: Session, table_id: int, field_name: str, record_ids: list[int]) -> None:
+def process(db: Session, table_id: int, field_name: str, record_ids: list[int], preserve_editor: bool = False) -> None:
     mt = db.get(MetaTable, table_id)
     if not mt:
         return
@@ -292,7 +292,7 @@ def process(db: Session, table_id: int, field_name: str, record_ids: list[int]) 
             if before.get(field_name) != value:
                 after = json_store.update_record(db, mt, get_meta_fields(db, table_id), rid, {field_name: value},
                                                  user="AI", editor_id=None, actor_type="ai",
-                                                 allow_fields={field_name})
+                                                 allow_fields={field_name}, preserve_editor=preserve_editor)
                 smart_events.record_updated(db, mt, before, after, [field_name], actor_type="ai")
             run = _run_row(db, table_id, field_name, rid)
             run.status, run.billable, run.tokens_used = "ok", billable, tokens
@@ -305,14 +305,14 @@ def process(db: Session, table_id: int, field_name: str, record_ids: list[int]) 
             db.commit()
 
 
-def enqueue(db: Session, table_id: int, field_name: str, record_ids: list[int]) -> int:
+def enqueue(db: Session, table_id: int, field_name: str, record_ids: list[int], preserve_editor: bool = False) -> int:
     ids = list(dict.fromkeys(int(x) for x in record_ids))[:MAX_BATCH]
     for rid in ids:
         run = _run_row(db, table_id, field_name, rid)
         run.status, run.error = "pending", None
     db.commit()
     if ids:
-        smart_events.submit(process, table_id, field_name, ids)
+        smart_events.submit(process, table_id, field_name, ids, preserve_editor=preserve_editor)
     return len(ids)
 
 
@@ -336,7 +336,9 @@ def handle_event(db: Session, event: dict) -> None:
             ids = [r.id for r in db.query(Record.id).filter_by(table_id=event["table_id"]).all()]
         else:
             ids = [event["record_id"]]
-        enqueue(db, event["table_id"], f.field_name, ids)
+        # Derived updates must not replace the author of the user's edit/copy/paste.
+        # Explicit AI generation uses enqueue's default and still records an AI author.
+        enqueue(db, event["table_id"], f.field_name, ids, preserve_editor=True)
 
 
 def attach_status(db: Session, table_id: int, fields: list, rows: list[dict]) -> None:

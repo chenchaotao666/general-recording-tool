@@ -6,6 +6,20 @@ import ProgressCell from '../src/components/smart/grid/ProgressCell.vue'
 import SmartCellEditor from '../src/components/smart/grid/SmartCellEditor.vue'
 import { progressColor } from '../src/smart/registry/fieldRegistry.js'
 
+test('selecting empty progress starts at the left endpoint without saving a value', async () => {
+  for (const value of [null, undefined, '']) {
+    const wrapper = mount(ProgressCell, { props: { value } })
+    await wrapper.setProps({ interactive: true })
+    expect(wrapper.find('input').element.value).toBe('0')
+    expect(wrapper.find('.progress-fill').element.style.width).toBe('0%')
+    expect(wrapper.find('.progress-number').text()).toBe('')
+    expect(wrapper.emitted('commit')).toBeUndefined()
+    await wrapper.setProps({ config: { range: { min: 20, max: 100 } } })
+    expect(wrapper.find('input').element.value).toBe('20')
+    wrapper.unmount()
+  }
+})
+
 test('progress schemes select one solid color using the configured range', async () => {
   expect(progressColor('s-red-green', 0.49)).toBe('#F5554A')
   expect(progressColor('s-red-green', 0.5)).toBe('#3DC15E')
@@ -52,12 +66,12 @@ test('double-click progress editor accepts numbers, clamps range and supports cl
   const wrapper = make(35)
   expect(wrapper.find('input').element.value).toBe('35')
   await wrapper.find('input').setValue('120')
-  await wrapper.find('input').trigger('keyup', { key: 'Enter' })
+  await wrapper.find('input').trigger('keydown', { key: 'Enter' })
   expect(wrapper.emitted('commit')[0]).toEqual([100])
   wrapper.unmount()
   const blank = make(null)
   expect(blank.find('input').element.value).toBe('')
-  await blank.find('input').trigger('keyup', { key: 'Enter' })
+  await blank.find('input').trigger('keydown', { key: 'Enter' })
   expect(blank.emitted('commit')[0]).toEqual([null])
   blank.unmount()
   const cancelled = make(35)
@@ -67,4 +81,16 @@ test('double-click progress editor accepts numbers, clamps range and supports cl
   expect(cancelled.emitted('commit')).toBeUndefined()
   expect(cancelled.emitted('cancel')).toHaveLength(1)
   cancelled.unmount()
+})
+
+test('percentage progress edits the displayed percentage and converts back to the configured range', async () => {
+  const wrapper = mount(SmartCellEditor, { attachTo: document.body,
+    props: { field: { field_name: 'p', field_type: 'progress', options: { numberFormat: 'percent', range: { min: 20, max: 60 } } }, record: { p: 40 } },
+    global: { plugins: [ElementPlus] } })
+  expect(wrapper.find('input').element.value).toBe('50')
+  expect(wrapper.find('.numeric-suffix').text()).toBe('%')
+  await wrapper.find('input').setValue('75')
+  await wrapper.find('input').trigger('keydown', { key: 'Enter' })
+  expect(wrapper.emitted('commit')).toEqual([[50]])
+  wrapper.unmount()
 })
