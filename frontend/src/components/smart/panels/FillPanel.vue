@@ -6,7 +6,7 @@
     <template #reference><slot /></template>
     <div class="flp">
       <div class="flp-head"><span class="tbp-title">填色</span></div>
-      <div v-for="(r, i) in draft" :key="r.id" class="flp-row" :class="dropClass(i)"
+      <div v-for="(r, i) in draft" :key="r.id" v-reorder-feedback="dropClass(i)" class="flp-row" :class="dropClass(i)"
            @dragover.prevent="overIdx = i" @drop.prevent="dropRow(i)">
         <span class="tbp-drag st-icon-action" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = null"><StIcon name="drag" :size="15" /></span>
         <TbFieldSelect :model-value="r.fieldId" :fields="fields" placeholder="字段" class="flp-field"
@@ -41,6 +41,7 @@
 </template>
 
 <script setup>
+import { vReorderFeedback } from '../../../smart/utils/reorderFeedback.js'
 import { computed, ref, watch } from 'vue'
 import ConditionValue from './ConditionValue.vue'
 import TbFieldSelect from './TbFieldSelect.vue'
@@ -119,8 +120,6 @@ watch(paletteIdx, (v) => {
 .flp { display: flex; flex-direction: column; gap: 6px; }
 .flp-head { margin-bottom: 6px; }
 .flp-row { display: flex; align-items: center; gap: 10px; border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
-.flp-row.drop-before { border-top-color: var(--st-primary); }
-.flp-row.drop-after { border-bottom-color: var(--st-primary); }
 .flp-field { width: 180px; flex: none; }
 .flp-target { flex: 1; min-width: 0; }
 .flp-op { width: 112px; flex: none; }
@@ -132,10 +131,10 @@ watch(paletteIdx, (v) => {
 .flp-val :deep(.el-date-editor.el-input), .flp-val :deep(.el-date-editor),
 .flp-val :deep(.el-input-number), .flp-val :deep(.val-editor), .flp-val :deep(.el-input) { width: 100% !important; min-width: 0; }
 .flp-val :deep(.enum-val) { width: 100%; box-sizing: border-box; }
-.flp-target :deep(.el-select__wrapper), .flp-op :deep(.el-select__wrapper) { min-height: 36px; border-radius: 6px; font-size: 14px; }
+.flp-target :deep(.el-select__wrapper), .flp-op :deep(.el-select__wrapper) { min-height: 36px; border-radius: 6px; font-size: var(--st-font-size); }
 .flp-val :deep(.el-input__wrapper), .flp-val :deep(.el-select__wrapper) { min-height: 36px; }
 .flp-val :deep(.enum-val) { min-height: 36px; }
-.flp-arrow { color: var(--st-text-2); flex: none; font-size: 15px; }
+.flp-arrow { color: var(--st-text-2); flex: none; font-size: var(--st-font-size); }
 .flp-color { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px 0 5px;
              border: 1px solid var(--st-border); border-radius: 6px; cursor: pointer; flex: none; background: #fff; }
 .flp-color:hover, .flp-color.open { border-color: #C9CCD1; }
@@ -147,6 +146,6 @@ watch(paletteIdx, (v) => {
 .flp-cell { width: 24px; height: 24px; border-radius: 3px; cursor: pointer; box-sizing: border-box; }
 .flp-cell.on { box-shadow: 0 0 0 1px #fff inset, 0 0 0 2px var(--st-primary); }
 .flp-cell:hover { transform: scale(1.08); }
-.flp-whole { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 14px; color: var(--st-text-2); cursor: pointer; }
-.flp-add { margin-left: 27px; }
+.flp-whole { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
+.flp-add { margin-left: 0; align-self: flex-start; }
 </style>

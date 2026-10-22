@@ -24,9 +24,24 @@ const box = ref(), ghost = ref(), layout = ref(null)
 const displayedRows = computed(() => layout.value || [props.tags.map((_, index) => ({ index }))])
 const hiddenCount = computed(() => Math.max(0, props.tags.length - displayedRows.value.flat().length))
 const layoutQueue = inject('smartGridLayoutQueue', null) || createGridLayoutQueue()
-let stopObserving, revision = 0
+const tagSignature = computed(() => JSON.stringify(props.tags))
+let stopObserving, revision = 0, knownWidth = 0
+function cacheKey(width) {
+  return JSON.stringify([tagSignature.value, width, availableHeight.value, props.stacked, props.expanded])
+}
+function restoreLayout(width) {
+  const cached = width > 0 && layoutQueue.getTagLayout(cacheKey(width))
+  if (!cached) return false
+  revision++
+  layout.value = cached
+  layoutQueue.cancel(measure)
+  return true
+}
 async function measure() {
   if (layoutQueue.paused) { layoutQueue.enqueue(measure); return }
+  if (!box.value) return
+  knownWidth = box.value.clientWidth
+  if (!knownWidth || restoreLayout(knownWidth)) return
   const current = ++revision
   layout.value = null
   await nextTick()
@@ -34,8 +49,10 @@ async function measure() {
   if (layoutQueue.paused) { layoutQueue.enqueue(measure); return }
   const tags = [...box.value.querySelectorAll('.compact-tag')]
   if (!box.value.clientWidth) return
-  layout.value = fitTagRows(tags.map(tag => tag.getBoundingClientRect().width), box.value.clientWidth, props.expanded ? Math.max(24, tags.length * 28) : availableHeight.value,
+  knownWidth = box.value.clientWidth
+  layout.value = fitTagRows(tags.map(tag => tag.getBoundingClientRect().width), knownWidth, props.expanded ? Math.max(24, tags.length * 28) : availableHeight.value,
     { stacked: props.stacked, badgeWidth: ghost.value?.offsetWidth || 28 })
+  layoutQueue.setTagLayout(cacheKey(knownWidth), layout.value)
 }
 function scheduleMeasure() {
   if (props.tags.length <= 1) {
@@ -45,7 +62,11 @@ function scheduleMeasure() {
     stopObserving?.(); stopObserving = null
     return
   }
-  if (!stopObserving && box.value) stopObserving = layoutQueue.observeWidth(box.value, scheduleMeasure)
+  if (!stopObserving && box.value) stopObserving = layoutQueue.observeWidth(box.value, width => {
+    knownWidth = Math.round(width)
+    scheduleMeasure()
+  })
+  if (restoreLayout(knownWidth)) return
   layoutQueue.enqueue(measure)
 }
 onMounted(scheduleMeasure)
@@ -56,10 +77,10 @@ onBeforeUnmount(() => { revision++; layoutQueue.cancel(measure); stopObserving?.
 <style scoped>
 .compact-cell-tags { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; overflow: hidden; width: 100%; min-width: 0; }
 .compact-row { display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0; height: 24px; flex: none; }
-.compact-tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 4px; box-sizing: border-box; height: 24px; line-height: 22px; border-radius: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; max-width: 100%; flex: none; }
+.compact-tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 4px; box-sizing: border-box; height: 24px; line-height: 22px; border-radius: 4px; font-size: var(--st-font-size); white-space: nowrap; overflow: hidden; max-width: 100%; flex: none; }
 .compact-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.compact-avatar { width: 20px; height: 20px; font-size: 12px; }
+.compact-avatar { width: 20px; height: 20px; font-size: var(--st-font-size); }
 .compact-tag.raw { background: var(--el-fill-color-light); color: var(--el-text-color-regular); border: 1px dashed var(--el-border-color); }
-.compact-more { flex: none; color: var(--el-text-color-secondary); font-size: 12px; white-space: nowrap; }
+.compact-more { flex: none; color: var(--el-text-color-secondary); font-size: var(--st-font-size); white-space: nowrap; }
 .compact-ghost { position: absolute; visibility: hidden; pointer-events: none; }
 </style>

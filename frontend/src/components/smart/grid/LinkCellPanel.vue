@@ -80,15 +80,15 @@ useGridScrollCollapse(() => opened.value, () => {
 .link-cell-anchor { display: block; width: 100%; height: 100%; }
 .link-cell-trigger { position: relative; display: flex; align-items: center; height: 100%; min-height: 28px; cursor: default; }
 .link-cell-anchor.selected .link-cell-trigger { cursor: pointer; }
-.link-cell-text { color: #3370ff; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; cursor: default; font-size: 13px; line-height: 22px; }
+.link-cell-text { color: var(--st-primary); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; cursor: default; font-size: var(--st-font-size); line-height: 22px; }
 .link-cell-anchor.selected .link-cell-text { cursor: pointer; }
 .link-cell-anchor.selected .link-cell-text:hover { text-decoration: underline; }
 .link-cell-panel { padding: 26px; }
 .link-edit-row { display: flex; align-items: center; gap: 18px; margin-bottom: 18px; }
-.link-edit-row > span { width: 70px; flex: none; font-size: 14px; color: #30343b; }
+.link-edit-row > span { width: 70px; flex: none; font-size: var(--st-font-size); color: var(--st-text-2); }
 .link-edit-row :deep(.el-input__wrapper) { min-height: 36px; border-radius: 6px; }
 .link-edit-actions { display: flex; justify-content: flex-end; gap: 16px; margin-top: 22px; }
 .link-edit-actions .el-button { width: 100px; height: 36px; margin: 0; border-radius: 6px; }
-.link-edit-actions .el-button:not(.el-button--primary) { background: #f2f3f5; border-color: #f2f3f5; color: #30343b; }
-.link-edit-error { color: #e45b5b; font-size: 12px; padding-left: 88px; }
+.link-edit-actions .el-button:not(.el-button--primary) { background: #f2f3f5; border-color: #f2f3f5; color: var(--st-text-2); }
+.link-edit-error { color: #e45b5b; font-size: var(--st-font-size); padding-left: 88px; }
 </style>

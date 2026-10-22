@@ -139,8 +139,8 @@ function save() {
 .type-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .type-item { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 8px 4px; text-align: center; cursor: pointer; }
 .type-item.active { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
-.t-icon { font-size: 20px; }
-.t-name { font-size: 12px; margin-top: 2px; }
+.t-icon { font-size: var(--st-font-size); }
+.t-name { font-size: var(--st-font-size); margin-top: 2px; }
 .metric-row { display: flex; gap: 8px; }
 .cfg-right { flex: 1; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 8px; }
 .preview { width: 100%; height: 360px; }

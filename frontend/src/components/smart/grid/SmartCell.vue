@@ -13,7 +13,7 @@
     <ProgressCell v-else-if="ft === 'progress'" :value="value" :config="cfg" />
     <!-- 人员：头像+姓名 -->
     <template v-else-if="ft === 'member'">
-      <CompactCellTags :tags="members.map(m => ({ key: m.id, label: m.name, person: m, style: { background: '#f0f1f3', color: '#646a73' } }))" />
+      <CompactCellTags :expanded="expandMembers" :tags="members.map(m => ({ key: m.id, label: m.name, person: m, style: { background: '#f0f1f3', color: '#646a73' } }))" />
     </template>
     <!-- 系统人员字段 -->
     <template v-else-if="ft === 'createdBy' || ft === 'lastModifiedBy'">
@@ -71,6 +71,7 @@ import { imageUrl } from '../../../api/index.js'
 import { formatCurrency, formatDate, formatNumber } from '../../../smart/utils/format.js'
 
 const props = defineProps({
+  expandMembers: Boolean,
   field: { type: Object, required: true },
   record: { type: Object, required: true },
   fillColor: { type: String, default: null },     // 填色规则命中色
@@ -148,7 +149,7 @@ const lookupValues = computed(() => {
 </script>
 
 <style scoped>
-.smart-cell { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow: hidden; white-space: nowrap; font-size: 13px; min-height: 20px; width: 100%; }
+.smart-cell { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow: hidden; white-space: nowrap; font-size: var(--st-font-size); min-height: 20px; width: 100%; }
 /* 纯文本单行省略号（flex 容器里的文本节点吃不到 ellipsis，须包一层） */
 .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lookup-value { width: auto; flex: 0 1 auto; min-width: 0; }
@@ -157,9 +158,9 @@ const lookupValues = computed(() => {
    单个标签超宽时自身省略号截断；有徽标时标签再让出徽标位 */
 .enum-box { position: relative; display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow: hidden; max-height: 22px; width: 100%; }
 .enum-box.has-more .opt-tag { max-width: calc(100% - 32px); }
-.enum-more { flex: none; color: var(--el-text-color-secondary); font-size: 12px; white-space: nowrap; }
+.enum-more { flex: none; color: var(--el-text-color-secondary); font-size: var(--st-font-size); white-space: nowrap; }
 .enum-ghost { position: absolute; visibility: hidden; pointer-events: none; }
-.opt-tag { padding: 1px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; flex: none; }
+.opt-tag { padding: 1px 8px; border-radius: 4px; font-size: var(--st-font-size); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; flex: none; }
 .opt-tag.raw { background: var(--el-fill-color-light); color: var(--el-text-color-regular); border: 1px dashed var(--el-border-color); }
 .member-chip { display: inline-flex; align-items: center; gap: 4px; }
 /* 方形圆角头像（对齐参照 单元格输入-人员.png） */
@@ -168,16 +169,16 @@ const lookupValues = computed(() => {
 .link-ico { flex: none; }
 .imgs { display: flex; gap: 4px; }
 .thumb { width: 28px; height: 28px; border-radius: 4px; }
-.more { font-size: 12px; color: var(--el-text-color-secondary); }
+.more { font-size: var(--st-font-size); color: var(--el-text-color-secondary); }
 .file-chip { text-decoration: none; color: inherit; }
-.file-chip, .rel-chip { background: var(--el-fill-color-light); border-radius: 4px; padding: 1px 6px; font-size: 12px; white-space: nowrap; }
+.file-chip, .rel-chip { background: var(--el-fill-color-light); border-radius: 4px; padding: 1px 6px; font-size: var(--st-font-size); white-space: nowrap; }
 .smart-cell.cell-checkbox { justify-content: center; }
 .checkbox { width: 18px; height: 18px; flex: none; border: 1px solid var(--el-border-color); border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; }
 .checkbox.checked { background: var(--st-success); border-color: var(--st-success); }
 .cell-currency, .cell-number, .cell-percent, .cell-progress { justify-content: flex-end; }
 /* AI 字段状态 */
 /* AI 生成中（参照 AI-分类-使用后选择-单元格内容生成中.png）：灰字 + 流光扫过 */
-.ai-state { display: inline-block; font-size: 13px; color: transparent; white-space: nowrap;
+.ai-state { display: inline-block; font-size: var(--st-font-size); color: transparent; white-space: nowrap;
             background: linear-gradient(90deg, #B5B9C0 0%, #B5B9C0 35%, #E6E8EB 50%, #B5B9C0 65%, #B5B9C0 100%);
             background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; animation: ai-shine 1.6s linear infinite; }
 .ai-state.err { color: var(--el-color-danger); background: none; animation: none; cursor: help; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }

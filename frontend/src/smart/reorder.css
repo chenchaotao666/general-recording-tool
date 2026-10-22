@@ -1,0 +1,53 @@
+/* Compact reorder feedback; forms retain their original placeholder. */
+:root {
+  --st-reorder-background: #DCEBFC;
+  --st-reorder-radius: 4px;
+  --st-reorder-opacity: .4;
+}
+.st-reorder-source { opacity: var(--st-reorder-opacity); }
+.st-reorder-placeholder, .fv-drop-placeholder {
+  flex: none; box-sizing: border-box; min-height: 32px;
+  border: 1px solid var(--st-primary); border-radius: var(--st-reorder-radius);
+  background: var(--st-reorder-background);
+}
+.st-reorder-placeholder { margin: 4px 0; }
+[data-st-reorder].st-reorder-into {
+  outline: 1px solid var(--st-primary); outline-offset: -1px;
+  border-radius: var(--st-reorder-radius); background: var(--st-reorder-background);
+}
+/* An inset line and endpoint remain visible even inside scroll containers.
+   Pseudo-elements never intercept drops or change the row's dimensions. */
+[data-st-reorder]:is(.st-reorder-before, .st-reorder-after) { position: relative; }
+[data-st-reorder]:is(.st-reorder-before, .st-reorder-after)::before {
+  content: ''; position: absolute; z-index: 2; pointer-events: none;
+  left: 4px; right: 2px; height: 2px; border-radius: 2px;
+  background: var(--st-primary);
+}
+[data-st-reorder]:is(.st-reorder-before, .st-reorder-after)::after {
+  content: ''; position: absolute; z-index: 2; pointer-events: none;
+  left: 1px; width: 6px; height: 6px; box-sizing: border-box;
+  border: 2px solid var(--st-primary); border-radius: 50%; background: white;
+}
+[data-st-reorder].st-reorder-before::before { top: 2px; }
+[data-st-reorder].st-reorder-before::after { top: 0; }
+[data-st-reorder].st-reorder-after::before { bottom: 2px; }
+[data-st-reorder].st-reorder-after::after { bottom: 0; }
+[data-st-reorder].st-reorder-horizontal::before {
+  top: 4px; bottom: 2px; width: 2px; height: auto; right: auto;
+}
+[data-st-reorder].st-reorder-horizontal::after { top: 0; bottom: auto; }
+[data-st-reorder].st-reorder-horizontal.st-reorder-before::before { left: 2px; }
+[data-st-reorder].st-reorder-horizontal.st-reorder-before::after { left: 0; }
+[data-st-reorder].st-reorder-horizontal.st-reorder-after::before { left: auto; right: 2px; }
+[data-st-reorder].st-reorder-horizontal.st-reorder-after::after { left: auto; right: 0; }
+/* Disable the previous tree-specific indicator in favour of the shared one. */
+[data-st-reorder]:is(.dnd-before, .dnd-after) {
+  border-top-color: transparent !important; border-bottom-color: transparent !important;
+  box-shadow: none !important;
+}
+:is(.st-page, .st-fcd, .st-tbpanel, .afe) [draggable="true"] { cursor: grab; }
+:is(.st-page, .st-fcd, .st-tbpanel, .afe) [draggable="true"]:active { cursor: grabbing; }
+:is(.fv-drag, .fv-opt-drag, .tbp-drag, .fcd-drag, .afe-drag, .ts-drag) {
+  color: var(--st-text-2); cursor: grab;
+}
+:is(.fv-drag, .fv-opt-drag, .tbp-drag, .fcd-drag, .afe-drag, .ts-drag) .st-icon { width: 14px; height: 14px; }

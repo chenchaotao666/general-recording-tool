@@ -122,7 +122,7 @@ function pick(v, label) { emit('pick', v, label) }
 
 <style scoped>
 .vm { position: fixed; z-index: 4000; background: #fff; border-radius: 10px; box-shadow: var(--st-shadow-pop); padding: 6px; min-width: 220px; }
-.vm-item { position: relative; display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 6px; cursor: pointer; font-size: 14px; color: var(--st-text-1); white-space: nowrap; }
+.vm-item { position: relative; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 6px; cursor: pointer; font-size: var(--st-font-size); color: var(--st-text-2); white-space: nowrap;  height: var(--st-list-item-height); box-sizing: border-box; }
 .vm-item:hover { background: var(--st-bg-hover); }
 .vm-item .st-icon { color: var(--st-text-2); }
 .vm-i { color: var(--st-text-3) !important; }
@@ -131,7 +131,7 @@ function pick(v, label) { emit('pick', v, label) }
 .vm-sub-fields { width: 324px; padding: 10px 8px; }
 .vm-sub-fields :deep(.fpl) { width: 100%; }
 .vm-sub-fields :deep(.fpl-list) { max-height: min(260px, calc(100vh - 80px)) !important; }
-.vm-empty { padding: 9px 14px; font-size: 13px; color: var(--st-text-4); }
+.vm-empty { padding: 9px 14px; font-size: var(--st-font-size); color: var(--st-text-4); }
 .vm.vm-inline { position: relative; z-index: auto; box-shadow: none; border-radius: 0; min-width: 0; border-top: 1px solid var(--st-border); }
 .vm-inline .vm-sub { left: auto; right: calc(100% + 4px); z-index: 1; }
 </style>

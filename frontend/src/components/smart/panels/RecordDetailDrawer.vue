@@ -82,9 +82,9 @@ function toggle(id) {
 .nav { display: flex; gap: 8px; margin-bottom: 8px; }
 .d-row { display: flex; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--st-border); }
 .d-row.member { padding-left: 22px; border-left: 1px solid var(--st-border); margin-left: 6px; }
-.d-group { display: flex; align-items: center; gap: 6px; padding: 8px 0 4px; cursor: pointer; font-weight: 600; font-size: 13px; color: var(--st-text-1); }
+.d-group { display: flex; align-items: center; gap: 6px; padding: 8px 0 4px; cursor: pointer; font-weight: 600; font-size: var(--st-font-size); color: var(--st-text-1); }
 .dg-caret { color: var(--st-text-3); }
-.d-label { width: 180px; flex: none; color: var(--st-text-2); font-size: 13px; display: flex; gap: 6px; align-items: center; }
+.d-label { width: 180px; flex: none; color: var(--st-text-2); font-size: var(--st-font-size); display: flex; gap: 6px; align-items: center; }
 .d-icon { color: var(--st-text-2); flex: none; }
 .d-value { flex: 1; min-width: 0; }
 </style>

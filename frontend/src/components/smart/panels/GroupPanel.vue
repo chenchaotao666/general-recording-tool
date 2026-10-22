@@ -5,7 +5,7 @@
     <template #reference><slot /></template>
     <div class="gp">
       <div class="gp-head"><span class="tbp-title">分组</span></div>
-      <div v-for="(g, i) in draft" :key="g._k" class="gp-row" :class="dropClass(i)"
+      <div v-for="(g, i) in draft" :key="g._k" v-reorder-feedback="dropClass(i)" class="gp-row" :class="dropClass(i)"
            @dragover.prevent="overIdx = i" @drop.prevent="dropRow(i)">
         <span class="tbp-drag st-icon-action" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = null"><StIcon name="drag" :size="15" /></span>
         <TbFieldSelect :model-value="g.fieldId" :fields="fields" placeholder="选择分组字段" class="gp-field"
@@ -21,6 +21,7 @@
 </template>
 
 <script setup>
+import { vReorderFeedback } from '../../../smart/utils/reorderFeedback.js'
 import { computed, ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 import TbFieldSelect from './TbFieldSelect.vue'
@@ -67,8 +68,6 @@ function dropRow(i) {
 .gp { display: flex; flex-direction: column; gap: 6px; }
 .gp-head { margin-bottom: 6px; }
 .gp-row { display: flex; align-items: center; gap: 12px; border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
-.gp-row.drop-before { border-top-color: var(--st-primary); }
-.gp-row.drop-after { border-bottom-color: var(--st-primary); }
 .gp-field { flex: 1; min-width: 0; }
-.gp-add-wrap { margin-left: 27px; align-self: flex-start; display: inline-flex; }
+.gp-add-wrap { margin-left: 0; align-self: flex-start; display: inline-flex; }
 </style>

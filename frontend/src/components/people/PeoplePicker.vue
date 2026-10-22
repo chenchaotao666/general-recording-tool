@@ -3,7 +3,7 @@
     <el-popover :visible="opened && !contacts" placement="bottom-start" :width="300" :show-arrow="false" popper-class="people-picker-pop" :persistent="false">
       <template #reference><div ref="trigger" class="people-trigger" :class="{ 'grid-people-trigger': gridCell }" @click="opened ? finish() : focus()">
         <div v-if="gridCell" class="people-cell-tags"><span v-for="p in selectedPeople" :key="p.id" class="people-cell-tag"><PersonAvatar :person="p" /><span class="people-cell-name">{{ p.name }}</span><button class="people-cell-remove" aria-label="移除人员" @click.stop="removePerson(p.id)">×</button></span></div>
-        <span v-else>{{ selectedNames }}</span><CellDropdown overlay :flush="!gridCell" :bordered="gridCell" :open="opened && !contacts" label="选择人员" @click="opened ? finish() : focus()" /></div></template>
+        <span v-else>{{ selectedNames }}</span><CellDropdown overlay :top="gridCell" :flush="!gridCell" :bordered="gridCell" :open="opened && !contacts" label="选择人员" @click="opened ? finish() : focus()" /></div></template>
       <div ref="panel" @mousedown.stop @click.stop @keydown.esc.stop.prevent="cancel">
         <div class="people-search"><el-input ref="search" v-model="query" placeholder="搜索成员" clearable aria-label="搜索成员" @keydown.enter="onEnter" @keydown.tab="onEnter" /></div>
         <div class="people-heading">企业成员</div>
@@ -11,7 +11,7 @@
           <div v-if="loading" class="people-empty">加载中…</div>
           <div v-else-if="error" class="people-empty">{{ error }} <button @click="load">重试</button></div>
           <template v-else>
-            <button v-for="p in filtered" :key="p.id" class="people-option" :class="{ selected: chosen.includes(p.id) }" :aria-pressed="chosen.includes(p.id)" @click="pick(p)"><PersonAvatar :person="p" /><span>{{ p.name }}</span><el-icon v-if="chosen.includes(p.id)"><Check /></el-icon></button>
+            <SmartListItem tag="button" type="button" v-for="p in filtered" :key="p.id" class="people-option" :selected="chosen.includes(p.id)" :aria-pressed="chosen.includes(p.id)" @click="pick(p)"><PersonAvatar :person="p" /><span>{{ p.name }}</span><el-icon v-if="chosen.includes(p.id)"><Check /></el-icon></SmartListItem>
             <div v-if="!filtered.length" class="people-empty">{{ query ? '无匹配成员' : '暂无企业成员' }}</div>
           </template>
         </div>
@@ -22,6 +22,7 @@
   </span>
 </template>
 <script setup>
+import SmartListItem from '../smart/common/SmartListItem.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Check } from '@element-plus/icons-vue'
 import CellDropdown from '../smart/grid/CellDropdown.vue'
@@ -76,7 +77,11 @@ function confirmContacts(value, people) { chosen.value = selectedIds(value); con
 function outside(e) { if (opened.value && !contacts.value && !trigger.value?.contains(e.target) && !panel.value?.contains(e.target)) finish() }
 onMounted(() => document.addEventListener('mousedown', outside, true))
 onBeforeUnmount(() => document.removeEventListener('mousedown', outside, true))
-defineExpose({ focus })
+function collapse() {
+  contacts.value = false
+  if (opened.value) finish()
+}
+defineExpose({ focus, collapse })
 </script>
 <style>
 .el-popper.people-picker-pop { padding: 0; border: 1px solid #dedfe3; border-radius: 8px; box-shadow: 0 4px 16px #0002; max-width: calc(100vw - 24px); }
@@ -85,13 +90,13 @@ defineExpose({ focus })
 .people-picker { display: block; width: 100%; }
 button { font: inherit; color: inherit; cursor: pointer; }
 .people-trigger { position: relative; width: 100%; height: 100%; min-height: 28px; box-sizing: border-box; display: flex; align-items: center; border: 0; background: transparent; padding: 0 8px; color: #7f8590; }
-.people-trigger > span:not(.cell-dropdown) { flex: 1; text-align: left; color: #30343b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people-trigger > span:not(.cell-dropdown) { flex: 1; text-align: left; color: var(--st-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grid-people-trigger { height: auto; min-height: 100%; align-items: flex-start; padding: 4px 26px 4px 6px; border: 2px solid var(--st-primary); background: white; box-shadow: 0 4px 16px #0000001f; }
-.people-cell-tags { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; width: 100%; container: people-tags / inline-size; }
-.people-cell-tag { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; box-sizing: border-box; padding: 1px 8px 1px 4px; line-height: 22px; font-size: 12px; border-radius: 4px; background: #f0f1f3; color: #646a73; }
-.people-cell-tag .person-avatar { width: 20px; height: 20px; font-size: 12px; }
+.people-cell-tags { display: flex; flex-flow: row wrap; align-items: flex-start; gap: 4px; min-width: 0; width: 100%; container: people-tags / inline-size; }
+.people-cell-tag { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; max-width: 100%; box-sizing: border-box; padding: 1px 8px 1px 4px; line-height: 22px; font-size: var(--st-font-size); border-radius: 4px; background: #f0f1f3; color: var(--st-text-2); }
+.people-cell-tag .person-avatar { width: 20px; height: 20px; font-size: var(--st-font-size); }
 .people-cell-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.people-cell-remove { flex: none; border: 0; border-radius: 4px; background: transparent; color: #9298a1; cursor: pointer; padding: 0 4px; font-size: 16px; }
+.people-cell-remove { flex: none; border: 0; border-radius: 4px; background: transparent; color: #9298a1; cursor: pointer; padding: 0 4px; font-size: var(--st-font-size); }
 /* 极窄列优先保留省略文本与完整删除按钮，头像不挤占操作区。 */
 @container people-tags (max-width: 64px) {
   .people-cell-tag { padding-left: 4px; padding-right: 4px; }
@@ -100,13 +105,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .people-search { padding: 12px 16px; border-bottom: 1px solid #edeef0; }
 .people-search :deep(.el-input__wrapper) { box-shadow: none; padding: 0; }
-.people-heading { padding: 12px 18px 6px; color: #969da8; font-size: 13px; }
+.people-heading { padding: 12px 18px 6px; color: var(--st-text-2); font-size: var(--st-font-size); }
 .people-options { max-height: 240px; overflow-y: auto; padding: 0 6px 8px; }
-.people-option { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; border-radius: 6px; padding: 8px 12px; text-align: left; }
+.people-option { display: flex; align-items: center;  width: 100%; border: 0; background: transparent;  padding: 0 8px; text-align: left; }
 .people-option span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .people-option:hover { background: #f1f2f4; }
-.people-option.selected { background: #eaf1ff; }
 .people-directory { display: block; width: 100%; padding: 14px 18px; text-align: left; background: transparent; border: 0; border-top: 1px solid #edeef0; border-radius: 0 0 8px 8px; }
 .people-directory:hover { background: #f1f2f4; }
-.people-empty { padding: 12px; color: #959ca7; font-size: 13px; }
+.people-empty { padding: 12px; color: var(--st-text-2); font-size: var(--st-font-size); }
 </style>

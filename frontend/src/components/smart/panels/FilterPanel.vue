@@ -235,10 +235,10 @@ function onMore(cmd) {
 
 <style>
 /* 工具栏面板通用外观（筛选/分组/排序/填色/表格设置/行高）：大圆角 + 柔和阴影 + 粗标题 */
-.st-tbpanel.el-popover.el-popper { padding: 22px 24px 20px; border-radius: 12px; border: none; box-shadow: 0 8px 32px rgba(0, 0, 0, .12); }
-.st-tbpanel .tbp-title { font-size: 17px; font-weight: 700; color: var(--st-text-1); }
+.st-tbpanel.el-popover.el-popper { padding: 20px; border-radius: 12px; border: none; box-shadow: 0 8px 32px rgba(0, 0, 0, .12); }
+.st-tbpanel .tbp-title { font-size: var(--st-font-size-title); font-weight: 700; color: var(--st-text-1); }
 .st-tbpanel .tbp-add { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border: none; border-radius: 6px;
-  background: #F2F3F5; color: var(--st-text-1); font-size: 14px; cursor: pointer; align-self: flex-start; }
+  background: #F2F3F5; color: var(--st-text-2); font-size: var(--st-font-size); cursor: pointer; align-self: flex-start; }
 .st-tbpanel .tbp-add:hover:not(:disabled) { background: #E8E9EB; }
 .st-tbpanel .tbp-add:disabled { color: var(--st-text-4); cursor: not-allowed; }
 .st-tbpanel .tbp-drag { color: var(--st-text-3); cursor: grab; display: inline-flex; flex: none; }
@@ -248,8 +248,8 @@ function onMore(cmd) {
 /* 运算符下拉：15px 文字、宽行、当前项 ✓ 在右（参照 PixPin_2026-10-18_00-48-13） */
 .fp-op-pop.el-dropdown__popper { border-radius: 10px; }
 .fp-op-pop .el-dropdown-menu { padding: 6px; border-radius: 10px; }
-.fp-op-pop .el-dropdown-menu__item { min-width: 190px; padding: 0 12px; height: 40px; border-radius: 6px; font-size: 15px; color: var(--st-text-1); }
-.fp-op-pop .el-dropdown-menu__item:not(.is-disabled):hover { background: var(--st-bg-hover); color: var(--st-text-1); }
+.fp-op-pop .el-dropdown-menu__item { min-width: 190px; padding: 0 12px; height: 40px; border-radius: 6px; font-size: var(--st-font-size); color: var(--st-text-2); }
+.fp-op-pop .el-dropdown-menu__item:not(.is-disabled):hover { background: var(--st-bg-hover); color: var(--st-text-2); }
 .fp-op-pop .fp-op-item { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 16px; }
 .fp-op-pop .fp-op-ck { color: var(--st-primary); }
 </style>
@@ -262,39 +262,39 @@ function onMore(cmd) {
   margin-right: -10px; padding-right: 10px; }
 .fp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
 .fp-scope { display: inline-flex; align-items: center; background: #E6EEFC; border-radius: 18px; padding: 0 6px 0 4px; height: 34px; }
-.fp-scope-item { padding: 0 10px; font-size: 14px; color: var(--st-text-2); cursor: pointer; line-height: 34px; }
+.fp-scope-item { padding: 0 10px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; line-height: 34px; }
 .fp-scope-item.on { color: var(--st-primary); }
 .fp-scope-more { display: inline-flex; color: var(--st-primary); padding: 4px; cursor: pointer; }
-.fp-conj { font-size: 14px; color: var(--st-text-2); display: flex; align-items: center; gap: 4px; }
-.fp-link { color: var(--st-primary); cursor: pointer; display: inline-flex; align-items: center; gap: 2px; font-size: 14px; }
+.fp-conj { font-size: var(--st-font-size); color: var(--st-text-2); display: flex; align-items: center; gap: 4px; }
+.fp-link { color: var(--st-primary); cursor: pointer; display: inline-flex; align-items: center; gap: 2px; font-size: var(--st-font-size); }
 /* 条件卡片（参照 PixPin_2026-10-18_00-27-29 取色）：卡片与内框同为 #FAFBFB 底、#EDEFEF 细边，内框四周缩进 6px */
 .fp-card { border: 1px solid #EDEFEF; border-radius: 8px; background: #FAFBFB; }
 .fp-card-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 14px 20px; cursor: pointer; }
-.fp-field { display: inline-flex; align-items: center; gap: 6px; font-size: 16px; color: var(--st-text-1); cursor: pointer; }
+.fp-field { display: inline-flex; align-items: center; gap: 6px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
 .fp-field.static { flex: none; max-width: 50%; min-width: 0; }
 .fp-field-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fp-caret { color: var(--st-text-2); }
-.fp-sum { flex: 1; min-width: 0; font-size: 13px; color: var(--st-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fp-sum { flex: 1; min-width: 0; font-size: var(--st-font-size); color: var(--st-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fp-acts { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .fp-act { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 4px;
   color: var(--st-text-2); cursor: pointer; }
-.fp-act:hover { color: var(--st-text-1); background: #EDEFEF; }
-.fp-act.on { color: var(--st-text-1); background: #E2E3E4; }   /* 已固定到工具栏：灰底方块 */
+.fp-act:hover { color: var(--st-text-2); background: #EDEFEF; }
+.fp-act.on { color: var(--st-text-2); background: #E2E3E4; }   /* 已固定到工具栏：灰底方块 */
 .fp-vsep { width: 1px; height: 14px; background: #DCDEE0; }
 .fp-card-body { margin: 0 6px 6px; background: #FAFBFB; border: 1px solid #EDEFEF; border-radius: 8px; padding: 14px 16px 16px;
   display: flex; flex-direction: column; gap: 12px; }
-.fp-op { color: #6B6F74; font-size: 15px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px; border-radius: 4px; }
+.fp-op { color: var(--st-text-2); font-size: var(--st-font-size); cursor: pointer; display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px; border-radius: 4px; }
 .fp-op:hover, .fp-op.open { background: #E2E3E4; }
 /* 条件值输入：白底 #DADBDD 细边、38px 高、15px 字（参照稿日期框） */
 .fp-val :deep(.el-input__wrapper), .fp-val :deep(.el-select__wrapper) {
   background: #fff; box-shadow: 0 0 0 1px #DADBDD inset; min-height: 38px; border-radius: 6px; }
 .fp-val :deep(.el-input__wrapper.is-focus), .fp-val :deep(.el-select__wrapper.is-focused) { box-shadow: 0 0 0 1px var(--st-primary) inset; }
-.fp-val :deep(.el-input__inner), .fp-val :deep(.el-select__selected-item), .fp-val :deep(.el-select__placeholder) { font-size: 15px; }
-.fp-val :deep(.el-select__selected-item:not(.is-transparent)) { color: var(--st-text-1); }
+.fp-val :deep(.el-input__inner), .fp-val :deep(.el-select__selected-item), .fp-val :deep(.el-select__placeholder) { font-size: var(--st-font-size); }
+.fp-val :deep(.el-select__selected-item:not(.is-transparent)) { color: var(--st-text-2); }
 .fp-val :deep(.el-date-editor), .fp-val :deep(.el-input-number) { height: 38px; }
 .fp-val :deep(.enum-val) { background: #fff; }
 .fp-list { border-top: 1px solid #E8EAEB; padding-top: 12px; display: flex; flex-direction: column; gap: 4px; }
 .fp-clear { cursor: pointer; color: var(--st-text-2); }
 .fp-clear.dim { color: var(--st-text-4); cursor: default; }
-.fp-empty { color: var(--st-text-4); font-size: 13px; padding: 4px 0; }
+.fp-empty { color: var(--st-text-4); font-size: var(--st-font-size); padding: 4px 0; }
 </style>

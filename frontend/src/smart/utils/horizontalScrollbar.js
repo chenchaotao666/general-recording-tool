@@ -26,9 +26,21 @@ function installScrollbar(handle, axis, { onStart, onEnd } = {}) {
   track.setAttribute('aria-orientation', axis)
   track.setAttribute('aria-valuemin', '0')
   let max = 0, travel = 0, thumbSize = 0, drag = null
+  let frame = 0, pending = null, lastTransform = '', lastValue = ''
   function sync() {
-    thumb.style.transform = `translate${vertical ? 'Y' : 'X'}(${max ? handle[position] / max * travel : 0}px)`
-    track.setAttribute('aria-valuenow', String(Math.round(handle[position])))
+    const current = handle[position]
+    const transform = `translate${vertical ? 'Y' : 'X'}(${max ? current / max * travel : 0}px)`
+    const value = String(Math.round(current))
+    if (transform !== lastTransform) { thumb.style.transform = transform; lastTransform = transform }
+    if (value !== lastValue) { track.setAttribute('aria-valuenow', value); lastValue = value }
+  }
+  function flush() {
+    frame = 0
+    if (pending == null) return
+    const next = pending
+    pending = null
+    if (handle[position] !== next) handle[position] = next
+    sync()
   }
   function resize() {
     const width = handle[clientSize]
@@ -58,11 +70,13 @@ function installScrollbar(handle, axis, { onStart, onEnd } = {}) {
     if (!drag || event.pointerId !== drag.id) return
     event.preventDefault()
     // Movement perpendicular to the scrollbar never cancels the gesture.
-    handle[position] = Math.max(0, Math.min(max, drag.left + (event[coordinate] - drag.x) * drag.scale))
-    sync()
+    pending = Math.max(0, Math.min(max, drag.left + (event[coordinate] - drag.x) * drag.scale))
+    if (!frame) frame = requestAnimationFrame(flush)
   }
   function end(event) {
     if (!drag || (event?.pointerId != null && event.pointerId !== drag.id)) return
+    cancelAnimationFrame(frame)
+    flush()
     const id = drag.id
     drag = null
     if (track.hasPointerCapture(id)) track.releasePointerCapture(id)

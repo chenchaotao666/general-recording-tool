@@ -8,7 +8,7 @@
           <div class="relation-preview" @mousedown.stop><strong @click="showDetail(id)">{{ label(id) }} <button class="relation-icon" aria-label="展开记录">↗</button></strong><div v-for="f in previewFields" :key="f.id"><label>{{ f.label }}</label><SmartCell :field="f" :record="records.get(id) || {}" /></div></div>
         </el-popover>
       </div>
-      <CellDropdown v-if="selected" overlay bordered :open="opened" label="关联记录" @click="toggle" />
+      <CellDropdown v-if="selected" overlay bordered top :open="opened" label="关联记录" @click="toggle" />
     </div>
     <el-popover v-if="opened" :visible="opened" virtual-triggering :virtual-ref="anchor" placement="bottom-start" :width="420" :show-arrow="false" popper-class="relation-pop">
       <div ref="panel" class="relation-panel" @mousedown.stop @click.stop>
@@ -136,12 +136,12 @@ useGridScrollCollapse(() => opened.value, () => {
 <style scoped>
 .relation-anchor, .relation-trigger { width: 100%; height: auto; min-width: 0; min-height: 0; }
 .relation-trigger { position: relative; display: flex; align-items: center; cursor: default; }
-.relation-trigger.selected { height: auto; min-height: var(--file-row-height, 36px); box-sizing: border-box; background: white; border: 2px solid var(--st-primary, #3370ff); border-radius: 0; padding: 3px 26px 3px 6px; z-index: 2; align-self: flex-start; box-shadow: 0 4px 16px #0000001f; cursor: pointer; }
+.relation-trigger.selected { height: auto; min-height: var(--file-row-height, 36px); box-sizing: border-box; background: white; border: 2px solid var(--st-primary, #267EF0); border-radius: 0; padding: 3px 26px 3px 6px; z-index: 2; align-self: flex-start; box-shadow: 0 4px 16px #0000001f; cursor: pointer; }
 .relation-chips { display: flex; flex-wrap: wrap; align-items: center; align-content: safe center; gap: 4px; width: 100%; min-width: 0; box-sizing: border-box; container: relation-tags / inline-size; }
-.relation-chip { display: inline-flex; align-items: center; max-width: 100%; box-sizing: border-box; background: #f0f1f3; color: #646a73; border-radius: 4px; padding: 1px 8px; margin: 0; line-height: 22px; font-size: 12px; gap: 4px; }
+.relation-chip { display: inline-flex; align-items: center; max-width: 100%; box-sizing: border-box; background: #f0f1f3; color: var(--st-text-2); border-radius: 4px; padding: 1px 8px; margin: 0; line-height: 22px; font-size: var(--st-font-size); gap: 4px; }
 .relation-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .relation-symbol { color: #969ca5; flex: none; }
-.relation-icon { flex: none; border: 0; border-radius: 4px; background: transparent; color: #9298a1; cursor: pointer; padding: 0 4px; font-size: 16px; }
+.relation-icon { flex: none; border: 0; border-radius: 4px; background: transparent; color: #9298a1; cursor: pointer; padding: 0 4px; font-size: var(--st-font-size); }
 .relation-icon:not([aria-label="移除关联"]):hover { background: #e5e7e9; }
 @container relation-tags (max-width: 64px) {
   .relation-chip { padding-left: 4px; padding-right: 4px; }
@@ -151,14 +151,14 @@ useGridScrollCollapse(() => opened.value, () => {
 .relation-cards { max-height: 340px; overflow: auto; }
 .relation-card { border-bottom: 1px solid #eceef1; padding: 14px 18px; cursor: pointer; }
 .relation-card:hover { background: #f8f9fa; }
-.relation-card strong, .relation-preview strong { display: flex; justify-content: space-between; font-weight: 500; margin-bottom: 14px; color: #30343b; }
+.relation-card strong, .relation-preview strong { display: flex; justify-content: space-between; font-weight: 500; margin-bottom: 14px; color: var(--st-text-2); }
 .relation-card-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
 .relation-card-fields > div { min-width: 0; }
-.relation-card-fields label, .relation-preview label { display: block; color: #969ca5; font-size: 12px; margin-bottom: 6px; }
+.relation-card-fields label, .relation-preview label { display: block; color: #969ca5; font-size: var(--st-font-size); margin-bottom: 6px; }
 .relation-preview > div { margin-top: 12px; }
 .relation-add { display: block; width: 100%; border: 0; background: white; color: #9298a1; padding: 13px; cursor: pointer; }
 .relation-add:hover { background: #f2f3f5; }
-.relation-source { color: #9298a1; margin-bottom: 16px; font-size: 13px; }
+.relation-source { color: #9298a1; margin-bottom: 16px; font-size: var(--st-font-size); }
 .relation-search { width: 280px; margin-bottom: 16px; }
 .relation-list-footer { display: flex; align-items: center; gap: 14px; padding: 10px 0; color: #9298a1; }
 .relation-list-footer .el-pagination { margin-left: auto; }

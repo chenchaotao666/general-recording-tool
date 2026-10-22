@@ -83,23 +83,23 @@ function ai() { emit('ai', { label: name.value.trim(), x: pos.value.x, y: pos.va
   box-shadow: var(--st-shadow-pop); padding: 16px 16px 10px; display: flex; flex-direction: column;
 }
 .afp-name {
-  border: none; outline: none; font-size: 14px; padding: 4px 2px 8px; width: 100%;
+  border: none; outline: none; font-size: var(--st-font-size); padding: 4px 2px 8px; width: 100%;
   border-bottom: 2px solid var(--st-primary); box-sizing: border-box;
 }
 .afp-name::placeholder { color: var(--st-text-4); }
 .afp-ai {
   display: flex; align-items: center; gap: 8px; padding: 10px 2px; margin-top: 6px;
-  font-size: 13px; cursor: pointer; border-radius: 6px; color: var(--st-text-1);
+  font-size: var(--st-font-size); cursor: pointer; border-radius: 6px; color: var(--st-text-2);
 }
 .afp-ai:hover { background: var(--st-bg-hover); }
 .afp-ai-icon { color: var(--st-ai); }
 .afp-ai-caret { margin-left: auto; color: var(--st-text-3); }
 .afp-divider { height: 1px; background: var(--st-border); margin: 4px 0; }
-.afp-label { font-size: 12px; color: var(--st-text-3); padding: 6px 2px; }
+.afp-label { font-size: var(--st-font-size); color: var(--st-text-3); padding: 6px 2px; }
 .afp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; max-height: 380px; overflow: auto; }
 .afp-type {
-  display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 13px;
-  cursor: pointer; border-radius: 6px; color: var(--st-text-1);
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: var(--st-font-size);
+  cursor: pointer; border-radius: 6px; color: var(--st-text-2);
 }
 .afp-type .st-icon { color: var(--st-text-2); }
 .afp-type.on { background: var(--st-bg-hover); }

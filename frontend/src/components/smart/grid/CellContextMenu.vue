@@ -89,7 +89,7 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside); do
 </script>
 
 <style scoped>
-.cell-context-menu,.cell-menu-sub { position: fixed; z-index: 3500; box-sizing: border-box; width: 240px; padding: 6px 0; border: 1px solid #dedfe2; border-radius: 10px; background: #fff; box-shadow: 0 4px 20px #0002; color: #252a34; font-size: 14px; }
+.cell-context-menu,.cell-menu-sub { position: fixed; z-index: 3500; box-sizing: border-box; width: 240px; padding: 6px 0; border: 1px solid #dedfe2; border-radius: 10px; background: #fff; box-shadow: 0 4px 20px #0002; color: #252a34; font-size: var(--st-font-size); }
 .cell-context-menu { width: 200px; max-height: calc(100vh - 16px); }
 .cell-menu-entry { position: relative; }
 .cell-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 14px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; white-space: nowrap; }

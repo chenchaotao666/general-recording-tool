@@ -1,6 +1,6 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CLIPBOARD_TYPE, TYPE_MESSAGE, copyCell, planPaste, rangeBounds, readClipboard, toTSV } from './cellClipboard.js'
+import { CLIPBOARD_TYPE, TYPE_MESSAGE, copyCell, planPaste, readClipboard, toTSV } from './cellClipboard.js'
 import { nextCell } from './cellNavigation.js'
 import { planFill } from './cellFill.js'
 
@@ -10,7 +10,16 @@ export function useCellRange({ table, rows, fields, selected, editing, buffer, d
   const fillPreview = ref(null)
   const wholeRow = computed(() => rowAnchor.value != null)
   const dataRows = computed(() => rows.value.filter(r => !r.__rowType))
-  const bounds = computed(() => rangeBounds(dataRows.value, fields.value, selected.value, end.value || selected.value))
+  const rowIndexes = computed(() => new Map(dataRows.value.map((row, i) => [row.__key, i])))
+  const fieldIndexes = computed(() => new Map(fields.value.map((field, i) => [field.field_name, i])))
+  const bounds = computed(() => {
+    const anchor = selected.value, last = end.value || anchor
+    if (!anchor || !last) return null
+    const r1 = rowIndexes.value.get(anchor.key), r2 = rowIndexes.value.get(last.key)
+    const c1 = fieldIndexes.value.get(anchor.fieldName), c2 = fieldIndexes.value.get(last.fieldName)
+    if ([r1, r2, c1, c2].some(index => index == null)) return null
+    return { top: Math.min(r1, r2), bottom: Math.max(r1, r2), left: Math.min(c1, c2), right: Math.max(c1, c2) }
+  })
   const multiple = computed(() => !!bounds.value && (!!fillPreview.value || rowAnchor.value != null || bounds.value.top !== bounds.value.bottom || bounds.value.left !== bounds.value.right))
   const clearRange = () => { end.value = null; rowAnchor.value = null }
   watch(selected, clearRange, { flush: 'sync' })
@@ -33,14 +42,16 @@ export function useCellRange({ table, rows, fields, selected, editing, buffer, d
     if (column?.params?.rowNumber) return { key: row.__key, fieldName: fields.value[0].field_name, rowNumber: true }
     return fields.value.some(f => f.field_name === column?.field) ? { key: row.__key, fieldName: column.field } : null
   }
-  function down(e) {
+  function down(e, fillTarget = null, fillRect = null) {
     suppressClick = false
     stopScroll(); drag = null
     const b = bounds.value
-    const td = e.target.closest?.('td.cell-fill-handle')
-    const rect = td?.getBoundingClientRect()
+    const td = fillTarget || e.target.closest?.('td.cell-fill-handle')
+    const handleAnchor = td?.querySelector('.sel-anchor, .grid-people-trigger') || td
+    const rect = fillRect || handleAnchor?.getBoundingClientRect()
     if (e.button === 0 && rect && b && !pending && !editing.value
-      && e.clientX >= rect.right - 9 && e.clientY >= rect.bottom - 9) {
+      && e.clientX >= rect.right - 9 && e.clientX <= rect.right + 2
+      && e.clientY >= rect.bottom - 9 && e.clientY <= rect.bottom + 2) {
       e.preventDefault(); e.stopPropagation()
       const cell = { key: dataRows.value[b.bottom].__key, fieldName: fields.value[b.right].field_name }
       drag = { cell, x: e.clientX, y: e.clientY, pointerX: e.clientX, pointerY: e.clientY,
@@ -200,7 +211,7 @@ export function useCellRange({ table, rows, fields, selected, editing, buffer, d
   function classes(row, name, rowNumber = false) {
     const b = fillPreview.value || bounds.value
     if (!b) return []
-    const r = dataRows.value.findIndex(x => x.__key === row.__key), c = fields.value.findIndex(f => f.field_name === name)
+    const r = rowIndexes.value.get(row.__key) ?? -1, c = fieldIndexes.value.get(name) ?? -1
     const handle = !rowNumber && !wholeRow.value && !editing.value && r === b.bottom && c === b.right
       && fields.value[c] && canEdit(row, fields.value[c]) ? ['cell-fill-handle'] : []
     if (!multiple.value && !fillPreview.value) return handle

@@ -2,6 +2,8 @@
 export function createGridLayoutQueue() {
   const pending = new Set()
   const widths = new Map()
+  // Bounded, grid-local cache survives virtual cell unmounts, not grid disposal.
+  const tagLayouts = new Map()
   let observer
   let paused = false, frame = 0
   function schedule() {
@@ -18,13 +20,23 @@ export function createGridLayoutQueue() {
     get paused() { return paused },
     enqueue(job) { pending.add(job); schedule() },
     cancel(job) { pending.delete(job) },
+    getTagLayout(key) {
+      const value = tagLayouts.get(key)
+      if (value) { tagLayouts.delete(key); tagLayouts.set(key, value) }
+      return value
+    },
+    setTagLayout(key, value) {
+      tagLayouts.delete(key)
+      tagLayouts.set(key, value)
+      if (tagLayouts.size > 1024) tagLayouts.delete(tagLayouts.keys().next().value)
+    },
     observeWidth(element, changed) {
       if (!observer) observer = new ResizeObserver(entries => {
         for (const entry of entries) {
           const item = widths.get(entry.target)
           if (!item || Math.abs(entry.contentRect.width - item.width) < .5) continue
           item.width = entry.contentRect.width
-          item.changed()
+          item.changed(item.width)
         }
       })
       widths.set(element, { width: -1, changed })
@@ -40,6 +52,7 @@ export function createGridLayoutQueue() {
     dispose() {
       cancelAnimationFrame(frame); frame = 0; pending.clear()
       observer?.disconnect(); observer = null; widths.clear()
+      tagLayouts.clear()
     },
   }
 }

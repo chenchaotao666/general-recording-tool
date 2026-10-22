@@ -76,7 +76,7 @@
                 <StIcon name="info" :size="14" class="afe-tip" /></el-tooltip>
             </div>
             <div class="afe-opts">
-              <div v-for="(o, i) in draft.options" :key="o.id" class="afe-opt-row" :class="dropCls(i)" draggable="true"
+              <div v-for="(o, i) in draft.options" :key="o.id" v-reorder-feedback="{ indicator: dropCls(i), horizontal: true }" class="afe-opt-row" :class="dropCls(i)" draggable="true"
                    @dragstart="dragI = i" @dragover.prevent="overI = i" @drop.prevent="dropOpt(i)" @dragend="dragI = overI = null">
                 <span class="afe-drag st-icon-action"><StIcon name="drag" :size="14" /></span>
                 <span class="afe-color" :style="{ background: optionColor(o.color).value }" data-smart-tip="切换颜色" @click="cycleColor(o)" />
@@ -131,6 +131,7 @@
 </template>
 
 <script setup>
+import { vReorderFeedback } from '../../../smart/utils/reorderFeedback.js'
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
@@ -382,18 +383,18 @@ function run(scope) { moreOpen.value = false; emit('run', { scope }) }
 .afe-logo { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, #8B6CF6, #E96BD8); color: #fff;
             display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .afe-logo.sm { width: 16px; height: 16px; border-radius: 4px; }
-.afe-name { min-width: 4em; max-width: 380px; field-sizing: content; font-size: 18px; font-weight: 700; color: var(--st-text-1); border: 1px solid transparent;
+.afe-name { min-width: 4em; max-width: 380px; field-sizing: content; font-size: var(--st-font-size-title); font-weight: 700; color: var(--st-text-1); border: 1px solid transparent;
             border-radius: 6px; padding: 3px 6px; background: transparent; outline: none; }
 .afe-name:hover { border-color: rgba(31, 35, 41, .12); background: rgba(255, 255, 255, .6); }
 .afe-name:focus { border-color: var(--st-primary); background: #fff; }
 .afe-flex { flex: 1; }
 .afe-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 6px; cursor: pointer; color: var(--st-text-2); }
-.afe-icon:hover { background: rgba(31, 35, 41, .08); color: var(--st-text-1); }
+.afe-icon:hover { background: rgba(31, 35, 41, .08); color: var(--st-text-2); }
 .afe-more-wrap { position: relative; }
 .afe-menu { position: absolute; right: 0; top: 34px; z-index: 5; background: #fff; border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, .14); padding: 6px; width: 170px; }
-.afe-mi { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border-radius: 6px; font-size: 14px; cursor: pointer; color: var(--st-text-1); }
+.afe-mi { display: flex; align-items: center; gap: 8px;  padding: 0 10px; border-radius: 6px; font-size: var(--st-font-size); cursor: pointer; color: var(--st-text-2);  height: var(--st-list-item-height); box-sizing: border-box; }
 .afe-mi:hover { background: #F2F3F5; }
-.afe-sub { padding: 0 24px 12px 56px; font-size: 13px; line-height: 24px; color: var(--st-text-3); }
+.afe-sub { padding: 0 24px 12px 56px; font-size: var(--st-font-size); line-height: 24px; color: var(--st-text-3); }
 .afe-chip { display: inline-flex; align-items: center; gap: 3px; height: 20px; line-height: 20px; padding: 0 5px; margin: 0 2px;
             background: rgba(255, 255, 255, .8); border-radius: 4px; color: var(--st-text-2); vertical-align: 1px; }
 .afe-scene { margin-left: 6px; color: #B5B9C0; }
@@ -402,57 +403,55 @@ function run(scope) { moreOpen.value = false; emit('run', { scope }) }
 .afe-row2 { display: flex; gap: 12px; }
 .afe-col { flex: 1; min-width: 0; }
 .afe-col.narrow { flex: 0 0 150px; }
-.afe-l { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--st-text-1); margin-bottom: 8px; }
-.afe-hint { font-size: 12px; font-weight: 400; color: #A8ADB5; }
+.afe-l { display: flex; align-items: center; gap: 8px; font-size: var(--st-font-size); font-weight: 600; color: var(--st-text-1); margin-bottom: 8px; }
+.afe-hint { font-size: var(--st-font-size); font-weight: 400; color: #A8ADB5; }
 .afe-sel { width: 100%; }
 .afe-sel :deep(.el-select__wrapper) { min-height: 38px; border-radius: 8px; }
 .afe-sel :deep(.el-select__prefix) { color: var(--st-text-2); }
 .afe-opt { display: inline-flex; align-items: center; gap: 8px; }
 .afe-opt .st-icon { color: var(--st-text-2); }
-.afe-link { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 400; color: var(--st-primary); cursor: pointer; }
+.afe-link { display: inline-flex; align-items: center; gap: 4px; font-size: var(--st-font-size); font-weight: 400; color: var(--st-primary); cursor: pointer; }
 .afe-link:hover { text-decoration: underline; }
 .afe-link.off { color: var(--st-text-3); cursor: default; text-decoration: none; }
 .afe-link .spin { animation: afe-rot .8s linear infinite; }
-.afe-prompt { position: relative; background: #F5F6F7; border-radius: 8px; padding: 10px 14px; font-size: 13px; line-height: 1.75;
-              color: var(--st-text-1); white-space: pre-wrap; cursor: pointer; }
+.afe-prompt { position: relative; background: #F5F6F7; border-radius: 8px; padding: 10px 14px; font-size: var(--st-font-size); line-height: 1.75;
+              color: var(--st-text-2); white-space: pre-wrap; cursor: pointer; }
 .afe-prompt.folded { max-height: 70px; overflow: hidden; }
 .afe-prompt.folded::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 28px; border-radius: 0 0 8px 8px;
                             background: linear-gradient(rgba(245, 246, 247, 0), #F5F6F7 80%); }
-.afe-prompt-more { position: absolute; right: 12px; bottom: 6px; z-index: 1; font-size: 12px; color: var(--st-primary); }
+.afe-prompt-more { position: absolute; right: 12px; bottom: 6px; z-index: 1; font-size: var(--st-font-size); color: var(--st-primary); }
 .afe-prompt.muted { color: var(--st-text-3); cursor: default; }
 .afe-tip { color: var(--st-text-3); cursor: help; }
-.afe-l :deep(.el-checkbox__label) { font-weight: 400; color: var(--st-text-2); font-size: 13px; }
+.afe-l :deep(.el-checkbox__label) { font-weight: 400; color: var(--st-text-2); font-size: var(--st-font-size); }
 .afe-opts { display: flex; flex-wrap: wrap; gap: 8px; }
 .afe-opt-row { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 6px 0 4px; border: 1px solid #E5E6E8; border-radius: 8px;
                background: #fff; border-left-width: 1px; }
-.afe-opt-row.drop-before { box-shadow: -2px 0 0 var(--st-primary); }
-.afe-opt-row.drop-after { box-shadow: 2px 0 0 var(--st-primary); }
 .afe-drag { color: #C9CDD4; cursor: grab; display: inline-flex; }
 .afe-color { width: 14px; height: 14px; border-radius: 3px; cursor: pointer; flex: none; }
-.afe-opt-in { width: 7em; min-width: 3em; border: none; outline: none; font-size: 13px; color: var(--st-text-1); background: transparent; field-sizing: content; }
+.afe-opt-in { width: 7em; min-width: 3em; border: none; outline: none; font-size: var(--st-font-size); color: var(--st-text-2); background: transparent; field-sizing: content; }
 .afe-del { display: inline-flex; color: #B5B9C0; cursor: pointer; padding: 2px; border-radius: 4px; }
 .afe-del:hover { color: var(--el-color-danger); background: #FDECEC; }
 .afe-add { display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 10px; border: 1px dashed #C9CDD4; border-radius: 8px;
-           font-size: 13px; color: var(--st-text-2); cursor: pointer; }
+           font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
 .afe-add:hover { border-color: var(--st-primary); color: var(--st-primary); }
-.afe-stale { font-size: 12px; font-weight: 400; color: #B7791F; background: #FFF7E6; border-radius: 4px; padding: 0 6px; }
+.afe-stale { font-size: var(--st-font-size); font-weight: 400; color: #B7791F; background: #FFF7E6; border-radius: 4px; padding: 0 6px; }
 .afe-auto { display: flex; align-items: center; gap: 8px; }
-.afe-auto :deep(.el-checkbox__label) { font-size: 14px; color: var(--st-text-1); }
+.afe-auto :deep(.el-checkbox__label) { font-size: var(--st-font-size); color: var(--st-text-2); }
 .afe-ai { flex: none; padding: 10px 12px 0; }
 .afe-running { display: flex; align-items: center; gap: 10px; height: 58px; padding: 0 12px 0 18px; background: #fff; border-radius: 16px;
-               font-size: 15px; color: var(--st-text-1); }
+               font-size: var(--st-font-size); color: var(--st-text-2); }
 .afe-spin { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid #D9DBDF; border-top-color: #8F959E; animation: afe-rot .8s linear infinite; }
 @keyframes afe-rot { to { transform: rotate(360deg); } }
 .afe-stop { margin-left: auto; width: 36px; height: 36px; border-radius: 8px; background: #F2F3F5; display: inline-flex; align-items: center;
             justify-content: center; cursor: pointer; }
-.afe-banner { display: flex; align-items: center; gap: 6px; margin: 8px 4px 0; font-size: 13px; color: #2BA471; }
+.afe-banner { display: flex; align-items: center; gap: 6px; margin: 8px 4px 0; font-size: var(--st-font-size); color: #2BA471; }
 .afe-banner .afe-link { margin-left: auto; }
-.afe-error { display: flex; align-items: center; gap: 6px; margin: 8px 4px 0; font-size: 13px; color: var(--el-color-danger); }
+.afe-error { display: flex; align-items: center; gap: 6px; margin: 8px 4px 0; font-size: var(--st-font-size); color: var(--el-color-danger); }
 .afe-foot { display: flex; align-items: center; gap: 10px; padding: 12px 20px 16px; }
-.afe-genall { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--st-text-2); cursor: pointer; }
-.afe-genall:hover { color: var(--st-text-1); }
+.afe-genall { display: inline-flex; align-items: center; gap: 6px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
+.afe-genall:hover { color: var(--st-text-2); }
 .afe-genall.off { opacity: .5; cursor: not-allowed; }
-.afe-btn { height: 34px; padding: 0 20px; border-radius: 8px; border: 1px solid #E3E5E8; background: #fff; font-size: 14px; color: var(--st-text-1); cursor: pointer; }
+.afe-btn { height: 34px; padding: 0 20px; border-radius: 8px; border: 1px solid #E3E5E8; background: #fff; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
 .afe-btn:hover { background: #F5F6F7; }
 .afe-btn.primary { background: var(--st-primary); border-color: var(--st-primary); color: #fff; }
 .afe-btn.primary:hover { background: #255BD0; }

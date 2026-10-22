@@ -92,15 +92,15 @@ function pick(f) {
 
 <style scoped>
 .tbfs { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 10px 0 12px; box-sizing: border-box;
-  border-radius: 6px; box-shadow: 0 0 0 1px var(--el-border-color) inset; background: #fff; cursor: pointer; font-size: 14px; }
+  border-radius: 6px; box-shadow: 0 0 0 1px var(--el-border-color) inset; background: #fff; cursor: pointer; font-size: var(--st-font-size); }
 .tbfs:hover { box-shadow: 0 0 0 1px var(--el-border-color-hover) inset; }
 .tbfs.open { box-shadow: 0 0 0 1px var(--st-primary) inset; }
 .tbfs.borderless { box-shadow: none !important; background: transparent; padding-left: 0; }
-.tbfs-ico { color: var(--st-text-1); flex: none; }
-.tbfs-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--st-text-1); }
+.tbfs-ico { color: var(--st-text-2); flex: none; }
+.tbfs-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--st-text-2); }
 .tbfs-label.ph { color: var(--el-text-color-placeholder); }
 .tbfs-caret { flex: none; color: var(--st-text-3); }
 .tbfs-clear { display: none; flex: none; color: var(--st-text-3); }
 .tbfs:hover .tbfs-clear { display: inline-flex; }
-.tbfs-clear:hover { color: var(--st-text-1); }
+.tbfs-clear:hover { color: var(--st-text-2); }
 </style>

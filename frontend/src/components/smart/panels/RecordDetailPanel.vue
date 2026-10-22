@@ -33,7 +33,7 @@ const { panelWidth, resizing, startResize } = usePanelResize('st-record-panel-wi
 .rd-top { display: flex; align-items: center; justify-content: space-between; height: 44px; flex: none; padding: 0 2px 0 6px; border-bottom: 1px solid var(--st-border); }
 .rd-nav { display: inline-flex; gap: 4px; }
 .rd-ico { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0;
-          border: none; background: transparent; border-radius: 6px; color: var(--st-text-1); cursor: pointer; }
+          border: none; background: transparent; border-radius: 6px; color: var(--st-text-2); cursor: pointer; }
 .rd-ico:hover:not(:disabled) { background: var(--st-bg-hover); }
 .rd-ico:disabled { color: var(--st-disabled); cursor: not-allowed; }
 </style>

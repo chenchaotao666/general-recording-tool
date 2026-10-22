@@ -101,17 +101,17 @@ function more() { emit('more', buildRule()); emit('close') }
 </script>
 
 <style scoped>
-.qr-title { font-size: 17px; font-weight: 600; }
+.qr-title { font-size: var(--st-font-size-title); font-weight: 600; }
 .qr-steps { position: relative; padding-left: 4px; }
 .qr-steps::before { content: ''; position: absolute; left: 8px; top: 18px; height: 38px; border-left: 1px solid var(--st-border); }
-.qr-line { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--st-text-1); margin-bottom: 14px; }
+.qr-line { display: flex; align-items: center; gap: 8px; font-size: var(--st-font-size); color: var(--st-text-2); margin-bottom: 14px; }
 .qr-dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--st-text-4); background: #fff; position: relative; z-index: 1; }
 .qr-field { width: 170px; }
 .qr-link { color: var(--st-primary); cursor: pointer; display: inline-flex; align-items: center; gap: 2px; }
 .qr-to { padding-left: 17px; }
 .qr-members { width: 100%; }
 .qr-foot { display: flex; align-items: center; gap: 10px; }
-.qr-more { margin-right: auto; color: var(--st-text-2); font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; }
+.qr-more { margin-right: auto; color: var(--st-text-2); font-size: var(--st-font-size); cursor: pointer; display: inline-flex; align-items: center; gap: 2px; }
 .qr-btn { width: 92px; }
 .qr-cancel { background: #EEEFF1; border-color: #EEEFF1; }
 </style>

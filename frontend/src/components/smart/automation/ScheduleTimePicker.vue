@@ -52,10 +52,10 @@ function confirm() {
 }
 </script>
 <style scoped>
-.stp-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 36px; padding: 6px 12px; background: #fff; border: 1px solid var(--st-border); border-radius: 5px; font: inherit; color: var(--st-text-1); cursor: pointer; }
+.stp-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 36px; padding: 6px 12px; background: #fff; border: 1px solid var(--st-border); border-radius: 5px; font: inherit; color: var(--st-text-2); cursor: pointer; }
 .stp-columns { display: flex; padding: 6px; }
 .stp-column { flex: 1; height: 252px; overflow-y: auto; scrollbar-width: thin; padding: 108px 0; box-sizing: border-box; }
-.stp-column button { display: block; width: 100%; height: 36px; border: 0; background: transparent; font: inherit; font-size: 15px; color: var(--st-text-1); cursor: pointer; }
+.stp-column button { display: block; width: 100%; height: 36px; border: 0; background: transparent; font: inherit; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
 .stp-column button:hover { background: var(--st-bg-hover); }
 .stp-column button.selected { background: #d6e7ff; color: var(--st-primary); }
 .stp-footer { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--st-border); }

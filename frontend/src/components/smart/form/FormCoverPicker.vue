@@ -78,19 +78,19 @@ function confirm() {
 .cover-option.selected { outline: 2px solid var(--st-primary, #287CF5); outline-offset: -2px; padding: 2px; }
 .cover-option.selected img { border-radius: 5px; }
 .cover-option:focus-visible { outline: 2px solid var(--st-primary, #287CF5); outline-offset: -2px; }
-.cover-none { font-size: 13px; color: #7A8491; }
-.cover-upload { display: flex; align-items: center; gap: 12px; margin: 16px 2px 0; font-size: 12px; color: #9098A3; }
-.cover-upload button { border: 0; border-radius: 4px; padding: 6px 8px; background: #F1F2F3; color: #30343B; cursor: pointer; }
+.cover-none { font-size: var(--st-font-size); color: #7A8491; }
+.cover-upload { display: flex; align-items: center; gap: 12px; margin: 16px 2px 0; font-size: var(--st-font-size); color: #9098A3; }
+.cover-upload button { border: 0; border-radius: 4px; padding: 6px 8px; background: #F1F2F3; color: var(--st-text-2); cursor: pointer; }
 .cover-upload button:hover { background: #E6E8E8; }
 .cover-upload button:disabled { opacity: .5; cursor: wait; }
 .cover-actions { display: flex; gap: 18px; padding-top: 4px; }
 .cover-actions .el-button { flex: 1; margin: 0; border-radius: 4px; }
-.cover-actions .el-button:not(.el-button--primary) { border-color: transparent; background: #F2F3F5; color: #30343B; }
+.cover-actions .el-button:not(.el-button--primary) { border-color: transparent; background: #F2F3F5; color: var(--st-text-2); }
 .cover-actions .el-button:not(.el-button--primary):hover { background: #E6E8E8; }
 </style>
 
 <style>
 .st-cover-dialog { border-radius: 8px; }
-.st-cover-dialog .el-dialog__title { font-size: 16px; color: #30343B; }
+.st-cover-dialog .el-dialog__title { font-size: var(--st-font-size); color: var(--st-text-2); }
 .st-cover-dialog .el-dialog__headerbtn:hover { background: #E6E8E8; border-radius: 4px; }
 </style>

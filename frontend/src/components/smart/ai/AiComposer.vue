@@ -192,38 +192,38 @@ defineExpose({ insertField, clear, focus: () => nextTick(placeCaretEnd) })
 <style scoped>
 .aic { background: #fff; border-radius: 16px; padding: 10px 12px 12px; display: flex; flex-direction: column; border: 1px solid #EBECEE; }
 .aic.compact { padding: 6px 10px 8px; border-radius: 14px; }
-.aic.compact .aic-editor { min-height: 26px; padding: 8px 4px 2px; font-size: 14px; }
+.aic.compact .aic-editor { min-height: 26px; padding: 8px 4px 2px; font-size: var(--st-font-size); }
 .aic.compact .aic-foot { margin-top: 4px; }
-.aic.compact .aic-ins { height: 30px; font-size: 13px; padding: 0 10px; }
+.aic.compact .aic-ins { height: 30px; font-size: var(--st-font-size); padding: 0 10px; }
 .aic.compact .aic-send { width: 34px; height: 34px; border-radius: 8px; }
 .aic-hint { display: flex; align-items: center; gap: 6px; background: #F5F6F7; border-radius: 10px; padding: 9px 12px;
-            font-size: 15px; color: var(--st-text-1); }
+            font-size: var(--st-font-size); color: var(--st-text-2); }
 .aic-hint-ico { color: var(--st-primary); }
-.aic-editor { min-height: 64px; max-height: 160px; overflow-y: auto; outline: none; padding: 12px 4px 6px; font-size: 15px;
-              line-height: 26px; color: var(--st-text-1); white-space: pre-wrap; word-break: break-all; }
+.aic-editor { min-height: 64px; max-height: 160px; overflow-y: auto; outline: none; padding: 12px 4px 6px; font-size: var(--st-font-size);
+              line-height: 26px; color: var(--st-text-2); white-space: pre-wrap; word-break: break-all; }
 .aic-editor.empty::before { content: attr(data-ph); color: #B5B9C0; pointer-events: none; }
 .aic-editor :deep(.aic-chip) { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px; margin: 0 3px;
-                               background: #F2F3F5; border-radius: 4px; font-size: 14px; color: var(--st-text-1);
+                               background: #F2F3F5; border-radius: 4px; font-size: var(--st-font-size); color: var(--st-text-2);
                                vertical-align: 1px; user-select: none; line-height: 24px; }
 .aic-editor :deep(.aic-chip svg) { color: var(--st-text-2); }
-.aic-editor :deep(.aic-chip-x) { font-style: normal; color: var(--st-text-3); cursor: pointer; margin-left: 2px; font-size: 14px; }
-.aic-editor :deep(.aic-chip-x:hover) { color: var(--st-text-1); }
+.aic-editor :deep(.aic-chip-x) { font-style: normal; color: var(--st-text-3); cursor: pointer; margin-left: 2px; font-size: var(--st-font-size); }
+.aic-editor :deep(.aic-chip-x:hover) { color: var(--st-text-2); }
 .aic-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
 .aic-ins-wrap { position: relative; }
 .aic-ins { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border: 1px solid #E3E5E8;
-           border-radius: 8px; background: #fff; font-size: 14px; color: var(--st-text-2); cursor: pointer; }
-.aic-ins:hover { background: #F5F6F7; color: var(--st-text-1); }
+           border-radius: 8px; background: #fff; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
+.aic-ins:hover { background: #F5F6F7; color: var(--st-text-2); }
 .aic-pick { position: absolute; left: 0; bottom: calc(100% + 6px); width: 240px; background: #fff; border-radius: 10px;
             box-shadow: 0 6px 24px rgba(0, 0, 0, .14); padding: 8px; z-index: 10; }
 .aic-pick-kw { width: 100%; box-sizing: border-box; height: 32px; border: 1px solid #E3E5E8; border-radius: 6px; padding: 0 10px;
-               outline: none; font-size: 13px; margin-bottom: 6px; }
+               outline: none; font-size: var(--st-font-size); margin-bottom: 6px; }
 .aic-pick-kw:focus { border-color: var(--st-primary); }
 .aic-pick-list { max-height: 240px; overflow-y: auto; }
-.aic-pick-item { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 8px; border-radius: 6px; font-size: 14px;
-                 color: var(--st-text-1); cursor: pointer; }
+.aic-pick-item { display: flex; align-items: center; gap: 8px;  padding: 0 8px; border-radius: 6px; font-size: var(--st-font-size);
+                 color: var(--st-text-2); cursor: pointer;  height: var(--st-list-item-height); box-sizing: border-box; }
 .aic-pick-item.on { background: #F2F3F5; }
 .aic-pick-ico { color: var(--st-text-2); }
-.aic-pick-none { padding: 14px; text-align: center; font-size: 13px; color: var(--st-text-3); }
+.aic-pick-none { padding: 14px; text-align: center; font-size: var(--st-font-size); color: var(--st-text-3); }
 .aic-send { width: 42px; height: 42px; border-radius: 10px; border: none; background: #B5CDF8; color: #fff; display: inline-flex;
             align-items: center; justify-content: center; cursor: not-allowed; }
 .aic-send.on { background: var(--st-primary); cursor: pointer; }

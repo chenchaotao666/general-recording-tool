@@ -8,10 +8,12 @@
         <span class="tbp-title">排序</span>
         <span class="sp-auto">自动排序<el-switch :model-value="autoSort" @change="$emit('auto-sort', $event)" /></span>
       </div>
-      <div v-for="(s, i) in draft" :key="s._k" class="sp-row" :class="dropClass(i)"
+      <div v-for="(s, i) in draft" :key="s._k" v-reorder-feedback="dropClass(i)" class="sp-row" :class="dropClass(i)"
            @dragover.prevent="overIdx = i" @drop.prevent="dropRow(i)">
         <span class="tbp-drag st-icon-action" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = null"><StIcon name="drag" :size="15" /></span>
-        <TbFieldSelect :model-value="s.fieldId" :fields="fields" class="sp-field" @update:model-value="(v) => update(i, { fieldId: v })" />
+        <div class="sp-field">
+          <TbFieldSelect :model-value="s.fieldId" :fields="fields" @update:model-value="(v) => update(i, { fieldId: v })" />
+        </div>
         <DirToggle :model-value="s.direction" :labels="labelsOf(s)" @update:model-value="(v) => update(i, { direction: v })" />
         <span class="tbp-del st-icon-action" data-smart-tip="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
       </div>
@@ -21,6 +23,7 @@
 </template>
 
 <script setup>
+import { vReorderFeedback } from '../../../smart/utils/reorderFeedback.js'
 import { computed, ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 import TbFieldSelect from './TbFieldSelect.vue'
@@ -73,10 +76,9 @@ function dropRow(i) {
 <style scoped>
 .sp { display: flex; flex-direction: column; gap: 6px; }
 .sp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.sp-auto { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; color: var(--st-text-1); }
+.sp-auto { display: inline-flex; align-items: center; gap: 10px; font-size: var(--st-font-size); color: var(--st-text-2); }
 .sp-row { display: flex; align-items: center; gap: 12px; border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
-.sp-row.drop-before { border-top-color: var(--st-primary); }
-.sp-row.drop-after { border-bottom-color: var(--st-primary); }
 .sp-field { flex: 1; min-width: 0; }
-.sp-add { margin-left: 27px; }
+.sp-field :deep(.tbfs) { width: 100%; }
+.sp-add { margin-left: 0; align-self: flex-start; }
 </style>

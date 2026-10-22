@@ -29,9 +29,9 @@ watch(() => props.visible, visible => { if (visible) zIndex.value = nextZIndex()
 <style scoped>
 .record-detail-floating { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; box-sizing: border-box; width: 560px; max-width: calc(100vw - 32px); height: min(800px, calc(100dvh - 32px)); padding: 0 16px 12px; background: #fff; border: 1px solid #e4e7ed; border-radius: 9px; box-shadow: 0 8px 36px #0003; overflow: hidden; }
 .floating-header { height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none; border-bottom: 1px solid var(--st-border); }
-.floating-source { display: flex; align-items: center; gap: 5px; min-width: 0; color: #30343b; font-size: 12px; }
+.floating-source { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--st-text-2); font-size: var(--st-font-size); }
 .floating-nav { display: flex; align-items: center; gap: 4px; flex: none; }
-.floating-action { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: #30343b; cursor: pointer; }
+.floating-action { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--st-text-2); cursor: pointer; }
 .floating-action:hover:not(:disabled) { background: #e6e8e8; }
 .floating-action:disabled { color: #bdc2ca; cursor: default; }
 .floating-divider { height: 16px; width: 1px; margin: 0 6px; background: #eceef1; }

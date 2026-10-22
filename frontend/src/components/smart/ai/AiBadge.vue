@@ -11,6 +11,6 @@ defineProps({ plain: { type: Boolean, default: false } })
 .aib { display: inline-flex; align-items: center; gap: 1px; flex: none; height: 16px; padding: 0 4px; border-radius: 4px;
        background: linear-gradient(90deg, #8B6CF6, #E96BD8); color: #fff; font-size: 11px; font-weight: 700; line-height: 1;
        letter-spacing: .2px; font-family: Arial, sans-serif; }
-.aib.plain { background: none; color: #A8ADB5; font-size: 14px; height: auto; padding: 0; font-weight: 600; }
+.aib.plain { background: none; color: #A8ADB5; font-size: var(--st-font-size); height: auto; padding: 0; font-weight: 600; }
 .aib.plain svg { width: 10px; height: 10px; }
 </style>

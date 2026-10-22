@@ -90,21 +90,21 @@ function pickVar(v, label) {
 <style scoped>
 .vi { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
 .vi-in { flex: 1; min-width: 0; width: 100%; }
-.vi-chip { flex: 1; display: inline-flex; align-items: center; justify-content: space-between; gap: 6px; background: #F0F1F3; border-radius: 4px; padding: 4px 10px; font-size: 13px; }
+.vi-chip { flex: 1; display: inline-flex; align-items: center; justify-content: space-between; gap: 6px; background: #F0F1F3; border-radius: 4px; padding: 4px 10px; font-size: var(--st-font-size); }
 .vi-x { color: var(--st-text-3); cursor: pointer; }
-.vi-var { flex: none; font-size: 13px; color: var(--st-text-2); background: #fff; cursor: pointer; border: 1px solid var(--st-border); border-radius: 4px; padding: 3px 6px; font-family: monospace; }
+.vi-var { flex: none; font-size: var(--st-font-size); color: var(--st-text-2); background: #fff; cursor: pointer; border: 1px solid var(--st-border); border-radius: 4px; padding: 3px 6px; font-family: monospace; }
 .vi-var:hover { color: var(--st-primary); border-color: var(--st-primary); }
 .vi-enum-trigger { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; width: 100%; min-height: 36px; padding: 5px 9px; border: 1px solid var(--st-border); border-radius: 6px; background: #fff; cursor: pointer; text-align: left; }
-.vi-placeholder { color: var(--st-text-4); font-size: 14px; }
+.vi-placeholder { color: var(--st-text-4); font-size: var(--st-font-size); }
 .vi-caret { margin-left: auto; color: var(--st-text-3); }
 .vi-option-search { padding: 8px; border-bottom: 1px solid var(--st-border); }
 .vi-option-list { max-height: 220px; overflow: auto; padding: 6px; }
-.vi-option-row { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: #fff; padding: 6px 12px; text-align: left; cursor: pointer; border-radius: 4px; }
+.vi-option-row { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: #fff; padding: 0 12px; text-align: left; cursor: pointer; border-radius: 4px;  height: var(--st-list-item-height); box-sizing: border-box; }
 .vi-option-row:hover { background: var(--st-bg-hover); }
-.vi-option-tag { display: inline-block; border-radius: 4px; padding: 2px 7px; font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
+.vi-option-tag { display: inline-block; border-radius: 4px; padding: 2px 7px; font-size: var(--st-font-size); line-height: 22px; overflow-wrap: anywhere; }
 .vi-check { margin-left: auto; color: var(--st-primary); }
 .vi-clear-value { width: 100%; border: 0; background: none; padding: 8px 18px; text-align: left; color: var(--st-text-3); cursor: pointer; }
-.vi-no-options { padding: 12px; color: var(--st-text-3); text-align: center; font-size: 13px; }
+.vi-no-options { padding: 12px; color: var(--st-text-3); text-align: center; font-size: var(--st-font-size); }
 </style>
 
 <style>

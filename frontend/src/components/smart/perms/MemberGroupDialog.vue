@@ -99,24 +99,24 @@ async function submit() {
 
 <style scoped>
 .mg-head { display: flex; justify-content: space-between; align-items: center; }
-.mg-title { font-size: 20px; font-weight: 700; display: inline-flex; align-items: center; }
+.mg-title { font-size: var(--st-font-size-title); font-weight: 700; display: inline-flex; align-items: center; }
 .mg-x { cursor: pointer; display: inline-flex; }
 .mg-card { background: #fff; border-radius: 10px; padding: 18px 22px; margin: 0 28px 14px; }
-.mg-t { font-size: 17px; font-weight: 700; color: var(--st-text-1); }
-.mg-d { font-size: 13px; color: var(--st-text-2); margin: 4px 0 14px; }
-.mg-choose { width: 100%; height: 40px; border: none; border-radius: 8px; background: #F1F2F3; font-size: 15px; cursor: pointer; color: var(--st-text-1); }
+.mg-t { font-size: var(--st-font-size-title); font-weight: 700; color: var(--st-text-1); }
+.mg-d { font-size: var(--st-font-size); color: var(--st-text-2); margin: 4px 0 14px; }
+.mg-choose { width: 100%; height: 40px; border: none; border-radius: 8px; background: #F1F2F3; font-size: var(--st-font-size); cursor: pointer; color: var(--st-text-2); }
 .mg-choose:hover { background: #E8E9EB; }
 .mg-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .mg-member { display: flex; align-items: center; gap: 10px; padding: 6px 4px; }
-.mg-av { width: 26px; height: 26px; border-radius: 50%; background: #F6903D; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
-.mg-name { flex: 1; font-size: 14px; }
+.mg-av { width: 26px; height: 26px; border-radius: 50%; background: #F6903D; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: var(--st-font-size); }
+.mg-name { flex: 1; font-size: var(--st-font-size); }
 .mg-rm { color: var(--st-text-4); cursor: pointer; display: inline-flex; }
 .mg-rm:hover { color: var(--el-color-danger); }
 .mg-pick, .mg-remark { width: 100%; }
 .mg-pick { margin-bottom: 8px; }
-.mg-add { display: inline-flex; align-items: center; gap: 4px; color: var(--st-primary); cursor: pointer; font-size: 14px; }
+.mg-add { display: inline-flex; align-items: center; gap: 4px; color: var(--st-primary); cursor: pointer; font-size: var(--st-font-size); }
 .mg-foot { display: flex; gap: 16px; padding: 0 8px; }
-.mg-btn { flex: 1; height: 44px; font-size: 16px; }
+.mg-btn { flex: 1; height: 44px; font-size: var(--st-font-size); }
 .mg-cancel { background: #EEEFF1; border-color: #EEEFF1; }
 </style>
 <style>

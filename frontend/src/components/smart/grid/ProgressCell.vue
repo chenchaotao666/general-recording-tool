@@ -41,7 +41,7 @@ function enterEdit(event) {
 .progress-cell { display: flex; align-items: center; gap: 16px; width: 100%; min-width: 0; min-height: 22px; height: 100%; }
 .progress-track { flex: 1; min-width: 20px; height: 12px; position: relative; background: #f1f2f3; border-radius: 2px; }
 .progress-fill { display: block; height: 100%; border-radius: 2px 0 0 2px; }
-.progress-number { flex: none; min-width: 34px; text-align: right; font-size: 13px; color: var(--st-text-1); font-variant-numeric: tabular-nums; }
+.progress-number { flex: none; min-width: 34px; text-align: right; font-size: var(--st-font-size); color: var(--st-text-2); font-variant-numeric: tabular-nums; }
 .progress-slider { appearance: none; -webkit-appearance: none; position: absolute; inset: -5px 0; width: 100%; height: 22px; margin: 0; background: transparent; outline: none; cursor: pointer; }
 .progress-slider::-webkit-slider-runnable-track { height: 12px; background: transparent; }
 .progress-slider::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 8px; height: 18px; margin-top: -3px; border: 1px solid #d9dde2; border-radius: 3px; background: white; cursor: ew-resize; }

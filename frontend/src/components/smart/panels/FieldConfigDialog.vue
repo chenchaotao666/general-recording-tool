@@ -3,8 +3,8 @@
        字段名称 → 字段类型（带图标）→ [类型说明] → 分隔线 → 类型专属设置（灰色小标题分区）→
        底部：左侧 AI 入口（使用 AI 生成/计算/判断/匹配标签/生成公式），右侧 确定 / 取消。
        无标题栏；所有入口均非模态，at 存在时锚定在打开位置（anchoredDialogAttrs），点击外部收起 -->
-  <el-dialog :model-value="visible" :width="isNumberFamily ? '322px' : '470px'" :show-close="false" class="st-fcd" :class="{ 'st-fcd-number': isNumberFamily }" append-to-body
-             v-bind="anchoredDialogAttrs(at, isNumberFamily ? 322 : 470, 560)" :close-on-press-escape="!fxEditor && !aiFormula" @opened="placeEditor" @update:model-value="$emit('close')" destroy-on-close>
+  <el-dialog :model-value="visible" :width="`${panelWidth}px`" :show-close="false" class="st-fcd" :class="{ 'st-fcd-number': isNumberFamily, 'st-fcd-compact': form.field_type !== 'ai' }" append-to-body
+             v-bind="anchoredDialogAttrs(at, panelWidth, 560)" :close-on-press-escape="!fxEditor && !aiFormula" @opened="placeEditor" @update:model-value="$emit('close')" destroy-on-close>
     <div ref="editorBody" class="fcd">
       <input ref="nameRef" v-model="form.label" class="fcd-input fcd-name" placeholder="字段名称" maxlength="100"
              @keydown.enter="save" @keydown.esc="$emit('close')" />
@@ -34,7 +34,7 @@
           </div>
           <template v-if="!isRef">
             <div class="fcd-optbox">
-              <div v-for="(o, i) in form.config.options" :key="o.id" class="fcd-opt-row" :class="dropCls(i)"
+              <SmartListItem v-for="(o, i) in form.config.options" :key="o.id" v-reorder-feedback="dropCls(i)" class="fcd-opt-row" :class="dropCls(i)"
                    @dragover.prevent="overIdx = i" @drop.prevent="dropOpt(i)">
                 <span class="fcd-del st-icon-action" data-smart-tip="删除选项" @click="form.config.options.splice(i, 1)"><StIcon name="minus-circle" :size="20" /></span>
                 <el-popover :hide-after="0" trigger="click" placement="bottom-start" :width="208" popper-class="fcd-color-pop" :show-arrow="false">
@@ -49,7 +49,7 @@
                 <input v-model="o.label" class="fcd-opt-in" />
                 <span class="fcd-drag st-icon-action" draggable="true" data-smart-tip="拖拽调整顺序" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = -1">
                   <StIcon name="drag" :size="16" /></span>
-              </div>
+              </SmartListItem>
               <div class="fcd-add" @click="addOption"><StIcon name="plus-circle" :size="20" />添加选项</div>
             </div>
             <el-checkbox v-model="form.config.allowAddOptionWhenEditing" class="fcd-ck">允许填写时新增选项</el-checkbox>
@@ -232,7 +232,7 @@
             <div class="fcd-hint">自定义格式和规则的编号</div>
             <div class="fcd-segbox">
               <div class="fcd-seg-preview"><span class="fcd-sub">编号预览</span>{{ segPreview }}</div>
-              <div v-for="(s, i) in form.config.segments" :key="i" class="fcd-seg" :class="dropCls(i)"
+              <div v-for="(s, i) in form.config.segments" :key="i" v-reorder-feedback="dropCls(i)" class="fcd-seg" :class="dropCls(i)"
                    @dragover.prevent="overIdx = i" @drop.prevent="dropSeg(i)">
                 <span class="fcd-del st-icon-action" :class="{ hidden: s.type === 'autoIncrement' }" @click="s.type !== 'autoIncrement' && form.config.segments.splice(i, 1)">
                   <StIcon name="minus-circle" :size="20" /></span>
@@ -347,6 +347,8 @@
 </template>
 
 <script setup>
+import { vReorderFeedback } from '../../../smart/utils/reorderFeedback.js'
+import SmartListItem from '../common/SmartListItem.vue'
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
 import { computed, defineComponent, h, nextTick, reactive, ref, watch } from 'vue'
 import { ElDropdown, ElDropdownItem, ElDropdownMenu, ElMessage, ElOption, ElSelect } from 'element-plus'
@@ -444,6 +446,7 @@ const MatchSwitch = defineComponent({
 
 // ---------- 表单 ----------
 const form = reactive({ label: '', field_type: 'text', config: {} })
+const panelWidth = computed(() => form.field_type === 'ai' ? 470 : 320)
 let lastSelectCfg = null
 watch(() => props.visible, async (v) => {
   if (!v) return
@@ -662,25 +665,25 @@ function save() {
 
 <style scoped>
 .fcd { display: flex; flex-direction: column; --el-color-primary: var(--st-primary); }
-.fcd-input { box-sizing: border-box; height: 36px; border: 1px solid #DEE0E3; border-radius: 6px; padding: 0 12px; font-size: 14px;
-             color: var(--st-text-1); outline: none; background: #fff; }
+.fcd-input { box-sizing: border-box; height: 36px; border: 1px solid #DEE0E3; border-radius: 6px; padding: 0 12px; font-size: var(--st-font-size);
+             color: var(--st-text-2); outline: none; background: #fff; }
 .fcd-input:hover { border-color: #C9CDD4; }
 .fcd-input:focus { border-color: var(--st-primary); }
 .fcd-name { width: 100%; margin-bottom: 12px; }
 .fcd-select { width: 100%; }
-.fcd-select :deep(.el-select__wrapper) { min-height: 36px; border-radius: 6px; font-size: 14px; box-shadow: 0 0 0 1px #DEE0E3 inset; padding: 0 12px; }
+.fcd-select :deep(.el-select__wrapper) { min-height: 36px; border-radius: 6px; font-size: var(--st-font-size); box-shadow: 0 0 0 1px #DEE0E3 inset; padding: 0 12px; }
 .fcd-select :deep(.el-select__wrapper:hover) { box-shadow: 0 0 0 1px #C9CDD4 inset; }
 .fcd-select :deep(.el-select__wrapper.is-focused) { box-shadow: 0 0 0 1px var(--st-primary) inset; }
-.fcd-pre { color: var(--st-text-1); margin-right: 4px; }
+.fcd-pre { color: var(--st-text-2); margin-right: 4px; }
 .fcd-opt { display: inline-flex; align-items: center; gap: 10px; }
-.fcd-opt .st-icon { color: var(--st-text-1); }
+.fcd-opt .st-icon { color: var(--st-text-2); }
 .fcd-opt-lr { display: flex; justify-content: space-between; width: 100%; gap: 16px; }
 .fcd-select :deep(.el-select__selected-item) { width: 100%; }   /* 让选中值的右侧说明（人民币 / ¥1.00）靠右 */
-.fcd-sub { color: var(--st-text-3); font-size: 14px; margin-right: 6px; }
-.fcd-hint { font-size: 14px; color: var(--st-text-3); margin-top: 10px; }
+.fcd-sub { color: var(--st-text-3); font-size: var(--st-font-size); margin-right: 6px; }
+.fcd-hint { font-size: var(--st-font-size); color: var(--st-text-3); margin-top: 10px; }
 .fcd-sep { height: 1px; background: #EBECEE; margin: 16px -24px 16px; }
 /* 分区小标题：上方 16px 与上一分区隔开；紧跟分隔线的第一个分区不加 */
-.fcd-label { font-size: 15px; color: var(--st-text-3); margin: 16px 0 8px; }
+.fcd-label { font-size: var(--st-font-size); color: var(--st-text-3); margin: 16px 0 8px; }
 .fcd-sep + .fcd-label, .fcd-sep + .fcd-head { margin-top: 0; }
 .fcd-row2 + .fcd-label { margin-top: 16px; }
 .fcd-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
@@ -688,29 +691,26 @@ function save() {
 .fcd-right, .fcd-inline { display: inline-flex; align-items: center; gap: 6px; }
 .fcd-inline { margin: 12px 0 8px; }
 .fcd-tip { color: var(--st-text-3); cursor: help; }
-.fcd :deep(.el-checkbox__label) { font-size: 16px; color: var(--st-text-1); padding-left: 10px; }
+.fcd :deep(.el-checkbox__label) { font-size: var(--st-font-size); color: var(--st-text-2); padding-left: 10px; }
 .fcd :deep(.el-checkbox__inner) { width: 18px; height: 18px; border-radius: 4px; }
 .fcd :deep(.el-checkbox__inner::after) { width: 4px; height: 8px; border-width: 0 2px 2px 0; }
 .fcd-ck { margin-top: 12px; height: auto; }
 /* 选项列表框 */
 .fcd-optbox { border: 1px solid #DEE0E3; border-radius: 8px; padding: 8px 12px 6px; }
-.fcd-opt-row { display: flex; align-items: center; gap: 14px; height: 44px; margin: 0 -8px; padding: 0 8px; border-radius: 6px;
+.fcd-opt-row { display: flex; align-items: center; margin: 0 -8px; padding: 0 8px;
                border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
-.fcd-opt-row:hover { background: #F2F3F5; }
-.fcd-opt-row.drop-before { border-top-color: var(--st-primary); }
-.fcd-opt-row.drop-after { border-bottom-color: var(--st-primary); }
 .fcd-del { display: inline-flex; color: #C9CDD4; cursor: pointer; flex: none; }
 .fcd-del:hover { color: var(--el-color-danger); }
 .fcd-del.hidden { visibility: hidden; }
 .fcd-color { width: 22px; height: 22px; border-radius: 4px; cursor: pointer; flex: none; }
-.fcd-opt-in { flex: 1; min-width: 0; height: 36px; border: 1px solid transparent; border-radius: 6px; padding: 0 10px; margin-left: -10px;
-              font-size: 14px; color: var(--st-text-1); background: transparent; outline: none; }
+.fcd-opt-in { flex: 1; min-width: 0; height: 28px; border: 1px solid transparent; border-radius: 4px; padding: 0 10px; margin-left: -10px;
+              font-size: var(--st-font-size); color: var(--st-text-2); background: transparent; outline: none; }
 .fcd-opt-in:focus { border-color: var(--st-primary); background: #fff; }
 .fcd-drag { display: inline-flex; color: var(--st-text-3); cursor: grab; flex: none; }
-.fcd-add { display: inline-flex; align-items: center; gap: 12px; height: 44px; color: var(--st-primary); font-size: 16px; cursor: pointer; }
+.fcd-add { display: inline-flex; align-items: center; gap: 12px; height: 44px; color: var(--st-primary); font-size: var(--st-font-size); cursor: pointer; }
 .fcd-add.gray { color: var(--st-text-2); gap: 6px; height: 36px; }
-.fcd-add.gray:hover { color: var(--st-text-1); }
-.fcd-add.dark { color: var(--st-text-1); }
+.fcd-add.gray:hover { color: var(--st-text-2); }
+.fcd-add.dark { color: var(--st-text-2); }
 .fcd-palette { display: grid; grid-template-columns: repeat(6, 24px); gap: 8px; }
 .fcd-pal { width: 24px; height: 24px; border-radius: 4px; cursor: pointer; box-sizing: border-box; }
 .fcd-pal.on { box-shadow: 0 0 0 2px #fff inset, 0 0 0 2px var(--st-primary); }
@@ -719,59 +719,57 @@ function save() {
 .fcd-row2 > * { flex: 1; min-width: 0; }
 .fcd-col { display: flex; flex-direction: column; }
 .fcd-graybox { background: #F5F6F7; border-radius: 8px; padding: 14px 18px 8px; margin-top: 12px; }
-.fcd-gb-head { display: flex; align-items: center; justify-content: space-between; font-size: 15px; color: var(--st-text-2); margin-bottom: 12px; }
+.fcd-gb-head { display: flex; align-items: center; justify-content: space-between; font-size: var(--st-font-size); color: var(--st-text-2); margin-bottom: 12px; }
 .fcd-cond { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
 .fcd-cond :deep(.el-select__wrapper) { background: #fff; }
 .fcd-c1, .fcd-c3 { flex: 1; min-width: 0; }
 .fcd-c2 { width: 92px; flex: none; }
-.fcd-small { height: 36px; font-size: 14px; }
+.fcd-small { height: 36px; font-size: var(--st-font-size); }
 .fcd :deep(.fcd-match) { display: inline-flex; align-items: center; gap: 2px; color: var(--st-text-2); }
-.fcd :deep(.fcd-link-dd) { display: inline-flex; align-items: center; gap: 2px; color: var(--st-primary); cursor: pointer; font-size: 15px; }
+.fcd :deep(.fcd-link-dd) { display: inline-flex; align-items: center; gap: 2px; color: var(--st-primary); cursor: pointer; font-size: var(--st-font-size); }
 .fcd :deep(.fcd-link-dd.gray) { color: var(--st-text-2); }
 .fcd-swap { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 36px; border: 1px solid #DEE0E3; border-radius: 6px;
-            background: #fff; font-size: 14px; color: var(--st-text-1); cursor: pointer; flex: none; }
+            background: #fff; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; flex: none; }
 .fcd-swap sub { font-size: 11px; }
 .fcd-swap.off { opacity: .4; cursor: not-allowed; }
 /* 数字族：快捷转换 */
 .fcd-quick { display: grid; grid-template-columns: repeat(4, 1fr); background: #F2F3F5; border-radius: 8px; padding: 0; overflow: hidden; }
 .fcd-qt { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 64px; box-sizing: border-box; cursor: pointer;
-          font-size: 15px; color: var(--st-text-1); border: 1px solid transparent; border-radius: 8px; }
+          font-size: var(--st-font-size); color: var(--st-text-2); border: 1px solid transparent; border-radius: 8px; }
 .fcd-qt:hover { background: #E8E9EB; }
 .fcd-qt.on { background: #fff; border-color: #DEE0E3; }
-.fcd-qt-ico { height: 28px; display: inline-flex; align-items: center; font-size: 22px; font-weight: 300; }
+.fcd-qt-ico { height: 28px; display: inline-flex; align-items: center; font-size: var(--st-font-size); font-weight: 300; }
 .fcd-pcolors { display: grid; grid-template-columns: repeat(9, 20px); justify-content: space-between; row-gap: 12px; }
 .fcd-pc { width: 20px; height: 20px; padding: 0; border: none; border-radius: 2px; cursor: pointer; box-sizing: border-box; }
 .fcd-pc.on { outline: 1px solid var(--st-primary); outline-offset: 2px; }
 .fcd-progress-preview { display: flex; flex-direction: column; gap: 4px; }
 .fcd-preview-track { height: 10px; background: #f1f2f3; border-radius: 2px; overflow: hidden; }
 .fcd-preview-track span { display: block; height: 100%; border-radius: 2px; }
-.fcd-preview-name { text-align: center; margin-top: 8px; font-size: 13px; color: var(--st-text-1); }
+.fcd-preview-name { text-align: center; margin-top: 8px; font-size: var(--st-font-size); color: var(--st-text-2); }
 .fcd-range { display: flex; align-items: center; height: 36px; border: 1px solid #DEE0E3; border-radius: 6px; padding: 0 12px; }
-.fcd-range-in { flex: 1; min-width: 0; border: none; outline: none; font-size: 14px; color: var(--st-text-1); background: transparent; }
+.fcd-range-in { flex: 1; min-width: 0; border: none; outline: none; font-size: var(--st-font-size); color: var(--st-text-2); background: transparent; }
 .fcd-range-in.right { text-align: right; }
 .fcd-range-value { display: flex; align-items: center; flex: 1; min-width: 0; }
 .fcd-range-value.right { justify-content: flex-end; }
 .fcd-range-value .fcd-range-in { flex: none; padding: 0; max-width: calc(100% - 16px); }
 .fcd-range-dash { color: #DEE0E3; padding: 0 12px; }
 /* 人员：开关行 */
-.fcd-switch { display: flex; align-items: center; justify-content: space-between; font-size: 16px; color: var(--st-text-1); height: 40px; }
+.fcd-switch { display: flex; align-items: center; justify-content: space-between; font-size: var(--st-font-size); color: var(--st-text-2); height: 40px; }
 .fcd-switch + .fcd-switch { margin-top: 16px; }
-.fcd-lrow { display: flex; align-items: center; justify-content: space-between; font-size: 16px; color: var(--st-text-1); }
+.fcd-lrow { display: flex; align-items: center; justify-content: space-between; font-size: var(--st-font-size); color: var(--st-text-2); }
 .fcd-w200 { width: 224px; }
 .fcd-cks { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 18px; }
 .fcd-cks :deep(.el-checkbox) { height: 32px; }
 /* 自动编号 */
 .fcd-segbox { border: 1px solid #DEE0E3; border-radius: 8px; overflow: hidden; margin-top: 14px; padding-bottom: 6px; }
-.fcd-seg-preview { background: #F2F3F5; height: 54px; display: flex; align-items: center; gap: 12px; padding: 0 18px; font-size: 16px; color: var(--st-text-1); margin-bottom: 8px; }
+.fcd-seg-preview { background: #F2F3F5; height: 54px; display: flex; align-items: center; gap: 12px; padding: 0 18px; font-size: var(--st-font-size); color: var(--st-text-2); margin-bottom: 8px; }
 .fcd-seg { display: flex; align-items: center; gap: 14px; padding: 4px 18px; border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
-.fcd-seg.drop-before { border-top-color: var(--st-primary); }
-.fcd-seg.drop-after { border-bottom-color: var(--st-primary); }
-.fcd-seg-l { width: 96px; flex: none; font-size: 15px; color: var(--st-text-1); }
+.fcd-seg-l { width: 96px; flex: none; font-size: var(--st-font-size); color: var(--st-text-2); }
 .fcd-seg-ctl { flex: 1; min-width: 0; }
-.fcd-seg-in { width: 100%; height: 36px; font-size: 14px; }
+.fcd-seg-in { width: 100%; height: 36px; font-size: var(--st-font-size); }
 .fcd-seg-ctl :deep(.el-select__wrapper) { min-height: 36px; }
 .fcd-digits { display: flex; align-items: center; height: 36px; border: 1px solid #DEE0E3; border-radius: 6px; overflow: hidden; padding-left: 12px; }
-.fcd-digits-in { flex: 1; min-width: 0; border: none; outline: none; font-size: 14px; background: transparent; -moz-appearance: textfield; }
+.fcd-digits-in { flex: 1; min-width: 0; border: none; outline: none; font-size: var(--st-font-size); background: transparent; -moz-appearance: textfield; }
 .fcd-digits-in::-webkit-inner-spin-button { display: none; }
 .fcd-steps { display: flex; flex-direction: column; width: 46px; height: 100%; background: #F2F3F5; font-size: 9px; color: var(--st-text-2); }
 .fcd-steps span { flex: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; }
@@ -779,9 +777,9 @@ function save() {
 .fcd-segbox :deep(.el-dropdown) { padding: 0 18px; }
 /* 公式入口 */
 .fx-entry { display: flex; align-items: center; gap: 12px; min-height: 54px; padding: 8px 18px; background: #F5F6F7; border-radius: 6px; cursor: pointer;
-            font-size: 16px; color: var(--st-text-1); }
+            font-size: var(--st-font-size); color: var(--st-text-2); }
 .fx-entry:hover { background: #EDEEF0; }
-.fx-preview { flex: 1; min-width: 0; font-family: Menlo, Consolas, monospace; font-size: 13px; line-height: 26px; word-break: break-all;
+.fx-preview { flex: 1; min-width: 0; font-family: Menlo, Consolas, monospace; font-size: var(--st-font-size); line-height: 26px; word-break: break-all;
               display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .fx-chip { display: inline-flex; align-items: center; gap: 3px; border: 1px solid #3D7BF2; background: #EAF1FE; border-radius: 11px;
            padding: 0 7px; line-height: 20px; font-family: var(--el-font-family); margin: 0 1px; }
@@ -791,10 +789,10 @@ function save() {
 .fcd-foot { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
 .fcd-foot.sep { border-top: 1px solid #EBECEE; margin: 16px -24px 0; padding: 16px 24px 0; }
 .fcd-flex { flex: 1; }
-.fcd-ai { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--st-text-3); cursor: pointer; }
-.fcd-ai:hover { color: var(--st-text-1); }
+.fcd-ai { display: inline-flex; align-items: center; gap: 6px; font-size: var(--st-font-size); color: var(--st-text-3); cursor: pointer; }
+.fcd-ai:hover { color: var(--st-text-2); }
 .fcd-ai-logo { width: 18px; height: 18px; border-radius: 5px; background: linear-gradient(135deg, #8B6CF6, #E96BD8); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
-.fcd-btn { height: 32px; padding: 0 16px; border-radius: 6px; border: none; background: #F2F3F5; font-size: 14px; color: var(--st-text-1); cursor: pointer; }
+.fcd-btn { height: 32px; padding: 0 16px; border-radius: 6px; border: none; background: #F2F3F5; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
 .fcd-btn:hover { background: #E6E8EA; }
 .fcd-btn.primary { background: var(--st-primary); color: #fff; }
 .fcd-btn.primary:hover { background: #255BD0; }
@@ -806,14 +804,20 @@ function save() {
 .el-dialog.st-fcd { padding: 0; border-radius: 8px; box-shadow: 0 8px 32px rgba(0, 0, 0, .14); }
 .el-dialog.st-fcd .el-dialog__header { display: none; }
 .el-dialog.st-fcd .el-dialog__body { padding: 24px; }
-.el-dialog.st-fcd-number .el-dialog__body { padding: 16px; }
+.el-dialog.st-fcd-compact .el-dialog__body { padding: 16px; }
 .el-dialog.st-fcd-number .fcd-qt { height: 56px; }
-.el-dialog.st-fcd-number .fcd-sep { margin-left: -16px; margin-right: -16px; }
-.el-dialog.st-fcd-number .fcd-foot.sep { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
+.el-dialog.st-fcd-compact .fcd-sep { margin-left: -16px; margin-right: -16px; }
+.el-dialog.st-fcd-compact .fcd-foot.sep { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
+/* 窄面板中的条件和操作允许换行，避免挤出 320px 的边界。 */
+.el-dialog.st-fcd-compact .fcd-gb-head { flex-wrap: wrap; gap: 8px; }
+.el-dialog.st-fcd-compact .fcd-cond { flex-wrap: wrap; }
+.el-dialog.st-fcd-compact .fcd-c1 { flex-basis: calc(100% - 98px); }
+.el-dialog.st-fcd-compact .fcd-c3 { flex-basis: calc(100% - 72px); }
+.el-dialog.st-fcd-compact .fcd-foot { flex-wrap: wrap; }
 /* 下拉：选项 16px、带图标；类型下拉分组之间用分隔线 */
-.fcd-pop .el-select-dropdown__item { font-size: 15px; height: 40px; line-height: 40px; }
+.fcd-pop .el-select-dropdown__item { font-size: var(--st-font-size); height: var(--st-list-item-height); line-height: var(--st-list-item-height); }
 .fcd-date-pop .el-select-dropdown__wrap { max-height: min(380px, calc(100vh - 32px)); }
-.fcd-date-pop .el-select-dropdown__item { display: flex; align-items: center; font-weight: normal; color: var(--st-text-1); }
+.fcd-date-pop .el-select-dropdown__item { display: flex; align-items: center; font-weight: normal; color: var(--st-text-2); }
 .fcd-date-check { display: inline-flex; width: 26px; flex-shrink: 0; color: var(--el-color-primary); }
 .fcd-pop .el-select-group__wrap:not(:last-of-type)::after { left: 12px; right: 12px; background: #EBECEE; }
 .fcd-pop .el-select-group__title { display: none; }

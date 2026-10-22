@@ -1,9 +1,9 @@
 <template>
   <!-- 表格设置面板（参照 docs/智慧表格/表格上方按钮/表格设置.png）：
-       字段行 = 56px，类型图标 + 名称 + 眼睛(显隐) + ⋯；编组为可折叠节（▾ 组名，成员带竖向层级线）。
+       字段行 = 32px，类型图标 + 名称 + 眼睛(显隐) + ⋯；编组为可折叠节（▾ 组名，成员缩进）。
        列顺序即表格显示顺序，整行可拖（落点指示同记事本目录：上/下沿蓝线、组头中部虚线框=移入编组）。
        长字段列表独立滚动，新增字段固定在下方；成员拖出编组范围即退出编组（父级处理）。 -->
-  <el-popover :hide-after="0" trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="420" popper-class="st-tbpanel st-ts-pop">
+  <el-popover :hide-after="0" trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="420" :popper-options="popperOptions" popper-class="st-tbpanel st-ts-pop">
     <template #reference><slot /></template>
     <div class="tbp-title ts-title">表格设置</div>
     <div class="settings">
@@ -11,7 +11,7 @@
         <template v-for="row in flatRows" :key="row.key">
           <div v-if="row.divider" class="ts-divider" />
           <!-- 编组组头：可折叠、可整组拖动（成员作为整体移动）；拖拽落点（字段中部虚线框 = 移入该组） -->
-          <div v-else-if="row.isGroup" class="group-head tree-item" :class="dndIndicator(row)"
+          <SmartListItem v-else-if="row.isGroup" v-reorder-feedback="dndIndicator(row)" class="group-head tree-item" :class="dndIndicator(row)"
                draggable="true" @dragstart="dndStartGroup(row.group, $event)"
                @dragover="dndOver(row, $event)" @drop="dndDrop(row, $event)" @dragend="dndEnd"
                @click="toggleGroup(row.group.id)">
@@ -22,9 +22,9 @@
               <StIcon :name="groupHidden(row) ? 'eye-off' : 'eye'" :size="20" :stroke-width="1.2" />
             </span>
             <span class="f-more f-more-ph" />
-          </div>
-          <!-- 字段行（编组成员缩进 + 竖向层级线）：整行可拖 -->
-          <div v-else class="field-row tree-item" :class="[{ member: row.member, off: isHidden(row.field) }, dndIndicator(row)]"
+          </SmartListItem>
+          <!-- 字段行（编组成员缩进）：整行可拖 -->
+          <SmartListItem v-else v-reorder-feedback="dndIndicator(row)" class="field-row tree-item" :class="[{ member: row.member, off: isHidden(row.field) }, dndIndicator(row)]"
                draggable="true" @dragstart="dndStart(row.field, $event)"
                @dragover="dndOver(row, $event)" @drop="dndDrop(row, $event)" @dragend="dndEnd">
             <span class="ts-drag st-icon-action"><StIcon name="drag" :size="14" /></span>
@@ -45,15 +45,17 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-          </div>
+          </SmartListItem>
         </template>
       </div>
-      <div class="add-field" @click="(e) => $emit('add-field', e)"><StIcon name="plus" :size="16" />新增字段</div>
+      <SmartListItem class="add-field" @click="(e) => $emit('add-field', e)"><StIcon name="plus" :size="16" />新增字段</SmartListItem>
     </div>
   </el-popover>
 </template>
 
 <script setup>
+import { vReorderFeedback } from '../../../smart/utils/reorderFeedback.js'
+import SmartListItem from '../common/SmartListItem.vue'
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
 import { computed, ref } from 'vue'
 import StIcon from '../icons/StIcon.vue'
@@ -67,6 +69,17 @@ const props = defineProps({
 const emit = defineEmits(['close', 'update:visible', 'toggle-visible', 'reorder', 'field-action',
                           'add-field', 'set-field-group'])
 const visibleModel = computed({ get: () => props.visible, set: (v) => emit('update:visible', v) })
+// 按工具栏下方实际可用空间限制整个面板，标题和新增入口不参与列表滚动。
+const popperOptions = {
+  modifiers: [
+    { name: 'flip', enabled: false },
+    { name: 'settingsHeight', enabled: true, phase: 'beforeRead', fn({ state }) {
+      const bottom = state.elements.reference.getBoundingClientRect().bottom
+      state.elements.popper.style.maxHeight = `${Math.max(0, window.innerHeight - bottom - 24)}px`
+      state.rects.popper.height = state.elements.popper.offsetHeight
+    } },
+  ],
+}
 
 // 字段显示顺序 = 视图 fieldOrder（与网格 visibleFields 同源）
 const orderedFields = computed(() => {
@@ -244,42 +257,39 @@ function dndIndicator(row) {
 </script>
 
 <style scoped>
-.ts-title { margin-bottom: 12px; }
-.settings { display: flex; flex-direction: column; margin: 0 -10px; padding: 0 10px; }
+.ts-title { margin-bottom: 12px; flex: none; }
+.settings { display: flex; flex-direction: column; min-height: 0; margin: 0 -10px; padding: 0 10px; }
 /* 列表左移 16px，行内留 18px 左内边距放拖动手柄（参照稿：悬停行左侧 ⋮⋮），图标仍与标题/新增字段对齐；
    手柄须在行内——放在行外会被列表 overflow 裁掉 */
-.settings-list { display: flex; flex-direction: column; min-height: 0; max-height: calc(100vh - 220px); overflow: auto; margin-left: -16px; }
-.field-row { position: relative; display: flex; align-items: center; flex: none; gap: 8px; height: 42px; padding: 0 4px 0 18px; border-radius: 6px; cursor: grab; }
-.field-row:hover, .group-head:hover { background: var(--st-bg-hover); }
+.settings-list { display: flex; flex-direction: column; min-height: 0; overflow: auto; margin-left: -16px; }
+.field-row { position: relative; display: flex; align-items: center; flex: none; padding: 0 4px 0 18px; cursor: grab; }
 .field-row.member { margin-left: 26px; padding-left: 22px; border-radius: 0 6px 6px 0; }
-.field-row.member::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid #DCDEE0; }
 .ts-drag { position: absolute; left: 2px; top: 50%; transform: translateY(-50%); color: var(--st-text-3); display: none; pointer-events: none; }
 .field-row:hover .ts-drag, .group-head:hover .ts-drag { display: inline-flex; }
 .field-row.member .ts-drag { left: 5px; }
 /* 字段图标/名称与右侧详情面板同一套：图标 16px 灰（--st-text-2）、名称 15px 深色、间距 8px */
 .ts-ico { color: var(--st-text-2); flex: none; }
 .field-row.off .f-name, .field-row.off .ts-ico { opacity: .4; }
-.f-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; color: var(--st-text-1); }
+.f-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--st-font-size); color: var(--st-text-2); }
 /* 显隐眼睛：与字段类型图标同色（--st-text-2）；20px 配 1.2 描边，实际线宽 1.5px 与 16px 字段图标一致 */
 .f-eye { cursor: pointer; color: var(--st-text-2); display: inline-flex; align-items: center; justify-content: center;
          flex: none; width: 32px; height: 32px; border-radius: 6px; }
 .f-eye:hover { color: var(--st-primary); background: var(--st-bg-active); }
-.f-more { cursor: pointer; color: var(--st-text-1); display: inline-flex; align-items: center; justify-content: center;
+.f-more { cursor: pointer; color: var(--st-text-2); display: inline-flex; align-items: center; justify-content: center;
           flex: none; width: 32px; height: 32px; border-radius: 6px; }
 .f-more:hover { color: var(--st-primary); background: var(--st-bg-active); }
 .f-more-ph { cursor: default; }
 .f-more-ph:hover { background: transparent; }
-/* 编组组头：可折叠节标题（∨ 组名），与字段行同为 56px */
-.group-head { position: relative; display: flex; align-items: center; flex: none; gap: 8px; height: 42px; padding: 0 4px 0 18px; border-radius: 6px; cursor: pointer; user-select: none; }
-.g-caret { display: inline-flex; color: var(--st-text-1); }
-.g-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; color: var(--st-text-1); }
+/* 编组组头：可折叠节标题（∨ 组名），与字段行同为 32px */
+.group-head { position: relative; display: flex; align-items: center; flex: none; padding: 0 4px 0 18px; cursor: pointer; user-select: none; }
+.g-caret { display: inline-flex; color: var(--st-text-2); }
+.g-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--st-font-size); color: var(--st-text-2); }
 .ts-divider { height: 1px; background: var(--st-border); margin: 8px 0; flex: none; }
 /* 底部新增字段：不随长字段列表滚动 */
-.add-field { display: flex; align-items: center; flex: none; gap: 8px; height: 42px; margin-top: 4px; padding: 0 2px;
-             cursor: pointer; color: var(--st-text-1); font-size: 15px; border-radius: 6px; }
-.add-field:hover { background: var(--st-bg-hover); }
+.add-field { display: flex; align-items: center; flex: none; margin-top: 4px; padding: 0 2px;
+             cursor: pointer; }
 </style>
 
 <style>
-.st-ts-pop.el-popover.el-popper { padding: 22px 20px 12px; }
+.st-ts-pop.el-popover.el-popper { display: flex; flex-direction: column; box-sizing: border-box; max-height: calc(100dvh - 24px); padding: 22px 20px 12px; }
 </style>

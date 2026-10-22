@@ -4,7 +4,7 @@
       <CompactCellTags class="file-compact-tags" :tags="fileTags" :expanded="selected" @tag-click="(_, event) => { event.stopPropagation(); clickFile() }">
         <template #tag="{ tag }"><FileTypeIcon :file="tag.file" /><span class="file-chip-name">{{ tag.label }}</span></template>
       </CompactCellTags>
-      <CellDropdown v-if="!readonly" class="file-cell-arrow" overlay :bordered="selected" :visible="selected || opened" :open="opened" label="展开或收起文件面板" @click="toggle('pick')" />
+      <CellDropdown v-if="!readonly" class="file-cell-arrow" overlay :top="selected || opened" :bordered="selected" :visible="selected || opened" :open="opened" label="展开或收起文件面板" @click="toggle('pick')" />
     </div>
     <el-popover v-if="opened" :visible="opened" virtual-triggering :virtual-ref="anchor" placement="bottom-end" :width="mode === 'pick' ? 280 : 400" :show-arrow="false" popper-class="file-cell-pop" :persistent="false">
       <div ref="panel" class="file-panel" tabindex="-1" @mousedown.stop @click.stop @keydown.esc.stop.prevent="close(true)" @dragover.prevent @drop.prevent="drop">
@@ -122,19 +122,20 @@ useGridScrollCollapse(() => opened.value, () => {
 button { font: inherit; color: inherit; cursor: pointer; }
 .file-cell-anchor { display: block; width: 100%; }
 .file-cell-trigger { position: relative; cursor: default; min-height: 28px; }
-.file-cell-trigger.selected { cursor: pointer; box-sizing: border-box; min-height: var(--file-row-height, 36px); border: 2px solid var(--st-primary, #3370ff); background: white; padding: 4px 26px 4px 6px; border-radius: 0; z-index: 2; box-shadow: 0 4px 16px #0000001f; }
+.file-cell-trigger.selected { cursor: pointer; box-sizing: border-box; min-height: var(--file-row-height, 36px); border: 2px solid var(--st-primary, #267EF0); background: white; padding: 4px 26px 4px 6px; border-radius: 0; z-index: 2; box-shadow: 0 4px 16px #0000001f; }
 .file-compact-tags .file-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-panel { font-size: 13px; color: #30343b; outline: none; }
+.file-panel { font-size: var(--st-font-size); color: var(--st-text-2); outline: none; }
 .file-search { width: 100%; box-sizing: border-box; height: 44px; padding: 0 16px; border: 0; border-bottom: 1px solid #eceef0; border-radius: 8px 8px 0 0; outline: none; font: inherit; }
 .file-search::placeholder { color: #a0a5ae; }
-.file-section-title { padding: 14px 16px 6px; color: #9399a3; font-size: 12px; }
+.file-section-title { padding: 14px 16px 6px; color: #9399a3; font-size: var(--st-font-size); }
 .file-recent { max-height: 250px; overflow: auto; padding: 0 6px 8px; }
-.file-recent-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; background: transparent; border: 0; border-radius: 4px; text-align: left; }
+.file-recent-row { display: flex; align-items: center; gap: 8px; width: 100%; height: var(--st-list-item-height, 32px); box-sizing: border-box; padding: 0 10px; background: transparent; border: 0; border-radius: 4px; text-align: left; }
 .file-recent-row > span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-recent-row:hover { background: #f2f3f5; }
 .file-check { color: #3985f7; }
 .file-upload-button, .file-add-button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 16px; background: transparent; border: 0; border-top: 1px solid #eceef0; border-radius: 0 0 8px 8px; text-align: left; }
-.file-add-button { justify-content: center; color: #969da8; }
+.file-upload-button { height: var(--st-list-item-height, 32px); box-sizing: border-box; padding-top: 0; padding-bottom: 0; }
+.file-add-button { justify-content: center; color: var(--st-text-2); }
 .file-upload-button:hover, .file-add-button:hover { background: #f2f3f5; }
 .file-panel-toolbar { display: flex; justify-content: flex-end; padding: 6px 12px; border-bottom: 1px solid #eceef0; gap: 4px; }
 .file-toolbar-icon { width: 28px; height: 26px; border: 0; border-radius: 4px; background: transparent; display: inline-flex; align-items: center; justify-content: center; color: #828a97; }
@@ -144,9 +145,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .file-item { position: relative; min-width: 0; }
 .file-preview { display: flex; justify-content: center; align-items: center; border: 1px solid #e9ebee; border-radius: 4px; height: 72px; width: 100%; background: white; padding: 0; overflow: hidden; }
 .file-preview img { width: 100%; height: 100%; object-fit: contain; }
-.file-preview .file-type-icon { width: 32px; height: 32px; font-size: 20px; }
+.file-preview .file-type-icon { width: 32px; height: 32px; font-size: var(--st-font-size); }
 .file-info { border: 0; background: transparent; padding: 6px 0 0; width: 100%; text-align: left; min-width: 0; }
-.file-item-name { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-item-name { display: block; font-size: var(--st-font-size); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-item > .el-dropdown { position: absolute; top: 3px; right: 3px; }
 .file-menu-button { display: inline-flex; justify-content: center; align-items: center; width: 20px; height: 20px; border: 0; border-radius: 3px; background: #a4a9b1; color: white; opacity: 0; }
 .file-item:hover .file-menu-button, .file-item:focus-within .file-menu-button { opacity: 1; }
@@ -154,9 +155,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .file-items.list .file-item { display: flex; align-items: center; gap: 10px; border: 1px solid #d7dbe1; border-radius: 4px; background: #f4f5f6; padding: 10px; }
 .file-items.list .file-preview { width: 30px; height: 30px; flex: none; border: 0; background: transparent; }
 .file-items.list .file-info { flex: 1; padding: 0; }
-.file-item-size { display: block; color: #9aa1ac; margin-top: 4px; font-size: 12px; }
+.file-item-size { display: block; color: #9aa1ac; margin-top: 4px; font-size: var(--st-font-size); }
 .file-delete { flex: none; }
-.file-empty { padding: 16px 10px; color: #969da8; font-size: 12px; }
-.file-error { padding: 8px 12px; color: #da6262; font-size: 12px; overflow-wrap: anywhere; max-height: 70px; overflow: auto; }
+.file-empty { padding: 16px 10px; color: var(--st-text-2); font-size: var(--st-font-size); }
+.file-error { padding: 8px 12px; color: #da6262; font-size: var(--st-font-size); overflow-wrap: anywhere; max-height: 70px; overflow: auto; }
 .file-input { display: none; }
 </style>

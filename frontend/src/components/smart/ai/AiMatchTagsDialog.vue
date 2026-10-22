@@ -53,7 +53,7 @@ async function run() {
 
 <style scoped>
 .amt { display: flex; flex-direction: column; gap: 12px; }
-.amt-l { font-size: 13px; color: var(--st-text-2); }
+.amt-l { font-size: var(--st-font-size); color: var(--st-text-2); }
 .amt-sel { width: 100%; }
-.amt-tip { font-size: 12px; color: var(--st-text-4); }
+.amt-tip { font-size: var(--st-font-size); color: var(--st-text-4); }
 </style>

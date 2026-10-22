@@ -51,11 +51,11 @@ async function showSpecific() {
 </script>
 
 <style scoped>
-.dvi-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 0; min-height: 36px; padding: 6px 12px; border: 1px solid var(--st-border); border-radius: 6px; background: #fff; font: inherit; font-size: 14px; color: var(--st-text-1); cursor: pointer; text-align: left; }
+.dvi-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 0; min-height: 36px; padding: 6px 12px; border: 1px solid var(--st-border); border-radius: 6px; background: #fff; font: inherit; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; text-align: left; }
 .dvi-trigger > span { min-width: 0; overflow-wrap: anywhere; }
 .placeholder { color: var(--st-text-4); }
 .dvi-days { padding: 6px; }
-.dvi-item { display: block; width: 100%; padding: 10px 16px; text-align: left; border: 0; border-radius: 4px; background: #fff; color: var(--st-text-1); font: inherit; font-size: 14px; cursor: pointer; }
+.dvi-item { display: block; width: 100%; padding: 0 16px; text-align: left; border: 0; border-radius: 4px; background: #fff; color: var(--st-text-2); font: inherit; font-size: var(--st-font-size); cursor: pointer;  height: var(--st-list-item-height); box-sizing: border-box; }
 .dvi-item:hover { background: var(--st-bg-hover); }
 .dvi-specific { padding: 6px; border-top: 1px solid var(--st-border); }
 .dvi-calendar { padding: 4px 10px 8px; }

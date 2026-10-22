@@ -115,10 +115,10 @@ async function onFile(e) {
 <style scoped>
 .fc-in { width: 100%; }
 .fc-num { width: 240px; }
-.fc-ph { background: #F5F6F7; border: 1px solid #ECEDEF; border-radius: 4px; padding: 9px 12px; font-size: 14px; color: var(--st-text-4); }
+.fc-ph { background: #F5F6F7; border: 1px solid #ECEDEF; border-radius: 4px; padding: 9px 12px; font-size: var(--st-font-size); color: var(--st-text-4); }
 .fc-ro { color: var(--st-text-3); }
 .fc-opts { display: flex; flex-direction: column; gap: 12px; }
-.fc-opt { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; color: var(--st-text-1); cursor: pointer; }
+.fc-opt { display: inline-flex; align-items: center; gap: 10px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
 .preview .fc-opt { cursor: default; }
 .fc-radio { width: 16px; height: 16px; border-radius: 50%; border: 1px solid #D0D3D6; background: #F5F6F7; box-sizing: border-box; flex: none; }
 .fc-radio.on { border: 5px solid var(--st-primary); background: #fff; }
@@ -129,11 +129,11 @@ async function onFile(e) {
 .fc-upload { position: relative; background: #F5F6F7; border: 1px solid #ECEDEF; border-radius: 4px; min-height: 46px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 8px; }
 .fc-upload.big { min-height: 150px; }
 .preview .fc-upload { cursor: default; }
-.fc-up-ph { color: var(--st-text-4); font-size: 14px; }
+.fc-up-ph { color: var(--st-text-4); font-size: var(--st-font-size); }
 .fc-files { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.fc-file { background: #fff; border: 1px solid var(--st-border); border-radius: 4px; padding: 3px 8px; font-size: 13px; display: inline-flex; gap: 6px; }
+.fc-file { background: #fff; border: 1px solid var(--st-border); border-radius: 4px; padding: 3px 8px; font-size: var(--st-font-size); display: inline-flex; gap: 6px; }
 .fc-x { color: var(--st-text-3); cursor: pointer; }
-.fc-up-more { color: var(--st-primary); font-size: 13px; }
-.fc-uploading { position: absolute; right: 10px; bottom: 6px; font-size: 12px; color: var(--st-text-3); }
+.fc-up-more { color: var(--st-primary); font-size: var(--st-font-size); }
+.fc-uploading { position: absolute; right: 10px; bottom: 6px; font-size: var(--st-font-size); color: var(--st-text-3); }
 .fc-file-input { display: none; }
 </style>

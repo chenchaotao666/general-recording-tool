@@ -44,13 +44,13 @@ const filtered = computed(() => (props.view?.config?.filters?.conditions || []).
 <style scoped>
 /* 顶对齐：多行字段名与同排单行字段名首行对齐（参照图「单位-计数-计算排名」） */
 .field-head { display: flex; align-items: flex-start; gap: 5px; width: 100%; min-width: 0; position: relative; box-sizing: border-box; }
-.field-icon { color: var(--st-head-text); flex: none; margin-top: 3px; }
+.field-icon { color: var(--st-head-text); flex: none; margin-top: 4px; }
 /* 表头字体统一：13px 粗体灰（编组标题同款） */
 .field-name {
   flex: 0 1 auto; min-width: 0; overflow: hidden;
   display: -webkit-box; -webkit-box-orient: vertical;
   white-space: normal; word-break: break-all; text-overflow: ellipsis;
-  font-size: 13px; line-height: 20px; font-weight: 600; color: var(--st-head-text);
+  font-size: var(--st-font-size); line-height: 20px; font-weight: 600; color: var(--st-head-text);
 }
 .filter-dot { display: inline-flex; vertical-align: -4px; margin-left: 4px; color: var(--st-primary); padding: 2px; border-radius: 4px; cursor: pointer; }
 .filter-dot:hover { background: rgba(46, 107, 230, .12); }

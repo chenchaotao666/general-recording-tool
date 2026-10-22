@@ -59,13 +59,13 @@ function apply() { emit('apply', { ...result.value, label: name.value || '公式
 
 <style scoped>
 .afd { display: flex; flex-direction: column; gap: 10px; }
-.afd-l { font-size: 13px; color: var(--st-text-2); }
+.afd-l { font-size: var(--st-font-size); color: var(--st-text-2); }
 .afd-fields { display: flex; flex-wrap: wrap; gap: 4px; }
-.afd-f { font-size: 12px; background: #F2F3F5; border-radius: 4px; padding: 1px 6px; cursor: pointer; }
+.afd-f { font-size: var(--st-font-size); background: #F2F3F5; border-radius: 4px; padding: 1px 6px; cursor: pointer; }
 .afd-f:hover { background: var(--st-primary-weak); color: var(--st-primary); }
 .afd-gen { align-self: flex-start; gap: 4px; background: linear-gradient(135deg, #7F3FF1, #4C8DFF); border: none; }
 .afd-gen .st-icon { margin-right: 4px; }
 .afd-result { background: #F7F8FA; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
-.afd-code { font-family: Consolas, monospace; background: #fff; border: 1px solid var(--st-border); border-radius: 4px; padding: 8px 10px; font-size: 14px; word-break: break-all; }
-.afd-exp { font-size: 13px; color: var(--st-text-2); }
+.afd-code { font-family: Consolas, monospace; background: #fff; border: 1px solid var(--st-border); border-radius: 4px; padding: 8px 10px; font-size: var(--st-font-size); word-break: break-all; }
+.afd-exp { font-size: var(--st-font-size); color: var(--st-text-2); }
 </style>

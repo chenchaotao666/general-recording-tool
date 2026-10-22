@@ -21,18 +21,19 @@
     <input v-if="searchMode === 'toggle' && searchOpen" ref="kwRef" v-model="kw" class="fol-search"
            :placeholder="kind === 'member' ? '搜索成员' : '搜索'" />
     <div class="fol-list" :style="maxHeight ? { maxHeight: `${maxHeight}px` } : {}">
-      <label v-for="o in filtered" :key="o.id" class="fol-item">
+      <SmartListItem tag="label" v-for="o in filtered" :key="o.id" class="fol-item">
         <el-checkbox :model-value="selected.includes(o.id)" class="fol-ck" @change="$emit('toggle', o.id)" />
         <span v-if="o.viewer" class="fol-me">我<span class="fol-me-hint">(根据查看者动态变化)</span></span>
         <span v-else-if="kind === 'member'" class="fol-member"><span class="fol-av">{{ (o.label || '?')[0] }}</span>{{ o.label }}</span>
         <span v-else class="fol-tag" :style="{ background: optionColor(o.color).value, color: optionColor(o.color).text }">{{ o.label }}</span>
-      </label>
+      </SmartListItem>
       <div v-if="!filtered.length" class="fol-empty">无匹配{{ kind === 'member' ? '成员' : '选项' }}</div>
     </div>
   </div>
 </template>
 
 <script setup>
+import SmartListItem from '../common/SmartListItem.vue'
 import { computed, nextTick, ref } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 import { optionColor } from '../../../smart/registry/fieldRegistry.js'
@@ -69,10 +70,10 @@ defineExpose({ focusSearch })
 .fol { display: flex; flex-direction: column; gap: 8px; --el-color-primary: var(--st-primary); }
 /* 尺寸/取色参照 PixPin_2026-10-18_00-27-29：搜索框 38px 灰底 #EDEFEF、选项行 38px、复选框 18px、标签 15px */
 .fol-search { width: 100%; box-sizing: border-box; height: 38px; border: 1px solid transparent; border-radius: 6px; background: #EDEFEF;
-              padding: 0 12px; font-size: 15px; color: var(--st-text-1); outline: none; }
+              padding: 0 12px; font-size: var(--st-font-size); color: var(--st-text-2); outline: none; }
 .fol-search::placeholder { color: #B5B9C0; }
 .fol-search:focus { border-color: var(--st-primary); }
-.fol-count { display: flex; justify-content: space-between; align-items: center; min-height: 24px; font-size: 15px; color: #6B6F74; padding: 0 0 0 6px; }
+.fol-count { display: flex; justify-content: space-between; align-items: center; min-height: 24px; font-size: var(--st-font-size); color: var(--st-text-2); padding: 0 0 0 6px; }
 .fol-acts { display: inline-flex; align-items: center; gap: 10px; }
 .fol-clear { cursor: pointer; }
 .fol-clear:hover { color: var(--st-primary); }
@@ -81,10 +82,9 @@ defineExpose({ focusSearch })
 /* 搜索按钮：24px 灰底方块 */
 .fol-act { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 4px;
   cursor: pointer; color: var(--st-text-2); background: #E2E3E4; }
-.fol-act:hover, .fol-act.on { background: #D8DADC; color: var(--st-text-1); }
+.fol-act:hover, .fol-act.on { background: #D8DADC; color: var(--st-text-2); }
 .fol-list { display: flex; flex-direction: column; overflow-y: auto; }
-.fol-item { display: flex; align-items: center; gap: 12px; min-height: 38px; padding: 0 6px; border-radius: 6px; cursor: pointer; user-select: none; flex: none; }
-.fol-item:hover { background: #EDEFEF; }
+.fol-item { display: flex; align-items: center; padding: 0 6px; cursor: pointer; user-select: none; flex: none; }
 /* 复选框：16px 圆角方框，主色勾选 */
 .fol-ck { height: auto; margin-right: 0; }
 .fol-ck :deep(.el-checkbox__inner) { width: 18px; height: 18px; border-radius: 3px; border-color: #C9CDD4; background: #fff; }
@@ -93,11 +93,11 @@ defineExpose({ focusSearch })
 .fol-ck :deep(.el-checkbox__input.is-checked .el-checkbox__inner) { background: var(--st-primary); border-color: var(--st-primary); }
 /* 选项文字：15px；标签 4px 圆角、27px 高 */
 .fol-tag { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-           border-radius: 4px; padding: 2px 8px; font-size: 15px; line-height: 23px; }
+           border-radius: 4px; padding: 2px 8px; font-size: var(--st-font-size); line-height: 23px; }
 .fol-member { display: inline-flex; align-items: center; gap: 6px; background: #EFF0F1; border-radius: 4px; padding: 2px 8px 2px 3px;
-              font-size: 15px; line-height: 23px; color: var(--st-text-1); }
+              font-size: var(--st-font-size); line-height: 23px; color: var(--st-text-2); }
 .fol-av { width: 18px; height: 18px; border-radius: 3px; background: #F6903D; color: #fff; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
-.fol-me { font-size: 15px; line-height: 23px; color: var(--st-text-1); }
+.fol-me { font-size: var(--st-font-size); line-height: 23px; color: var(--st-text-2); }
 .fol-me-hint { margin-left: 4px; color: var(--st-text-3); }
-.fol-empty { font-size: 13px; color: var(--st-text-3); text-align: center; padding: 12px 0; }
+.fol-empty { font-size: var(--st-font-size); color: var(--st-text-3); text-align: center; padding: 12px 0; }
 </style>

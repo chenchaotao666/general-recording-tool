@@ -5,6 +5,11 @@ import ElementPlus from 'element-plus'
 import RecordDetailPanel from '../src/components/smart/panels/RecordDetailPanel.vue'
 import RecordDetailFloating from '../src/components/smart/panels/RecordDetailFloating.vue'
 import RecordDetailContent from '../src/components/smart/panels/RecordDetailContent.vue'
+import SmartCellEditor from '../src/components/smart/grid/SmartCellEditor.vue'
+import LinkCellPanel from '../src/components/smart/grid/LinkCellPanel.vue'
+import FileCellPanel from '../src/components/smart/grid/FileCellPanel.vue'
+import ImageCellPanel from '../src/components/smart/grid/ImageCellPanel.vue'
+import RelationCellPanel from '../src/components/smart/grid/RelationCellPanel.vue'
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
 for (const component of [RecordDetailPanel, RecordDetailFloating]) {
   test(`${component.__name} shares content and forwards edits, permissions and navigation`, async () => {
@@ -25,3 +30,98 @@ for (const component of [RecordDetailPanel, RecordDetailFloating]) {
     wrapper.unmount()
   })
 }
+
+test('AI text uses its output editor and still obeys cell permissions', async () => {
+  const field = { field_name: 'ai', field_type: 'ai', label: 'AI', options: { outputType: 'text' } }
+  const wrapper = mount(RecordDetailContent, { props: { record: { id: 1, ai: 'Generated' }, fields: [field], canCreate: false, canDelete: false }, global: { plugins: [ElementPlus] } })
+  try {
+    await wrapper.find('.rd-value').trigger('click')
+    await wrapper.find('textarea').setValue('Manual correction')
+    await wrapper.find('textarea').trigger('blur')
+    expect(wrapper.emitted('cell-commit')[0][0]).toMatchObject({ field, value: 'Manual correction' })
+    await wrapper.setProps({ canEditCell: () => false })
+    expect(wrapper.find('.rd-value').classes()).not.toContain('editable')
+  } finally { wrapper.unmount() }
+})
+
+test('progress editor remains mounted until blur can commit its draft', async () => {
+  const field = { field_name: 'progress', field_type: 'progress', label: 'Progress', options: {} }
+  const wrapper = mount(RecordDetailContent, { attachTo: document.body, props: { record: { id: 1, progress: 20 }, fields: [field], canCreate: false, canDelete: false }, global: { plugins: [ElementPlus] } })
+  try {
+    await wrapper.find('.rd-value').trigger('click')
+    expect(wrapper.find('.rd-value').classes()).toContain('keep-pad')
+    await wrapper.find('input').setValue('65')
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(wrapper.findComponent(SmartCellEditor).exists()).toBe(true)
+    await wrapper.find('input').trigger('blur')
+    expect(wrapper.emitted('cell-commit')[0][0]).toMatchObject({ field, value: 65 })
+  } finally { wrapper.unmount() }
+})
+
+test('detail progress supports dragging without opening the numeric editor', async () => {
+  const field = { field_name: 'progress', field_type: 'progress', label: 'Progress', options: {} }
+  const wrapper = mount(RecordDetailContent, { props: { record: { id: 1, progress: 20 }, fields: [field], canCreate: false, canDelete: false }, global: { plugins: [ElementPlus] } })
+  try {
+    const slider = wrapper.find('.progress-slider')
+    slider.element.value = '65'
+    await slider.trigger('input')
+    expect(wrapper.emitted('cell-commit')).toBeUndefined()
+    await slider.trigger('change')
+    await slider.trigger('click')
+    expect(wrapper.emitted('cell-commit')[0][0]).toMatchObject({ field, value: 65 })
+    expect(wrapper.findComponent(SmartCellEditor).exists()).toBe(false)
+    await wrapper.setProps({ readonly: true })
+    expect(wrapper.find('.progress-slider').exists()).toBe(false)
+  } finally { wrapper.unmount() }
+})
+
+test('scrolling record details dismisses the read-only field hint', async () => {
+  const wrapper = mount(RecordDetailContent, {
+    props: { record: { id: 1, serial: 134 }, fields: [{ field_name: 'serial', field_type: 'autoNumber', label: 'Serial' }], canCreate: false, canDelete: false },
+    global: { plugins: [ElementPlus], stubs: { teleport: true } },
+  })
+  try {
+    await wrapper.find('.rd-value').trigger('click')
+    expect(wrapper.find('.rd-blocked-hint').exists()).toBe(true)
+    await wrapper.find('.rd-body').trigger('scroll')
+    expect(wrapper.find('.rd-blocked-hint').exists()).toBe(false)
+  } finally { wrapper.unmount() }
+})
+
+test('detail scroll closes a persistent link panel without unmounting its content', async () => {
+  const wrapper = mount(RecordDetailContent, {
+    attachTo: document.body,
+    props: { record: { id: 1, url: { text: 'Example', url: 'https://example.com' } }, fields: [{ field_name: 'url', field_type: 'url', label: 'Link' }], canCreate: false, canDelete: false },
+    global: { plugins: [ElementPlus] },
+  })
+  try {
+    const panel = wrapper.findComponent(LinkCellPanel)
+    await panel.vm.focus()
+    expect(panel.find('.cell-dropdown').attributes('aria-expanded')).toBe('true')
+    await wrapper.find('.rd-body').trigger('scroll')
+    expect(panel.find('.cell-dropdown').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.findComponent(LinkCellPanel).exists()).toBe(true)
+    expect(wrapper.emitted('cell-commit')).toBeUndefined()
+  } finally { wrapper.unmount() }
+})
+
+test.each([['url', LinkCellPanel], ['file', FileCellPanel], ['image', ImageCellPanel], ['relation', RelationCellPanel]])('%s keeps the same detail content while its panel opens and closes', async (type, component) => {
+  const field = { field_name: 'media', field_type: type, label: 'Media' }
+  const wrapper = mount(RecordDetailContent, {
+    props: { record: { id: 1, media: type === 'url' ? { text: 'Example', url: 'https://example.com' } : [] }, fields: [field], canCreate: false, canDelete: false },
+    global: { plugins: [ElementPlus] },
+  })
+  try {
+    const panel = wrapper.findComponent(component)
+    const instance = panel.vm.$.uid
+    panel.vm.$emit('open')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent(component).vm.$.uid).toBe(instance)
+    expect(wrapper.find('.rd-value').classes()).toContain('keep-pad')
+    panel.vm.$emit('collapse')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent(component).vm.$.uid).toBe(instance)
+    await wrapper.setProps({ readonly: true })
+    expect(wrapper.findComponent(component).props('readonly')).toBe(true)
+  } finally { wrapper.unmount() }
+})

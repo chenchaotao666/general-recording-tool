@@ -70,15 +70,15 @@ defineExpose({ setErrors: (errs) => Object.assign(errors, errs || {}) })
 .ff-cover img { width: 100%; height: 170px; object-fit: cover; border-radius: 16px 16px 0 0; display: block; }
 .ff-paper { background: #fff; border-radius: 12px; padding: 36px 48px 40px; }
 .ff-cover + .ff-paper { position: relative; margin-top: -44px; border-radius: 8px; }
-.ff-title { font-size: 22px; font-weight: 700; margin: 0 0 8px; color: var(--st-text-1); }
-.ff-desc { font-size: 14px; color: var(--st-text-2); white-space: pre-wrap; }
+.ff-title { font-size: var(--st-font-size-title); font-weight: 700; margin: 0 0 8px; color: var(--st-text-1); }
+.ff-desc { font-size: var(--st-font-size); color: var(--st-text-2); white-space: pre-wrap; }
 .ff-line { height: 1px; background: var(--st-border); margin: 20px 0 8px; }
 .ff-q { padding: 18px 0 6px; }
-.ff-q-title { font-size: 15px; font-weight: 600; color: var(--st-text-1); margin-bottom: 10px; }
+.ff-q-title { font-size: var(--st-font-size); font-weight: 600; color: var(--st-text-1); margin-bottom: 10px; }
 .ff-req { color: var(--el-color-danger); margin-right: 3px; }
-.ff-q-desc { font-size: 13px; color: var(--st-text-3); margin: -6px 0 10px; white-space: pre-wrap; }
-.ff-err { color: var(--el-color-danger); font-size: 12px; margin-top: 6px; }
-.ff-submit { display: flex; width: 160px; max-width: 100%; height: 40px; margin: 40px auto 4px; border-radius: 4px; font-size: 14px; }
+.ff-q-desc { font-size: var(--st-font-size); color: var(--st-text-3); margin: -6px 0 10px; white-space: pre-wrap; }
+.ff-err { color: var(--el-color-danger); font-size: var(--st-font-size); margin-top: 6px; }
+.ff-submit { display: flex; width: 160px; max-width: 100%; height: 40px; margin: 40px auto 4px; border-radius: 4px; font-size: var(--st-font-size); }
 @media (max-width: 600px) {
   .ff { padding: 0 12px 12px; }
   .ff-cover { margin: 0 -12px; }

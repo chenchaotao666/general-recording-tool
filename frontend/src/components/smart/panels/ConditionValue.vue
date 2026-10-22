@@ -164,10 +164,10 @@ function removeOpt(id) {
 }
 .enum-val:hover { border-color: var(--el-color-primary); }
 .ev-tags { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow: hidden; }
-.ev-tag { flex: none; display: inline-flex; align-items: center; gap: 2px; border-radius: 4px; padding: 1px 6px; font-size: 12px; white-space: nowrap; }
+.ev-tag { flex: none; display: inline-flex; align-items: center; gap: 2px; border-radius: 4px; padding: 1px 6px; font-size: var(--st-font-size); white-space: nowrap; }
 .ev-x { cursor: pointer; opacity: .6; font-size: 10px; }
 .ev-x:hover { opacity: 1; }
-.ev-ph { color: var(--el-text-color-placeholder); font-size: 13px; }
+.ev-ph { color: var(--el-text-color-placeholder); font-size: var(--st-font-size); }
 .ev-caret { flex: none; color: var(--el-text-color-placeholder); font-size: 10px; }
 
 /* 浮动选项面板：查找框 + ✓ 勾选清单 */
@@ -176,20 +176,20 @@ function removeOpt(id) {
   background: #fff; border-radius: 8px; box-shadow: var(--el-box-shadow);
   padding: 8px; display: flex; flex-direction: column; gap: 6px; cursor: default;
 }
-.ev-sub { font-size: 12px; color: var(--el-text-color-secondary); }
+.ev-sub { font-size: var(--st-font-size); color: var(--el-text-color-secondary); }
 .ev-list { display: flex; flex-direction: column; max-height: 220px; overflow: auto; }
-.ev-item { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 4px; cursor: pointer; }
+.ev-item { display: flex; align-items: center; gap: 6px; padding: 0 6px; border-radius: 4px; cursor: pointer;  height: var(--st-list-item-height); box-sizing: border-box; }
 .ev-item:hover { background: var(--el-fill-color-light); }
-.ev-check { flex: none; width: 14px; color: var(--el-color-primary); font-size: 12px; }
-.opt-tag { border-radius: 4px; padding: 1px 8px; font-size: 12px; }
-.opt-name { font-size: 13px; }
-.opt-empty { color: var(--el-text-color-placeholder); font-size: 12px; padding: 8px 0; text-align: center; }
+.ev-check { flex: none; width: 14px; color: var(--el-color-primary); font-size: var(--st-font-size); }
+.opt-tag { border-radius: 4px; padding: 1px 8px; font-size: var(--st-font-size); }
+.opt-name { font-size: var(--st-font-size); }
+.opt-empty { color: var(--el-text-color-placeholder); font-size: var(--st-font-size); padding: 8px 0; text-align: center; }
 </style>
 
 <style>
 /* 日期模式下拉（:teleported=false 渲染在面板内，类名不带作用域）：✓ 当前项；「具体日期」与相对日期之间分隔线 */
-.dv-mode-pop .el-select-dropdown__item { display: flex; align-items: center; font-weight: 400; color: var(--st-text-1); }
-.dv-mode-pop .el-select-dropdown__item.is-selected { color: var(--st-text-1); background: var(--st-bg-hover); }
+.dv-mode-pop .el-select-dropdown__item { display: flex; align-items: center; font-weight: 400; color: var(--st-text-2); }
+.dv-mode-pop .el-select-dropdown__item.is-selected { color: var(--st-text-2); background: var(--st-bg-hover); }
 .dv-mode-pop .dv-ck { width: 22px; flex: none; color: var(--st-primary); }
 .dv-mode-pop .el-select-dropdown__item.dv-exact { margin-bottom: 9px; position: relative; overflow: visible; }
 .dv-mode-pop .el-select-dropdown__item.dv-exact::after { content: ''; position: absolute; left: 0; right: 0; bottom: -5px; height: 1px; background: var(--st-border); }

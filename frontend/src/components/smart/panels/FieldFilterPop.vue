@@ -131,18 +131,18 @@ function remove() { moreOpen.value = false; emit('change', null, { unpin: true }
 <style scoped>
 .ffp { width: 100%; display: flex; flex-direction: column; gap: 12px; --el-color-primary: var(--st-primary); }
 .ffp-head { display: flex; align-items: center; gap: 10px; }
-.ffp-head b { font-size: 17px; color: var(--st-text-1); }
-.ffp-scope { font-size: 14px; color: var(--st-text-2); border: 1px solid #E3E5E8; border-radius: 999px; padding: 2px 12px; background: #fff; }
+.ffp-head b { font-size: var(--st-font-size); color: var(--st-text-2); }
+.ffp-scope { font-size: var(--st-font-size); color: var(--st-text-2); border: 1px solid #E3E5E8; border-radius: 999px; padding: 2px 12px; background: #fff; }
 .ffp-flex { flex: 1; }
 .ffp-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 6px; color: var(--st-text-2); cursor: pointer; }
-.ffp-icon:hover, .ffp-icon.on { background: #F2F3F5; color: var(--st-text-1); }
-.ffp-icon.on :deep(svg) { color: var(--st-text-1); }
+.ffp-icon:hover, .ffp-icon.on { background: #F2F3F5; color: var(--st-text-2); }
+.ffp-icon.on :deep(svg) { color: var(--st-text-2); }
 .ffp-icon.sq { width: 30px; height: 30px; background: #F2F3F5; }
 .ffp-icon.sq:hover { background: #E6E8EA; }
 .ffp-more-wrap, .ffp-op-wrap { position: relative; }
 .ffp-menu { position: absolute; right: 0; top: 34px; z-index: 5; background: #fff; border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, .14); padding: 6px; min-width: 150px; }
 .ffp-op-menu { left: 0; right: auto; top: 30px; min-width: 140px; max-height: 280px; overflow-y: auto; }
-.ffp-mi { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 6px; font-size: 14px; color: var(--st-text-1); cursor: pointer; white-space: nowrap; }
+.ffp-mi { display: flex; align-items: center; gap: 8px;  padding: 0 10px; border-radius: 6px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; white-space: nowrap;  height: var(--st-list-item-height); box-sizing: border-box; }
 .ffp-mi:hover { background: #F2F3F5; }
 .ffp-mi.cur { color: var(--st-primary); }
 .ffp-mi-ck { margin-left: auto; }
@@ -150,11 +150,11 @@ function remove() { moreOpen.value = false; emit('change', null, { unpin: true }
 .ffp-mi.off { opacity: .4; cursor: default; }
 .ffp-card { border: 1px solid #EBECEE; border-radius: 12px; padding: 12px 14px 10px; display: flex; flex-direction: column; gap: 10px; }
 .ffp-oprow { display: flex; align-items: center; justify-content: space-between; min-height: 30px; }
-.ffp-op { display: inline-flex; align-items: center; gap: 3px; font-size: 15px; color: var(--st-text-2); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
-.ffp-op:hover { background: #F2F3F5; color: var(--st-text-1); }
+.ffp-op { display: inline-flex; align-items: center; gap: 3px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+.ffp-op:hover { background: #F2F3F5; color: var(--st-text-2); }
 .ffp-sep { height: 1px; background: #EBECEE; margin: 0 -2px; }
 .ffp-input { width: 100%; box-sizing: border-box; height: 44px; border: 1px solid transparent; border-radius: 8px; background: #F2F3F5; padding: 0 14px;
-             font-size: 16px; color: var(--st-text-1); outline: none; }
+             font-size: var(--st-font-size); color: var(--st-text-2); outline: none; }
 .ffp-input::placeholder { color: #B5B9C0; }
 .ffp-input:focus { border-color: var(--st-primary); background: #F2F3F5; }
 .ffp-text { position: relative; }

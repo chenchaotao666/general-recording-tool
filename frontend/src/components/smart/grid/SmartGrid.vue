@@ -2,7 +2,7 @@
   <!-- SmartGrid：智能表网格（vxe-table 封装）。
        flatten 行序列：分组标题行 / 数据行（树形缩进）。添加一行入口在统计行左侧「＋」。
        视图配置（显隐/列序/列宽/冻结/行高/填色）纯前端应用，数据层不动（设计文档 §1.3 原则 1）。 -->
-  <div class="smart-grid" :class="{ 'is-empty': !gridRows.length }" :style="{ maxWidth: `${gridContentWidth}px` }" @pointerdown.capture="cellRange.down" @click.capture="cellRange.click" @dragstart.prevent @contextmenu.prevent @contextmenu.capture="onHeaderContextMenu" @mouseover.capture="suppressDragHover" @mouseenter.capture="suppressDragHover" @mouseover="onRowOver" @mouseleave="scheduleExpandHide" @wheel.capture="onGridWheel">
+  <div class="smart-grid" :class="{ 'is-empty': !gridRows.length }" :style="{ maxWidth: `${gridContentWidth}px` }" @mousedown.capture="onTextCellMouseDown" @pointerdown.capture="cellRange.down" @click.capture="onGridCellClick" @dragstart.prevent @contextmenu.prevent @contextmenu.capture="onHeaderContextMenu" @mouseover.capture="suppressDragHover" @mouseenter.capture="suppressDragHover" @mouseover="onRowOver" @mouseleave="scheduleExpandHide" @wheel.capture="onGridWheel">
     <textarea ref="typingBuffer" class="grid-typing-buffer" tabindex="-1" aria-label="输入以替换选中单元格" @input="onSelectedInput" @compositionstart="typingComposing = true" @compositionend="finishSelectedComposition" />
     <!-- 新增/重排列时重建注册；仅删除列保留表格和其余列，避免滚动条归零。 -->
     <vxe-table
@@ -133,7 +133,9 @@ import RelationCellPanel from './RelationCellPanel.vue'
 import CellDropdown from './CellDropdown.vue'
 import FieldHeader from './FieldHeader.vue'
 import AiRunButton from '../ai/AiRunButton.vue'
-import { isDisplayCell, visibleCellRect } from '../../../smart/utils/vxeCell.js'
+import { isDisplayCell, visibleRowRect } from '../../../smart/utils/vxeCell.js'
+import { installVirtualTablePosition } from '../../../smart/utils/virtualTablePosition.js'
+import { fieldScrollLeft, rowScrollTop } from '../../../smart/utils/revealField.js'
 import StIcon from '../icons/StIcon.vue'
 import { BLOCKED_CONFIGURABLE, BLOCKED_EDIT_TEXT, regOf, sortDirectionLabels, STAT_LABELS, formatStatValue, optionColor } from '../../../smart/registry/fieldRegistry.js'
 import { useCellRange } from '../../../smart/utils/useCellRange.js'
@@ -166,7 +168,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['cell-commit', 'add-row', 'add-field', 'cell-menu', 'field-menu', 'toggle-group',
                           'selection-change', 'open-config', 'footer-menu', 'add-option', 'group-menu', 'add-row-in-group', 'ai-run',
-                          'field-edit', 'field-filter', 'group-edit', 'expand-row'])
+                          'field-edit', 'field-filter', 'group-edit', 'expand-row', 'row-activate'])
 
 const gridRef = ref(null)
 const memberList = inject('smartMembers', ref([]))
@@ -178,6 +180,7 @@ watch(gridRef, async (table, _, onCleanup) => {
   onCleanup(() => { cancelled = true; cleanups.forEach(cleanup => cleanup()) })
   await nextTick()
   if (cancelled || !table) return
+  if (table.$el) cleanups.push(installVirtualTablePosition(table.$el))
   const handle = table.$el?.querySelector('.vxe-table--scroll-x-handle')
   if (handle) cleanups.push(installHorizontalScrollbar(handle, { onStart: onDocMouseDown, onEnd: onScrollPointerUp }))
   const vertical = table.$el?.querySelector('.vxe-table--scroll-y-handle')
@@ -426,8 +429,7 @@ function locateExpandBtn() {
   const row = key && gridRows.value.find(r => r.__key === key)
   const tableEl = gridRef.value?.$el
   if (!row || row.__rowType || !tableEl) { expandBtn.value = null; return }
-  const td = [...tableEl.querySelectorAll(`.vxe-body--row[rowid="${key}"] > td`)].find(isDisplayCell)
-  const r = visibleCellRect(td)
+  const r = visibleRowRect(tableEl.querySelectorAll(`.vxe-body--row[rowid="${key}"] > td`))
   if (!r) { expandBtn.value = null; return }
   const left = tableEl.getBoundingClientRect().left
   // 20px 按钮中心压在左边框；纵向上移 1px，保持光学居中。
@@ -519,6 +521,7 @@ function onScrollPointerDown(event) {
 function onScrollPointerUp() {
   if (!scrollPointerDown) return
   scrollPointerDown = false
+  if (scrollActive) scheduleScrollIdle()
   if (!scrollIdleTimer) layoutQueue.resume()
   scheduleRowSnap()
   scheduleExpandLocate()
@@ -527,23 +530,35 @@ function onScrollPointerUp() {
 let lastScrollTop = 0
 let lastScrollLeft = 0
 let scrollIdleTimer = 0
-function onGridScroll(scroll) {
-  layoutQueue.pause()
-  // 连续滚动期间不定位悬浮控件、不处理 hover；只在停止后恢复一次。
-  expandBtn.value = null
-  hoverKey.value = null
-  cancelExpandHide()
-  aiBtn.value = null
-  cancelAnimationFrame(locateRaf); locateRaf = 0
-  cancelAnimationFrame(expandRaf); expandRaf = 0
+let scrollActive = false
+function scheduleScrollIdle() {
   clearTimeout(scrollIdleTimer)
   scrollIdleTimer = setTimeout(() => {
     scrollIdleTimer = 0
-    if (!scrollPointerDown) { layoutQueue.resume(); scheduleExpandLocate(); scheduleLocate() }
+    if (!scrollPointerDown) {
+      scrollActive = false
+      layoutQueue.resume(); scheduleExpandLocate(); scheduleLocate()
+    }
   }, 120)
-  if (blockedHint.value) hideBlockedHint()
+}
+function onGridScroll(scroll) {
   const top = scroll.scrollTop ?? 0
   const left = scroll.scrollLeft ?? 0
+  if (top === lastScrollTop && left === lastScrollLeft) return
+  if (!scrollActive) {
+    scrollActive = true
+    layoutQueue.pause()
+    // Clean up once per scrolling session, not on every position update.
+    expandBtn.value = null
+    hoverKey.value = null
+    cancelExpandHide()
+    aiBtn.value = null
+    cancelAnimationFrame(locateRaf); locateRaf = 0
+    cancelAnimationFrame(expandRaf); expandRaf = 0
+    if (blockedHint.value) hideBlockedHint()
+  }
+  // Captured dragging has an explicit end; it needs no per-event idle timer.
+  if (!scrollPointerDown) scheduleScrollIdle()
   if ((top !== lastScrollTop || left !== lastScrollLeft) && (editingCell.value || scrollCollapses.size)) {
     const cell = editingCell.value || selectedCell.value
     for (const collapse of [...scrollCollapses]) collapse()
@@ -553,7 +568,7 @@ function onGridScroll(scroll) {
   lastScrollLeft = left
   if (top !== lastScrollTop) {
     lastScrollTop = top
-    scheduleRowSnap()
+    if (!scrollPointerDown) scheduleRowSnap()
   }
 }
 function onAiBtnRun(scope) {
@@ -700,9 +715,15 @@ function canEdit(row, field) {
 const CellSlot = defineComponent({
   name: 'GridCellContent',
   props: { row: Object, field: Object },
-  setup: cellProps => () => renderCell(cellProps),
+  setup: cellProps => {
+    // Stable per-cell computed values keep unrelated content out of selection updates.
+    const matches = cell => cell?.key === cellProps.row.__key && cell?.fieldName === cellProps.field.field_name
+    const selection = computed(() => matches(selectedCell.value) ? selectedCell.value : null)
+    const editor = computed(() => matches(editingCell.value) ? editingCell.value : null)
+    return () => renderCell(cellProps, selection.value, editor.value)
+  },
 })
-function renderCell(props2) {
+function renderCell(props2, activeSelection, activeEditor) {
   const { row, field } = props2
   const firstField = visibleFields.value[0]?.field_name
   // 组内「+」行：仅首字段列可点（带上该组全部条件预设添加记录）
@@ -739,8 +760,8 @@ function renderCell(props2) {
       field: ef, record: row,
       style: { '--file-row-height': `${rowHeightPx.value}px` },
       value: row[field.field_name], readonly: !canEdit(row, field) || props.readonly,
-      selected: !cellRange.multiple.value && isCurrent(selectedCell.value),
-      initialInput: isCurrent(editingCell.value) ? editingCell.value.initialInput : undefined,
+      selected: !cellRange.multiple.value && !!activeSelection,
+      initialInput: activeEditor?.initialInput,
       advanceOnEnter: true,
       onAdvance: direction => advanceCell(row, field, direction),
       onSelect: () => { clearColSelection(); selectedCell.value = cell },
@@ -750,11 +771,12 @@ function renderCell(props2) {
       onCommit: value => emit('cell-commit', { row, field, value }),
     })
   }
-  const isEdit = !cellRange.multiple.value && editingCell.value && editingCell.value.key === row.__key && editingCell.value.fieldName === field.field_name
+  const isEdit = !cellRange.multiple.value && !!activeEditor
   if (isEdit && canEdit(row, field)) {
     return h(SmartCellEditor, {
+      key: `edit:${row.__key}:${field.field_name}`,
       field: ef, record: row,
-      initialInput: editingCell.value.initialInput,
+      initialInput: activeEditor.initialInput,
       advanceOnEnter: true,
       onAdvance: direction => advanceCell(row, field, direction),
       frozen: isFrozen(field.field_name),   // 编辑器按 wrapper 判断自己是不是显示副本用
@@ -772,8 +794,7 @@ function renderCell(props2) {
     })
   }
   // 单选/多选单击选中：呈现编辑态锚点（标签+✕+下拉按钮），面板不展开；
-  if (!cellRange.multiple.value && ef.field_type === 'progress' && canEdit(row, field) && selectedCell.value?.key === row.__key
-      && selectedCell.value?.fieldName === field.field_name) {
+  if (!cellRange.multiple.value && activeSelection && ef.field_type === 'progress' && canEdit(row, field)) {
     return h(ProgressCell, {
       value: row[field.field_name], config: ef.options || {}, interactive: true,
       onPointerdown: event => {
@@ -794,7 +815,7 @@ function renderCell(props2) {
       },
     })
   }
-  if (!cellRange.multiple.value && ef.field_type === 'member' && canEdit(row, field) && selectedCell.value?.key === row.__key && selectedCell.value.fieldName === field.field_name) {
+  if (!cellRange.multiple.value && activeSelection && ef.field_type === 'member' && canEdit(row, field)) {
     return h(PeoplePicker, {
       gridCell: true, class: 'cell-editor', modelValue: row[field.field_name], people: memberList.value,
       multiple: ef.options?.multiple !== false,
@@ -806,8 +827,7 @@ function renderCell(props2) {
     })
   }
   // 点下拉按钮或双击锚点 → open 进编辑态（面板展开）
-  const isSelEnum = !cellRange.multiple.value && canEdit(row, field) && selectedCell.value && selectedCell.value.key === row.__key
-    && selectedCell.value.fieldName === field.field_name
+  const isSelEnum = !cellRange.multiple.value && activeSelection && canEdit(row, field)
     && ['singleSelect', 'multiSelect'].includes(ef.field_type)
   if (isSelEnum) {
     return h(SelectCellPanel, {
@@ -820,7 +840,28 @@ function renderCell(props2) {
       },
     })
   }
-  // 未进入编辑时继续展示原内容，键入后的首段文本由输入缓冲交给编辑器。
+  if (!cellRange.multiple.value && activeSelection && ['text', 'formula'].includes(ef.field_type)
+      && !(dismissedTextPreview.value?.key === row.__key && dismissedTextPreview.value.fieldName === field.field_name)) {
+    const cell = { key: row.__key, fieldName: field.field_name }
+    return h(SmartCellEditor, {
+      key: `preview:${row.__key}:${field.field_name}`,
+      field: ef, record: row, preview: true, frozen: isFrozen(field.field_name),
+      fillHandle: ef.field_type !== 'formula' && canEdit(row, field),
+      onFillStart: (event, td, rect) => {
+        cellRange.down(event, td, rect)
+        dismissedTextPreview.value = cell
+      },
+      onCancel: () => { dismissedTextPreview.value = cell },
+      onCollapse: () => { dismissedTextPreview.value = cell },
+      'onEnter-edit': () => {
+        if (ef.field_type === 'formula') { showBlockedHint(row, field); return }
+        if (!canEdit(row, field)) return
+        selectedCell.value = null
+        editingCell.value = cell
+      },
+    })
+  }
+  // 键入后的首段文本由输入缓冲交给编辑器。
   // 填色只在 td 级铺满（cellFillStyle）；不再给 SmartCell 内容层重复着色——内容层色块只盖住文字范围，
   // 选中列/悬停等改变 td 底色时会露出一块块残色
   const cell = h(SmartCell, { field, record: row })
@@ -904,7 +945,7 @@ function FooterCell({ field }) {
     children.push(h('div', { class: 'fs-hint' }, ['统计', h(CellDropdown, { class: 'fs-caret', decorative: true })]))
   }
   return h('div', {
-    class: 'footer-stat', 'data-smart-tip': '点击设置统计方式',
+    class: 'footer-stat',
     onClick: (e) => { e.stopPropagation(); emit('footer-menu', field, e) },
   }, children)
 }
@@ -917,6 +958,10 @@ function footerMethod({ columns }) {
 
 const IMMEDIATE = ['checkbox']
 const selectedCell = ref(null)   // 单击选中态 {key, fieldName}（企微式：单击选中、双击编辑）
+const dismissedTextPreview = ref(null)
+watch(selectedCell, (value, previous) => {
+  if (value?.key !== previous?.key || value?.fieldName !== previous?.fieldName) dismissedTextPreview.value = null
+})
 const typingBuffer = ref(null)
 const cellRange = useCellRange({
   table: gridRef, rows: gridRows, fields: displayedFields, selected: selectedCell, editing: editingCell, buffer: typingBuffer,
@@ -981,7 +1026,42 @@ watch([selectedCol, selectedCell, () => props.rows], scheduleLocate)   // 选中
 watch([hoverKey, currentRowKey, () => props.rows, () => props.view?.config?.rowHeight], scheduleExpandLocate)
 let lastClick = { key: null, fieldName: null, t: 0 }   // 自检测双击用
 
+function onGridCellClick(event) {
+  cellRange.click(event)
+  if (event.cancelBubble) return // Ignore the suppressed click after a range drag.
+  const td = event.target.closest?.('td.vxe-body--column')
+  const table = gridRef.value
+  if (!td || !table?.$el?.contains(td)) return
+  const row = table.getRowNode(td.closest('tr'))?.item
+  // Capture also covers controls that stop bubbling (checkboxes, files, links).
+  if (row && !row.__rowType && row.id != null) emit('row-activate', row)
+}
+
+function onTextCellMouseDown(event) {
+  if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey) return
+  if (event.target.closest?.('input, textarea, button, .cell-dropdown')) return
+  const td = event.target.closest?.('td.vxe-body--column')
+  const table = gridRef.value
+  if (!td || !table) return
+  const row = table.getRowNode(td.closest('tr'))?.item
+  const column = table.getColumnNode(td)?.item
+  const field = fieldsByName.value.get(column?.field)
+  if (!row || row.__rowType || typeOf(field) !== 'text') return
+  if (editingCell.value?.key === row.__key && editingCell.value.fieldName === field.field_name) return
+  if (lastClick.key !== row.__key || lastClick.fieldName !== field.field_name
+      || (event.detail < 2 && Date.now() - lastClick.t >= 500)) return
+  // The preview mounts after a frame. Catch the second press on the stable
+  // table ancestor before that mount changes the mouseup/click target.
+  event.preventDefault()
+  event.stopPropagation()
+  lastClick = { key: null, fieldName: null, t: 0 }
+  if (!canEdit(row, field)) { showBlockedHint(row, field); return }
+  selectedCell.value = null
+  editingCell.value = { key: row.__key, fieldName: field.field_name }
+}
+
 function onCellClick({ row, column, $event }) {
+  dismissedTextPreview.value = null
   if (!row || row.__rowType) return
   if (column.params?.rowNumber) {
     lastClick = { key: null, fieldName: null, t: 0 }
@@ -990,6 +1070,7 @@ function onCellClick({ row, column, $event }) {
   }
   const f = fieldsByName.value.get(column.field)
   if (!f) return
+  if (editingCell.value?.key === row.__key && editingCell.value.fieldName === f.field_name) return
   // 切换目标时结束旧编辑态；新选中必须在同一次 click 中落下。
   if (editingCell.value && (editingCell.value.key !== row.__key || editingCell.value.fieldName !== f.field_name)) {
     editingCell.value = null
@@ -1003,10 +1084,11 @@ function onCellClick({ row, column, $event }) {
     } else selectedCell.value = { key: row.__key, fieldName: f.field_name }
     return
   }
-  // 自检测双击：同一单元格 400ms 内的第二击直接进编辑。原生 dblclick 不可靠——
+  // 原生点击计数 + 同一单元格 500ms 内的第二击补偿。原生 dblclick 不可靠——
   // 第一击后选中态锚点/预览浮层会替换单元格 DOM，两次点击落在不同元素上时 Chrome 不合成 dblclick
   const now = Date.now()
-  const isSecond = lastClick.key === row.__key && lastClick.fieldName === f.field_name && now - lastClick.t < 400
+  const isSecond = lastClick.key === row.__key && lastClick.fieldName === f.field_name
+    && ($event?.detail >= 2 || now - lastClick.t < 500)
   lastClick = isSecond ? { key: null, fieldName: null, t: 0 } : { key: row.__key, fieldName: f.field_name, t: now }
   if (isSecond) {
     if (!canEdit(row, f)) { showBlockedHint(row, f); return }
@@ -1155,6 +1237,7 @@ function detachGlobalEvents() {
   clearTimeout(rowSnapTimer)
   clearTimeout(scrollIdleTimer)
   scrollIdleTimer = 0
+  scrollActive = false
   cancelAnimationFrame(locateRaf)
   cancelAnimationFrame(expandRaf)
   locateRaf = 0
@@ -1214,6 +1297,21 @@ function orderSearchMatches(matches) {
   return orderFindMatches(matches, gridRows.value, displayedFields.value)
 }
 
+function revealField(fieldName, recordId = null) {
+  const table = gridRef.value
+  const body = table?.$el?.querySelector('.body--wrapper > .vxe-table--body-inner-wrapper')
+  if (!table || !body) return
+  const columns = table.getTableColumn().visibleColumn
+  const { scrollLeft: left, scrollTop: top } = table.getScroll()
+  const next = fieldScrollLeft(columns, fieldName, left, body.clientWidth)
+  const rowIndex = recordId == null ? -1 : gridRows.value.findIndex(row => !row.__rowType && row.id === recordId)
+  const nextTop = rowScrollTop(rowIndex, rowHeightPx.value, top, body.clientHeight)
+  if (next === left && nextTop === top) return
+  clearTimeout(rowSnapTimer)
+  locatingUntil = Date.now() + 600
+  return table.scrollTo(next, nextTop)
+}
+
 defineExpose({
   clearSelection: () => { selectedCell.value = null; editingCell.value = null },
   requestScrollToEnd: () => { scrollToEndAfterColumns = true },
@@ -1227,6 +1325,7 @@ defineExpose({
   orderSearchMatches,
   clearEditing: () => { editingCell.value = null; selectedCell.value = null; selectedCol.value = null; selectedGroupId.value = null },
   focusRecord,
+  revealField,
 })
 </script>
 
@@ -1234,7 +1333,7 @@ defineExpose({
 .smart-vxe :deep(.vxe-body--column.cell-range) { position: relative; user-select: none; }
 .smart-vxe :deep(.vxe-body--column.cell-range)::before {
   content: ''; position: absolute; inset: 0; background: rgba(40, 120, 240, .09);
-  border: 0 solid #538eff; box-sizing: border-box; pointer-events: none; z-index: 5;
+  border: 0 solid var(--st-primary); box-sizing: border-box; pointer-events: none; z-index: 5;
 }
 .smart-vxe :deep(.cell-range.range-top)::before { border-top-width: 1px; }
 .smart-vxe :deep(.cell-range.range-bottom)::before { border-bottom-width: 1px; }
@@ -1246,23 +1345,21 @@ defineExpose({
 .smart-vxe :deep(.vxe-body--column.cell-range.range-anchor) { background: #fff !important; }
 .smart-vxe :deep(.vxe-body--column.cell-fill-handle) { position: relative; }
 .smart-vxe :deep(.vxe-body--column.cell-fill-handle)::after {
-  content: ''; position: absolute; bottom: 0; right: 0; width: 7px; height: 7px;
-  background: #538eff; border: 1px solid white; box-sizing: border-box;
+  content: ''; position: absolute; bottom: 0; right: 0; width: 6px; height: 6px;
+  background: var(--st-primary); border: 1px solid white; box-sizing: border-box;
+  pointer-events: auto; cursor: crosshair; z-index: 20;
+}
+/* Expanded tag/person anchors own the visible border, so the fill handle follows
+   their actual height instead of the underlying fixed-height table row. */
+.smart-vxe :deep(.cell-fill-handle:has(.sel-anchor, .grid-people-trigger))::after { display: none; }
+.smart-vxe :deep(.cell-fill-handle :is(.sel-anchor, .grid-people-trigger))::after {
+  content: ''; position: absolute; bottom: -2px; right: -2px; width: 6px; height: 6px;
+  background: var(--st-primary); border: 1px solid white; box-sizing: border-box;
   pointer-events: auto; cursor: crosshair; z-index: 20;
 }
 .grid-typing-buffer { position: fixed; left: -100px; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .smart-grid { width: 100%; }
-.smart-vxe :deep(.st-horizontal-track) { position: absolute; inset: 0; z-index: 2; touch-action: none; user-select: none; }
-.smart-vxe :deep(.st-horizontal-thumb) { position: absolute; left: 0; top: 3px; bottom: 3px; border-radius: 6px; background: rgba(31, 45, 61, .25); }
-.smart-vxe :deep(.st-horizontal-track:hover .st-horizontal-thumb),
-.smart-vxe :deep(.st-horizontal-track.dragging .st-horizontal-thumb) { top: 1px; bottom: 1px; background: rgba(31, 45, 61, .4); }
-.smart-vxe :deep(.st-horizontal-track:focus-visible) { outline: 1px solid var(--st-primary); outline-offset: -1px; }
-.smart-vxe :deep(.st-vertical-track) { position: absolute; inset: 0; z-index: 2; touch-action: none; user-select: none; }
-.smart-vxe :deep(.st-vertical-thumb) { position: absolute; top: 0; left: 3px; right: 3px; border-radius: 6px; background: rgba(31, 45, 61, .25); }
-.smart-vxe :deep(.st-vertical-track:hover .st-vertical-thumb),
-.smart-vxe :deep(.st-vertical-track.dragging .st-vertical-thumb) { left: 1px; right: 1px; background: rgba(31, 45, 61, .4); }
-.smart-vxe :deep(.st-vertical-track:focus-visible) { outline: 1px solid var(--st-primary); outline-offset: -1px; }
-.add-col { display: block; width: 100%; text-align: center; color: var(--st-text-3); font-weight: 600; cursor: pointer; font-size: 15px; }
+.add-col { display: block; width: 100%; text-align: center; color: var(--st-text-3); font-weight: 600; cursor: pointer; font-size: var(--st-font-size); }
 /* 末尾添加列：浅灰底方块 + 灰「＋」（对齐参照 添加一列-按钮.png） */
 /* 末尾「+」列与列外空白区：白底（vxe 表头容器默认灰底，列不满宽时右侧会露出灰条） */
 .smart-vxe :deep(.vxe-table--header-wrapper),
@@ -1271,14 +1368,14 @@ defineExpose({
 /* 统计行左侧的添加一行「＋」：单元格内居中、整格可点、hover 主色 */
 .footer-add-btn {
   display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;
-  cursor: pointer; color: var(--el-text-color-regular); font-size: 16px; user-select: none;
+  cursor: pointer; color: var(--el-text-color-regular); font-size: var(--st-font-size); user-select: none;
 }
 .smart-vxe :deep(.vxe-header--column.th-add-col),
 .smart-vxe :deep(.vxe-footer--column.footer-add-cell) { cursor: pointer; }
 .smart-vxe :deep(.vxe-header--column.th-add-col:hover),
 .smart-vxe :deep(.vxe-footer--column.footer-add-cell:hover) { background-color: var(--st-icon-hover-bg, #E6E8E8); }
 .group-toggle { cursor: pointer; color: var(--el-text-color-secondary); user-select: none; }
-.row-no { color: var(--el-text-color-placeholder); font-size: 12px; }
+.row-no { color: var(--el-text-color-placeholder); font-size: var(--st-font-size); }
 .smart-vxe :deep(.col-no) { cursor: pointer; user-select: none; }
 /* 详情面板打开的记录：整行浅灰底（参照 hover-行.png） */
 .smart-vxe :deep(.vxe-body--row.row-active) { background-color: #F2F3F5; }
@@ -1286,13 +1383,13 @@ defineExpose({
 .smart-vxe :deep(.vxe-body--row.row--hover > .vxe-body--column[style*="--st-cell-fill"]) {
   background-color: color-mix(in srgb, var(--st-cell-fill) 94%, #30343b 6%) !important;
 }
-.group-head { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+.group-head { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: var(--st-font-size); }
 /* 分组头：分组值彩色 chip（枚举）+ 记录数灰字（对齐参照 分组-1个字段.png） */
-.gv-chip { border-radius: 4px; padding: 1px 8px; font-size: 12px; font-weight: 500; }
+.gv-chip { border-radius: 4px; padding: 1px 8px; font-size: var(--st-font-size); font-weight: 500; }
 .gv-text { font-weight: 600; }
 .gv-empty { color: var(--st-text-3); font-weight: 400; }
-.g-count { font-size: 12px; color: var(--st-text-3); font-weight: 400; }
-.group-agg { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: var(--el-text-color-secondary); cursor: pointer; }
+.g-count { font-size: var(--st-font-size); color: var(--st-text-3); font-weight: 400; }
+.group-agg { display: inline-flex; align-items: center; gap: 2px; font-size: var(--st-font-size); color: var(--el-text-color-secondary); cursor: pointer; }
 .group-agg:hover .st-dd { background: #E6E8E8; }
 
 /* 组内「+」行：灰色加号（对齐参照 分组-1个字段.png 每组末尾的 + 行） */
@@ -1314,7 +1411,7 @@ defineExpose({
 .smart-vxe :deep(.row-group) { background: var(--st-bg-canvas); }
 .smart-vxe :deep(.row-group.depth-1) { background: #fafbfc; }
 .smart-vxe :deep(.row-group.depth-2) { background: #fcfdfe; }
-.smart-vxe :deep(.vxe-body--column.col-no) { color: var(--el-text-color-placeholder); font-size: 18px; }
+.smart-vxe :deep(.vxe-body--column.col-no) { color: var(--el-text-color-placeholder); font-size: var(--st-font-size); }
 /* 序号列：左右内边距对称、内容水平居中（vxe 默认左侧 padding 大于右侧，数字会偏） */
 .smart-vxe :deep(.col-no .vxe-cell) { padding-left: 0 !important; padding-right: 0 !important; justify-content: center; text-align: center; }
 .smart-vxe :deep(.col-no .vxe-cell--wrapper) { justify-content: center; width: 100%; }
@@ -1374,11 +1471,11 @@ defineExpose({
 }
 .smart-vxe :deep(.vxe-body--column.cell-editing .vxe-cell--wrapper) { height: 100%; }
 /* VXE 的内容容器比 td 窄，数值编辑框画在 td 上，与选中态边界一致；不改变文字留白。 */
-.smart-vxe :deep(.vxe-body--column.cell-editing:has(.numeric-input)) {
+.smart-vxe :deep(.vxe-body--column.cell-editing:has(.numeric-input, .cell-date-wrap)) {
   position: relative; box-shadow: 0 0 0 2px var(--st-primary) inset;
 }
-.smart-vxe :deep(.vxe-body--column.cell-editing:has(.numeric-input) .vxe-cell),
-.smart-vxe :deep(.row-last .vxe-body--column.cell-editing:has(.numeric-input)) { box-shadow: none; }
+.smart-vxe :deep(.vxe-body--column.cell-editing:has(.numeric-input, .cell-date-wrap) .vxe-cell),
+.smart-vxe :deep(.row-last .vxe-body--column.cell-editing:has(.numeric-input, .cell-date-wrap)) { box-shadow: none; }
 .smart-vxe :deep(.vxe-body--column.cell-editing .el-input),
 .smart-vxe :deep(.vxe-body--column.cell-editing .el-select),
 .smart-vxe :deep(.vxe-body--column.cell-editing .el-date-editor.el-input) { width: 100%; height: 100%; }
@@ -1388,6 +1485,20 @@ defineExpose({
   box-shadow: none; background: transparent;   /* 透出 .vxe-cell 上的编辑态边框 */
 }
 .smart-vxe :deep(.vxe-body--column.cell-editing .el-input__inner) { height: 100%; }
+/* 日期使用与查看态相同的首行位置，避免原生输入框居中和位移叠加。 */
+.smart-vxe :deep(.cell-editing .cell-date-editor .el-input__wrapper) {
+  align-items: flex-start; padding-top: 6px; padding-bottom: 0;
+}
+.smart-vxe :deep(.cell-editing .cell-date-editor .el-input__inner) {
+  height: 22px; line-height: 22px; transform: none;
+}
+.smart-vxe :deep(.cell-editing .cell-date-editor .el-input__suffix) {
+  flex: none; height: 22px; line-height: 22px; align-self: flex-start;
+  transform: none;
+}
+.smart-vxe :deep(.cell-editing .cell-date-editor .el-input__suffix-inner) {
+  height: 22px; align-items: center;
+}
 /* 高行查看态采用 7px 顶部留白、22px 行高；数字和日期编辑也固定在同一首行，
    保留编辑器本身撑满单元格，仅限制文字输入区域，避免随行高垂直居中。 */
 .smart-vxe.rh-tall :deep(.cell-editing :is(.numeric-input, .cell-date-editor) .el-input__wrapper) {
@@ -1421,7 +1532,7 @@ defineExpose({
 /* 查看/选中态禁止选中文字（企微式：单击只是选中单元格，双击才进编辑态，编辑器内不受影响） */
 .smart-vxe :deep(.vxe-body--column:not(.cell-editing) .vxe-cell) { user-select: none; }
 /* 表头单元格统一灰色（含 # 列；字段名/图标的样式由 FieldHeader 自己管，这里不覆盖避免优先级打架） */
-.smart-vxe :deep(.vxe-header--column) { font-size: 13px; color: var(--st-head-text); background-color: #fff; user-select: none; }   /* 表头文字不可选中 */
+.smart-vxe :deep(.vxe-header--column) { font-size: var(--st-font-size); color: var(--st-head-text); background-color: #fff; user-select: none; }   /* 表头文字不可选中 */
 .smart-vxe :deep(.vxe-table--scroll-y-top-corner) { background-color: #fff; }
 /* 表头（参照 表头样式.png）：白底，hover 整格浅灰；插槽内容撑满单元格宽，字段名可换行 */
 .smart-vxe :deep(.vxe-header--column:hover) { background-color: #F2F3F5; }
@@ -1446,6 +1557,10 @@ defineExpose({
 .smart-vxe :deep(.vxe-header--column:hover .cg-caret),
 .smart-vxe :deep(.vxe-header--column.th-col-selected .cg-caret) { visibility: visible; }
 /* 整列选中（单击表头）：浅蓝底 + 主色描边框住整列（表头顶边 → 统计行底边） */
+.smart-vxe :deep(.vxe-table--body.st-virtual-position) {
+  position: relative; left: var(--st-virtual-x, 0px);
+  transform: translateY(var(--st-virtual-y, 0px)) !important;
+}
 /* 选中整组（单击编组表头）时同一套样式框住组头 + 全部成员列。
    四条边按 sel-l/sel-r/sel-t/sel-b 分别打开（整组只在外沿画线，组内列之间不画） */
 .smart-vxe :deep(.th-col-selected),
@@ -1461,23 +1576,29 @@ defineExpose({
    边线并设了 background-size，叠加的渐变会被压成 1px 细线、还会冲掉边线。白底上叠出的颜色即原来的 #EEF3FD / #E9EFFC */
 .smart-vxe :deep(.vxe-header--column.th-col-selected),
 .smart-vxe :deep(.vxe-body--column.col-selected),
-.smart-vxe :deep(.vxe-footer--column.tf-col-selected) { position: relative; }
+.smart-vxe :deep(.vxe-footer--column.tf-col-selected) {
+  position: relative;
+  /* Paint against the cell box itself: positioned pseudo-element borders can
+     round differently in the translated virtual body and the static header. */
+  box-shadow: inset var(--cs-l) 0 0 var(--st-primary),
+    inset calc(0px - var(--cs-r)) 0 0 var(--st-primary),
+    inset 0 var(--cs-t) 0 var(--st-primary),
+    inset 0 calc(0px - var(--cs-b)) 0 var(--st-primary);
+}
 .smart-vxe :deep(.vxe-header--column.th-col-selected)::before,
 .smart-vxe :deep(.vxe-body--column.col-selected)::before,
 .smart-vxe :deep(.vxe-footer--column.tf-col-selected)::before {
-  content: ''; position: absolute; inset: 0; pointer-events: none; background: rgba(46, 107, 230, .08);
-  box-sizing: border-box; border-style: solid; border-color: var(--st-primary);
-  border-width: var(--cs-t) var(--cs-r) var(--cs-b) var(--cs-l); }
+  content: ''; position: absolute; inset: var(--cs-t) var(--cs-r) var(--cs-b) var(--cs-l);
+  pointer-events: none; background: rgba(46, 107, 230, .08);
+  box-sizing: border-box; border: 0; }
 .smart-vxe :deep(.vxe-header--column.th-col-selected)::before { background: rgba(46, 107, 230, .105); }
-/* 表头、数据行、统计行统一用 2px border 绘制；首尾轮廓整体内缩，侧边不会突出。 */
-.smart-vxe :deep(.vxe-header--row:first-child .vxe-header--column.th-col-selected.sel-t)::before { top: 1px; }
-.smart-vxe :deep(.vxe-footer--column.tf-col-selected.sel-b)::before { bottom: 1px; }
+/* 表头、数据行、统计行统一沿单元格内沿绘制 2px 选中轮廓。 */
 .smart-vxe :deep(.vxe-header--column.th-col-selected:hover) { background-color: #fff; }   /* 不叠表头 hover 灰（表头填色是内联样式，不受影响） */
 /* 编组组头：标题居中，下拉钉在右侧 */
 :deep(.colgroup-title) { display: flex; align-items: center; justify-content: center; position: relative; width: 100%; min-height: 22px; }
 /* 编组名与字段名同款：13px 粗体灰 */
 :deep(.colgroup-title .cg-name) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 28px;
-  font-size: 13px; line-height: 20px; font-weight: 600; color: var(--st-head-text); }
+  font-size: var(--st-font-size); line-height: 20px; font-weight: 600; color: var(--st-head-text); }
 /* 编组下拉：与字段列头一致——默认隐藏，hover 列头出现灰三角，hover 按钮出现浅灰圆角底 */
 :deep(.colgroup-title .cg-caret) { position: absolute; right: 0; top: 50%; transform: translateY(-50%); visibility: hidden; background: transparent; }
 :deep(.colgroup-title .cg-caret:hover) { background: #E6E8E8; }
@@ -1489,9 +1610,9 @@ defineExpose({
 }
 .smart-vxe :deep(.vxe-footer--column:hover) { background: var(--el-fill-color-light); }
 :deep(.footer-stat) { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; }
-:deep(.footer-stat .fs-label) { text-align: right; font-size: 12px; line-height: 18px; color: var(--el-text-color-secondary); }
-:deep(.footer-stat .fs-value) { text-align: right; font-size: 15px; line-height: 22px; color: var(--el-text-color-primary); font-variant-numeric: tabular-nums; }
-:deep(.footer-stat .fs-hint) { font-size: 13px; color: var(--el-text-color-secondary); visibility: hidden; }
+:deep(.footer-stat .fs-label) { text-align: right; font-size: var(--st-font-size); line-height: 18px; color: var(--el-text-color-secondary); }
+:deep(.footer-stat .fs-value) { text-align: right; font-size: var(--st-font-size); line-height: 22px; color: var(--el-text-color-primary); font-variant-numeric: tabular-nums; }
+:deep(.footer-stat .fs-hint) { font-size: var(--st-font-size); color: var(--el-text-color-secondary); visibility: hidden; }
 :deep(.footer-stat:hover .fs-hint) { visibility: visible; }
 :deep(.footer-stat .fs-hint) { display: inline-flex; align-items: center; gap: 2px; }
 :deep(.filter-dot) { color: var(--st-primary); }
@@ -1506,7 +1627,7 @@ defineExpose({
 .smart-vxe :deep(.vxe-body--column.cell-search-active.cell-editing .vxe-cell) { box-shadow: 0 0 0 2px #FCBA02 inset; }
 /* 不可编辑提示气泡（teleport 到 body） */
 :global(.st-blocked-hint) { position: fixed; z-index: 2200; display: inline-flex; align-items: center; gap: 14px; height: 40px; padding: 0 16px;
-  background: #fff; border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, .12); font-size: 14px; color: #1F2329; white-space: nowrap; }
+  background: #fff; border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, .12); font-size: var(--st-font-size); color: var(--st-text-2); white-space: nowrap; }
 :global(.st-blocked-link) { color: var(--st-primary); cursor: pointer; }
 /* 展开记录按钮（参照 hover-行.png）：白底细边圆角小方块 + 斜向双箭头，中心压在表格左边框上 */
 :global(.st-row-expand) { position: fixed; z-index: 2000; display: inline-flex; align-items: center; justify-content: center;

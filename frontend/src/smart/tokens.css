@@ -1,14 +1,18 @@
 /* 智慧表格设计令牌（对齐 docs/智慧表格差距分析.md §0 参照值） */
 :root {
-  --st-primary: #2E6BE6;          /* 主色蓝：主按钮/聚焦框/选中勾/开关/添加一行 */
+  --st-font-size: 14px;
+  --st-font-size-title: 16px;
+  --st-line-height: 22px;
+  --st-list-item-height: 32px;
+  --st-primary: #267EF0;          /* 主色蓝：主按钮/聚焦框/选中勾/开关/添加一行 */
   --st-primary-weak: #E8F1FF;     /* 激活胶囊底（筛选 1 / 排序 3） */
   --st-primary-hover: #2459C4;
   --st-cell-selected: #EAF2FE;    /* 单元格选中底 */
   --st-ai: #7F3FF1;               /* AI 紫 */
   --st-text-1: #1F2329;
   --st-text-2: #646A73;
-  --st-text-3: #8F959E;
-  --st-head-text: #8F959E;        /* 表头文字/图标（字段名 / 编组名统一：13px 粗体浅灰） */
+  --st-text-3: #646A73;
+  --st-head-text: #1F2329;        /* 表头：统一字号、粗体黑色 */
   --st-text-4: #BBBFC4;
   --st-disabled: #C4C6CC;
   --st-bg-hover: #F2F3F5;
@@ -23,6 +27,12 @@
   --st-radius-sm: 4px;
   --st-radius-md: 6px;
   --st-radius-lg: 8px;
+}
+
+/* VXE 内置选框与单元格、编辑浮层使用同一个主色。 */
+.smart-vxe {
+  --vxe-ui-font-primary-color: var(--st-primary);
+  --el-color-primary: var(--st-primary);
 }
 
 /* 智慧表格作用域内把 Element 主色换为参照蓝（popover/抽屉 teleport 到 body，逐个列出） */
@@ -80,30 +90,6 @@ body:has(.smart-home, .st-page, .dash-page) .el-popper[class*="-leave-active"] {
   animation-delay: 0s !important;
 }
 
-/* 智能表格滚动条：12px 热区 + 平时 6px 细滑块；鼠标移到滚动条区域或拖动时变粗到 10px 并加深（好抓好拖）。
-   Chrome 不会因 :hover 重绘自定义滚动条，加粗由 smart/utils/scrollbarHover.js 打 .sb-hot 并强制重绘实现。
-   半透明灰滑块、透明轨道、无箭头，配色同首页 .sec-body。滑块粗细用透明边框 + background-clip 控制，热区宽度不变不抖动。
-   作用范围：智能表各页面根节点 + 挂到 body 的工具栏面板/详情浮层。
-   Chrome/Edge 走 ::-webkit-scrollbar（不能同时设 scrollbar-width/color，Chrome 121+ 设了标准属性会忽略 webkit 伪元素）；
-   Firefox 只认标准属性，单独放在 @supports 里 */
-:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay) ::-webkit-scrollbar,
-:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay)::-webkit-scrollbar { width: 12px; height: 12px; }
-:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay) ::-webkit-scrollbar-thumb,
-:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay)::-webkit-scrollbar-thumb {
-  background-color: rgba(31, 45, 61, .2); border-radius: 6px; border: 3px solid transparent; background-clip: padding-box; }
-.sb-hot::-webkit-scrollbar-thumb {
-  border-width: 1px; background-color: rgba(31, 45, 61, .38); }
-:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay) ::-webkit-scrollbar-track,
-:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay) ::-webkit-scrollbar-corner { background: transparent; }
-:is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay) ::-webkit-scrollbar-button { display: none; }
-@supports (-moz-appearance: none) {
-  :is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay),
-  :is(.smart-home, .st-page, .dash-page, .st-tbpanel, .st-pop, .sel-panel, .cell-overlay) * {
-    scrollbar-width: thin; scrollbar-color: rgba(31, 45, 61, .25) transparent; }
-}
-/* vxe-table 用独立滚动层显示滚动条，默认预留 18px：收窄到与上面的滚动条热区同宽 */
-.smart-vxe { --vxe-ui-table-view-scrollbar-width: 12px; --vxe-ui-table-view-scrollbar-height: 12px; }
-
 /* 提示层会传送到 body；按智能表页面作用域统一，包含组件内置的溢出提示。 */
 body:has(.smart-home, .st-page, .dash-page) .el-popper.is-dark,
 body:has(.smart-home, .st-page, .dash-page) .vxe-table--tooltip-wrapper,
@@ -154,8 +140,46 @@ body:has(.smart-home, .st-page, .dash-page) .vxe-tooltip--arrow { display: none;
     .ev-x, .fc-x, .aic-chip-x, .me-chip-x):is(:hover, :focus-visible):not(:disabled):not([aria-disabled="true"]):not(.disabled):not(.off):not(.is-disabled) {
   background: var(--st-icon-hover-bg) !important;
   border-radius: var(--st-icon-hover-radius) !important;
-  color: #30343B;
+  color: var(--st-icon-action-color, #30343B);
 }
 .st-icon-action:disabled:hover, .st-icon-action[aria-disabled="true"]:hover {
   background: transparent !important;
+}
+
+/* Common typography also covers panels teleported outside the table page. */
+:is(.st-page, .st-tbpanel, .st-fcd, .st-pop, .fcd-pop, .sel-panel, .cell-overlay,
+    .fpl, .fol, .people-picker, .people-picker-pop, .contact-picker-dialog) {
+  font-size: var(--st-font-size);
+  line-height: var(--st-line-height);
+  color: var(--st-text-2);
+  --el-font-size-base: var(--st-font-size);
+  --el-font-size-small: var(--st-font-size);
+  --el-font-size-extra-small: var(--st-font-size);
+  --el-text-color-primary: var(--st-text-2);
+  --el-text-color-regular: var(--st-text-2);
+  --el-text-color-secondary: var(--st-text-2);
+  --el-color-primary: var(--st-primary);
+  --vxe-ui-font-size: var(--st-font-size);
+  --vxe-ui-font-size-small: var(--st-font-size);
+}
+
+/* Element Plus keeps its keyboard/navigation behavior; its options share the row tokens. */
+body:has(.st-page) :is(.el-select-dropdown__item, .el-dropdown-menu__item) {
+  box-sizing: border-box;
+  height: var(--st-list-item-height);
+  min-height: var(--st-list-item-height);
+  line-height: var(--st-list-item-height);
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: var(--st-font-size);
+  color: var(--st-text-2);
+}
+body:has(.st-page) :is(.el-select-dropdown__item, .el-dropdown-menu__item):is(:hover, .is-hovering) {
+  background: var(--st-bg-hover);
+}
+body:has(.st-page) .el-select-dropdown__item.is-selected {
+  color: var(--st-primary); background: var(--st-primary-weak); font-weight: 400;
+}
+body:has(.st-page) :is(.el-select-dropdown__item, .el-dropdown-menu__item).is-disabled {
+  color: var(--st-disabled);
 }

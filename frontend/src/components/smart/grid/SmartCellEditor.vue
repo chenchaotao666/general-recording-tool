@@ -3,21 +3,24 @@
        统一契约：props {field, record}，emit commit(value) / cancel() -->
   <!-- 内联输入（数字/百分数/货币）：失焦/回车提交，Esc 取消 -->
   <el-input
-    v-if="editorKind === 'inline' && ft !== 'text'" ref="inputRef" v-model="draft" size="small" class="cell-editor numeric-input" :class="{ 'percent-input': ft === 'percent' }"
+    v-if="!preview && editorKind === 'inline' && ft !== 'text'" ref="inputRef" v-model="draft" size="small" class="cell-editor numeric-input" :class="{ 'percent-input': ft === 'percent' }"
     @blur="commitInline" @keydown.enter="enterInline" @keydown.tab="tabInline" @keyup.esc="$emit('cancel')">
     <template v-if="ft === 'percent'" #suffix><span class="numeric-suffix">%</span></template>
   </el-input>
 
   <!-- 文本：双击进入的浮层编辑（企微式）。边界=单元格（边框与选中态同款 2px 主色），
-       内容多时自动增高（上限 220px 后滚动）；Enter/Shift+Enter 提交后向下/向上，Alt+Enter 换行。
+       内容多时自动增高（上限 220px 后滚动）；Enter 提交后向下，Shift+Enter/Alt+Enter 换行。
        preview（单击选中态）：同一浮层只读展示全文——用 div 而非 readonly textarea
        （Chrome 里 readonly textarea 的内容仍可被拖选），失焦/点外部/Esc 关闭，双击浮层进编辑 -->
-  <template v-else-if="editorKind === 'inline'">
+  <template v-else-if="preview || editorKind === 'inline'">
     <span ref="anchorRef" class="cell-anchor" />
     <teleport to="body">
       <div v-if="overlayRect" v-show="!overlayOut" class="cell-overlay" :class="{ preview }" :style="overlayStyle"
-           @mousedown.stop @click="onPreviewClick" @dblclick.stop="preview && $emit('enter-edit')">
-        <div v-if="preview" ref="taRef" class="cell-textarea preview-text" :style="taStyle">{{ draft }}</div>
+           @mousedown.stop="onPreviewMouseDown" @click="onPreviewClick" @dblclick.stop="preview && $emit('enter-edit')">
+        <template v-if="preview">
+          <div ref="taRef" class="cell-textarea preview-text" :style="taStyle">{{ draft }}</div>
+          <span v-if="fillHandle" class="text-fill-handle" @pointerdown.stop="startFill" @click.stop @dblclick.stop />
+        </template>
         <textarea v-else ref="taRef" v-model="draft" class="cell-textarea" :style="taStyle" rows="1"
                   @input="autoGrow" @keydown.esc="discard"
                   @keydown.enter="enterInline" @keydown.tab="tabInline" @blur="commitInline" />
@@ -90,8 +93,9 @@ const props = defineProps({
   record: { type: Object, required: true },
   frozen: { type: Boolean, default: false },   // 列是否被冻结（判断显示副本在哪个 wrapper）
   preview: { type: Boolean, default: false },  // 单击选中的只读预览（仅文本浮层用）
+  fillHandle: Boolean,
 })
-const emit = defineEmits(['advance', 'commit', 'commit-soft', 'cancel', 'open-config', 'add-option', 'enter-edit', 'collapse'])
+const emit = defineEmits(['advance', 'commit', 'commit-soft', 'cancel', 'open-config', 'add-option', 'enter-edit', 'collapse', 'fill-start'])
 
 const memberList = inject('smartMembers', { value: [] })          // [{id, name}]
 function rememberPeople(people) {
@@ -141,6 +145,12 @@ const anchorRef = ref(null)
 const taRef = ref(null)
 const overlayRect = ref(null)
 const textFont = ref({})
+function startFill(event) {
+  if (event.button !== 0) return
+  const td = anchorRef.value?.closest('td')
+  const rect = event.currentTarget.closest('.cell-overlay').getBoundingClientRect()
+  if (td) emit('fill-start', event, td, rect)
+}
 const overlayStyle = computed(() => {
   const r = overlayRect.value
   if (!r) return {}
@@ -257,28 +267,43 @@ function onPreviewOutside(e) {
 }
 
 // 预览浮层自检测双击：原生 dblclick 在单元格 DOM 被选中态替换后可能不合成
-// （两次点击落在不同元素上），400ms 内第二击直接进编辑
-let lastPreviewClick = 0
-function onPreviewClick() {
+// （两次点击落在不同元素上），原生计数与 500ms 跨元素补偿共同识别第二击
+let lastPreviewClick = props.preview ? Date.now() : 0
+function onPreviewMouseDown(event) {
+  if (!props.preview || event.button !== 0 || event.target.closest('.text-fill-handle')) return
+  // Recognize the second press before DOM replacement can swallow its click.
+  // Native click counts respect the user's double-click speed preference.
+  if (event.detail >= 2 || Date.now() - lastPreviewClick < 500) {
+    event.preventDefault()
+    emit('enter-edit')
+  }
+}
+function onPreviewClick(event) {
   if (!props.preview) return
   const now = Date.now()
-  if (now - lastPreviewClick < 400) emit('enter-edit')
+  if (event.detail >= 2 || now - lastPreviewClick < 500) emit('enter-edit')
   lastPreviewClick = now
 }
 
 // 预览 → 编辑切换：内容从 div 换成 textarea，补焦一次；预览的外部点击监听摘掉
 // （否则编辑态点外部会被误取消，编辑态的关闭走 textarea blur 提交）
 watch(() => props.preview, async (p) => {
-  if (p || !anchorRef.value) return
+  lastPreviewClick = p ? Date.now() : 0
   document.removeEventListener('mousedown', onPreviewOutside, true)
+  if (!anchorRef.value) return
   await nextTick()
+  if (discarded || !overlayRect.value) return
   autoGrow()
-  focusTextarea()
+  if (p) document.addEventListener('mousedown', onPreviewOutside, true)
+  else focusTextarea()
 })
 
 function enterInline(event) {
   if (event.isComposing || event.keyCode === 229) return
-  if (ft.value === 'text' && (!props.advanceOnEnter || event.altKey) && !event.ctrlKey) return
+  if (ft.value === 'text' && (!props.advanceOnEnter || event.shiftKey || event.altKey) && !event.ctrlKey) {
+    event.stopPropagation()
+    return // Keep the textarea's native newline insertion.
+  }
   event.preventDefault(); event.stopPropagation()
   commitInline(props.advanceOnEnter ? (event.shiftKey ? 'up' : 'down') : false)
 }
@@ -334,8 +359,10 @@ function discard() {
 
 // Esc/取消时浮层卸载会触发 blur → 防误提交：取消置标志，提交跳过
 let discarded = false
-useGridScrollCollapse(() => ['inline', 'progress', 'date', 'member'].includes(editorKind.value), () => {
-  if (editorKind.value === 'inline' || editorKind.value === 'progress') commitInline()
+useGridScrollCollapse(() => props.preview || ['inline', 'progress', 'date', 'member'].includes(editorKind.value), () => {
+  if (props.preview) emit('collapse')
+  else if (editorKind.value === 'inline' || editorKind.value === 'progress') commitInline()
+  else if (editorKind.value === 'member') { selectRef.value?.collapse?.(); emit('collapse') }
   else emit('collapse')
 })
 // 组件被卸载（如 vxe 重渲染重建单元格 DOM）时 textarea 的 blur 会误触发提交，一律禁止
@@ -359,10 +386,10 @@ onBeforeUnmount(() => {
 /* 数值编辑与查看态共用字号和右侧留白，避免 small 输入框默认左对齐、12px 字号造成跳动。 */
 .numeric-input :deep(.el-input__wrapper) { padding: 0 8px; }
 .numeric-input :deep(.el-input__inner) {
-  text-align: right; font-size: 13px; font-family: inherit;
+  text-align: right; font-size: var(--st-font-size); font-family: inherit;
   color: var(--el-text-color-primary); transform: translateY(-2px);
 }
-.numeric-input :deep(.el-input__suffix) { font-size: 13px; font-family: inherit; color: var(--el-text-color-primary); transform: translateY(-1px); }
+.numeric-input :deep(.el-input__suffix) { font-size: var(--st-font-size); font-family: inherit; color: var(--el-text-color-primary); transform: translateY(-1px); }
 .numeric-suffix { line-height: 22px; color: var(--st-text-3, #8f959e); }
 .numeric-input :deep(.el-input__suffix-inner > :first-child) { margin-left: 0; }
 .cell-anchor { display: block; width: 100%; height: 100%; }
@@ -375,19 +402,24 @@ onBeforeUnmount(() => {
 .cell-textarea {
   display: block; width: 100%; border: none; outline: none; resize: none;
   box-sizing: border-box; padding: 5px 6px; overflow-y: hidden;
-  font-family: inherit; font-size: 13px; line-height: 22px; max-height: 216px;
+  font-family: inherit; font-size: var(--st-font-size); line-height: 22px; max-height: 216px;
 }
 /* 单击预览态：div 展示全文（Chrome 里 readonly textarea 仍可拖选，div 才可靠禁选） */
 .cell-overlay.preview .preview-text {
   user-select: none; cursor: default; white-space: pre-wrap; word-break: break-all;
 }
+.text-fill-handle {
+  position: absolute; right: -2px; bottom: -2px; width: 6px; height: 6px;
+  background: var(--st-primary); border: 1px solid white; box-sizing: border-box;
+  cursor: crosshair; touch-action: none;
+}
 .slider { padding: 0 8px; }
 .url-editor { background: #fff; border: 1px solid var(--el-border-color); border-radius: 6px; padding: 8px; box-shadow: var(--el-box-shadow-light); min-width: 220px; }
 .url-field { margin-bottom: 6px; }
 .url-ops { display: flex; justify-content: flex-end; gap: 6px; }
-.blocked { display: flex; align-items: center; gap: 6px; background: #fff; padding: 4px 8px; border-radius: 6px; box-shadow: var(--el-box-shadow-light); font-size: 12px; }
+.blocked { display: flex; align-items: center; gap: 6px; background: #fff; padding: 4px 8px; border-radius: 6px; box-shadow: var(--el-box-shadow-light); font-size: var(--st-font-size); }
 .blocked-text { color: var(--el-text-color-secondary); }
-.hint { color: #909399; font-size: 12px; margin-top: 4px; }
+.hint { color: var(--st-text-2); font-size: var(--st-font-size); margin-top: 4px; }
 </style>
 
 <style>
@@ -395,6 +427,5 @@ onBeforeUnmount(() => {
    不能写在 scoped 里：el-date-picker 根元素不带本组件作用域属性，:deep 选择器命中不到 */
 .cell-date-editor .el-input__prefix { display: none; }
 .cell-date-editor .el-input__wrapper { padding: 0 8px; }
-/* translateY(-2px)：查看态内容整体上移 2px 做光学居中（SmartGrid .vxe-cell--wrapper），编辑框文字同步上移 */
-.cell-date-editor .el-input__inner { font-size: 13px; font-family: inherit; color: var(--el-text-color-primary); transform: translateY(-2px); }
+.cell-date-editor .el-input__inner { font-size: var(--st-font-size); font-family: inherit; color: var(--el-text-color-primary); }
 </style>

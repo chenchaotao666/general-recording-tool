@@ -149,6 +149,7 @@
       :active-row-id="detail.visible ? detailRecord?.id : null"
       :search-matches="findHighlight.matches" :search-current-index="findHighlight.currentIndex"
       @expand-row="(r) => openDetail(r)"
+      @row-activate="syncDetailRow"
       :can-create="perms.can_create" :can-delete="perms.can_delete"
       @cell-commit="onCellCommit" @add-row="addRow" @cell-menu="onCellMenu" @field-menu="onFieldMenu" @ai-run="runAiField" @field-edit="(f, at) => openFieldConfig(f, null, at)"
       @group-edit="(g, at) => openGroupDialog(null, g, at)"
@@ -179,6 +180,7 @@
                        :readonly="!perms.can_edit" :can-edit-cell="canEditCell"
                        :can-create="perms.can_create" :can-delete="perms.can_delete"
                        :title-field="cfg.recordTitleField" :can-set-title="contentPerm.viewManage"
+                       @field-click="f => gridRef?.revealField(f.field_name, detailRecord.id)"
                        @set-title-field="(fn) => patchConfig({ recordTitleField: fn }, { reload: false })"
                        @close="detail.visible = false" @nav="navDetail" @cell-commit="onCellCommit"
                        @add-option="onAddOption" @open-config="openFieldConfig" @record-action="onDetailAction" />
@@ -1201,6 +1203,10 @@ function openDetail(r) {
   detail.record = dataRows.value.find(x => x.id === r.id) || r
   detail.visible = true
 }
+function syncDetailRow(row) {
+  if (!detail.visible || detail.record?.id === row.id) return
+  detail.record = dataRows.value.find(record => record.id === row.id) || row
+}
 // 详情面板 ⋯：生成记录副本 / 删除记录（删除后切到下一条，没有则收起）
 async function onDetailAction(cmd, rec) {
   if (cmd === 'duplicate') {
@@ -1989,7 +1995,8 @@ async function duplicateGroup(g) {
 function autoFitFields(names) {
   const ctx = document.createElement('canvas').getContext('2d')
   const measured = new Map()
-  const measure = (text, size = 13) => {
+  const fontSize = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--st-font-size')) || 14
+  const measure = (text, size = fontSize) => {
     const key = `${size}:${text}`
     if (!measured.has(key)) {
       ctx.font = `${size}px "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif`
@@ -2017,14 +2024,14 @@ function autoFitFields(names) {
       let contentWidth
       if (['singleSelect', 'multiSelect'].includes(type)) {
         const tags = resolveEnumTags(f.options?.options, v)
-        contentWidth = wrappedTagWidth(tags.map(tag => measure(tag.label, 12) + (tags.length === 1 ? 16 : 12)), height)
+        contentWidth = wrappedTagWidth(tags.map(tag => measure(tag.label) + (tags.length === 1 ? 16 : 12)), height)
       } else if (type === 'member') {
-        contentWidth = wrappedTagWidth(values.map(id => measure(memberDir.value.get(Number(id))?.name || `#${id}`, 12) + 36), height)
+        contentWidth = wrappedTagWidth(values.map(id => measure(memberDir.value.get(Number(id))?.name || `#${id}`) + 36), height)
       } else if (type === 'relation') {
         const labels = relationDir.value.get(f.options?.targetTableId)
-        contentWidth = wrappedTagWidth(values.map(id => measure(labels?.get(id) ?? labels?.get(Number(id)) ?? `#${id}`, 12) + 30), height)
+        contentWidth = wrappedTagWidth(values.map(id => measure(labels?.get(id) ?? labels?.get(Number(id)) ?? `#${id}`) + 30), height)
       } else if (type === 'file') {
-        contentWidth = wrappedTagWidth(values.map(file => measure(file.name || '文件', 12) + 34), height)
+        contentWidth = wrappedTagWidth(values.map(file => measure(file.name || '文件') + 34), height)
       } else if (type === 'text' || type === 'url') {
         contentWidth = wrappedTextWidth(type === 'url' ? (v.text || v.url || '') : v, height, measure)
       } else {
@@ -2116,7 +2123,7 @@ onUnmounted(() => {
 
 <style scoped>
 .st-page { display: flex; gap: 12px; height: 100%; min-width: 0; box-sizing: border-box; padding: 6px 12px 12px 12px; background: #fff; }
-.st-initial { flex: 1; display: flex; align-items: center; justify-content: center; gap: 12px; color: #909399; font-size: 14px; }
+.st-initial { flex: 1; display: flex; align-items: center; justify-content: center; gap: 12px; color: var(--st-text-2); font-size: var(--st-font-size); }
 .st-table-pane { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .st-page :deep(.view-tabs) { height: 40px; box-sizing: border-box; flex-shrink: 0; border-bottom: 0; padding-left: 0; }
 .st-page :deep(.rd-panel) { padding: 0; }
@@ -2130,23 +2137,23 @@ onUnmounted(() => {
 .tb-btn {
   display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px;
   border: none; background: transparent; border-radius: 6px; cursor: pointer;
-  font-size: 13px; color: var(--st-text-1); white-space: nowrap;
+  font-size: var(--st-font-size); color: var(--st-text-2); white-space: nowrap;
 }
 .tb-btn .st-icon { color: var(--st-text-2); }
 .tb-btn:hover { background: var(--st-bg-hover); }
 .tb-btn:disabled { color: var(--st-disabled); cursor: not-allowed; background: transparent; }
 .tb-btn:disabled .st-icon { color: var(--st-disabled); }
 /* 生效态：筛选/分组/排序/填色 = 浅灰底深色字 */
-.tb-btn.on, .tb-btn.open { background: #E8E9EB; color: var(--st-text-1); }
-.tb-btn.on .st-icon, .tb-btn.open .st-icon { color: var(--st-text-1); }
+.tb-btn.on, .tb-btn.open { background: #E8E9EB; color: var(--st-text-2); }
+.tb-btn.on .st-icon, .tb-btn.open .st-icon { color: var(--st-text-2); }
 .tb-scope { color: var(--st-text-2); margin-left: 4px; }   /* 灰底按钮上的次要说明：中灰（原浅蓝随按钮改灰底一起换掉） */
 /* 行高菜单 */
 .rh-menu { display: flex; flex-direction: column; margin: -14px -16px -12px; }
-.rh-item { display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 16px 0 12px; margin: 0 6px; border-radius: 6px; cursor: pointer; font-size: 15px; color: var(--st-text-1); }
+.rh-item { display: flex; align-items: center; gap: 10px;  padding: 0 16px 0 12px; margin: 0 6px; border-radius: 6px; cursor: pointer; font-size: var(--st-font-size); color: var(--st-text-2);  height: var(--st-list-item-height); box-sizing: border-box; }
 .rh-item:hover { background: var(--st-bg-hover); }
-.rh-check { width: 16px; color: var(--st-primary); font-size: 15px; }
-.rh-ico { color: var(--st-text-1); }
-.rh-custom { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--st-border); margin-top: 4px; padding: 12px 18px; font-size: 15px; color: var(--st-text-1); }
+.rh-check { width: 16px; color: var(--st-primary); font-size: var(--st-font-size); }
+.rh-ico { color: var(--st-text-2); }
+.rh-custom { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--st-border); margin-top: 4px; padding: 12px 18px; font-size: var(--st-font-size); color: var(--st-text-2); }
 .rh-num { width: 56px; }
 .rh-num :deep(.el-input__inner) { text-align: center; }
 .tb-btn.tb-add { color: var(--st-primary); font-weight: 500; }
@@ -2157,17 +2164,17 @@ onUnmounted(() => {
   display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
   border: none; background: transparent; border-radius: 6px; cursor: pointer; color: var(--st-text-2);
 }
-.tb-ico:hover { background: var(--st-bg-hover); color: var(--st-text-1); }
+.tb-ico:hover { background: var(--st-bg-hover); color: var(--st-text-2); }
 .tb-ico:disabled { color: var(--st-disabled); cursor: not-allowed; background: transparent; }
 /* pin 的条件胶囊：浅灰底圆角块（类型图标+字段名+⌄） */
 .chip {
   display: inline-flex; align-items: center; gap: 4px; background: var(--st-bg-hover);
-  border-radius: 6px; padding: 4px 8px; font-size: 12px; color: var(--st-text-1); cursor: pointer;
+  border-radius: 6px; padding: 4px 8px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer;
 }
 .chip .st-icon { color: var(--st-text-3); }
 .chip:hover { background: var(--st-bg-active); }
 .chip-edit { display: flex; gap: 8px; align-items: center; }
-.tb-selected { font-size: 13px; color: var(--st-text-2); white-space: nowrap; padding: 0 4px; }
+.tb-selected { font-size: var(--st-font-size); color: var(--st-text-2); white-space: nowrap; padding: 0 4px; }
 .tb-btn.tb-danger { color: var(--el-color-danger); }
 .tb-btn.tb-danger:hover { background: var(--el-color-danger-light-9); }
 /* 分页条：紧凑（36px），紧跟表格 */
@@ -2177,9 +2184,9 @@ onUnmounted(() => {
 .field-menu-layer > .fm, .group-menu-layer > .fm { pointer-events: auto; }
 .fm { position: fixed; background: #fff; border-radius: 8px; box-shadow: var(--st-shadow-pop); padding: 4px; min-width: 170px; }
 .mi {
-  display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13px;
-  border-radius: 4px; cursor: pointer; white-space: nowrap; color: var(--st-text-1);
-}
+  display: flex; align-items: center; gap: 8px; padding: 0 12px; font-size: var(--st-font-size);
+  border-radius: 4px; cursor: pointer; white-space: nowrap; color: var(--st-text-2);
+ height: var(--st-list-item-height); box-sizing: border-box; }
 .mi .st-icon { color: var(--st-text-2); }
 .mi:hover { background: var(--st-bg-hover); }
 .mi.danger { color: var(--el-color-danger); }
@@ -2196,18 +2203,18 @@ onUnmounted(() => {
 .fb-item.freeze-disabled { color: var(--st-disabled); cursor: not-allowed; }
 .mi.disabled .st-icon { color: var(--st-disabled); }
 /* V3「根据此列…」分节 + 数据可视化飞出（双行项：标题 + 灰色说明） */
-.fm-group-t { font-size: 12px; color: var(--st-text-3); padding: 6px 12px 2px; }
+.fm-group-t { font-size: var(--st-font-size); color: var(--st-text-3); padding: 6px 12px 2px; }
 .fm-free { margin-left: 6px; }
 .fm-ai { color: var(--st-ai) !important; }
 .fm-viz { min-width: 260px; }
-.fm-sub-t { font-size: 12px; color: var(--st-text-3); padding: 6px 12px 2px; }
+.fm-sub-t { font-size: var(--st-font-size); color: var(--st-text-3); padding: 6px 12px 2px; }
 .mi-2 { align-items: flex-start; }
 .mi-2 > .st-icon { margin-top: 2px; }
-.mi-s { font-size: 12px; color: var(--st-text-3); margin-top: 2px; }
+.mi-s { font-size: var(--st-font-size); color: var(--st-text-3); margin-top: 2px; }
 .tb-ico.on { background: var(--st-primary-weak); color: var(--st-primary); }
 .sub-check { display: inline-block; width: 16px; color: var(--st-primary); }
 .gd-form { display: flex; flex-direction: column; --el-color-primary: var(--st-primary); }
-.gd-name { width: 100%; box-sizing: border-box; height: 36px; margin-bottom: 12px; border: 1px solid #DEE0E3; border-radius: 6px; padding: 0 12px; font-size: 14px; color: var(--st-text-1); background: #fff; outline: none; }
+.gd-name { width: 100%; box-sizing: border-box; height: 36px; margin-bottom: 12px; border: 1px solid #DEE0E3; border-radius: 6px; padding: 0 12px; font-size: var(--st-font-size); color: var(--st-text-2); background: #fff; outline: none; }
 .gd-name:hover { border-color: #C9CDD4; }
 .gd-name:focus { border-color: var(--st-primary); }
 .gd-fields { display: flex; align-items: center; gap: 8px; min-height: 36px; border-radius: 6px; box-shadow: 0 0 0 1px #DEE0E3 inset; padding: 5px 12px; box-sizing: border-box; cursor: pointer; }
@@ -2215,9 +2222,9 @@ onUnmounted(() => {
 .gd-fields.open, .gd-fields:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--st-primary) inset; }
 .gd-fields > .st-icon { flex: none; }
 .gd-tags { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
-.gd-placeholder { color: var(--el-text-color-placeholder); font-size: 14px; }
+.gd-placeholder { color: var(--el-text-color-placeholder); font-size: var(--st-font-size); }
 .gd-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; border-top: 1px solid #EBECEE; margin: 16px -24px 0; padding: 16px 24px 0; }
-.gd-btn { height: 32px; padding: 0 16px; border-radius: 6px; border: none; background: #F2F3F5; font-size: 14px; color: var(--st-text-1); cursor: pointer; }
+.gd-btn { height: 32px; padding: 0 16px; border-radius: 6px; border: none; background: #F2F3F5; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
 .gd-btn:hover { background: #E6E8EA; }
 .gd-btn.primary { background: var(--st-primary); color: #fff; }
 .gd-btn.primary:hover { background: #255BD0; }
@@ -2229,12 +2236,12 @@ onUnmounted(() => {
 .sm-val { color: var(--st-text-2); font-variant-numeric: tabular-nums; }
 .fm-divider { height: 1px; background: var(--st-border); margin: 4px 6px; }
 /* 排序项行尾：当前方向内联灰字（参照 表头-工具栏.png「选项正序 ›」） */
-.mi-tail { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; color: var(--st-text-3); font-size: 12px; }
+.mi-tail { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; color: var(--st-text-3); font-size: var(--st-font-size); }
 .mi.has-sub .mi-tail .sub-caret { margin-left: 0; }
 /* 列头菜单底部图标快捷栏：5 图标等距，hover 浅灰块，tooltip 由 el-tooltip 提供 */
 .fm-bar { display: flex; align-items: center; justify-content: space-around; border-top: 1px solid var(--st-border); margin-top: 4px; padding: 6px 4px 2px; }
 .fb-item { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 28px; border-radius: 6px; cursor: pointer; color: var(--st-text-2); }
-.fb-item:hover { background: var(--st-bg-hover); color: var(--st-text-1); }
+.fb-item:hover { background: var(--st-bg-hover); color: var(--st-text-2); }
 /* 列头单字段筛选浮层容器 */
 .ffp-wrap { width: 480px; box-sizing: border-box; padding: 18px 20px 16px; border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .14); }
 </style>

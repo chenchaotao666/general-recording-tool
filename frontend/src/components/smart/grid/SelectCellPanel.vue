@@ -15,7 +15,7 @@
     <!-- 未匹配到选项的原始值兜底（改类型/引用源被删场景） -->
     <span v-for="(v, i) in unmatchedValues" :key="`raw-${i}`" class="opt-tag raw"><span class="opt-label">{{ v }}</span></span>
     <!-- 下拉按钮：单个三角，点击切换展开/收起（方向随状态翻转） -->
-    <CellDropdown class="chev" overlay bordered :open="!closed" label="展开/收起选项" @click="onChevClick" />
+    <CellDropdown class="chev" overlay bordered top :open="!closed" label="展开/收起选项" @click="onChevClick" />
   </span>
   <teleport to="body">
     <div v-if="rect && !closed" v-show="!panelOut" ref="panelRef" class="sel-panel" :style="panelStyle" @mousedown.stop>
@@ -23,12 +23,12 @@
              @keydown.enter="onEnter" @keydown.tab="onEnter" @keydown.esc.stop.prevent="onEsc" />
       <div class="sel-kind">{{ isMulti ? '多选' : '单选' }}</div>
       <div class="sel-list">
-        <div v-for="o in visibleOptions" :key="o.id" class="sel-item" @click="pick(o.id)">
+        <SmartListItem v-for="o in visibleOptions" :key="o.id" class="sel-item" :selected="isSelected(o.id)" role="button" tabindex="0" @keydown.enter.prevent="pick(o.id)" @keydown.space.prevent="pick(o.id)" @click="pick(o.id)">
           <span class="check">{{ isSelected(o.id) ? '✓' : '' }}</span>
           <span class="opt-tag"
                 :style="{ background: optionColor(o.color).value, color: optionColor(o.color).text }">{{ o.label }}</span>
-        </div>
-        <div v-if="creatable" class="sel-item create" @click="create">＋ 创建「{{ kw.trim() }}」</div>
+        </SmartListItem>
+        <SmartListItem v-if="creatable" class="sel-item create" @click="create">＋ 创建「{{ kw.trim() }}」</SmartListItem>
         <div v-if="!visibleOptions.length && !creatable" class="sel-empty">无可选项</div>
       </div>
     </div>
@@ -36,6 +36,7 @@
 </template>
 
 <script setup>
+import SmartListItem from '../common/SmartListItem.vue'
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useGridScrollCollapse } from '../../../smart/utils/useGridScrollCollapse.js'
 import StIcon from '../icons/StIcon.vue'
@@ -275,7 +276,7 @@ onUnmounted(() => {
 /* 选中态与编辑态一样：宿主单元格内边距与光学上移已由 SmartGrid 归零，锚点框直接撑满单元格
    （原先用固定负边距补偿 8px padding，行高变大后单元格 padding 不同，框会超出单元格） */
 .sel-anchor.closed { margin: 0; width: 100%; min-height: 100%; }
-.opt-tag { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; max-width: 100%; box-sizing: border-box; }
+.opt-tag { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 4px; font-size: var(--st-font-size); white-space: nowrap; max-width: 100%; box-sizing: border-box; }
 /* 单个标签超宽时省略号截断，✕ 始终保留 */
 .opt-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .opt-tag.raw { background: var(--el-fill-color); color: var(--el-text-color-secondary); }
@@ -292,20 +293,22 @@ onUnmounted(() => {
 .sel-search {
   width: 100%; box-sizing: border-box; border: none; outline: none;
   border-bottom: 1px solid var(--el-border-color-lighter);
-  padding: 4px 2px 8px; font-size: 13px; color: var(--el-text-color-primary);
+  padding: 4px 2px 8px; font-size: var(--st-font-size); color: var(--el-text-color-primary);
   user-select: text;
 }
 .sel-search::placeholder { color: var(--el-text-color-placeholder); }
-.sel-kind { font-size: 12px; color: var(--el-text-color-secondary); padding: 8px 2px 4px; }
+.sel-kind { font-size: var(--st-font-size); color: var(--el-text-color-secondary); padding: 8px 2px 4px; }
 .sel-list { max-height: 240px; min-height: 0; flex: 0 1 auto; overflow-y: auto; display: flex; flex-direction: column; }
 .sel-item {
-  display: flex; align-items: center; gap: 6px; padding: 3px 4px;   /* 行高与单元格标签一致（标签 20px + 上下 3px） */
-  cursor: pointer; border-radius: 4px;
+  display: flex; align-items: center;  padding: 0 8px;   /* 行高与单元格标签一致（标签 20px + 上下 3px） */
+  cursor: pointer;
 }
-.sel-item:hover { background: var(--el-fill-color-lighter); }
-.sel-item .check { width: 16px; color: var(--st-primary); font-size: 12px; flex: none; }
+.sel-item.st-list-item.is-selected { background: transparent; }
+.sel-item.st-list-item.is-selected:hover,
+.sel-item.st-list-item.is-selected:focus-within { background: var(--st-bg-hover, #F2F3F5); }
+.sel-item .check { width: 16px; color: var(--st-primary); font-size: var(--st-font-size); flex: none; }
 /* 面板挂 body 后拿不到 vxe 单元格的 22px 行高，标签会比单元格里矮一截——补齐一致 */
 .sel-panel .opt-tag { line-height: 22px; }
-.sel-item.create { color: var(--st-primary); font-size: 13px; padding-left: 22px; }
-.sel-empty { color: var(--el-text-color-secondary); font-size: 12px; padding: 8px 2px; }
+.sel-item.create { color: var(--st-primary); font-size: var(--st-font-size); padding-left: 22px; }
+.sel-empty { color: var(--el-text-color-secondary); font-size: var(--st-font-size); padding: 8px 2px; }
 </style>

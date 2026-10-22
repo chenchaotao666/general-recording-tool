@@ -4,25 +4,20 @@
       <div class="rd-head">
         <!-- 标题：选定字段的值；▾ 切换记录标题（参照 PixPin_2026-10-18_00-06-14，存视图配置 recordTitleField） -->
         <div class="rd-title">
-          <el-popover :hide-after="0" v-if="canSetTitle" v-model:visible="titlePickOpen" trigger="click" placement="bottom-start" :width="440"
-                      :show-arrow="false" popper-class="rd-title-pop">
+          <el-popover :hide-after="0" v-if="canSetTitle" v-model:visible="titlePickOpen" trigger="click" placement="bottom-start" :width="324"
+                      :show-arrow="false" popper-class="st-tbpanel st-pick-pop">
             <template #reference>
               <span class="rd-title-trigger" :class="{ open: titlePickOpen }">
                 <span :class="{ 'rd-title-empty': !titleText }">{{ titleText || '未命名记录' }}</span>
                 <StIcon name="chevron-down" :size="18" class="rd-title-caret" />
               </span>
             </template>
-            <div class="rd-tp-head">切换记录标题</div>
-            <div class="rd-tp-list">
-              <div v-for="f in titleCandidates" :key="f.field_name" class="rd-tp-item" @click="pickTitle(f)">
-                <span class="rd-tp-check"><StIcon v-if="titleField?.field_name === f.field_name" name="check" :size="16" /></span>
-                <StIcon :name="fieldIconName(f)" :size="16" class="rd-tp-ico" /><span class="rd-tp-name">{{ f.label }}</span>
-              </div>
-            </div>
+            <FieldPickList title="切换记录标题" :fields="titleCandidates" :column-groups="columnGroups"
+                           :selected="titleField?.field_name" @pick="pickTitle" />
           </el-popover>
           <span v-else :class="{ 'rd-title-empty': !titleText }">{{ titleText || '未命名记录' }}</span>
         </div>
-        <el-dropdown :hide-after="0" v-if="canCreate || canDelete" trigger="click" placement="bottom-end" popper-class="rd-more-pop"
+        <el-dropdown ref="moreRef" :hide-after="0" v-if="canCreate || canDelete" trigger="click" placement="bottom-end" popper-class="rd-more-pop"
                      @command="(cmd) => $emit('record-action', cmd, record)" @visible-change="(v) => (moreOpen = v)">
           <button class="rd-more st-icon-action" :class="{ open: moreOpen }"><StIcon name="more-h" :size="18" /></button>
           <template #dropdown>
@@ -33,19 +28,25 @@
           </template>
         </el-dropdown>
       </div>
-      <div class="rd-body">
+      <div class="rd-body" @scroll.passive="collapseDetailPanels">
         <template v-for="row in rows" :key="row.key">
           <div v-if="row.group" class="rd-group" @click="toggle(row.group.id)">
             <StIcon :name="collapsed.has(row.group.id) ? 'chevron-right' : 'chevron-down'" :size="16" class="rd-caret" />
             <span class="rd-gname">{{ row.group.name }}</span>
           </div>
           <template v-if="!row.group || !collapsed.has(row.group.id)">
-            <div v-for="f in row.fields" :key="f.field_name" class="rd-row" :class="{ member: !!row.group }">
+            <div v-for="f in row.fields" :key="f.field_name" class="rd-row" :class="{ member: !!row.group }" @click.capture="$emit('field-click', f)">
               <div class="rd-label"><StIcon :name="fieldIconName(f)" :size="16" class="rd-icon" /><span>{{ f.label }}</span></div>
-              <div class="rd-value" :class="[`v-${typeOf(f)}`, { editable: canEdit(f), editing: editing === f.field_name, 'keep-pad': !!inlineKind(f) || isEnum(f) }]"
+              <component :is="['member', 'image', 'file', 'url', 'relation'].includes(typeOf(f)) ? DetailSelectBox : 'div'" class="rd-value" :class="[`v-${typeOf(f)}`, { editable: canEdit(f), editing: editing === f.field_name, 'keep-pad': !!inlineKind(f) || isEnum(f) || ['member', 'progress', 'image', 'file', 'url', 'relation'].includes(typeOf(f)) }]"
                    :data-field="f.field_name" @click="(e) => onValueClick(f, e)">
                 <!-- 文本/数字/日期：面板内联编辑，内边距/字号/行高与展示态一致，边框用内阴影——进出编辑不位移 -->
-                <template v-if="editing === f.field_name && inlineKind(f)">
+                <template v-if="['image', 'file', 'url', 'relation'].includes(typeOf(f))">
+                  <component :is="detailMediaComponent[typeOf(f)]" :value="record[f.field_name] || null" v-bind="typeOf(f) === 'relation' ? { field: effOf(f), record } : {}" selected :readonly="!canEdit(f)"
+                             @open="editing = f.field_name" @collapse="closeMedia(f)" @cancel="closeMedia(f)"
+                             @commit="v => commit(f, v, typeOf(f) === 'url')" />
+                  <span v-if="isEmpty(f)" class="rd-media-placeholder rd-ph">{{ placeholderOf(f) }}</span>
+                </template>
+                <template v-else-if="editing === f.field_name && inlineKind(f)">
                   <textarea v-if="inlineKind(f) === 'text'" ref="inlineRef" v-model="draft" class="rd-input rd-ta" rows="1"
                             @input="grow" @blur="commitDraft(f)" @keydown.esc.stop.prevent="cancelDraft"
                             @keydown.ctrl.enter.prevent="$event.target.blur()" />
@@ -65,6 +66,9 @@
                                  @open-config="(x) => $emit('open-config', x)" />
                 <!-- 复选框：展示即操作（单击切换） -->
                 <SmartCell v-else-if="typeOf(f) === 'checkbox'" :field="f" :record="record" />
+                <ProgressCell v-else-if="typeOf(f) === 'progress'" :value="record[f.field_name]" :config="effOf(f).options || {}"
+                              :interactive="canEdit(f)" @commit="v => commit(f, v, false)"
+                              @enter-edit="editing = f.field_name" />
                 <template v-else-if="isEmpty(f)">
                   <span v-if="typeOf(f) === 'progress'" class="rd-ph-bar" />
                   <span v-else-if="typeOf(f) === 'image'" class="rd-ph-box">{{ placeholderOf(f) }}</span>
@@ -79,8 +83,9 @@
                 </span>
                 <!-- 日期类：按字段日期格式显示（与表格单元格 formatDate 一致），编辑框同格式，进出编辑文字不变 -->
                 <span v-else-if="isDateType(f)">{{ fmtDate(record[f.field_name], f) }}</span>
-                <SmartCell v-else :field="f" :record="record" />
-              </div>
+                <SmartCell v-else :field="f" :record="record" :expand-members="typeOf(f) === 'member'" />
+                <CellDropdown v-if="typeOf(f) === 'member' && editing !== f.field_name && canEdit(f)" overlay label="选择人员" @click="e => onValueClick(f, e)" />
+              </component>
             </div>
           </template>
         </template>
@@ -98,10 +103,18 @@
 
 <script setup>
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
-import { computed, h, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import SmartCell from '../grid/SmartCell.vue'
+import ProgressCell from '../grid/ProgressCell.vue'
 import SmartCellEditor from '../grid/SmartCellEditor.vue'
+import FieldPickList from './FieldPickList.vue'
+import DetailSelectBox from '../common/DetailSelectBox.vue'
+import CellDropdown from '../grid/CellDropdown.vue'
+import ImageCellPanel from '../grid/ImageCellPanel.vue'
+import FileCellPanel from '../grid/FileCellPanel.vue'
+import LinkCellPanel from '../grid/LinkCellPanel.vue'
+import RelationCellPanel from '../grid/RelationCellPanel.vue'
 import StIcon from '../icons/StIcon.vue'
 import { dayjsDateFormat, formatCurrency, formatDate, formatNumber } from '../../../smart/utils/format.js'
 import { BLOCKED_CONFIGURABLE, BLOCKED_EDIT_TEXT, optionColor, regOf } from '../../../smart/registry/fieldRegistry.js'
@@ -118,9 +131,31 @@ const props = defineProps({
   titleField: { type: String, default: null },     // 视图配置 recordTitleField
   canSetTitle: { type: Boolean, default: false },  // 有视图管理权限才能切换记录标题
 })
-const emit = defineEmits(['cell-commit', 'record-action', 'add-option', 'open-config', 'set-title-field'])
+const emit = defineEmits(['cell-commit', 'record-action', 'add-option', 'open-config', 'set-title-field', 'field-click'])
 
 const moreOpen = ref(false)
+const moreRef = ref(null)
+const scrollCollapses = new Set()
+provide('smartGridScrollCollapse', collapse => {
+  scrollCollapses.add(collapse)
+  return () => scrollCollapses.delete(collapse)
+})
+function collapseDetailPanels() {
+  hideBlockedHint()
+  titlePickOpen.value = false
+  moreRef.value?.handleClose?.()
+  // Snapshot: each callback may unmount an editor and unsubscribe itself.
+  for (const collapse of [...scrollCollapses]) collapse()
+  const field = props.fields.find(f => f.field_name === editing.value)
+  if (field && inlineKind(field)) {
+    if (inlineKind(field) === 'date') {
+      for (const picker of [].concat(inlineRef.value || [])) picker?.handleClose?.()
+    } else commitDraft(field)
+  }
+  editing.value = null
+}
+const detailMediaComponent = { image: ImageCellPanel, file: FileCellPanel, url: LinkCellPanel, relation: RelationCellPanel }
+function closeMedia(f) { if (editing.value === f.field_name) editing.value = null }
 
 // 两种容器共用编辑状态；切换记录时退出当前字段编辑。
 const editing = ref(null)   // 正在编辑的 field_name
@@ -200,7 +235,7 @@ const typeOf = (f) => effOf(f)?.field_type
 const isEnum = (f) => ['singleSelect', 'multiSelect'].includes(typeOf(f))
 
 function canEdit(f) {
-  if (props.readonly || regOf(f).readonly) return false
+  if (props.readonly || regOf(effOf(f)).readonly) return false
   return props.canEditCell ? props.canEditCell(props.record, f) : true
 }
 
@@ -255,8 +290,8 @@ const fmtDate = (v, f) => formatDate(v, f.options || {})
 // ---------- 不可编辑提示（文案与表格单元格共用 BLOCKED_EDIT_TEXT） ----------
 const blockedHint = ref(null)   // {x, y, text, field}
 function showBlockedHint(f, el) {
-  const ft = f.field_type   // AI 字段按原类型判定（只读）
-  const typeText = BLOCKED_EDIT_TEXT[ft] || (ft === 'ai' ? 'AI 字段内容由 AI 生成，不可直接编辑' : null)
+  const ft = typeOf(f)
+  const typeText = BLOCKED_EDIT_TEXT[ft]
   const text = typeText || (props.readonly ? '你没有编辑该表格的权限' : '你没有编辑该单元格的权限')
   const r = el.getBoundingClientRect()
   const x = Math.max(8, Math.min(r.left, window.innerWidth - 300))
@@ -272,6 +307,7 @@ function openBlockedConfig() {
 watch(() => props.record?.id, hideBlockedHint)
 
 function onValueClick(f, e) {
+  if (['image', 'file', 'url', 'relation'].includes(typeOf(f))) return // persistent panels own their open/close lifecycle
   if (editing.value === f.field_name) return
   if (!canEdit(f)) { showBlockedHint(f, e.currentTarget); return }
   if (typeOf(f) === 'checkbox') { commit(f, !props.record[f.field_name], true); return }
@@ -319,9 +355,9 @@ function commit(f, value, close) {
   emit('cell-commit', { row: props.record, field: f, value })
 }
 
-// 上传/链接/进度编辑器没有自己的失焦提交：点到值区与浮层之外即退出编辑。
+// 上传/链接编辑器没有自己的失焦提交：点到值区与浮层之外即退出编辑。
 // 其余编辑器（文本/选项/日期/人员/关联）自己在失焦或面板关闭时提交，不能抢先卸载
-const SELF_CLOSING = ['inline', 'select', 'date', 'member', 'relation']
+const SELF_CLOSING = ['inline', 'select', 'date', 'member', 'relation', 'progress']
 function onDocMousedown(e) {
   if (blockedHint.value && !e.target.closest?.('.rd-blocked-hint')) hideBlockedHint()
   if (!editing.value) return
@@ -339,79 +375,96 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMousedown, 
 /* 统一外框内的内容区，独立滚动 */
 .rd-card { display: flex; flex-direction: column; flex: 1; min-height: 0;  }
 .rd-head { display: flex; align-items: flex-start; gap: 12px; padding: 20px 16px 8px 24px; flex: none; }
-.rd-title { flex: 1; min-width: 0; font-size: 22px; line-height: 30px; font-weight: 500; color: var(--st-text-1); word-break: break-all; }
+.rd-title { flex: 1; min-width: 0; font-size: var(--st-font-size); line-height: 30px; font-weight: 500; color: var(--st-text-2); word-break: break-all; }
 .rd-title-empty { color: var(--st-text-4); }
 /* 标题 ▾：整块可点，hover 浅灰底 */
 .rd-title-trigger { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; margin-left: -6px; padding: 0 6px;
   border-radius: 6px; cursor: pointer; }
 .rd-title-trigger:hover, .rd-title-trigger.open { background: var(--st-bg-hover); }
-.rd-title-caret { flex: none; color: var(--st-text-1); }
+.rd-title-caret { flex: none; color: var(--st-text-2); }
 .rd-more { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0;
-           border: none; border-radius: 6px; background: transparent; color: var(--st-text-1); cursor: pointer; }
+           border: none; border-radius: 6px; background: transparent; color: var(--st-text-2); cursor: pointer; }
 .rd-more:hover, .rd-more.open { background: var(--st-bg-active); }
 .rd-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 16px 16px 16px; }
 /* 字段行：左列图标 + 字段名（可换行），右列值 */
-.rd-row { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: 4px 0; box-sizing: border-box; }
+.rd-row { display: flex; align-items: flex-start; gap: 12px; min-height: 40px; padding: 2px 0; box-sizing: border-box; }
 .rd-row.member { margin-left: 8px; padding-left: 14px; border-left: 1px solid #DCDEE0; }
 .rd-label { display: flex; align-items: flex-start; gap: 8px; width: 190px; flex: none; padding-top: 7px;
-            font-size: 15px; line-height: 22px; color: var(--st-text-1); word-break: break-all; }
+            font-size: var(--st-font-size); line-height: 22px; color: var(--st-text-2); word-break: break-all; }
 .rd-row.member .rd-label { width: 168px; }
 /* 图标/名称样式与表格设置面板一致（图标 16px 灰、名称 15px 深色、间距 8px） */
 .rd-icon { color: var(--st-text-2); flex: none; margin-top: 3px; }
 .rd-value { position: relative; flex: 1; min-width: 0; min-height: 36px; padding: 7px 8px; margin-left: -8px; box-sizing: border-box;
-            border-radius: 6px; font-size: 15px; line-height: 22px; color: var(--st-text-1); word-break: break-all; }
+            border-radius: 6px; font-size: var(--st-font-size); line-height: 22px; color: var(--st-text-2); word-break: break-all; }
 .rd-value.editable { cursor: pointer; }
+.rd-value:is(.v-singleSelect, .v-multiSelect, .v-member) { min-height: 38px; }
+.rd-value:is(.v-singleSelect, .v-multiSelect, .v-member) > .rd-ph { display: block; min-height: 24px; line-height: 24px; }
 .rd-value.editable:not(.editing):hover { background: var(--st-bg-hover); }
 /* 编辑态：内边距不变（与展示态同高），蓝色边框用内阴影画、不占布局 */
 .rd-value.editing { background: #fff; box-shadow: inset 0 0 0 2px var(--st-primary); }
 /* 其余编辑器（人员/关联/上传…）自带边框，值区让出内边距 */
 .rd-value.editing:not(.keep-pad) { padding: 0; box-shadow: none; }
 .rd-input { display: block; width: 100%; margin: 0; padding: 0; border: none; outline: none; background: transparent;
-            font: inherit; font-size: 15px; line-height: 22px; height: 22px; color: var(--st-text-1); }
+            font: inherit; font-size: var(--st-font-size); line-height: 22px; height: 22px; color: var(--st-text-2); }
 .rd-ta { resize: none; overflow: hidden; word-break: break-all; }
 /* 日期：输入框去边框/内边距，文字与展示态同位置 */
 /* 块级 flex：EP 默认 inline-flex + vertical-align:middle 会在行框里下沉 1px */
 .rd-date.el-date-editor, .rd-value :deep(.rd-date.el-date-editor) { display: flex; width: 100%; height: 22px; }
 .rd-value :deep(.rd-date .el-input__wrapper) { padding: 0; box-shadow: none !important; background: transparent; height: 22px; }
 .rd-value :deep(.rd-date .el-input__prefix) { display: none; }
-.rd-value :deep(.rd-date .el-input__inner) { height: 22px; line-height: 22px; font-size: 15px; font-family: inherit; color: var(--st-text-1); }
+.rd-value :deep(.rd-date .el-input__inner) { height: 22px; line-height: 22px; font-size: var(--st-font-size); font-family: inherit; color: var(--st-text-2); }
 /* 展示态：去掉单元格排版（13px / flex / 单行），与编辑框同为 15px·22px 块级——进出编辑文字不动 */
-.rd-value :deep(.smart-cell) { display: block; font-size: 15px; line-height: 22px; min-height: 22px; width: auto;
+.rd-value :deep(.smart-cell) { display: block; font-size: var(--st-font-size); line-height: 22px; min-height: 22px; width: auto;
   white-space: normal; overflow: visible; }
 .rd-value :deep(.smart-cell .txt) { white-space: pre-wrap; overflow: visible; text-overflow: clip; }
+/* Checkbox content must not use the baseline of the optional checkmark. */
+.rd-value :deep(.smart-cell.cell-checkbox) { display: flex; align-items: center; justify-content: flex-start; height: 22px; }
+/* Detail editors share the value area's padding and border, not grid overlays. */
+.rd-value.v-progress.editing :deep(.progress-input) { display: flex; height: 22px; }
+.rd-value.v-progress.editing :deep(.el-input__wrapper) { padding: 0; height: 22px; background: transparent; box-shadow: none; }
+.rd-value.v-progress.editing :deep(.el-input__inner),
+.rd-value.v-progress.editing :deep(.el-input__suffix) { height: 22px; line-height: 22px; transform: none; }
+.rd-value.v-progress :deep(.progress-slider) { opacity: 0; }
+.rd-value.v-progress:hover :deep(.progress-slider),
+.rd-value.v-progress :deep(.progress-slider:focus-visible),
+.rd-value.v-progress :deep(.progress-slider:active) { opacity: 1; }
+.rd-value.v-member.editing :deep(.grid-people-trigger) {
+  min-height: 24px; height: auto; padding: 0 30px 0 0;
+  border: 0; background: transparent; box-shadow: none;
+}
+.rd-value.v-member.editing :deep(.people-cell-tag) { height: 24px; }
+.rd-value.v-member:not(.editing) :deep(.smart-cell) { padding-right: 30px; }
 .rd-ph { color: var(--st-text-4); }
 .rd-ph-bar { display: block; width: 60%; height: 22px; border-radius: 4px; background: var(--st-bg-hover); }
 .rd-ph-box { display: block; margin: -7px -8px; padding: 7px 8px; border-radius: 6px; background: var(--st-bg-hover); color: var(--st-text-4); }
-/* 单选/多选标签：22px 高，单行时值区与其它字段同为 36px */
-.rd-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.rd-tag { display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: 4px; font-size: 14px; line-height: 22px; }
+/* 单选/多选标签：展示态与编辑态均为 24px。 */
+.rd-tags { display: flex; flex-wrap: wrap; gap: 6px; min-height: 24px; }
+.rd-tag { display: inline-flex; align-items: center; gap: 4px; height: 24px; box-sizing: border-box; padding: 0 8px; border-radius: 4px; font-size: var(--st-font-size); line-height: 22px; }
 .rd-value.editable .rd-tags { padding-right: 22px; }   /* 与编辑态 ▼ 让位一致，换行位置不变 */
-.rd-tag-x { opacity: .6; cursor: pointer; font-size: 12px; }
+.rd-tag-x { opacity: .6; cursor: pointer; font-size: var(--st-font-size); }
 .rd-tag-x:hover { opacity: 1; }
 /* 编组节：∨ 组名 */
-.rd-group { display: flex; align-items: center; gap: 6px; height: 44px; cursor: pointer; user-select: none; font-size: 15px; color: var(--st-text-1); }
+.rd-group { display: flex; align-items: center; gap: 6px; height: 40px; cursor: pointer; user-select: none; font-size: var(--st-font-size); color: var(--st-text-2); }
 .rd-caret { color: var(--st-text-2); }
 /* 编辑态：编辑器撑满值区 */
 .rd-value.editing :deep(.cell-editor) { width: 100%; }
 /* 单选/多选编辑态：去掉单元格锚点自带的边框/内边距/阴影，标签排版与展示态一致（边框由值区内阴影画）；
    ▼ 相对值区定位，不占文字流——进出编辑标签不动 */
-.rd-value.editing :deep(.sel-anchor) { position: static; min-height: 22px; padding: 0 22px 0 0; gap: 6px; border: none;
+.rd-value.editing :deep(.sel-anchor) { position: static; min-height: 24px; padding: 0 22px 0 0; gap: 6px; border: none;
   border-radius: 0; background: transparent; box-shadow: none; align-content: flex-start; }
-.rd-value.editing :deep(.sel-anchor .opt-tag) { gap: 0; padding: 0 8px; font-size: 14px; line-height: 22px; }
-.rd-value.editing :deep(.sel-anchor .tag-x) { margin-left: 4px; font-size: 12px; }
+.rd-value.editing :deep(.sel-anchor .opt-tag) { gap: 0; height: 24px; box-sizing: border-box; padding: 0 8px; font-size: var(--st-font-size); line-height: 22px; }
+.rd-value.editing :deep(.sel-anchor .tag-x) { margin-left: 4px; font-size: var(--st-font-size); }
 .rd-value.editing :deep(.sel-anchor .chev) { top: 6px; right: 6px; }
+.rd-media-placeholder { position: absolute; left: 8px; top: 7px; pointer-events: none; }
+.rd-value :deep(.image-cell-trigger), .rd-value :deep(.link-cell-trigger) { min-height: 24px; height: auto; padding-right: 30px; }
+.rd-value :deep(.image-cell-thumbs) { height: 24px; }
+.rd-value :deep(.file-cell-trigger.selected), .rd-value :deep(.relation-trigger.selected) {
+  min-height: 24px; border: 0; padding: 0 30px 0 0; border-radius: 0;
+  background: transparent; box-shadow: none; z-index: auto;
+}
+.rd-value :deep(.link-cell-text) { white-space: normal; overflow-wrap: anywhere; }
 </style>
 
 <style>
-.rd-more-pop .el-dropdown-menu__item { font-size: 15px; padding: 8px 28px; }
-/* 切换记录标题下拉：灰色小标题 + 字段列表（✓ + 类型图标 + 名称），超高滚动 */
-.rd-title-pop.el-popover.el-popper { padding: 8px 6px; border-radius: 10px; }
-.rd-title-pop .rd-tp-head { padding: 6px 12px 8px; font-size: 14px; color: var(--st-text-3); }
-.rd-title-pop .rd-tp-list { max-height: 520px; overflow-y: auto; }
-.rd-title-pop .rd-tp-item { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; border-radius: 6px;
-  cursor: pointer; font-size: 15px; color: var(--st-text-1); }
-.rd-title-pop .rd-tp-item:hover { background: var(--st-bg-hover); }
-.rd-title-pop .rd-tp-check { display: inline-flex; width: 18px; flex: none; color: var(--st-primary); }
-.rd-title-pop .rd-tp-ico { flex: none; color: var(--st-text-2); }
-.rd-title-pop .rd-tp-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-more-pop .el-dropdown-menu__item { font-size: var(--st-font-size); padding: 8px 28px; }
 </style>

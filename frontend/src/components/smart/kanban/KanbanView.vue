@@ -96,7 +96,7 @@ function onDrop(col) {
 
 <style scoped>
 .kb { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--st-bg-canvas); }
-.kb-bar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: #fff; border-bottom: 1px solid var(--st-border); font-size: 13px; }
+.kb-bar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: #fff; border-bottom: 1px solid var(--st-border); font-size: var(--st-font-size); }
 .kb-label { color: var(--st-text-2); }
 .kb-sel { width: 160px; }
 .kb-sel-m { width: 220px; margin-right: auto; }
@@ -105,17 +105,17 @@ function onDrop(col) {
 .kb-col { width: 272px; flex: none; background: #F0F1F3; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; max-height: 100%; border: 2px solid transparent; }
 .kb-col.over { border-color: var(--st-primary); }
 .kb-col-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px 10px; }
-.kb-tag { border-radius: 4px; padding: 1px 8px; font-size: 13px; }
+.kb-tag { border-radius: 4px; padding: 1px 8px; font-size: var(--st-font-size); }
 .kb-tag-none { background: #E3E5E8; color: var(--st-text-2); }
-.kb-count { font-size: 12px; color: var(--st-text-3); }
+.kb-count { font-size: var(--st-font-size); color: var(--st-text-3); }
 .kb-cards { display: flex; flex-direction: column; gap: 8px; overflow: auto; }
 .kb-card { background: #fff; border-radius: 8px; padding: 10px 12px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
 .kb-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.1); }
-.kb-card-title { font-size: 14px; font-weight: 600; color: var(--st-text-1); margin-bottom: 6px; word-break: break-all; }
+.kb-card-title { font-size: var(--st-font-size); font-weight: 600; color: var(--st-text-1); margin-bottom: 6px; word-break: break-all; }
 .kb-card-field { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
 .kb-f-label { font-size: 11px; color: var(--st-text-3); }
-.kb-f-val { font-size: 13px; min-height: 18px; }
+.kb-f-val { font-size: var(--st-font-size); min-height: 18px; }
 .kb-f-val:deep(.smart-cell), .kb-card-field :deep(.smart-cell) { justify-content: flex-start; text-align: left; }
-.kb-add { display: flex; align-items: center; gap: 4px; padding: 8px 6px 2px; color: var(--st-text-2); font-size: 13px; cursor: pointer; }
+.kb-add { display: flex; align-items: center; gap: 4px; padding: 8px 6px 2px; color: var(--st-text-2); font-size: var(--st-font-size); cursor: pointer; }
 .kb-add:hover { color: var(--st-primary); }
 </style>

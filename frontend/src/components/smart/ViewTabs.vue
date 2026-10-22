@@ -44,14 +44,14 @@ defineEmits(['switch', 'action'])
 .view-tabs { display: flex; align-items: center; gap: 2px; border-bottom: 1px solid var(--st-border); padding: 6px 8px 0; background: #fff; }
 .view-tab {
   display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; margin-bottom: 6px;
-  font-size: 13px; cursor: pointer; color: var(--st-text-2); border-radius: 6px;
+  font-size: var(--st-font-size); cursor: pointer; color: var(--st-text-2); border-radius: 6px;
 }
 .view-tab:hover { background: var(--st-bg-hover); }
-.view-tab.active { background: var(--st-bg-active); color: var(--st-text-1); font-weight: 500; }
+.view-tab.active { background: var(--st-bg-active); color: var(--st-text-2); font-weight: 500; }
 .vt-icon { color: var(--st-text-3); }
 .view-tab.active .vt-icon { color: var(--st-text-2); }
 .vt-more { display: inline-flex; padding: 0 2px; color: var(--st-text-3); border-radius: 4px; }
-.vt-more:hover { color: var(--st-text-1); }
+.vt-more:hover { color: var(--st-text-2); }
 .vt-sep { width: 1px; height: 16px; background: var(--st-border); margin: 0 6px 6px; }
 .vt-add { display: inline-flex; padding: 4px; margin-bottom: 6px; cursor: pointer; color: var(--st-text-2); border-radius: 4px; }
 .vt-add:hover { background: var(--st-bg-hover); }

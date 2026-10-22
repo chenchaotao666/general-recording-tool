@@ -246,41 +246,41 @@ async function copyAndOpenWechat() {
 </script>
 
 <style scoped>
-.share-trigger { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; background: var(--st-primary); color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.share-trigger { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; background: var(--st-primary); color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: var(--st-font-size); }
 .share-trigger:hover { filter: brightness(1.06); }
 .share-trigger:disabled { opacity: .45; cursor: not-allowed; }
-.fs-panel { padding: 8px; color: #30343B; font-size: 13px; }
+.fs-panel { padding: 8px; color: var(--st-text-2); font-size: var(--st-font-size); }
 .fs-enable { display: flex; align-items: center; gap: 12px; }
 .fs-enable.enabled { padding-bottom: 16px; border-bottom: 1px solid #E1E3E6; }
 .fs-enable > div:first-child { flex: 1; }
 .fs-enable > .el-switch { flex: none; }
 .fs-heading { line-height: 20px; }
-.fs-enable p { margin: 0; color: #8D96A3; font-size: 12px; line-height: 18px; }
+.fs-enable p { margin: 0; color: #8D96A3; font-size: var(--st-font-size); line-height: 18px; }
 .fs-section { margin-top: 16px; margin-bottom: 10px; }
 .fs-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
 .fs-row > span { flex: none; }
 .fs-row > .el-select { width: 190px; }
 .fs-password { margin-top: 12px; }
-.fs-password-state { font-size: 12px; color: #8D96A3; margin-bottom: 8px; }
+.fs-password-state { font-size: var(--st-font-size); color: #8D96A3; margin-bottom: 8px; }
 .fs-invite { margin-top: 18px; }
 .fs-actions { display: flex; gap: 8px; }
-.fs-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 36px; border: 0; background: #EFF0F1; border-radius: 4px; color: #30343B; cursor: pointer; }
+.fs-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 36px; border: 0; background: #EFF0F1; border-radius: 4px; color: var(--st-text-2); cursor: pointer; }
 .fs-actions button:hover:not(:disabled) { background: #E6E8E8; }
 .fs-actions button:disabled { color: #ADB3BC; cursor: not-allowed; }
-.fs-copy { flex: 1; font-size: 13px; }
+.fs-copy { flex: 1; font-size: var(--st-font-size); }
 .fs-icon { flex: none; width: 36px; }
 .fs-error { color: #D94848; padding-top: 12px; }
 .fs-error button { border: 0; background: transparent; color: var(--st-primary); cursor: pointer; }
 .fs-qr { display: flex; flex-direction: column; gap: 20px; padding: 0 8px 8px; }
 .fs-qr-card { padding: 32px 24px; border-radius: 6px; background: #fff; box-shadow: 0 4px 12px #0000001f; color: #18202B; }
 .fs-form-mark { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 5px; background: #4094FF; color: #fff; }
-.fs-qr-card h3 { font-size: 20px; line-height: 28px; margin: 12px 0 2px; overflow-wrap: anywhere; }
-.fs-qr-card p { font-size: 13px; margin: 0; line-height: 20px; }
+.fs-qr-card h3 { font-size: var(--st-font-size); line-height: 28px; margin: 12px 0 2px; overflow-wrap: anywhere; }
+.fs-qr-card p { font-size: var(--st-font-size); margin: 0; line-height: 20px; }
 .fs-qr img { display: block; max-width: 100%; height: auto; margin: 24px auto 12px; }
-.fs-qr-card .fs-qr-password { text-align: center; color: #7A8491; font-size: 12px; }
+.fs-qr-card .fs-qr-password { text-align: center; color: #7A8491; font-size: var(--st-font-size); }
 .fs-qr > .el-button { width: 100%; height: 40px; margin: 0; }
-.fs-copy-help { margin: 0 0 12px; color: #7A8491; font-size: 13px; line-height: 20px; }
-.fs-wechat-help { margin: 0 0 12px; color: #30343B; font-size: 13px; }
+.fs-copy-help { margin: 0 0 12px; color: #7A8491; font-size: var(--st-font-size); line-height: 20px; }
+.fs-wechat-help { margin: 0 0 12px; color: var(--st-text-2); font-size: var(--st-font-size); }
 .fs-wechat-result { margin-top: 12px; }
 .fs-wechat-actions { display: flex; gap: 12px; }
 .fs-wechat-actions .el-button { margin: 0; border-radius: 4px; }
@@ -290,6 +290,6 @@ async function copyAndOpenWechat() {
 <style>
 .fs-qr-dialog,.fs-wechat-dialog { border-radius: 8px; max-height: calc(100vh - 24px); overflow-y: auto; }
 .fs-qr-dialog { background: #F8F9FA; }
-.fs-qr-dialog .el-dialog__title,.fs-wechat-dialog .el-dialog__title { color: #18202B; font-weight: 600; font-size: 16px; }
+.fs-qr-dialog .el-dialog__title,.fs-wechat-dialog .el-dialog__title { color: #18202B; font-weight: 600; font-size: var(--st-font-size-title); }
 .fs-qr-dialog .el-dialog__headerbtn:hover,.fs-wechat-dialog .el-dialog__headerbtn:hover { background: #E6E8E8; border-radius: 4px; }
 </style>

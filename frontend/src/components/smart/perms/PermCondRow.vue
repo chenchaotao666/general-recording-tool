@@ -63,7 +63,7 @@ function onField(fn) {
 .pcr-field { width: 180px; flex: none; }
 .pcr-op { width: 120px; flex: none; }
 .pcr-val { flex: 1; min-width: 0; }
-.pcr-ph { font-size: 13px; color: var(--st-text-4); padding-left: 8px; }
+.pcr-ph { font-size: var(--st-font-size); color: var(--st-text-4); padding-left: 8px; }
 .pcr-opt { display: inline-flex; align-items: center; gap: 6px; }
 .pcr-opt .st-icon { color: var(--st-text-2); }
 .pcr-del { display: inline-flex; color: var(--st-text-4); cursor: pointer; flex: none; }

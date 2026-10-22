@@ -43,6 +43,6 @@ function pick(scope) { menu.value = false; emit('run', scope) }
 .arb-tri { width: 0; height: 0; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 5px solid #1F2329; }
 .arb-menu { position: absolute; left: 0; top: calc(100% + 6px); background: #fff; border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, .14);
             padding: 6px; width: 150px; }
-.arb-mi { height: 36px; display: flex; align-items: center; padding: 0 12px; border-radius: 6px; font-size: 14px; color: #1F2329; cursor: pointer; white-space: nowrap; }
+.arb-mi {  display: flex; align-items: center; padding: 0 12px; border-radius: 6px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; white-space: nowrap;  height: var(--st-list-item-height); box-sizing: border-box; }
 .arb-mi:hover { background: #F2F3F5; }
 </style>

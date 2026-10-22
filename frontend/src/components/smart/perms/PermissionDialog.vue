@@ -212,14 +212,14 @@ function close() { emit('close') }
 .st-perm-dlg .el-dialog__header { padding: 22px 28px 12px; margin: 0; }
 .st-perm-dlg .el-dialog__body { padding: 0; }
 .st-perm-dlg .el-dialog__footer { padding: 14px 28px 18px; border-top: 1px solid var(--st-border); }
-.st-free-tag { display: inline-block; margin-left: 10px; padding: 1px 6px; font-size: 12px; font-weight: 400; color: #C98A1B; background: #FDF3DC; border-radius: 4px; vertical-align: middle; }
+.st-free-tag { display: inline-block; margin-left: 10px; padding: 1px 6px; font-size: var(--st-font-size); font-weight: 400; color: #C98A1B; background: #FDF3DC; border-radius: 4px; vertical-align: middle; }
 </style>
 <style scoped>
 .pd-head { display: flex; justify-content: space-between; align-items: flex-start; }
-.pd-title { font-size: 20px; font-weight: 700; color: var(--st-text-1); display: flex; align-items: center; }
-.pd-sub { font-size: 13px; color: var(--st-text-2); margin-top: 6px; display: inline-flex; align-items: center; gap: 2px; cursor: default; }
+.pd-title { font-size: var(--st-font-size-title); font-weight: 700; color: var(--st-text-1); display: flex; align-items: center; }
+.pd-sub { font-size: var(--st-font-size); color: var(--st-text-2); margin-top: 6px; display: inline-flex; align-items: center; gap: 2px; cursor: default; }
 .pd-head-r { display: flex; gap: 14px; }
-.pd-ico { display: inline-flex; cursor: pointer; color: var(--st-text-1); padding: 2px; border-radius: 4px; }
+.pd-ico { display: inline-flex; cursor: pointer; color: var(--st-text-2); padding: 2px; border-radius: 4px; }
 .pd-ico:hover { background: var(--st-bg-hover); }
 .pd-body { display: flex; height: 72vh; border-top: 1px solid transparent; }
 .pd-left { width: 300px; flex: none; overflow: auto; padding: 4px 12px 12px; border-right: 1px solid var(--st-border); }
@@ -228,23 +228,23 @@ function close() { emit('close') }
 .pd-entry.on { background: #E6EEFC; }
 .pd-eicon { color: var(--st-text-2); }
 .pd-ename { min-width: 0; }
-.pd-n { font-size: 15px; color: var(--st-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pd-s { font-size: 13px; color: var(--st-text-3); }
+.pd-n { font-size: var(--st-font-size); color: var(--st-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pd-s { font-size: var(--st-font-size); color: var(--st-text-3); }
 .pd-right { flex: 1; overflow: auto; padding: 4px 28px 20px 24px; }
-.pd-warn { display: flex; align-items: center; gap: 8px; background: #FDF3D5; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; font-size: 14px; color: #6B4D00; }
+.pd-warn { display: flex; align-items: center; gap: 8px; background: #FDF3D5; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; font-size: var(--st-font-size); color: #6B4D00; }
 .pd-warn .st-icon { color: #F5B400; }
-.pd-warn-link { margin-left: auto; color: var(--st-text-1); cursor: pointer; }
+.pd-warn-link { margin-left: auto; color: var(--st-text-2); cursor: pointer; }
 .pd-grant-card { display: flex; align-items: center; gap: 14px; background: #fff; border-radius: 10px; padding: 14px 20px; }
 .pd-avatars { display: inline-flex; }
-.pd-av { width: 26px; height: 26px; border-radius: 50%; background: #5B8FF9; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; border: 2px solid #fff; margin-left: -8px; }
+.pd-av { width: 26px; height: 26px; border-radius: 50%; background: #5B8FF9; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: var(--st-font-size); border: 2px solid #fff; margin-left: -8px; }
 .pd-av:first-child { margin-left: 0; background: #F6903D; }
 .pd-gc-text { flex: 1; }
-.pd-gc-t { font-weight: 600; font-size: 15px; color: var(--st-text-1); }
-.pd-gc-s { font-size: 13px; color: var(--st-text-3); margin-top: 2px; }
+.pd-gc-t { font-weight: 600; font-size: var(--st-font-size); color: var(--st-text-1); }
+.pd-gc-s { font-size: var(--st-font-size); color: var(--st-text-3); margin-top: 2px; }
 .pd-restore { display: inline-flex; gap: 6px; }
 .pd-restore .st-icon { margin-right: 6px; }
 .pd-divider { height: 1px; background: var(--st-border); margin: 16px 0 16px; }
-.pd-readonly-tip { font-size: 12px; color: var(--st-text-3); padding: 4px; }
-.pd-btn { width: 130px; height: 40px; font-size: 15px; }
+.pd-readonly-tip { font-size: var(--st-font-size); color: var(--st-text-3); padding: 4px; }
+.pd-btn { width: 130px; height: 40px; font-size: var(--st-font-size); }
 .pd-cancel { background: #EEEFF1; border-color: #EEEFF1; }
 </style>

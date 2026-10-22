@@ -1,10 +1,30 @@
 // @vitest-environment jsdom
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { expect, test, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import SmartCellEditor from '../src/components/smart/grid/SmartCellEditor.vue'
 import LinkCellPanel from '../src/components/smart/grid/LinkCellPanel.vue'
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+
+test('text Shift+Enter permits a newline without committing or navigating', async () => {
+  const wrapper = mount(SmartCellEditor, { attachTo: document.body, props: { field: { field_name: 'text', field_type: 'text' }, record: { text: 'First' }, advanceOnEnter: true }, global: { plugins: [ElementPlus] } })
+  try {
+    await flushPromises()
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    await flushPromises()
+    const textarea = document.querySelector('.cell-overlay textarea')
+    const event = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true })
+    textarea.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(wrapper.emitted('commit')).toBeUndefined()
+    expect(wrapper.emitted('advance')).toBeUndefined()
+    textarea.value = 'First\nSecond'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(wrapper.emitted('commit')).toEqual([['First\nSecond']])
+    expect(wrapper.emitted('advance')).toEqual([['down']])
+  } finally { wrapper.unmount() }
+})
 test('typing into a selected cell initializes replacement text without changing the original record', () => {
   const record = { n: 123 }
   const wrapper = mount(SmartCellEditor, { props: { field: { field_name: 'n', field_type: 'number' }, record, initialInput: '4', advanceOnEnter: true }, global: { plugins: [ElementPlus] } })

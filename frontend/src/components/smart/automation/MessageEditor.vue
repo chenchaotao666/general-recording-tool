@@ -226,14 +226,14 @@ function removeButton(index) { buttons.value.splice(index, 1); emitAll() }
 <style scoped>
 .me { min-width: 0; max-width: 100%; box-sizing: border-box; border: 1px solid var(--st-border); border-radius: 8px; padding: 14px 18px 6px; background: #fff; }
 .me.focus { border-color: var(--st-primary); }
-.me-title { width: 100%; border: none; outline: none; font-size: 18px; font-weight: 700; padding: 0 0 10px; color: var(--st-text-1); }
-.me-body { min-height: 170px; outline: none; font-size: 15px; line-height: 2; color: var(--st-text-1); white-space: pre-wrap; word-break: break-word; }
+.me-title { width: 100%; border: none; outline: none; font-size: var(--st-font-size-title); font-weight: 700; padding: 0 0 10px; color: var(--st-text-1); }
+.me-body { min-height: 170px; outline: none; font-size: var(--st-font-size); line-height: 2; color: var(--st-text-2); white-space: pre-wrap; word-break: break-word; }
 .me-body:empty::before { content: attr(data-placeholder); color: var(--st-text-4); }
-.me-body :deep(.me-chip) { display: inline-flex; align-items: center; gap: 4px; background: #F0F1F3; border-radius: 4px; padding: 0 6px; margin: 0 2px; line-height: 26px; font-size: 14px; user-select: none; }
-.me-body :deep(.me-chip-x) { color: var(--st-text-3); cursor: pointer; font-size: 12px; }
-.me-body :deep(.me-chip-x:hover) { color: var(--st-text-1); }
+.me-body :deep(.me-chip) { display: inline-flex; align-items: center; gap: 4px; background: #F0F1F3; border-radius: 4px; padding: 0 6px; margin: 0 2px; line-height: 26px; font-size: var(--st-font-size); user-select: none; }
+.me-body :deep(.me-chip-x) { color: var(--st-text-3); cursor: pointer; font-size: var(--st-font-size); }
+.me-body :deep(.me-chip-x:hover) { color: var(--st-text-2); }
 .me-buttons { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); min-width: 0; max-width: 100%; gap: 10px; padding: 6px 0; }
-.me-btn-chip { display: flex; flex: 1; min-width: 0; align-items: center; background: #f2f3f5; border-radius: 5px; padding: 8px; font-size: 14px; color: var(--st-text-1); }
+.me-btn-chip { display: flex; flex: 1; min-width: 0; align-items: center; background: #f2f3f5; border-radius: 5px; padding: 8px; font-size: var(--st-font-size); color: var(--st-text-2); }
 .me-btn-chip > span { flex: 1; min-width: 0; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .me-btn-chip :deep(.el-dropdown) { flex: none; }
 .me-button-more, .me-var-link { border: 0; background: transparent; color: var(--st-text-3); cursor: pointer; }
@@ -246,11 +246,11 @@ function removeButton(index) { buttons.value.splice(index, 1); emitAll() }
 .me-button-actions > button { flex: 1; margin: 0; }
 .me-x { color: var(--st-text-3); cursor: pointer; }
 .me-bar { display: flex; align-items: center; gap: 18px; border-top: 1px solid var(--st-border); margin-top: 8px; padding: 10px 0 6px; }
-.me-tool { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--st-text-2); cursor: pointer; }
-.me-tool:hover { color: var(--st-text-1); }
+.me-tool { display: inline-flex; align-items: center; gap: 6px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
+.me-tool:hover { color: var(--st-text-2); }
 .me-right { margin-left: auto; }
 .me-mask { position: fixed; inset: 0; z-index: 3990; }
 .me-emoji { position: fixed; z-index: 4000; background: #fff; border-radius: 10px; box-shadow: var(--st-shadow-pop); padding: 8px; display: grid; grid-template-columns: repeat(8, 32px); gap: 2px; }
-.me-e { font-size: 20px; text-align: center; cursor: pointer; border-radius: 6px; line-height: 32px; }
+.me-e { font-size: var(--st-font-size); text-align: center; cursor: pointer; border-radius: 6px; line-height: 32px; }
 .me-e:hover { background: var(--st-bg-hover); }
 </style>

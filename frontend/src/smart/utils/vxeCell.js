@@ -35,3 +35,14 @@ export function visibleCellRect(td) {
   if (r.top < b.top - 1 || r.bottom > b.bottom + 1 || r.right <= b.left + 1 || r.left >= b.right - 1) return null
   return r
 }
+
+// Row controls need any visible cell, not the first rendered (possibly scrolled
+// offscreen) cell. Stop at the first usable anchor to avoid scanning the row.
+export function visibleRowRect(cells) {
+  for (const td of cells) {
+    if (!isDisplayCell(td)) continue
+    const rect = visibleCellRect(td)
+    if (rect) return rect
+  }
+  return null
+}

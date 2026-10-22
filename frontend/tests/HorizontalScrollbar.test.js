@@ -6,6 +6,11 @@ test.each(['horizontal', 'vertical'])('captured %s drag continues off-track unti
   const vertical = axis === 'vertical'
   const position = vertical ? 'scrollTop' : 'scrollLeft'
   const disconnect = vi.fn()
+  const frames = new Map()
+  let frameId = 0
+  vi.stubGlobal('requestAnimationFrame', callback => { frames.set(++frameId, callback); return frameId })
+  vi.stubGlobal('cancelAnimationFrame', id => frames.delete(id))
+  const frame = () => { const jobs = [...frames.values()]; frames.clear(); jobs.forEach(job => job()) }
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect = disconnect })
   const wrapper = document.createElement('div'), handle = document.createElement('div')
   wrapper.append(handle); document.body.append(wrapper)
@@ -28,15 +33,23 @@ test.each(['horizontal', 'vertical'])('captured %s drag continues off-track unti
     pointer(thumb, 'pointerdown', 10, 500)
     expect(track.setPointerCapture).toHaveBeenCalledWith(7)
     pointer(track, 'pointermove', 50, 250)
-    expect(handle[position]).toBe(200)
+    expect(handle[position]).toBe(0)
     pointer(track, 'pointermove', 90, -100)
+    expect(frames.size).toBe(1)
+    frame()
     expect(handle[position]).toBe(400)
+    const mutations = vi.spyOn(track, 'setAttribute')
+    handle.dispatchEvent(new Event('scroll'))
+    expect(mutations).not.toHaveBeenCalled()
     expect(bounds).not.toHaveBeenCalled()
-    pointer(track, 'pointerup', 90, -100)
+    pointer(track, 'pointermove', 110, -100)
+    pointer(track, 'pointerup', 110, -100)
+    expect(handle[position]).toBe(500)
+    expect(frames.size).toBe(0)
     expect(track.releasePointerCapture).toHaveBeenCalledWith(7)
     expect(end).toHaveBeenCalledTimes(1)
     pointer(track, 'pointermove', 130, -100)
-    expect(handle[position]).toBe(400)
+    expect(handle[position]).toBe(500)
     handle[position] = 600
     handle.dispatchEvent(new Event('scroll'))
     expect(track.getAttribute('aria-valuenow')).toBe('600')

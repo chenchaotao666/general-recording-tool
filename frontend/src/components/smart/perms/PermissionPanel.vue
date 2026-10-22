@@ -138,33 +138,33 @@ async function groupAction(cmd, g) {
 .pp { position: fixed; top: 56px; right: 0; bottom: 0; width: 420px; z-index: 2000; background: #F7F8FA;
       box-shadow: -8px 0 24px rgba(0, 0, 0, .08); display: flex; flex-direction: column; --el-color-primary: var(--st-primary); }
 .pp-head { display: flex; justify-content: space-between; align-items: flex-start; padding: 18px 20px 14px; background: #fff; border-bottom: 1px solid var(--st-border); }
-.pp-title { font-size: 19px; font-weight: 700; color: var(--st-text-1); display: flex; align-items: center; }
-.pp-help { font-size: 13px; color: var(--st-text-2); margin-top: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; }
+.pp-title { font-size: var(--st-font-size-title); font-weight: 700; color: var(--st-text-1); display: flex; align-items: center; }
+.pp-help { font-size: var(--st-font-size); color: var(--st-text-2); margin-top: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; }
 .pp-x { cursor: pointer; display: inline-flex; padding: 2px; }
 .pp-body { flex: 1; overflow: auto; padding: 16px; }
 .pp-card { background: #fff; border-radius: 12px; padding: 16px 12px 10px; margin-bottom: 12px; }
-.pp-card-t { font-size: 15px; font-weight: 700; padding: 0 10px 8px; display: flex; align-items: center; gap: 4px; }
+.pp-card-t { font-size: var(--st-font-size); font-weight: 700; padding: 0 10px 8px; display: flex; align-items: center; gap: 4px; }
 .pp-i { color: var(--st-text-3); }
-.pp-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.pp-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: var(--st-font-size); }
 .pp-row:hover { background: var(--st-bg-hover); }
 .pp-eicon { color: var(--st-text-2); flex: none; }
-.pp-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--st-text-1); }
-.pp-sum { display: inline-flex; align-items: center; gap: 2px; color: var(--st-text-3); font-size: 13px; flex: none; }
-.pp-empty { color: var(--st-text-4); font-size: 13px; padding: 8px 10px; }
-.pp-sep-text { font-size: 13px; color: var(--st-text-2); padding: 4px 12px 10px; }
+.pp-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--st-text-2); }
+.pp-sum { display: inline-flex; align-items: center; gap: 2px; color: var(--st-text-3); font-size: var(--st-font-size); flex: none; }
+.pp-empty { color: var(--st-text-4); font-size: var(--st-font-size); padding: 8px 10px; }
+.pp-sep-text { font-size: var(--st-font-size); color: var(--st-text-2); padding: 4px 12px 10px; }
 .pp-group { padding-top: 14px; border-top: 1px solid var(--st-border); margin: 0 10px 6px; }
 .pp-group.first { border-top: none; padding-top: 0; }
 .pp-group .pp-row { margin: 0 -10px; }
 .pp-g-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
-.pp-g-name { font-size: 15px; font-weight: 700; color: var(--st-text-1); }
-.pp-g-members { font-size: 13px; color: var(--st-text-3); margin-top: 2px; }
-.pp-more { cursor: pointer; display: inline-flex; padding: 4px; border-radius: 4px; color: var(--st-text-1); }
+.pp-g-name { font-size: var(--st-font-size); font-weight: 700; color: var(--st-text-1); }
+.pp-g-members { font-size: var(--st-font-size); color: var(--st-text-3); margin-top: 2px; }
+.pp-more { cursor: pointer; display: inline-flex; padding: 4px; border-radius: 4px; color: var(--st-text-2); }
 .pp-more:hover { background: var(--st-bg-hover); }
 .pp-g-row { background: transparent; }
 .pp-g-row:hover { background: var(--st-bg-active); }
-.pp-g-empty { font-size: 13px; color: var(--st-primary); cursor: pointer; padding: 4px 0 8px; }
+.pp-g-empty { font-size: var(--st-font-size); color: var(--st-primary); cursor: pointer; padding: 4px 0 8px; }
 .pp-add { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 14px 0 6px; margin: 4px 10px 0;
-          border-top: 1px solid var(--st-border); cursor: pointer; font-size: 15px; color: var(--st-text-1); }
+          border-top: 1px solid var(--st-border); cursor: pointer; font-size: var(--st-font-size); color: var(--st-text-2); }
 .pp-add.solo { border-top: none; padding-top: 6px; }
 .pp-add:hover { color: var(--st-primary); }
 .pp-slide-enter-active, .pp-slide-leave-active { transition: transform .2s ease; }

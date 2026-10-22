@@ -269,30 +269,30 @@ async function ruleAction(cmd, r) {
 .ad { position: relative; max-width: 100%; flex-shrink: 0; min-height: 0; box-sizing: border-box; overflow: hidden; background: #F7F7F9;
       display: flex; flex-direction: column; --el-color-primary: var(--st-primary); }
 .ad-head { display: flex; align-items: center; gap: 12px; padding: 14px 24px; background: #fff; border-bottom: 1px solid var(--st-border); flex-shrink: 0; }
-.ad-title { font-size: 17px; font-weight: 700; flex: 1; }
-.ad-x, .ad-back { cursor: pointer; display: inline-flex; color: var(--st-text-1); }
-.ad-name { flex: 1; height: 36px; border: 1px solid var(--st-border); border-radius: 6px; padding: 0 10px; font-size: 17px; font-weight: 700; outline: none; }
+.ad-title { font-size: var(--st-font-size-title); font-weight: 700; flex: 1; }
+.ad-x, .ad-back { cursor: pointer; display: inline-flex; color: var(--st-text-2); }
+.ad-name { flex: 1; height: 36px; border: 1px solid var(--st-border); border-radius: 6px; padding: 0 10px; font-size: var(--st-font-size-title); font-weight: 700; outline: none; }
 .ad-name:focus { border-color: var(--st-primary); }
-.ad-log { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; color: var(--st-text-2); cursor: pointer; white-space: nowrap; }
-.ad-log:hover { color: var(--st-text-1); }
+.ad-log { display: inline-flex; align-items: center; gap: 6px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; white-space: nowrap; }
+.ad-log:hover { color: var(--st-text-2); }
 .ad-vsep { width: 1px; height: 16px; background: var(--st-border); }
 .ad-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 24px; }
 .ad-body-edit { min-width: 0; overflow-x: hidden; padding: 0 24px; }
-.ad-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 60px 0; color: var(--st-text-3); font-size: 14px; }
+.ad-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 60px 0; color: var(--st-text-3); font-size: var(--st-font-size); }
 .ad-empty .st-icon { color: var(--st-text-4); }
-.ad-empty-s { font-size: 12px; color: var(--st-text-4); }
+.ad-empty-s { font-size: var(--st-font-size); color: var(--st-text-4); }
 .ad-rule { display: flex; align-items: flex-start; gap: 12px; background: #fff; border-radius: 5px; padding: 16px 20px; margin-bottom: 8px; cursor: pointer; border: 1px solid var(--st-border); }
 .ad-rule:hover { border-color: #cbd3df; box-shadow: 0 2px 8px #00000008; }
 .ad-r-ico { width: 26px; height: 26px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; color: #fff; flex: none; }
 .ad-r-main { flex: 1; min-width: 0; }
-.ad-r-name { font-size: 16px; font-weight: 600; color: var(--st-text-1); }
-.ad-r-sum { font-size: 14px; color: var(--st-text-2); margin-top: 10px; line-height: 1.8; }
-.ad-r-last { font-size: 12px; color: var(--st-text-3); margin-top: 4px; }
+.ad-r-name { font-size: var(--st-font-size-title); font-weight: 600; color: var(--st-text-1); }
+.ad-r-sum { font-size: var(--st-font-size); color: var(--st-text-2); margin-top: 10px; line-height: 1.8; }
+.ad-r-last { font-size: var(--st-font-size); color: var(--st-text-3); margin-top: 4px; }
 .ad-r-last.failed { color: var(--el-color-danger); }
 .ad-more { display: inline-flex; padding: 2px; cursor: pointer; color: var(--st-text-2); }
 .ad-foot { display: flex; align-items: center; gap: 8px; padding: 12px 20px; background: #fff; border-top: 1px solid var(--st-border); }
 .ad-foot-sp { flex: 1; }
-.ad-save-error { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--st-text-2); }
+.ad-save-error { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--st-font-size); color: var(--st-text-2); }
 .ad-save-error > span { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--el-color-danger); color: #fff; font-weight: 700; }
 .ad-save-warning > span { background: var(--el-color-warning); }
 .ad-slide-enter-active, .ad-slide-leave-active { transition: opacity .15s ease; }
@@ -300,16 +300,16 @@ async function ruleAction(cmd, r) {
 .ad-slide-enter-from, .ad-slide-leave-to { opacity: 0; }
 .ad-body-list { background: #fff; }
 .ad-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 5px; border: 1px solid var(--st-border); border-radius: 4px; background: #f7f7f8; }
-.ad-list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; font-size: 14px; color: var(--st-text-2); }
+.ad-list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; font-size: var(--st-font-size); color: var(--st-text-2); }
 .ad-templates { padding: 14px 20px; }
-.ad-template { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; margin-bottom: 8px; background: #fff; border: 1px solid var(--st-border); border-radius: 5px; cursor: pointer; color: var(--st-text-1); font: inherit; }
-.ad-template strong { font-size: 16px; }
-.ad-template > span { font-size: 14px; line-height: 1.7; color: var(--st-text-2); }
+.ad-template { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; margin-bottom: 8px; background: #fff; border: 1px solid var(--st-border); border-radius: 5px; cursor: pointer; color: var(--st-text-2); font: inherit; }
+.ad-template strong { font-size: var(--st-font-size); }
+.ad-template > span { font-size: var(--st-font-size); line-height: 1.7; color: var(--st-text-2); }
 .ad-template:hover { box-shadow: 0 4px 12px #0000000d; border-color: #cbd3df; }
-.ad-template-blank { flex-direction: row; align-items: center; color: var(--st-primary); font-size: 17px; font-weight: 600; padding: 24px 24px; }
+.ad-template-blank { flex-direction: row; align-items: center; color: var(--st-primary); font-size: var(--st-font-size-title); font-weight: 600; padding: 24px 24px; }
 button.ad-back, button.ad-x { border: 0; background: transparent; padding: 0; }
 .ad-name { min-width: 0; }
 .ad-foot { flex-shrink: 0; }
 .ad :deep(.el-button) { min-height: 36px; }
-@media (max-width: 520px) { .ad-body-edit { padding: 0 16px; } .ad-foot { padding-right: 24px; } .ad-log { font-size: 12px; } }
+@media (max-width: 520px) { .ad-body-edit { padding: 0 16px; } .ad-foot { padding-right: 24px; } .ad-log { font-size: var(--st-font-size); } }
 </style>

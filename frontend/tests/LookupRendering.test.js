@@ -16,7 +16,7 @@ test('raw lookup renders source select tags, members, dates and links', () => {
   const tags = cell('singleSelect', ['a'], { options: [{ id: 'a', label: 'Ready', color: 'blue' }] })
   expect(tags.find('.opt-tag').text()).toBe('Ready'); tags.unmount()
   const members = cell('member', [[2]])
-  expect(members.find('.member-chip').text()).toContain('Alice'); members.unmount()
+  expect(members.find('.compact-tag').text()).toContain('Alice'); members.unmount()
   const dates = cell('date', ['2026-10-22T12:30:00'], { format: 'yyyy年M月d日 HH:mm' })
   expect(dates.text()).toBe('2026年10月22日 12:30'); dates.unmount()
   const link = cell('url', [{ text: 'Website', url: 'https://example.com' }])
