@@ -52,6 +52,11 @@
 .st-control--native:hover { border-color: var(--st-control-border-hover) !important; }
 .st-control--native:is(:focus, :focus-within, .open) { border-color: var(--st-primary) !important; }
 .st-control--native::placeholder { color: var(--el-text-color-placeholder, #A8ABB2); }
+/* 行内名称默认展示为文字，点击或键盘聚焦后再显示输入框。 */
+.st-control.st-control--inline:not(:focus) {
+  border-color: transparent !important;
+  background: transparent !important;
+}
 .st-control :is(.el-input__wrapper, .el-select__wrapper),
 .st-control.el-range-editor { box-shadow: 0 0 0 1px var(--st-control-border) inset !important; }
 .st-control :is(.el-input__wrapper, .el-select__wrapper):hover,

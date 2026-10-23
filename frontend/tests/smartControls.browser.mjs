@@ -13,12 +13,16 @@ import TbFieldSelect from '/src/components/smart/panels/TbFieldSelect.vue'
 import ScheduleTimePicker from '/src/components/smart/automation/ScheduleTimePicker.vue'
 import FillPanel from '/src/components/smart/panels/FillPanel.vue'
 import SmartTagList from '/src/components/smart/common/SmartTagList.vue'
+import AiComposer from '/src/components/smart/ai/AiComposer.vue'
 const fields = [{field_name:'name',label:'名称',field_type:'text'}]
 createApp({setup() {
   const selected = ref(['a','b','c'])
   const text = ref('')
   const tags = ref([{value:'a',label:'产品名称'},{value:'b',label:'生产线'},{value:'c',label:'计划产量'}])
   return () => h('div', {style:'display:grid;gap:12px;width:360px;padding:24px'}, [
+    h('div',{id:'clipped-composer',style:'height:160px;overflow:hidden'},[
+      h(AiComposer,{fields:Array.from({length:20},(_,i)=>({field_name:'f'+i,label:'字段'+i,field_type:'text'}))}),
+    ]),
     h('div',{id:'tag-control',class:'st-control st-control--native st-control--wrap',style:'display:flex;width:220px;padding-inline:8px'},[
       h(SmartTagList,{items:tags.value,onRemove:value=>tags.value=tags.value.filter(t=>t.value!==value)}),
     ]),
@@ -67,6 +71,15 @@ try {
   await page.locator('.tbfs').first().waitFor()
   await page.locator('.flp').waitFor()
   await page.waitForTimeout(300)
+  await page.locator('#clipped-composer .aic-ins').click()
+  const picker=page.locator('.aic-field-picker-pop:visible')
+  await picker.waitFor()
+  const pickerBox=await picker.boundingBox()
+  assert.ok(pickerBox.y>=0 && pickerBox.y+pickerBox.height<=1000)
+  assert.equal(await picker.evaluate(n=>!!n.closest('#clipped-composer')),false)
+  await picker.locator('input').fill('字段19')
+  await picker.locator('.aic-pick-item').click()
+  assert.equal(await page.locator('#clipped-composer .aic-chip').count(),1)
   const tags = await page.locator('.st-tag-list__item').evaluateAll(ns=>ns.map(n=>({height:n.getBoundingClientRect().height,top:n.getBoundingClientRect().top})))
   assert.ok(tags.every(t=>t.height===24))
   assert.ok(tags[2].top>tags[0].top, 'tags wrap to another row')
@@ -75,7 +88,7 @@ try {
   await page.getByRole('button',{name:'移除计划产量',exact:true}).click()
   assert.equal(await page.locator('.st-tag-list__item').count(),2)
   assert.equal(await page.locator('#tag-control').evaluate(n=>n.getBoundingClientRect().height),32)
-  const buttonStyles = await page.locator('.st-button').evaluateAll(ns=>ns.filter(n=>n.getBoundingClientRect().height).map(n=>({
+  const buttonStyles = await page.locator('#buttons .st-button, .flp .st-button').evaluateAll(ns=>ns.filter(n=>n.getBoundingClientRect().height).map(n=>({
     height:n.getBoundingClientRect().height, expected:n.classList.contains('st-button--large')?36:28,
     color:getComputedStyle(n).backgroundColor, expectedColor:n.classList.contains('st-button--primary')?'rgb(38, 126, 240)':'rgb(242, 243, 245)',
   })))

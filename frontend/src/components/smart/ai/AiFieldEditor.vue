@@ -48,6 +48,23 @@
         </div>
         <AiComposer v-show="!running" :key="sceneKey" ref="composerRef" :initial-text="initialInstruction" :initial-fields="initialFields" :fields="composeFields" :send-label="triedPreview || !isNew ? '更新预览' : '生成预览'" :allow-empty="!trying && (inputList.length > 0 || NO_INPUT.includes(sceneKey))" placeholder="描述处理规则、分类方式或输出长度；留空则使用场景默认规则。"
                     @change="onRequirementsChange" @send="onAiModify" />
+        <details class="afe-instructions">
+          <summary>AI 执行指令<span class="afe-hint">查看或微调实际使用的规则</span></summary>
+          <p class="afe-instruction-help">根据场景和处理要求生成，AI 将按这份指令处理数据。手动修改后可按当前指令预览；再次提交处理要求时，指令可能会重新生成。</p>
+          <div class="afe-sec">
+            <div class="afe-l">执行内容
+              <button v-if="!scene?.local" type="button" class="st-button" :disabled="running || trying" @click="promptEdit = !promptEdit">{{ promptEdit ? '完成编辑' : '编辑指令' }}</button>
+            </div>
+            <div v-if="scene?.local" class="afe-prompt muted">本地计算，不调用大模型、不消耗 AI 次数</div>
+            <el-input v-else-if="promptEdit" v-model="draft.systemPrompt" type="textarea" :autosize="{ minRows: 4, maxRows: 10 }"
+                      :disabled="running || trying" placeholder="你是一个……&#10;任务：……&#10;输入：……" />
+            <div v-else class="afe-prompt" :class="{ folded: longPrompt && !promptOpen }" @click="promptOpen = !promptOpen">
+              {{ draft.systemPrompt || '生成预览后，可在这里查看执行指令' }}
+              <span v-if="longPrompt && !promptOpen" class="afe-prompt-more">展开</span>
+            </div>
+          </div>
+          <button type="button" class="st-button afe-instruction-preview" :disabled="!canSave" @click="tryRun">{{ trying ? '试算中…' : '按当前指令预览' }}</button>
+        </details>
         <div v-if="!inputList.length && !NO_INPUT.includes(sceneKey)" class="afe-field-hint">请插入要处理的字段</div>
         <div v-if="undoSnap" class="afe-banner">
           <StIcon name="check" :size="14" />预览已更新，确认效果后保存
@@ -64,21 +81,8 @@
             <AiSceneCard bare :fields="fields" :preview="preview" :out-label="draft.label" :output-type="draft.outputType" />
           </div>
 
-          <details class="afe-advanced">
-            <summary>高级设置<span class="afe-hint">AI 指令、选项管理</span></summary>
-          <!-- AI 指令 -->
-          <div class="afe-sec">
-            <div class="afe-l">AI 指令
-              <span v-if="!scene?.local" class="afe-link" @click="promptEdit = !promptEdit">{{ promptEdit ? '完成' : '编辑' }}</span>
-            </div>
-            <div v-if="scene?.local" class="afe-prompt muted">本地计算，不调用大模型、不消耗 AI 次数</div>
-            <el-input v-else-if="promptEdit" v-model="draft.systemPrompt" type="textarea" :autosize="{ minRows: 4, maxRows: 10 }"
-                      placeholder="你是一个……&#10;任务：……&#10;输入：……" />
-            <div v-else class="afe-prompt" :class="{ folded: longPrompt && !promptOpen }" @click="promptOpen = !promptOpen">
-              {{ draft.systemPrompt || '（未设置）' }}
-              <span v-if="longPrompt && !promptOpen" class="afe-prompt-more">展开</span>
-            </div>
-          </div>
+          <details v-if="isSelectOut" class="afe-advanced">
+            <summary>输出选项<span class="afe-hint">管理分类结果及新增选项规则</span></summary>
 
           <!-- 选项（单选/多选） -->
           <div v-if="isSelectOut" class="afe-sec">
@@ -100,7 +104,7 @@
             </div>
           </div>
 
-            <button class="st-button afe-btn afe-advanced-preview" :disabled="!canSave" @click="tryRun">{{ trying ? '试算中…' : '按高级设置更新预览' }}</button>
+            <button class="st-button afe-btn afe-advanced-preview" :disabled="!canSave" @click="tryRun">{{ trying ? '试算中…' : '按选项设置更新预览' }}</button>
           </details>
 
           <div class="afe-auto">
@@ -152,7 +156,8 @@ const emit = defineEmits(['close', 'save', 'run', 'write-formula'])
 const isNew = computed(() => !props.field.field_name)
 const saveScope = ref(isNew.value ? 'first5' : 'none')
 
-const OUT_TYPES = [{ v: 'text', l: '文本' }, { v: 'number', l: '数字' }, { v: 'singleSelect', l: '单选' },
+const OUT_TYPES = [{ v: 'text', l: '文本' }, { v: 'number', l: '数字' },
+                   { v: 'percent', l: '百分数' }, { v: 'progress', l: '进度' }, { v: 'date', l: '日期' }, { v: 'singleSelect', l: '单选' },
                    { v: 'multiSelect', l: '多选' }, { v: 'checkbox', l: '复选框' }]
 const NO_INPUT = ['cvRandom', 'cvUuid', 'cvPassword']
 const selectPopperOptions = { strategy: 'fixed', modifiers: [{ name: 'preventOverflow', options: { padding: 12, altAxis: true, tether: false } }] }
@@ -479,6 +484,12 @@ function run(scope) { moreOpen.value = false; emit('run', { scope }) }
 .afe-ai { min-width: 0; }
 .afe-field-hint { margin-top: 8px; font-size: var(--st-font-size); color: var(--st-text-3); }
 .afe-head { padding-bottom: 16px; }
+.afe-instructions { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--st-border); border-radius: 6px; }
+.afe-instructions > summary { cursor: pointer; color: var(--st-text-2); font-size: var(--st-font-size); }
+.afe-instruction-help { margin: 10px 0; color: var(--st-text-3); font-size: 12px; line-height: 1.6; }
+.afe-instructions > .afe-sec { margin-top: 10px; }
+.afe-instructions .afe-l { justify-content: space-between; }
+.afe-instruction-preview { margin-top: 10px; }
 .afe-advanced { border-top: 1px solid #EBECEE; padding-top: 12px; }
 .afe-advanced > summary { cursor: pointer; color: var(--st-text-2); font-size: var(--st-font-size); }
 .afe-advanced > summary .afe-hint { margin-left: 12px; }

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from collections import Counter
 from datetime import datetime
@@ -20,7 +21,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from ..models import MetaField, MetaTable, Record, SmartAiRun
 from . import entitlement, json_store, smart_events
-from .field_registry import OPTION_COLOR_ORDER
+from .field_registry import AI_OUTPUT_TYPES, OPTION_COLOR_ORDER
 from .meta_service import get_meta_fields
 from .ai_scenes import CATEGORIES, SCENE_BY_KEY, SCENES
 from .smart_format import display, option_map, record_text
@@ -33,6 +34,9 @@ MAX_BATCH = 2000
 OUTPUT_RULES = {
     "text": '以 JSON 返回：{"value": "结果文本"}。',
     "number": '以 JSON 返回：{"value": 数字}，无法计算时 value 为 null。',
+    "percent": '以 JSON 返回：{"value": 百分数数值}，例如 25% 返回 25，不要返回 0.25 或带百分号的字符串。无法计算时 value 为 null。',
+    "progress": '以 JSON 返回：{"value": 0 到 100 之间的进度数值}，例如完成 75% 返回 75。无法确定时 value 为 null。',
+    "date": '以 JSON 返回：{"value": "YYYY-MM-DD"}，例如 "2026-10-23"。无法确定有效日期时 value 为 null，不要编造日期。',
     "checkbox": '以 JSON 返回：{"value": true 或 false}。',
 }
 
@@ -142,6 +146,23 @@ def coerce_basic(out_type: str, value):
     """非选项类输出的类型归一（数字 / 复选框 / 文本）。"""
     if value in (None, "", []):
         return None
+    if out_type in ("percent", "progress"):
+        if isinstance(value, bool):
+            return None
+        try:
+            number = float(str(value).strip().removesuffix("%").removesuffix("％").replace(",", ""))
+            if not math.isfinite(number) or (out_type == "progress" and not 0 <= number <= 100):
+                return None
+            return number
+        except (TypeError, ValueError):
+            return None
+    if out_type == "date":
+        if not isinstance(value, str):
+            return None
+        try:
+            return datetime.fromisoformat(value.strip().replace("/", "-").replace("Z", "+00:00")).date().isoformat()
+        except ValueError:
+            return None
     if out_type == "number":
         if isinstance(value, bool):
             return None
@@ -484,7 +505,7 @@ def _config_system() -> str:
             '"desc": "一句话说明这个字段做什么，引用字段时写成 [字段名]", '
             '"inputLabel": "输入字段在任务中的角色，如「待分类的产品名称」", '
             '"prompt": "给模型的提示词，三行：你是一个……。\\n任务：……\\n输入：……", '
-            '"outputType": "text / number / singleSelect / multiSelect / checkbox 之一", '
+            '"outputType": "text / number / percent / progress / date / singleSelect / multiSelect / checkbox 之一", '
             '"options": ["仅单选/多选时给出 3-6 个候选选项，否则为空数组"], '
             '"inputs": ["需要用到的字段名（必须来自表格字段列表）"]}。只输出 JSON。')
 
@@ -599,7 +620,7 @@ def configure(db: Session, mt: MetaTable, payload: dict) -> dict:
     out_type = payload.get("output_type") or base.get("outputType")
     if not out_type:
         out_type = gen.get("outputType") if scene["key"] == "custom" else scene["outputType"]
-    if out_type not in ("text", "number", "singleSelect", "multiSelect", "checkbox"):
+    if out_type not in AI_OUTPUT_TYPES:
         out_type = "text"
     cfg = {
         "scene": scene["key"], "inputFields": [f.field_name for f in inputs],

@@ -281,7 +281,7 @@ async function ruleAction(cmd, r) {
 .ad-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 60px 0; color: var(--st-text-3); font-size: var(--st-font-size); }
 .ad-empty .st-icon { color: var(--st-text-4); }
 .ad-empty-s { font-size: var(--st-font-size); color: var(--st-text-4); }
-.ad-rule { display: flex; align-items: flex-start; gap: 12px; background: #fff; border-radius: 5px; padding: 16px 20px; margin-bottom: 8px; cursor: pointer; border: 1px solid var(--st-border); }
+.ad-rule { display: flex; align-items: flex-start; gap: 12px; background: #fff; border-radius: 5px; padding: 12px 16px; margin-bottom: 8px; cursor: pointer; border: 1px solid var(--st-border); }
 .ad-rule:hover { border-color: #cbd3df; box-shadow: 0 2px 8px #00000008; }
 .ad-r-ico { width: 26px; height: 26px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; color: #fff; flex: none; }
 .ad-r-main { flex: 1; min-width: 0; }

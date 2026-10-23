@@ -9,9 +9,14 @@
          :class="{ empty: isEmpty }" @input="onInput" @keydown="onKeydown" @mousedown="onEditorMouseDown"
          @keyup="saveRange" @mouseup="saveRange" @blur="saveRange" @paste="onPaste" />
     <div class="aic-foot">
-      <div class="aic-ins-wrap">
+      <div ref="pickerTriggerRef" class="aic-ins-wrap">
+        <el-popover :visible="picker" placement="top-start" :width="256" :teleported="true" :show-arrow="false"
+                    :hide-after="0" :popper-options="pickerPopperOptions" popper-class="aic-field-picker-pop"
+                    :popper-style="{ padding: '8px', maxWidth: 'calc(100vw - 24px)', maxHeight: 'calc(100dvh - 24px)', overflow: 'hidden' }">
+          <template #reference>
         <button class="st-button aic-ins" type="button" @mousedown.prevent @click="togglePicker"><StIcon name="plus-circle" :size="16" />插入字段</button>
-        <div v-if="picker" class="aic-pick" @mousedown.prevent>
+          </template>
+        <div v-if="picker" ref="pickerRef" class="aic-pick" @mousedown.prevent>
           <input ref="kwRef" v-model="kw" class="st-control st-control--small st-control--native aic-pick-kw" placeholder="搜索字段" @keydown.stop="onPickKey" />
           <div class="aic-pick-list">
             <div v-for="(f, i) in pickList" :key="f.field_name" class="aic-pick-item" :class="{ on: i === pickIdx }"
@@ -21,6 +26,7 @@
             <div v-if="!pickList.length" class="aic-pick-none">没有匹配的字段</div>
           </div>
         </div>
+        </el-popover>
       </div>
       <button class="st-button st-button--primary aic-send" type="button" :class="{ on: canSend, 'with-label': sendLabel }" :disabled="!canSend" :aria-label="sendLabel || '发送'" @click="send">
         <span v-if="sendLabel">{{ sendLabel }}</span>
@@ -49,6 +55,12 @@ const emit = defineEmits(['send', 'change'])
 
 const editorRef = ref(null)
 const kwRef = ref(null)
+const pickerRef = ref(null)
+const pickerTriggerRef = ref(null)
+const pickerPopperOptions = { strategy: 'fixed', modifiers: [
+  { name: 'flip', options: { fallbackPlacements: ['bottom-start', 'top-end', 'bottom-end'], padding: 12 } },
+  { name: 'preventOverflow', options: { padding: 12, boundary: [], rootBoundary: 'viewport', altAxis: true, tether: false } },
+] }
 const isEmpty = ref(true)
 const hasContent = ref(false)
 const picker = ref(false)
@@ -218,7 +230,7 @@ function send() {
 function clear() { if (editorRef.value) editorRef.value.innerHTML = ''; refresh() }
 
 function onDocDown(e) {
-  if (picker.value && !e.target.closest?.('.aic-ins-wrap')) { picker.value = false; atTrigger = false }
+  if (picker.value && !pickerTriggerRef.value?.contains(e.target) && !pickerRef.value?.contains(e.target)) { picker.value = false; atTrigger = false }
 }
 document.addEventListener('mousedown', onDocDown)
 onBeforeUnmount(() => document.removeEventListener('mousedown', onDocDown))
@@ -251,12 +263,12 @@ defineExpose({ insertField, clear, setContent, focus: () => nextTick(placeCaretE
 .aic-ins { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border: 1px solid #E3E5E8;
            border-radius: 8px; background: #fff; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
 .aic-ins:hover { background: #F5F6F7; color: var(--st-text-2); }
-.aic-pick { position: absolute; left: 0; bottom: calc(100% + 6px); width: 240px; background: #fff; border-radius: 10px;
-            box-shadow: 0 6px 24px rgba(0, 0, 0, .14); padding: 8px; z-index: 10; }
+.aic-pick { display: flex; flex-direction: column; min-height: 0; max-height: calc(100dvh - 42px); background: #fff; }
 .aic-pick-kw { width: 100%; box-sizing: border-box; height: 32px; border: 1px solid #E3E5E8; border-radius: 6px; padding: 0 10px;
                outline: none; font-size: var(--st-font-size); margin-bottom: 6px; }
 .aic-pick-kw:focus { border-color: var(--st-primary); }
-.aic-pick-list { max-height: 240px; overflow-y: auto; }
+.aic-pick-list { min-height: 0; max-height: 240px; overflow-y: auto; }
+.aic-pick-kw { flex-shrink: 0; }
 .aic-pick-item { display: flex; align-items: center; gap: 8px;  padding: 0 8px; border-radius: 6px; font-size: var(--st-font-size);
                  color: var(--st-text-2); cursor: pointer;  height: var(--st-list-item-height); box-sizing: border-box; }
 .aic-pick-item.on { background: #F2F3F5; }

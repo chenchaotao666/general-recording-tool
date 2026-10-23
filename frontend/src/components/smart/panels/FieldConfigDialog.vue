@@ -47,7 +47,7 @@
                           :style="{ background: c.value }" :data-smart-tip="c.label" @click="o.color = c.key" />
                   </div>
                 </el-popover>
-                <input v-model="o.label" class="st-control st-control--small st-control--native fcd-opt-in" />
+                <input v-model="o.label" class="st-control st-control--small st-control--native st-control--inline fcd-opt-in" aria-label="选项名称" />
                 <span class="fcd-drag st-icon-action" draggable="true" data-smart-tip="拖拽调整顺序" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = -1">
                   <StIcon name="drag" :size="16" /></span>
               </SmartListItem>
@@ -187,7 +187,6 @@
         </template>
 
         <!-- ========== 图片 ========== -->
-        <el-checkbox v-if="form.field_type === 'image'" v-model="form.config.cameraOnly" class="fcd-ck">仅限手机拍照上传</el-checkbox>
 
         <!-- ========== 复选框 ========== -->
         <el-checkbox v-if="form.field_type === 'checkbox'" v-model="form.config.defaultChecked" class="fcd-ck">默认勾选</el-checkbox>
@@ -705,11 +704,12 @@ function save() {
 .fcd-del:hover { color: var(--el-color-danger); }
 .fcd-del.hidden { visibility: hidden; }
 .fcd-color { width: 22px; height: 22px; border-radius: 4px; cursor: pointer; flex: none; }
-.fcd-opt-in { flex: 1; min-width: 0; height: 28px; border: 1px solid transparent; border-radius: 4px; padding: 0 10px; margin-left: -10px;
+.fcd-opt-in { flex: 1; min-width: 0; height: 24px; border: 1px solid transparent; border-radius: 4px; padding: 0 6px;
               font-size: var(--st-font-size); color: var(--st-text-2); background: transparent; outline: none; }
 .fcd-opt-in:focus { border-color: var(--st-primary); background: #fff; }
 .fcd-drag { display: inline-flex; color: var(--st-text-3); cursor: grab; flex: none; }
 .fcd-add { display: inline-flex; align-items: center; gap: 12px; height: 44px; color: var(--st-primary); font-size: var(--st-font-size); cursor: pointer; }
+.fcd-optbox > .fcd-add { margin-top: 6px; }
 .fcd-add.gray { color: var(--st-text-2); gap: 6px; height: 36px; }
 .fcd-add.gray:hover { color: var(--st-text-2); }
 .fcd-add.dark { color: var(--st-text-2); }
@@ -736,7 +736,7 @@ function save() {
 .fcd-swap.off { opacity: .4; cursor: not-allowed; }
 /* 数字族：快捷转换 */
 .fcd-quick { display: grid; grid-template-columns: repeat(4, 1fr); background: #F2F3F5; border-radius: 8px; padding: 0; overflow: hidden; }
-.fcd-qt { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 64px; box-sizing: border-box; cursor: pointer;
+.fcd-qt { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 64px; box-sizing: border-box; cursor: pointer;
           font-size: var(--st-font-size); color: var(--st-text-2); border: 1px solid transparent; border-radius: 8px; }
 .fcd-qt:hover { background: #E8E9EB; }
 .fcd-qt.on { background: #fff; border-color: #DEE0E3; }
@@ -760,7 +760,7 @@ function save() {
 .fcd-switch + .fcd-switch { margin-top: 16px; }
 .fcd-lrow { display: flex; align-items: center; justify-content: space-between; font-size: var(--st-font-size); color: var(--st-text-2); }
 .fcd-w200 { width: 224px; }
-.fcd-cks { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 18px; }
+.fcd-cks { display: flex; flex-direction: column; align-items: flex-start; margin-top: 18px; }
 .fcd-cks :deep(.el-checkbox) { height: 32px; }
 /* 自动编号 */
 .fcd-segbox { border: 1px solid #DEE0E3; border-radius: 8px; overflow: hidden; margin-top: 14px; padding-bottom: 6px; }
