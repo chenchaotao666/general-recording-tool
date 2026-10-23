@@ -1,11 +1,12 @@
 <template>
   <!-- 智能表首页（设计文档 §2.2/§2.5）：左侧条目树 + 新建菜单 -->
+  <el-config-provider :z-index="4000">
   <div class="smart-home">
     <div v-show="!sideCollapsed" class="nav" :style="{ width: sideWidth + 'px' }">
       <div class="side-top">
         <div class="side-top-row">
-          <button class="side-fold st-icon-action" type="button" data-smart-tip="收起目录" @click="toggleSide"><el-icon><Fold /></el-icon></button>
-          <el-input v-model="kw" placeholder="搜索智能表" clearable :prefix-icon="Search" />
+          <button class="side-fold st-icon-action" type="button" aria-label="收起目录" @click="toggleSide"><el-icon><Fold /></el-icon></button>
+          <el-input class="st-control" v-model="kw" placeholder="搜索智能表" clearable :prefix-icon="Search" />
         </div>
         <div class="side-top-row">
           <el-dropdown :hide-after="0" class="side-new" trigger="click" @command="cmd => cmd === 'import' ? importVisible = true : createEntry(cmd)">
@@ -65,12 +66,12 @@
           <div class="up">将文件拖拽至此，或点击选择（.xlsx / .csv）</div>
         </el-upload>
         <template v-if="fileId">
-          <el-select v-model="sheetName" placeholder="选择工作表" @change="loadPreview">
+          <el-select class="st-control" v-model="sheetName" placeholder="选择工作表" @change="loadPreview">
             <el-option v-for="s in sheets" :key="s.name" :value="s.name" :label="s.name" />
           </el-select>
-          <el-input-number v-model="headerRow" :min="1" :max="10" size="small" @change="loadPreview" />
+          <el-input-number class="st-control st-control--small" v-model="headerRow" :min="1" :max="10" size="small" @change="loadPreview" />
           <span class="hint">表头行</span>
-          <el-input v-model="importName" placeholder="工作表名称" />
+          <el-input class="st-control" v-model="importName" placeholder="工作表名称" />
           <el-table v-if="preview.length" :data="preview" size="small" max-height="200" border>
             <el-table-column v-for="(h, i) in previewHeaders" :key="i" :prop="`c${i}`" :label="h" show-overflow-tooltip />
           </el-table>
@@ -88,7 +89,7 @@
 
     <!-- 移入文件夹 -->
     <el-dialog v-model="move.visible" title="移入文件夹" width="360px">
-      <el-select v-model="move.target" clearable placeholder="选择目标文件夹（留空=根级）" style="width: 100%">
+      <el-select class="st-control" v-model="move.target" clearable placeholder="选择目标文件夹（留空=根级）" style="width: 100%">
         <el-option v-for="f in folders" :key="f.id" :value="f.id" :label="f.name" />
       </el-select>
       <template #footer>
@@ -97,6 +98,7 @@
       </template>
     </el-dialog>
   </div>
+  </el-config-provider>
 </template>
 
 <script setup>

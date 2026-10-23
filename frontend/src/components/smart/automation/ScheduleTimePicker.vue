@@ -2,7 +2,7 @@
   <el-popover v-model:visible="open" trigger="click" placement="bottom-start" :width="300"
               :hide-after="0" :show-arrow="false" popper-class="schedule-time-pop" @show="reset">
     <template #reference>
-      <button type="button" class="stp-trigger">{{ modelValue || '09:00' }}<StIcon :name="open ? 'chevron-up' : 'chevron-down'" :size="14" /></button>
+      <button type="button" class="st-control st-control--native stp-trigger">{{ modelValue || '09:00' }}<StIcon :name="open ? 'chevron-up' : 'chevron-down'" :size="14" /></button>
     </template>
     <div class="stp-columns">
       <div ref="hours" class="stp-column" role="listbox" aria-label="小时">
@@ -15,8 +15,8 @@
       </div>
     </div>
     <div class="stp-footer">
-      <button type="button" class="stp-now" @click="now">此刻</button>
-      <el-button type="primary" @click="confirm">确定</el-button>
+      <button type="button" class="st-button stp-now" @click="now">此刻</button>
+      <el-button class="st-button st-button--primary" type="primary" @click="confirm">确定</el-button>
     </div>
   </el-popover>
 </template>

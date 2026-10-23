@@ -1,10 +1,12 @@
 <template>
   <span class="image-cell-anchor" :class="{ 'can-preview': selected || opened }" @mousedown.stop @click.stop @dblclick.stop>
-    <div ref="anchor" class="image-cell-trigger" @click="toggle">
+    <div v-if="!detail || !current.length" ref="anchor" class="image-cell-trigger" @click="toggle">
       <span class="image-cell-thumbs"><img v-for="(item, index) in current.slice(0, 3)" :key="idOf(item)" :src="src(item)" alt="预览图片" role="button" tabindex="0" @click.stop="preview(index)" @keydown.enter.stop="preview(index)" /><span v-if="current.length > 3">+{{ current.length - 3 }}</span></span>
       <CellDropdown v-if="!readonly" class="image-cell-arrow" overlay :visible="selected || opened" :open="opened" label="展开或收起图片面板" @click="toggle" />
     </div>
-    <el-popover v-if="opened" :visible="opened" virtual-triggering :virtual-ref="anchor" placement="bottom-start" :width="current.length ? 400 : 480" :show-arrow="false" popper-class="image-cell-pop" :persistent="false">
+    <component :is="detail && current.length ? 'div' : ElPopover" v-if="opened || (detail && current.length)"
+               :class="{ 'image-detail-gallery': detail && current.length }"
+               v-bind="detail && current.length ? {} : { visible: opened, virtualTriggering: true, virtualRef: anchor, placement: 'bottom-start', width: current.length ? 400 : 480, showArrow: false, popperClass: 'image-cell-pop', persistent: false }">
       <div ref="panel" class="image-upload-panel" tabindex="-1" @mousedown.stop @click.stop @keydown.esc.stop.prevent="close">
         <div class="image-drop-wrap" :class="{ 'has-images': current.length, dragging: dragDepth > 0 }"
             @dragenter.prevent="dragDepth++" @dragover.prevent="onDragOver" @dragleave.prevent="dragDepth = Math.max(0, dragDepth - 1)" @drop.prevent="drop">
@@ -12,7 +14,7 @@
             <div v-for="(item, index) in current" :key="idOf(item)" class="image-card">
               <div class="image-card-preview">
                 <el-image :src="src(item)" fit="contain" :preview-src-list="current.map(src)" :initial-index="index" preview-teleported />
-                <div class="image-card-actions">
+                <div v-if="!readonly" class="image-card-actions">
                   <el-dropdown trigger="click" :disabled="uploading || saving" popper-class="image-item-menu" @command="command => itemCommand(command, item, index)">
                     <button class="image-action" aria-label="图片操作" :disabled="uploading || saving"><el-icon><MoreFilled /></el-icon></button>
                     <template #dropdown><el-dropdown-menu>
@@ -39,10 +41,10 @@
           <div v-if="current.length && (uploading || dragDepth)" class="image-gallery-status">{{ uploading ? `正在上传 ${completed} / ${total} 张图片` : '松开即可添加图片' }}</div>
           <div v-if="error" class="image-upload-error" role="alert">{{ error }}</div>
         </div>
-        <button class="image-local-upload" :disabled="uploading" @click="choose"><el-icon><Picture /></el-icon>添加本地图片</button>
+        <button v-if="!readonly" class="image-local-upload" :disabled="uploading" @click="choose"><el-icon><Picture /></el-icon>添加本地图片</button>
         <input ref="fileInput" class="image-file-input" type="file" accept="image/*" multiple aria-label="选择本地图片" @change="onFiles" />
       </div>
-    </el-popover>
+    </component>
     <el-image-viewer v-if="previewIndex !== null" :url-list="current.map(src)" :initial-index="previewIndex" teleported @close="previewIndex = null" />
   </span>
 </template>
@@ -50,10 +52,10 @@
 import { useGridScrollCollapse } from '../../../smart/utils/useGridScrollCollapse.js'
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Loading, Picture, MoreFilled, Close } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElPopover } from 'element-plus'
 import { imageUrl, uploadImageFile, imageMeta, renameImage } from '../../../api/index.js'
 import CellDropdown from './CellDropdown.vue'
-const props = defineProps({ value: [Array, String], closed: Boolean, readonly: Boolean, selected: Boolean, upload: { type: Function, default: uploadImageFile } })
+const props = defineProps({ value: [Array, String], closed: Boolean, readonly: Boolean, selected: Boolean, detail: Boolean, upload: { type: Function, default: uploadImageFile } })
 const emit = defineEmits(['commit', 'cancel', 'open', 'select', 'collapse'])
 const previewIndex = ref(null)
 function preview(index) { const active = props.selected || opened.value; emit('select'); if (active) previewIndex.value = index }
@@ -66,12 +68,12 @@ const managed = item => /^[a-f0-9]{32}$/.test(String(idOf(item)))
 function src(item) { const id = idOf(item); return /^https?:|^data:|^blob:|^\//.test(String(id)) ? id : imageUrl(id) }
 function nameOf(item) { return metadata.value[idOf(item)]?.filename || item?.filename || item?.name || (managed(item) ? '图片' : String(idOf(item)).split('/').pop()?.split('?')[0] || '图片') }
 watch(() => props.value, value => { current.value = Array.isArray(value) ? [...value] : value ? [value] : [] }, { immediate: true })
-watch([opened, current], async () => {
-  if (!opened.value) return
+watch([opened, current, () => props.detail], async () => {
+  if (!opened.value && !props.detail) return
   await Promise.all(current.value.filter(item => managed(item) && !metadata.value[idOf(item)]).map(async item => {
     try { metadata.value[idOf(item)] = await imageMeta(idOf(item)) } catch { /* 图片不可访问时仍可从单元格移除 */ }
   }))
-})
+}, { immediate: true })
 function publish(items) { current.value = items; emit('commit', [...items]) }
 function remove(index) { if (!uploading.value && !saving.value) publish(current.value.filter((_, i) => i !== index)) }
 async function itemCommand(command, item, index) {
@@ -112,7 +114,7 @@ function onDragOver(event) { if (event.dataTransfer) event.dataTransfer.dropEffe
 function drop(event) { dragDepth.value = 0; uploadFiles(event.dataTransfer?.files || []) }
 function onFiles(event) { const files = [...event.target.files]; event.target.value = ''; uploadFiles(files) }
 async function uploadFiles(files) {
-  if (uploading.value) return
+  if (props.readonly || uploading.value) return
   error.value = ''
   const images = [...files].filter(f => f.type.startsWith('image/'))
   const rejected = files.length - images.length
@@ -192,6 +194,13 @@ useGridScrollCollapse(() => opened.value, () => {
 .image-local-upload:hover { background: #f3f4f5; }
 .image-local-upload:disabled { cursor: wait; opacity: .6; }
 .image-local-upload .el-icon { font-size: var(--st-font-size); }
+.image-detail-gallery { background: var(--st-bg-hover, #f3f4f5); border-radius: 4px; }
+.image-detail-gallery .image-drop-wrap.has-images { padding: 8px; }
+.image-detail-gallery .image-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(0, min(112px, 100%))); gap: 8px; max-height: none; overflow: visible; }
+.image-detail-gallery .image-card { width: 100%; }
+.image-detail-gallery .image-card-preview { width: 100%; height: auto; aspect-ratio: 1; box-sizing: border-box; background: #fff; overflow: hidden; }
+.image-detail-gallery .image-card-name { font-size: 12px; color: var(--st-text-3); }
+.image-detail-gallery .image-local-upload { height: 32px; background: transparent; font-size: 12px; }
 .image-file-input { display: none; }
 .image-upload-error { margin-top: 8px; font-size: var(--st-font-size); color: #d95959; overflow-wrap: anywhere; max-height: 64px; overflow: auto; }
 </style>

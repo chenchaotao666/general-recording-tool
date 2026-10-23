@@ -7,10 +7,10 @@
     <!-- 左边框拖拽改宽度（宽度记在本机，下次打开沿用） -->
     <div class="st-side-resize" :class="{ active: resizing }" data-smart-tip="拖动调整宽度" @mousedown.prevent="startResize" />
     <slot name="header"><div class="rd-top">
-      <button class="rd-ico st-icon-action" data-smart-tip="收起" @click="$emit('close')"><StIcon name="panel-close" :size="18" /></button>
+      <button class="rd-ico st-icon-action" aria-label="收起" @click="$emit('close')"><StIcon name="panel-close" :size="18" /></button>
       <span class="rd-nav">
-        <button class="rd-ico st-icon-action" data-smart-tip="上一条" :disabled="!hasPrev" @click="$emit('nav', -1)"><StIcon name="chevron-up" :size="18" /></button>
-        <button class="rd-ico st-icon-action" data-smart-tip="下一条" :disabled="!hasNext" @click="$emit('nav', 1)"><StIcon name="chevron-down" :size="18" /></button>
+        <button class="rd-ico st-icon-action" aria-label="上一条" :disabled="!hasPrev" @click="$emit('nav', -1)"><StIcon name="chevron-up" :size="18" /></button>
+        <button class="rd-ico st-icon-action" aria-label="下一条" :disabled="!hasNext" @click="$emit('nav', 1)"><StIcon name="chevron-down" :size="18" /></button>
       </span>
     </div></slot>
     <RecordDetailContent v-bind="$attrs" />

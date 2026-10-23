@@ -4,10 +4,10 @@
       <header class="floating-header">
         <span class="floating-source">来自 <StIcon name="table" :size="14" /> {{ source }}</span>
         <nav class="floating-nav" aria-label="记录导航">
-          <button class="floating-action" aria-label="上一条" data-smart-tip="上一条" :disabled="!hasPrev" @click="$emit('nav', -1)"><StIcon name="chevron-up" :size="16" /></button>
-          <button class="floating-action" aria-label="下一条" data-smart-tip="下一条" :disabled="!hasNext" @click="$emit('nav', 1)"><StIcon name="chevron-down" :size="16" /></button>
+          <button class="floating-action" aria-label="上一条" :disabled="!hasPrev" @click="$emit('nav', -1)"><StIcon name="chevron-up" :size="16" /></button>
+          <button class="floating-action" aria-label="下一条" :disabled="!hasNext" @click="$emit('nav', 1)"><StIcon name="chevron-down" :size="16" /></button>
           <span class="floating-divider" />
-          <button class="floating-action" aria-label="关闭详情" data-smart-tip="关闭" @click="$emit('close')"><StIcon name="close" :size="16" /></button>
+          <button class="floating-action" aria-label="关闭详情" @click="$emit('close')"><StIcon name="close" :size="16" /></button>
         </nav>
       </header>
       <RecordDetailContent v-bind="$attrs" />

@@ -70,7 +70,11 @@ cd backend
 断言键与界面配置一一对应（`block()` 的 docstring 里有完整清单）；全局口径用 `range_eq("past_7d")` /
 `range_field("production_date")`。新的表结构场景可以仿照 `PROD_FIELDS` 另建字段清单。
 
-## 后续可加
+## 手绘画板 AI 评测
+
+画板的 50 条测试会话、运行脚本、图片及评测报告统一放在 [whiteboard/](whiteboard/README.md) 目录，运行方式和覆盖范围见目录内说明。
+
+## 后续可加（其他功能）
 
 - `eval_ai_assistant.py`：AI 助手动作识别（填表/建表/查数据/建流程的意图分类准确率）
 

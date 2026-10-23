@@ -11,7 +11,7 @@
           <span class="ad-x st-icon-action" @click="emit('close')"><StIcon name="close" :size="18" /></span>
         </div>
         <div v-loading="loading" class="ad-body ad-body-list">
-          <div class="ad-list-toolbar"><span>{{ rules.length }} 条自动化流程，{{ rules.filter(r => r.last_run?.status === 'running').length }} 条运行中</span><el-button type="primary" @click="mode = 'templates'">新建流程</el-button></div>
+          <div class="ad-list-toolbar"><span>{{ rules.length }} 条自动化流程，{{ rules.filter(r => r.last_run?.status === 'running').length }} 条运行中</span><el-button class="st-button st-button--primary" type="primary" @click="mode = 'templates'">新建流程</el-button></div>
           <div v-if="!rules.length && !loading" class="ad-empty">
             <StIcon name="automation" :size="40" />
             <div>还没有自动化规则</div>
@@ -43,9 +43,9 @@
 
       <template v-else-if="mode === 'templates'">
         <div class="ad-head">
-          <button class="ad-back" aria-label="返回" @click="back"><StIcon name="back" :size="18" /></button>
+          <button class="st-button st-button--icon ad-back" aria-label="返回" @click="back"><StIcon name="back" :size="18" /></button>
           <span class="ad-title">新建流程</span>
-          <button class="ad-x" aria-label="关闭" @click="emit('close')"><StIcon name="close" :size="18" /></button>
+          <button class="st-button st-button--icon ad-x" aria-label="关闭" @click="emit('close')"><StIcon name="close" :size="18" /></button>
         </div>
         <div class="ad-body ad-templates">
           <button class="ad-template ad-template-blank" @click="newRule('blank')"><StIcon name="plus" :size="22" />空白流程</button>
@@ -58,7 +58,7 @@
       <template v-else>
         <div class="ad-head ad-head-edit">
           <span class="ad-back st-icon-action" @click="back"><StIcon name="back" :size="18" /></span>
-          <input v-if="mode === 'edit'" v-model="draft.name" class="ad-name" maxlength="200" placeholder="自动化名称" />
+          <input v-if="mode === 'edit'" v-model="draft.name" class="st-control st-control--native ad-name" maxlength="200" placeholder="自动化名称" />
           <span v-else class="ad-title">运行日志 · {{ draft?.name }}</span>
           <span v-if="mode === 'edit' && draft.id" class="ad-log" @click="openLogs(draft)"><StIcon name="log" :size="16" />运行日志</span>
           <span class="ad-vsep" />
@@ -72,10 +72,10 @@
         <div v-if="mode === 'edit'" class="ad-foot">
           <span v-if="enableError" class="ad-save-error" role="alert"><span aria-hidden="true">!</span>{{ enableError }}</span>
           <span v-else-if="loopWarning" class="ad-save-error ad-save-warning" role="status"><span aria-hidden="true">!</span>{{ loopWarning }}</span>
-          <el-button v-if="draft.trigger?.type === 'schedule'" :disabled="!canSave || !!enableError || saving" :loading="running" @click="runOnce(draft, true)">试运行</el-button>
+          <el-button class="st-button" v-if="draft.trigger?.type === 'schedule'" :disabled="!canSave || !!enableError || saving" :loading="running" @click="runOnce(draft, true)">试运行</el-button>
           <span class="ad-foot-sp" />
-          <el-button :disabled="!canSave || saving" @click="save(false)">仅保存</el-button>
-          <el-button type="primary" :disabled="!canSave || !!enableError" :loading="saving" @click="save(true)">保存并启用</el-button>
+          <el-button class="st-button" :disabled="!canSave || saving" @click="save(false)">仅保存</el-button>
+          <el-button class="st-button st-button--primary" type="primary" :disabled="!canSave || !!enableError" :loading="saving" @click="save(true)">保存并启用</el-button>
         </div>
       </template>
     </div>

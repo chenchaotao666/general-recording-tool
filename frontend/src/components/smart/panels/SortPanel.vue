@@ -1,9 +1,9 @@
 <template>
   <!-- 排序面板（§5.3，对齐参照 docs/智慧表格/表格上方按钮/排序.png）：
        标题 + 自动排序开关 → 规则行（⋮⋮ 拖拽 + 字段下拉 + 方向两段切换 + ⊖）→「＋ 添加排序字段」。即时生效 -->
-  <el-popover :hide-after="0" trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="500" popper-class="st-tbpanel">
-    <template #reference><slot /></template>
-    <div class="sp">
+  <el-popover :hide-after="0" :visible="visible" placement="bottom-start" :width="500" popper-class="st-tbpanel">
+    <template #reference><span class="sp-ref" @click="emit('update:visible', !visible)"><slot /></span></template>
+    <div v-if="visible" class="sp">
       <div class="sp-head">
         <span class="tbp-title">排序</span>
         <span class="sp-auto">自动排序<el-switch :model-value="autoSort" @change="$emit('auto-sort', $event)" /></span>
@@ -15,16 +15,16 @@
           <TbFieldSelect :model-value="s.fieldId" :fields="fields" @update:model-value="(v) => update(i, { fieldId: v })" />
         </div>
         <DirToggle :model-value="s.direction" :labels="labelsOf(s)" @update:model-value="(v) => update(i, { direction: v })" />
-        <span class="tbp-del st-icon-action" data-smart-tip="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
+        <span class="tbp-del st-icon-action" aria-label="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
       </div>
-      <button class="tbp-add sp-add" :disabled="draft.length >= 5" @click="add"><StIcon name="plus" :size="15" />添加排序字段</button>
+      <button class="st-button tbp-add sp-add" :disabled="draft.length >= 5" @click="add"><StIcon name="plus" :size="15" />添加排序字段</button>
     </div>
   </el-popover>
 </template>
 
 <script setup>
 import { vReorderFeedback } from '../../../smart/utils/reorderFeedback.js'
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 import TbFieldSelect from './TbFieldSelect.vue'
 import DirToggle from './DirToggle.vue'
@@ -37,7 +37,7 @@ const props = defineProps({
   autoSort: { type: Boolean, default: true },
 })
 const emit = defineEmits(['update:visible', 'change', 'auto-sort'])
-const visibleModel = computed({ get: () => props.visible, set: (v) => emit('update:visible', v) })
+// 由 SmartTablePage 外点判定关闭，body 上的字段选择浮层也属于面板交互。
 
 // 本地草稿（保留尚未选字段的行）；每次变更只提交完整规则
 let seq = 0
@@ -74,6 +74,7 @@ function dropRow(i) {
 </script>
 
 <style scoped>
+.sp-ref { display: inline-flex; }
 .sp { display: flex; flex-direction: column; gap: 6px; }
 .sp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .sp-auto { display: inline-flex; align-items: center; gap: 10px; font-size: var(--st-font-size); color: var(--st-text-2); }

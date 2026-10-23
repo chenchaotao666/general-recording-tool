@@ -16,7 +16,7 @@
     <span ref="anchorRef" class="cell-anchor" />
     <teleport to="body">
       <div v-if="overlayRect" v-show="!overlayOut" class="cell-overlay" :class="{ preview }" :style="overlayStyle"
-           @mousedown.stop="onPreviewMouseDown" @click="onPreviewClick" @dblclick.stop="preview && $emit('enter-edit')">
+           @contextmenu="onPreviewContextMenu" @mousedown.stop="onPreviewMouseDown" @click="onPreviewClick" @dblclick.stop="preview && $emit('enter-edit')">
         <template v-if="preview">
           <div ref="taRef" class="cell-textarea preview-text" :style="taStyle">{{ draft }}</div>
           <span v-if="fillHandle" class="text-fill-handle" @pointerdown.stop="startFill" @click.stop @dblclick.stop />
@@ -75,7 +75,7 @@
 <script setup>
 import { useGridScrollCollapse } from '../../../smart/utils/useGridScrollCollapse.js'
 import { computed, getCurrentInstance, h, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElMessage, dayjs } from 'element-plus'
+import { ElMessage, dayjs, useZIndex } from 'element-plus'
 import { regOf } from '../../../smart/registry/fieldRegistry.js'
 import { dayjsDateFormat } from '../../../smart/utils/format.js'
 import SelectCellPanel from './SelectCellPanel.vue'
@@ -95,7 +95,7 @@ const props = defineProps({
   preview: { type: Boolean, default: false },  // 单击选中的只读预览（仅文本浮层用）
   fillHandle: Boolean,
 })
-const emit = defineEmits(['advance', 'commit', 'commit-soft', 'cancel', 'open-config', 'add-option', 'enter-edit', 'collapse', 'fill-start'])
+const emit = defineEmits(['advance', 'commit', 'commit-soft', 'cancel', 'open-config', 'add-option', 'enter-edit', 'collapse', 'fill-start', 'context-menu'])
 
 const memberList = inject('smartMembers', { value: [] })          // [{id, name}]
 function rememberPeople(people) {
@@ -143,7 +143,14 @@ const selfInst = getCurrentInstance()   // 必须在 setup 顶层捕获，回调
 // 文本浮层编辑：定位锚=单元格 rect；高度随内容增长（上限 220px 滚动）
 const anchorRef = ref(null)
 const taRef = ref(null)
-const overlayRect = ref(null)
+const overlayRect = ref(null) // 保留宿主尺寸，浮层避让不改变单元格/填充操作的来源
+const overlayHeight = ref(0)
+const { nextZIndex } = useZIndex()
+const overlayZIndex = ref(0)
+const contextMenuLayer = inject('smartCellContextMenuLayer', ref(0))
+const viewport = ref({ width: window.innerWidth, height: window.innerHeight })
+const overlayMaxHeight = computed(() => Math.max(0, viewport.value.height - 16))
+const textareaMaxHeight = computed(() => Math.max(0, Math.min(216, overlayMaxHeight.value - 4)))
 const textFont = ref({})
 function startFill(event) {
   if (event.button !== 0) return
@@ -154,11 +161,16 @@ function startFill(event) {
 const overlayStyle = computed(() => {
   const r = overlayRect.value
   if (!r) return {}
-  // 宽度严格=单元格宽（只纵向随内容增高）
+  const margin = 8
+  const width = Math.min(r.width, Math.max(0, viewport.value.width - margin * 2))
+  const minHeight = Math.min(r.height, overlayMaxHeight.value)
+  const height = Math.max(minHeight, overlayHeight.value)
   return {
-    left: `${r.left}px`, top: `${r.top}px`,
-    width: `${r.width}px`, minHeight: `${r.height}px`,
+    left: `${Math.max(margin, Math.min(r.left, viewport.value.width - margin - width))}px`,
+    top: `${Math.max(margin, Math.min(r.top, viewport.value.height - margin - height))}px`,
+    width: `${width}px`, minHeight: `${minHeight}px`, maxHeight: `${overlayMaxHeight.value}px`,
     ...textFont.value,
+    zIndex: contextMenuLayer.value > 0 ? Math.min(overlayZIndex.value, contextMenuLayer.value - 1) : overlayZIndex.value,
   }
 })
 // 与查看态的首行行框对齐；扣除浮层的 2px 边框后计算输入框内边距。
@@ -170,19 +182,21 @@ const taStyle = computed(() => {
   // 底部留白封顶 6px：内容盒最小高度由 autoGrow 的 min（= 单元格高）兜住；若按行高补齐底部留白，
   // 行高变大时多行文本会把浮层撑出单元格（内容明明放得下，参照 PixPin_2026-10-17_16-53-48）
   const padBottom = Math.min(6, ((r?.height || 36) - 26) - padTop)
-  return { padding: `${padTop}px 6px ${padBottom}px` }
+  return { padding: `${padTop}px 6px ${Math.max(0, padBottom)}px`, maxHeight: `${textareaMaxHeight.value}px` }
 })
 function autoGrow() {
   const ta = taRef.value
   if (!ta) return
+  const scrollTop = ta.scrollTop
   ta.style.height = 'auto'
-  // border-box：scrollHeight 即整高（含 padding）；内容盒至少与单元格等高（减去浮层边框 4px）
-  const min = (overlayRect.value?.height || 36) - 4
+  // border-box：scrollHeight 含 padding；先按钳制后的宽度测量，再用实际高度避让底边。
+  const min = Math.max(0, (overlayRect.value?.height || 36) - 4)
   const need = ta.scrollHeight
-  // 单行吸附到内容盒等高（容忍 scrollHeight 的 1px 取整误差）；多行按内容撑高（上限 216px）
-  const h = need <= min + 1 ? min : Math.min(need, 216)
+  const h = Math.min(need <= min + 1 ? min : need, textareaMaxHeight.value)
   ta.style.height = `${h}px`
   ta.style.overflowY = need > h ? 'auto' : 'hidden'
+  ta.scrollTop = scrollTop
+  overlayHeight.value = Math.min(overlayMaxHeight.value, Math.max(h, ta.getBoundingClientRect().height) + 4)
 }
 function focusTextarea() {
   const ta = taRef.value
@@ -213,6 +227,7 @@ onMounted(async () => {
   if (nativeInput) nativeInput.setSelectionRange?.(nativeInput.value.length, nativeInput.value.length)
   // 文本浮层：锚定单元格位置；编辑态聚焦，预览态（div）不可聚焦、由 Esc/点外部关闭
   if (anchorRef.value) {
+    overlayZIndex.value = nextZIndex()
     const td = anchorRef.value.closest('td') || anchorRef.value.parentElement
     overlayRect.value = td?.getBoundingClientRect() || null
     // 浮层挂到 body 后不再继承表格字体，显式保留宿主字体，避免字形和基线跳动。
@@ -249,11 +264,13 @@ function onAnyScroll(e) {
   if (e?.target && taRef.value && e.target === taRef.value) return   // 浮层自身内容滚动
   cancelAnimationFrame(scrollRaf)
   scrollRaf = requestAnimationFrame(() => {
+    viewport.value = { width: window.innerWidth, height: window.innerHeight }
     const td = anchorRef.value?.closest('td') || anchorRef.value?.parentElement   // 详情面板内：宿主是值容器
     const r = visibleCellRect(td)
     overlayOut.value = !r
     if (r && overlayRect.value) {
-      overlayRect.value = { left: r.left, top: r.top, width: r.width, height: overlayRect.value.height }
+      overlayRect.value = r
+      nextTick(autoGrow) // 等宽度/最大高度生效后重测换行；不重建 textarea 或移动光标
     }
   })
 }
@@ -269,6 +286,12 @@ function onPreviewOutside(e) {
 // 预览浮层自检测双击：原生 dblclick 在单元格 DOM 被选中态替换后可能不合成
 // （两次点击落在不同元素上），原生计数与 500ms 跨元素补偿共同识别第二击
 let lastPreviewClick = props.preview ? Date.now() : 0
+function onPreviewContextMenu(event) {
+  if (!props.preview) return
+  event.preventDefault()
+  event.stopPropagation()
+  emit('context-menu', event)
+}
 function onPreviewMouseDown(event) {
   if (!props.preview || event.button !== 0 || event.target.closest('.text-fill-handle')) return
   // Recognize the second press before DOM replacement can swallow its click.
@@ -293,6 +316,7 @@ watch(() => props.preview, async (p) => {
   if (!anchorRef.value) return
   await nextTick()
   if (discarded || !overlayRect.value) return
+  overlayZIndex.value = nextZIndex()
   autoGrow()
   if (p) document.addEventListener('mousedown', onPreviewOutside, true)
   else focusTextarea()
@@ -395,7 +419,7 @@ onBeforeUnmount(() => {
 .cell-anchor { display: block; width: 100%; height: 100%; }
 /* 文本浮层编辑（teleport 到 body）：边框与选中态同款 2px 主色，边界起于单元格 */
 .cell-overlay {
-  position: fixed; z-index: 3000; background: #fff; box-sizing: border-box;
+  position: fixed; background: #fff; box-sizing: border-box;
   border: 2px solid var(--st-primary); border-radius: 2px;   /* teleport 到 body，不在 EP 主色作用域内，直接用令牌 */
   box-shadow: 0 4px 16px rgba(0, 0, 0, .12);
 }

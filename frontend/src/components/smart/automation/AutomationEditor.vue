@@ -6,7 +6,7 @@
     <div class="ae-step-label"><span class="ae-dot" />第1步</div>
     <div v-if="!trig.type" class="ae-card">
       <div class="ae-choice-label">请选择触发条件：</div>
-      <div class="ae-choice-options"><button v-for="t in TRIGGERS" :key="t.type" class="ae-choice" @click="setTriggerType(t.type)"><span class="ae-type-ico" :style="{ background: t.color }"><StIcon :name="t.icon" :size="13" /></span>{{ t.label }}</button></div>
+      <div class="ae-choice-options"><button v-for="t in TRIGGERS" :key="t.type" class="st-button ae-choice" @click="setTriggerType(t.type)"><span class="ae-type-ico" :style="{ background: t.color }"><StIcon :name="t.icon" :size="13" /></span>{{ t.label }}</button></div>
     </div>
     <div v-else class="ae-card">
       <el-dropdown :hide-after="0" trigger="click" @command="setTriggerType">
@@ -23,16 +23,16 @@
 
       <!-- 定时重复 -->
       <div v-if="trig.type === 'schedule'" class="ae-line">
-        <el-select :model-value="trig.schedule.freq" class="ae-sel-s" :teleported="false"
+        <el-select :model-value="trig.schedule.freq" class="st-control ae-sel-s" :teleported="true"
                    @update:model-value="(v) => patchSchedule({ freq: v })">
           <el-option value="daily" label="每天" /><el-option value="weekly" label="每周" /><el-option value="monthly" label="每月" /><el-option value="weekdays" label="每工作日" />
         </el-select>
         <el-select v-if="trig.schedule.freq === 'weekly'" :model-value="trig.schedule.weekdays" multiple collapse-tags
-                   class="ae-sel-m" :teleported="false" @update:model-value="(v) => patchSchedule({ weekdays: v })">
+                   class="st-control ae-sel-m" :teleported="true" @update:model-value="(v) => patchSchedule({ weekdays: v })">
           <el-option v-for="(w, i) in WEEKDAYS" :key="i" :value="i + 1" :label="w" />
         </el-select>
         <el-select v-if="trig.schedule.freq === 'monthly'" :model-value="trig.schedule.monthDays" multiple collapse-tags
-                   class="ae-sel-m" :teleported="false" @update:model-value="(v) => patchSchedule({ monthDays: v })">
+                   class="st-control ae-sel-m" :teleported="true" @update:model-value="(v) => patchSchedule({ monthDays: v })">
           <el-option v-for="d in 31" :key="d" :value="d" :label="`${d} 日`" />
         </el-select>
         <span>的</span>
@@ -55,12 +55,12 @@
       <!-- 记录内容变更时 -->
       <div v-else class="ae-line">
         <span>在</span><TableChip :name="tableName" /><span>里，当记录的</span>
-        <el-popover trigger="click" placement="bottom-start" :width="480" popper-class="ae-watch-popover" :show-arrow="false" :hide-after="0"
-                    :popper-style="{ maxWidth: 'calc(100vw - 24px)' }">
+        <el-popover :visible="activePopover === 'watch'" :trigger="[]" :trigger-keys="[]" placement="bottom-start" :width="480" popper-class="ae-watch-popover" :show-arrow="false" :hide-after="0"
+                    :popper-style="{ maxWidth: 'calc(100vw - 24px)' }" :popper-options="popoverOptions">
           <template #reference>
-            <button type="button" class="ae-pill ae-watch-trigger">{{ watchMode === 'specified' ? '指定列' : '任意列' }}</button>
+            <button type="button" class="st-control st-control--native ae-pill ae-watch-trigger" @click="togglePopover('watch')">{{ watchMode === 'specified' ? '指定列' : '任意列' }}</button>
           </template>
-          <div class="ae-watch-panel">
+          <div v-if="activePopover === 'watch'" class="ae-watch-panel">
             <el-radio-group :model-value="watchMode" class="ae-watch-modes" @update:model-value="setWatchMode">
               <el-radio value="any">任意列</el-radio>
               <el-radio value="specified">指定列</el-radio>
@@ -69,7 +69,7 @@
               <div>满足以下任意条件</div>
               <PermCondRow v-for="(c, i) in watchConditions" :key="i" :cond="c" :fields="fields" allow-changed compact
                            @update="c => setWatchCond(i, c)" @remove="removeWatchCond(i)" />
-              <button type="button" class="ae-find-add" @click="addWatchCond"><StIcon name="plus" :size="13" />添加条件</button>
+              <button type="button" class="st-button ae-find-add" @click="addWatchCond"><StIcon name="plus" :size="13" />添加条件</button>
             </div>
           </div>
         </el-popover>
@@ -83,7 +83,7 @@
         <span class="ae-type-ico ae-gray"><StIcon name="filter" :size="12" /></span>
         <span>{{ trig.type === 'recordCreated' ? '且被添加的记录满足' : '且被修改的记录满足以下' }}</span>
         <el-select v-if="(trig.filter?.conditions || []).length > 1 || trig.type === 'recordUpdated'"
-                   :model-value="trig.filter?.match || 'all'" class="ae-sel-xs" :teleported="false"
+                   :model-value="trig.filter?.match || 'all'" class="st-control ae-sel-xs" :teleported="true"
                    @update:model-value="(v) => patchTrig({ filter: { ...trig.filter, match: v } })">
           <el-option value="all" label="所有" /><el-option value="any" label="任一" />
         </el-select>
@@ -91,7 +91,7 @@
       </div>
       <PermCondRow v-for="(c, i) in trig.filter?.conditions || []" :key="i" :cond="c" :fields="fields"
                    @update="(nc) => setFilterCond(i, nc)" @remove="removeFilterCond(i)" />
-      <a class="ae-add-cond" @click="addFilterCond"><StIcon name="plus" :size="13" />添加条件</a>
+      <a class="st-button ae-add-cond" @click="addFilterCond"><StIcon name="plus" :size="13" />添加条件</a>
     </div>
     <div v-if="trig.type === 'recordCreated'" class="ae-note">如需在添加空白行后再修改时触发，可设置“记录内容变更”触发条件。</div>
 
@@ -100,7 +100,7 @@
 
     <template v-if="!modelValue.actions.length">
       <div class="ae-step-label"><span class="ae-dot" />第2步</div>
-      <div class="ae-card"><div class="ae-choice-label">请选择执行操作：</div><div class="ae-choice-options"><button v-for="t in ACTIONS" :key="t.type" :disabled="!trig.type" class="ae-choice" @click="addAction(t.type)"><span class="ae-type-ico" :style="{ background: t.color }"><StIcon :name="t.icon" :size="13" /></span>{{ t.label }}</button></div></div>
+      <div class="ae-card"><div class="ae-choice-label">请选择执行操作：</div><div class="ae-choice-options"><button v-for="t in ACTIONS" :key="t.type" :disabled="!trig.type" class="st-button ae-choice" @click="addAction(t.type)"><span class="ae-type-ico" :style="{ background: t.color }"><StIcon :name="t.icon" :size="13" /></span>{{ t.label }}</button></div></div>
     </template>
     <template v-for="(a, i) in modelValue.actions" :key="a.id">
       <div class="ae-step-label"><span class="ae-dot" />第{{ i + 2 }}步</div>
@@ -117,7 +117,7 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <span v-if="modelValue.actions.length > 1" class="ae-del st-icon-action" data-smart-tip="删除此操作" @click="removeAction(i)"><StIcon name="trash" :size="16" /></span>
+          <span v-if="modelValue.actions.length > 1" class="ae-del st-icon-action" aria-label="删除此操作" @click="removeAction(i)"><StIcon name="trash" :size="16" /></span>
         </div>
 
         <!-- 发送消息 -->
@@ -129,8 +129,8 @@
             </div>
           </div>
             <div class="ae-label">发送给</div>
-            <el-select :model-value="recipientsOf(a)" multiple filterable class="ae-full" placeholder="选择成员，或记录中的人员字段"
-                       :teleported="false" @update:model-value="(v) => setRecipients(i, v)">
+            <el-select collapse-tags collapse-tags-tooltip :model-value="recipientsOf(a)" multiple filterable class="st-control ae-full" placeholder="选择成员，或记录中的人员字段"
+                       :teleported="true" @update:model-value="(v) => setRecipients(i, v)">
               <el-option-group label="成员">
                 <el-option v-for="m in members" :key="m.id" :value="m.id" :label="m.name" />
               </el-option-group>
@@ -149,15 +149,15 @@
           <div class="ae-line">
             <span>在</span><TableSelect :model-value="a.tableId" :tables="tables" @update:model-value="(v) => setActionTable(i, v)" />
             <span>里，查找</span>
-            <el-popover trigger="click" placement="bottom-start" :width="540" :hide-after="0" :show-arrow="false"
-                        popper-class="ae-find-pop" :popper-style="{ maxWidth: 'calc(100vw - 24px)' }">
+            <el-popover :visible="activePopover === `find-${a.id}`" :trigger="[]" :trigger-keys="[]" placement="bottom-start" :width="540" :hide-after="0" :show-arrow="false"
+                        popper-class="ae-find-pop" :popper-style="{ maxWidth: 'calc(100vw - 24px)' }" :popper-options="popoverOptions">
               <template #reference>
-                <button type="button" class="ae-pill ae-find-trigger">满足条件的记录<span class="ae-config-count">{{ a.conditions?.length || 0 }}</span></button>
+                <button type="button" class="st-control st-control--native ae-pill ae-find-trigger" @click="togglePopover(`find-${a.id}`)">满足条件的记录<span class="ae-config-count">{{ a.conditions?.length || 0 }}</span></button>
               </template>
-              <div class="ae-find-conditions">
+              <div v-if="activePopover === `find-${a.id}`" class="ae-find-conditions">
                 <div class="ae-line">
                   <span>满足以下</span>
-                  <el-select :model-value="a.match || 'all'" class="ae-sel-xs" :teleported="false"
+                  <el-select :model-value="a.match || 'all'" class="st-control ae-sel-xs" :teleported="true"
                              @update:model-value="v => patchAction(i, { match: v })">
                     <el-option value="all" label="所有" /><el-option value="any" label="任一" />
                   </el-select>
@@ -165,7 +165,7 @@
                 </div>
                 <PermCondRow v-for="(c, ci) in a.conditions" :key="ci" :cond="c" :fields="fieldsOf(a.tableId)" :column-groups="groupsOf(a.tableId)"
                              @update="nc => setActCond(i, ci, nc)" @remove="removeActCond(i, ci)" />
-                <button type="button" class="ae-add-cond ae-find-add" @click="addActCond(i)"><StIcon name="plus" :size="16" />添加条件</button>
+                <button type="button" class="st-button ae-add-cond ae-find-add" @click="addActCond(i)"><StIcon name="plus" :size="16" />添加条件</button>
               </div>
             </el-popover>
           </div>
@@ -181,68 +181,68 @@
             <span>在</span><TableSelect :model-value="a.tableId" :tables="tables" @update:model-value="(v) => setActionTable(i, v)" />
             <template v-if="a.type === 'createRecord'">
               <span>里，添加</span>
-              <el-popover trigger="click" placement="bottom-start" :width="560" :hide-after="0" :show-arrow="false"
-                          :popper-style="{ maxWidth: 'calc(100vw - 24px)' }">
-                <template #reference><button type="button" class="ae-pill ae-create-trigger">{{ createMode(a) === 'blank' ? '空白记录' : '指定内容的记录' }}<span v-if="createMode(a) === 'specified'" class="ae-config-count">{{ a.values?.length || 0 }}</span></button></template>
-                <div class="ae-create-options">
+              <el-popover :visible="activePopover === `create-${a.id}`" :trigger="[]" :trigger-keys="[]" placement="bottom-start" :width="560" :hide-after="0" :show-arrow="false"
+                          :popper-style="{ maxWidth: 'calc(100vw - 24px)' }" :popper-options="popoverOptions">
+                <template #reference><button type="button" class="st-control st-control--native ae-pill ae-create-trigger" @click="togglePopover(`create-${a.id}`)">{{ createMode(a) === 'blank' ? '空白记录' : '指定内容的记录' }}<span v-if="createMode(a) === 'specified'" class="ae-config-count">{{ a.values?.length || 0 }}</span></button></template>
+                <div v-if="activePopover === `create-${a.id}`" class="ae-create-options">
                   <label v-for="o in [{ value: 'blank', label: '空白记录' }, { value: 'specified', label: '指定内容的记录' }]" :key="o.value">
                     <input type="radio" :name="`create-${a.id}`" :checked="createMode(a) === o.value" @change="setCreateMode(i, o.value)" />{{ o.label }}
                   </label>
                 </div>
-                <div v-if="createMode(a) === 'specified'" class="ae-create-values">
+                <div v-if="activePopover === `create-${a.id}` && createMode(a) === 'specified'" class="ae-create-values">
                   <div v-for="(v, vi) in a.values" :key="vi" class="ae-value-row">
                     <TbFieldSelect :model-value="v.fieldId" :fields="writableFields(a.tableId)" :column-groups="groupsOf(a.tableId)"
                                    class="ae-create-field" @update:model-value="fn => setValue(i, vi, { fieldId: fn, value: undefined })" />
                     <span class="ae-create-eq">等于</span>
                     <ValueInput :model-value="v.value" :field="fieldsOf(a.tableId).find(f => f.field_name === v.fieldId)"
                                 :steps="stepsBefore(i + 2)" @update:model-value="nv => setValue(i, vi, { ...v, value: nv })" />
-                    <button type="button" class="ae-create-delete" aria-label="删除指定内容" @click="removeValue(i, vi)"><StIcon name="trash" :size="16" /></button>
+                    <button type="button" class="st-button st-button--icon ae-create-delete" aria-label="删除指定内容" @click="removeValue(i, vi)"><StIcon name="trash" :size="16" /></button>
                   </div>
-                  <button type="button" class="ae-add-cond ae-create-add" @click="addValue(i)"><StIcon name="plus" :size="16" />添加指定内容</button>
+                  <button type="button" class="st-button ae-add-cond ae-create-add" @click="addValue(i)"><StIcon name="plus" :size="16" />添加指定内容</button>
                 </div>
               </el-popover>
             </template>
             <template v-else>
               <span>里，对</span>
-              <el-popover trigger="click" placement="bottom-start" :width="540" :hide-after="0" :show-arrow="false"
-                          :popper-style="{ maxWidth: 'calc(100vw - 24px)' }">
+              <el-popover :visible="activePopover === `target-${a.id}`" :trigger="[]" :trigger-keys="[]" placement="bottom-start" :width="540" :hide-after="0" :show-arrow="false"
+                          :popper-style="{ maxWidth: 'calc(100vw - 24px)' }" :popper-options="popoverOptions">
                 <template #reference>
-                  <button type="button" class="ae-pill ae-create-trigger">{{ targetOptions(i).find(o => o.value === targetValue(a))?.label || '选择记录' }}</button>
+                  <button type="button" class="st-control st-control--native ae-pill ae-create-trigger" @click="togglePopover(`target-${a.id}`)">{{ targetOptions(i).find(o => o.value === targetValue(a))?.label || '选择记录' }}</button>
                 </template>
-                <div class="ae-create-options ae-target-options">
+                <div v-if="activePopover === `target-${a.id}`" class="ae-create-options ae-target-options">
                   <label v-for="o in targetOptions(i)" :key="o.value" class="ae-target-option">
                     <input type="radio" :name="`target-${a.id}`" :checked="targetValue(a) === o.value" @change="setTarget(i, o.value)" />{{ o.label }}
                   </label>
                 </div>
-                <div v-if="a.target === 'matching'" class="ae-find-conditions ae-target-conditions">
+                <div v-if="activePopover === `target-${a.id}` && a.target === 'matching'" class="ae-find-conditions ae-target-conditions">
                   <div class="ae-line">
                     <span>满足以下</span>
-                    <el-select :model-value="a.match || 'all'" class="ae-sel-xs" :teleported="false" @update:model-value="v => patchAction(i, { match: v })">
+                    <el-select :model-value="a.match || 'all'" class="st-control ae-sel-xs" :teleported="true" @update:model-value="v => patchAction(i, { match: v })">
                       <el-option value="all" label="所有" /><el-option value="any" label="任一" />
                     </el-select><span>条件</span>
                   </div>
                   <PermCondRow v-for="(c, ci) in a.conditions" :key="ci" :cond="c" :fields="fieldsOf(a.tableId)" :column-groups="groupsOf(a.tableId)"
                                @update="nc => setActCond(i, ci, nc)" @remove="removeActCond(i, ci)" />
-                  <button type="button" class="ae-add-cond ae-find-add" @click="addActCond(i)"><StIcon name="plus" :size="16" />添加条件</button>
+                  <button type="button" class="st-button ae-add-cond ae-find-add" @click="addActCond(i)"><StIcon name="plus" :size="16" />添加条件</button>
                 </div>
               </el-popover>
               <div class="ae-update-inline">
                 <span>修改</span>
-                <el-popover trigger="click" placement="bottom-start" :width="560" :hide-after="0" :show-arrow="false"
-                            :popper-style="{ maxWidth: 'calc(100vw - 24px)' }">
+                <el-popover :visible="activePopover === `values-${a.id}`" :trigger="[]" :trigger-keys="[]" placement="bottom-start" :width="560" :hide-after="0" :show-arrow="false"
+                            :popper-style="{ maxWidth: 'calc(100vw - 24px)' }" :popper-options="popoverOptions">
                   <template #reference>
-                    <button type="button" class="ae-pill ae-create-trigger">指定内容<span class="ae-config-count">{{ a.values?.length || 0 }}</span></button>
+                    <button type="button" class="st-control st-control--native ae-pill ae-create-trigger" @click="togglePopover(`values-${a.id}`)">指定内容<span class="ae-config-count">{{ a.values?.length || 0 }}</span></button>
                   </template>
-                  <div class="ae-update-values">
+                  <div v-if="activePopover === `values-${a.id}`" class="ae-update-values">
                     <div v-for="(v, vi) in a.values" :key="vi" class="ae-value-row">
                       <TbFieldSelect :model-value="v.fieldId" :fields="writableFields(a.tableId)" :column-groups="groupsOf(a.tableId)"
                                      class="ae-create-field" @update:model-value="fn => setValue(i, vi, { fieldId: fn, value: undefined })" />
                       <span class="ae-create-eq">修改为</span>
                       <ValueInput :model-value="v.value" :field="fieldsOf(a.tableId).find(f => f.field_name === v.fieldId)"
                                   :steps="stepsBefore(i + 2)" @update:model-value="nv => setValue(i, vi, { ...v, value: nv })" />
-                      <button type="button" class="ae-create-delete" aria-label="删除指定内容" @click="removeValue(i, vi)"><StIcon name="trash" :size="16" /></button>
+                      <button type="button" class="st-button st-button--icon ae-create-delete" aria-label="删除指定内容" @click="removeValue(i, vi)"><StIcon name="trash" :size="16" /></button>
                     </div>
-                    <button type="button" class="ae-add-cond ae-create-add" @click="addValue(i)"><StIcon name="plus" :size="16" />添加指定内容</button>
+                    <button type="button" class="st-button ae-add-cond ae-create-add" @click="addValue(i)"><StIcon name="plus" :size="16" />添加指定内容</button>
                   </div>
                 </el-popover>
               </div>
@@ -267,7 +267,7 @@
 
 <script setup>
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
-import { computed, defineComponent, h, reactive, watch } from 'vue'
+import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElOption, ElSelect } from 'element-plus'
 import StIcon from '../icons/StIcon.vue'
 import TbFieldSelect from '../panels/TbFieldSelect.vue'
@@ -287,6 +287,15 @@ const props = defineProps({
   loadFields: { type: Function, required: true }, // tid → Promise<fields>
 })
 const emit = defineEmits(['update:modelValue'])
+const popoverOptions = { strategy: 'fixed', modifiers: [{ name: 'preventOverflow', options: { altAxis: true, tether: false, padding: 12 } }] }
+const activePopover = ref(null)
+function togglePopover(id) { activePopover.value = activePopover.value === id ? null : id }
+function onOutside(event) {
+  if (event.target.closest?.('.ae-watch-trigger, .ae-find-trigger, .ae-create-trigger, .el-popper, .vm-sub')) return
+  activePopover.value = null
+}
+onMounted(() => document.addEventListener('pointerdown', onOutside, true))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, true))
 
 const TRIGGERS = [
   { type: 'schedule', label: '定时重复', color: '#22B35E', icon: 'automation' },
@@ -456,7 +465,7 @@ const TableSelect = defineComponent({
   emits: ['update:modelValue'],
   setup(p, { emit: em }) {
     return () => h(ElSelect, {
-      modelValue: p.modelValue, filterable: true, teleported: false, class: 'ae-sel-table',
+      modelValue: p.modelValue, filterable: true, teleported: true, class: 'ae-sel-table',
       'onUpdate:modelValue': (v) => em('update:modelValue', v),
     }, {
       prefix: () => h(StIcon, { name: 'view-grid', size: 14 }),

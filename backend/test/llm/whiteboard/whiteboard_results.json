@@ -1,0 +1,4920 @@
+{
+  "timestamp": "2026-10-23T03:30:44.954921+00:00",
+  "provider": {
+    "type": "openai_compat",
+    "model": "deepseek-chat",
+    "vision_model": null
+  },
+  "scope": "Live model + server validation + semantic multi-turn context; visual/UI confirmation requires separate review",
+  "planned_conversations": 50,
+  "completed": 50,
+  "counts": {
+    "PASS": 48,
+    "FAIL": 2
+  },
+  "results": [
+    {
+      "id": "WB001",
+      "group": "drawing",
+      "name": "精确数量与边框填充双色",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "只画一个矩形，填充纯红色 #ff0000，边框蓝色 #0000ff，不要文字。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "count": 1,
+                "all": {
+                  "type": "rectangle",
+                  "backgroundColor": "#ff0000",
+                  "strokeColor": "#0000ff",
+                  "fillStyle": "solid"
+                }
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "红色矩形",
+            "elements": [
+              {
+                "type": "rectangle",
+                "x": -150.0,
+                "y": -100.0,
+                "strokeColor": "#0000ff",
+                "backgroundColor": "#ff0000",
+                "fillStyle": "solid",
+                "strokeWidth": 2,
+                "width": 300.0,
+                "height": 200.0
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.75,
+      "run": 1
+    },
+    {
+      "id": "WB002",
+      "group": "drawing",
+      "name": "无填充圆形",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "画一个无填充的圆形，边框 #1971c2，完全平滑，宽高相等。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "count": 1,
+                "all": {
+                  "type": "ellipse",
+                  "backgroundColor": "transparent",
+                  "strokeColor": "#1971c2",
+                  "roughness": 0
+                },
+                "equal_fields": [
+                  "width",
+                  "height"
+                ]
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "无填充圆形",
+            "elements": [
+              {
+                "type": "ellipse",
+                "x": -150.0,
+                "y": -150.0,
+                "strokeColor": "#1971c2",
+                "backgroundColor": "transparent",
+                "fillStyle": "solid",
+                "strokeStyle": "solid",
+                "strokeWidth": 2,
+                "roughness": 0,
+                "width": 300.0,
+                "height": 300.0
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.69,
+      "run": 1
+    },
+    {
+      "id": "WB003",
+      "group": "drawing",
+      "name": "图形内文字和文字色",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "只画一个菱形，里面写“是否通过”，填充 #1971c2，文字 #ffffff。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "count": 1,
+                "all": {
+                  "type": "diamond",
+                  "backgroundColor": "#1971c2",
+                  "textColor": "#ffffff",
+                  "label": {
+                    "text": "是否通过"
+                  }
+                }
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "是否通过菱形",
+            "elements": [
+              {
+                "type": "diamond",
+                "x": -90.0,
+                "y": -60.0,
+                "strokeColor": "#1971c2",
+                "backgroundColor": "#1971c2",
+                "fillStyle": "solid",
+                "label": {
+                  "text": "是否通过"
+                },
+                "width": 180.0,
+                "height": 120.0
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "FAIL",
+          "error": "elements 属性不满足 {'type': 'diamond', 'backgroundColor': '#1971c2', 'textColor': '#ffffff', 'label': {'text': '是否通过'}}"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "FAIL",
+      "unexecuted_turns": 0,
+      "seconds": 1.59,
+      "run": 1
+    },
+    {
+      "id": "WB004",
+      "group": "text",
+      "name": "独立中文文字和字号",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "只写“你好世界”，文字 #0000ff，字号32，不要边框或其他图形。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "count": 1,
+                "all": {
+                  "type": "text",
+                  "text": "你好世界",
+                  "fontSize": 32
+                },
+                "color": "#0000ff"
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "你好世界",
+            "elements": [
+              {
+                "type": "text",
+                "x": 0.0,
+                "y": 0.0,
+                "textColor": "#0000ff",
+                "fontSize": 32,
+                "text": "你好世界"
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.33,
+      "run": 1
+    },
+    {
+      "id": "WB005",
+      "group": "drawing",
+      "name": "同一图画中的两个对象",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "在同一幅画里画两个图形：左边红色矩形 #ff0000，右边蓝色圆形 #0000ff，都为纯色填充，不要连线或文字。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "count": 2,
+                "contains": [
+                  {
+                    "type": "rectangle",
+                    "backgroundColor": "#ff0000"
+                  },
+                  {
+                    "type": "ellipse",
+                    "backgroundColor": "#0000ff"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "title": "红色矩形与蓝色圆形",
+            "parts": [
+              {
+                "type": "drawing",
+                "title": "红色矩形",
+                "elements": [
+                  {
+                    "type": "rectangle",
+                    "x": -260.0,
+                    "y": -100.0,
+                    "strokeColor": "#ff0000",
+                    "backgroundColor": "#ff0000",
+                    "fillStyle": "solid",
+                    "strokeWidth": 2,
+                    "width": 200.0,
+                    "height": 200.0
+                  }
+                ]
+              },
+              {
+                "type": "drawing",
+                "title": "蓝色圆形",
+                "elements": [
+                  {
+                    "type": "ellipse",
+                    "x": 60.0,
+                    "y": -100.0,
+                    "strokeColor": "#0000ff",
+                    "backgroundColor": "#0000ff",
+                    "fillStyle": "solid",
+                    "strokeWidth": 2,
+                    "width": 200.0,
+                    "height": 200.0
+                  }
+                ]
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.83,
+      "run": 1
+    },
+    {
+      "id": "WB006",
+      "group": "drawing",
+      "name": "折线和负坐标",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "只画一条红色 #ff0000 的L形折线，不要箭头，三个折点，先水平向右，再垂直向下。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "count": 1,
+                "all": {
+                  "type": "line",
+                  "strokeColor": "#ff0000"
+                },
+                "points_count": 3
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "红色L形折线",
+            "elements": [
+              {
+                "type": "line",
+                "x": -150.0,
+                "y": -100.0,
+                "strokeColor": "#ff0000",
+                "strokeStyle": "solid",
+                "strokeWidth": 4,
+                "roughness": 0,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    150.0,
+                    0.0
+                  ],
+                  [
+                    150.0,
+                    100.0
+                  ],
+                  [
+                    300.0,
+                    100.0
+                  ]
+                ]
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "FAIL",
+          "error": "elements 折点数量不符"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "FAIL",
+      "unexecuted_turns": 0,
+      "seconds": 2.06,
+      "run": 1
+    },
+    {
+      "id": "WB007",
+      "group": "drawing",
+      "name": "独立箭头",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "只画一根从左向右的绿色 #2f9e44 箭头，线宽4，使用虚线。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "count": 1,
+                "all": {
+                  "type": "arrow",
+                  "strokeColor": "#2f9e44",
+                  "strokeWidth": 4,
+                  "strokeStyle": "dashed"
+                }
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "绿色虚线箭头",
+            "elements": [
+              {
+                "type": "arrow",
+                "x": -200.0,
+                "y": 0.0,
+                "strokeColor": "#2f9e44",
+                "strokeStyle": "dashed",
+                "strokeWidth": 4,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    400.0,
+                    0.0
+                  ]
+                ]
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.43,
+      "run": 1
+    },
+    {
+      "id": "WB008",
+      "group": "drawing",
+      "name": "具体人物不是流程图",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "画一个举手的简笔画小人，圆形头、线条身体和四肢，所有线条 #1971c2，不要文字和流程图。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "min": 5,
+                "all": {
+                  "strokeColor": "#1971c2"
+                },
+                "contains": [
+                  {
+                    "type": "ellipse"
+                  },
+                  {
+                    "type": "line"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "举手的小人",
+            "elements": [
+              {
+                "type": "ellipse",
+                "x": -40.0,
+                "y": -180.0,
+                "strokeColor": "#1971c2",
+                "backgroundColor": "transparent",
+                "strokeWidth": 2,
+                "width": 80.0,
+                "height": 80.0
+              },
+              {
+                "type": "line",
+                "x": 0.0,
+                "y": -100.0,
+                "strokeColor": "#1971c2",
+                "strokeWidth": 2,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    130.0
+                  ]
+                ]
+              },
+              {
+                "type": "line",
+                "x": 0.0,
+                "y": -70.0,
+                "strokeColor": "#1971c2",
+                "strokeWidth": 2,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    -70.0,
+                    -60.0
+                  ],
+                  [
+                    -70.0,
+                    -130.0
+                  ]
+                ]
+              },
+              {
+                "type": "line",
+                "x": 0.0,
+                "y": -70.0,
+                "strokeColor": "#1971c2",
+                "strokeWidth": 2,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    70.0,
+                    20.0
+                  ]
+                ]
+              },
+              {
+                "type": "line",
+                "x": 0.0,
+                "y": 30.0,
+                "strokeColor": "#1971c2",
+                "strokeWidth": 2,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    -50.0,
+                    90.0
+                  ]
+                ]
+              },
+              {
+                "type": "line",
+                "x": 0.0,
+                "y": 30.0,
+                "strokeColor": "#1971c2",
+                "strokeWidth": 2,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    50.0,
+                    90.0
+                  ]
+                ]
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "人工检查举手姿势、身体部件连接和比例，结构断言不评价绘画美观",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 2.43,
+      "run": 1
+    },
+    {
+      "id": "WB009",
+      "group": "drawing",
+      "name": "房屋轮廓",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "画一个简笔画小房子，矩形墙体、三角形屋顶、一扇门和一扇窗，不要文字和流程图。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "min": 4,
+                "contains": [
+                  {
+                    "type": "rectangle"
+                  },
+                  {
+                    "type": "line"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "简笔画小房子",
+            "elements": [
+              {
+                "type": "rectangle",
+                "x": -150.0,
+                "y": -20.0,
+                "strokeColor": "#333333",
+                "backgroundColor": "#fff6e5",
+                "fillStyle": "solid",
+                "strokeWidth": 2,
+                "roughness": 1,
+                "width": 300.0,
+                "height": 220.0
+              },
+              {
+                "type": "line",
+                "x": -180.0,
+                "y": -20.0,
+                "strokeColor": "#333333",
+                "strokeWidth": 2,
+                "roughness": 1,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    180.0,
+                    -140.0
+                  ],
+                  [
+                    360.0,
+                    0.0
+                  ]
+                ]
+              },
+              {
+                "type": "rectangle",
+                "x": -40.0,
+                "y": 90.0,
+                "strokeColor": "#333333",
+                "backgroundColor": "#c98b5a",
+                "fillStyle": "solid",
+                "strokeWidth": 2,
+                "roughness": 1,
+                "width": 80.0,
+                "height": 110.0
+              },
+              {
+                "type": "rectangle",
+                "x": 50.0,
+                "y": 20.0,
+                "strokeColor": "#333333",
+                "backgroundColor": "#bfe3f5",
+                "fillStyle": "solid",
+                "strokeWidth": 2,
+                "roughness": 1,
+                "width": 80.0,
+                "height": 70.0
+              },
+              {
+                "type": "line",
+                "x": 90.0,
+                "y": 20.0,
+                "strokeColor": "#333333",
+                "strokeWidth": 2,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    70.0
+                  ]
+                ]
+              },
+              {
+                "type": "line",
+                "x": 50.0,
+                "y": 55.0,
+                "strokeColor": "#333333",
+                "strokeWidth": 2,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    80.0,
+                    0.0
+                  ]
+                ]
+              },
+              {
+                "type": "ellipse",
+                "x": 20.0,
+                "y": 130.0,
+                "strokeColor": "#333333",
+                "backgroundColor": "#333333",
+                "fillStyle": "solid",
+                "strokeWidth": 1,
+                "width": 10.0,
+                "height": 10.0
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "人工检查屋顶在墙体上方，门窗位于墙体内且没有悬空",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 2.49,
+      "run": 1
+    },
+    {
+      "id": "WB010",
+      "group": "drawing",
+      "name": "组合自然景物",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "画一幅简笔画：左上角黄色太阳 #ffd43b，右边一朵云，所有图形无文字，不要流程图。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "min": 2,
+                "contains": [
+                  {
+                    "type": "ellipse",
+                    "backgroundColor": "#ffd43b"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "太阳与云",
+            "elements": [
+              {
+                "type": "ellipse",
+                "x": -300.0,
+                "y": -300.0,
+                "strokeColor": "#f59f00",
+                "backgroundColor": "#ffd43b",
+                "fillStyle": "solid",
+                "strokeWidth": 2,
+                "width": 140.0,
+                "height": 140.0
+              },
+              {
+                "type": "line",
+                "x": -230.0,
+                "y": -300.0,
+                "strokeColor": "#f59f00",
+                "strokeWidth": 3,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    -70.0,
+                    0.0
+                  ]
+                ]
+              },
+              {
+                "type": "line",
+                "x": -230.0,
+                "y": -300.0,
+                "strokeColor": "#f59f00",
+                "strokeWidth": 3,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    70.0,
+                    0.0
+                  ]
+                ]
+              },
+              {
+                "type": "line",
+                "x": -230.0,
+                "y": -300.0,
+                "strokeColor": "#f59f00",
+                "strokeWidth": 3,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    -70.0
+                  ]
+                ]
+              },
+              {
+                "type": "line",
+                "x": -230.0,
+                "y": -300.0,
+                "strokeColor": "#f59f00",
+                "strokeWidth": 3,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    70.0
+                  ]
+                ]
+              },
+              {
+                "type": "line",
+                "x": -230.0,
+                "y": -300.0,
+                "strokeColor": "#f59f00",
+                "strokeWidth": 3,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    -50.0,
+                    -50.0
+                  ]
+                ]
+              },
+              {
+                "type": "line",
+                "x": -230.0,
+                "y": -300.0,
+                "strokeColor": "#f59f00",
+                "strokeWidth": 3,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    50.0,
+                    -50.0
+                  ]
+                ]
+              },
+              {
+                "type": "line",
+                "x": -230.0,
+                "y": -300.0,
+                "strokeColor": "#f59f00",
+                "strokeWidth": 3,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    -50.0,
+                    50.0
+                  ]
+                ]
+              },
+              {
+                "type": "line",
+                "x": -230.0,
+                "y": -300.0,
+                "strokeColor": "#f59f00",
+                "strokeWidth": 3,
+                "points": [
+                  [
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    50.0,
+                    50.0
+                  ]
+                ]
+              },
+              {
+                "type": "ellipse",
+                "x": 60.0,
+                "y": -260.0,
+                "strokeColor": "#adb5bd",
+                "backgroundColor": "#ffffff",
+                "fillStyle": "solid",
+                "strokeWidth": 2,
+                "width": 150.0,
+                "height": 110.0
+              },
+              {
+                "type": "ellipse",
+                "x": 150.0,
+                "y": -230.0,
+                "strokeColor": "#adb5bd",
+                "backgroundColor": "#ffffff",
+                "fillStyle": "solid",
+                "strokeWidth": 2,
+                "width": 120.0,
+                "height": 90.0
+              },
+              {
+                "type": "ellipse",
+                "x": -20.0,
+                "y": -220.0,
+                "strokeColor": "#adb5bd",
+                "backgroundColor": "#ffffff",
+                "fillStyle": "solid",
+                "strokeWidth": 2,
+                "width": 110.0,
+                "height": 80.0
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "人工检查太阳和云的相对位置及可辨识性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 2.73,
+      "run": 1
+    },
+    {
+      "id": "WB011",
+      "group": "style",
+      "name": "只改选中图形填充",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "把选中图形的填充改为纯红色 #ff0000，其他属性不变。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "backgroundColor": "#ff0000",
+                    "fillStyle": "solid"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "backgroundColor": "#ff0000",
+                "fillStyle": "solid"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.62,
+      "run": 1
+    },
+    {
+      "id": "WB012",
+      "group": "style",
+      "name": "边框色不影响填充或文字",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "只把选中框的边框改为 #0000ff，不改填充和文字。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "strokeColor": "#0000ff"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "strokeColor": "#0000ff"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.41,
+      "run": 1
+    },
+    {
+      "id": "WB013",
+      "group": "style",
+      "name": "文字色不影响边框",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "只把选中框内文字改为 #ff0000，边框和填充保持原样。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "textColor": "#ff0000"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "textColor": "#ff0000"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.75,
+      "run": 1
+    },
+    {
+      "id": "WB014",
+      "group": "style",
+      "name": "不透明度",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "把选中框的不透明度设为35%，其余不变。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "opacity": 35
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "opacity": 35
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.69,
+      "run": 1
+    },
+    {
+      "id": "WB015",
+      "group": "style",
+      "name": "平滑风格零值",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "选中的框不要抖动的手绘线，改为完全平滑，手绘程度为0，其余不变。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "roughness": 0
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "roughness": 0
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.55,
+      "run": 1
+    },
+    {
+      "id": "WB016",
+      "group": "style",
+      "name": "独立线宽",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "只把选中框的线宽改为4。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "strokeWidth": 4
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "strokeWidth": 4
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.45,
+      "run": 1
+    },
+    {
+      "id": "WB017",
+      "group": "style",
+      "name": "只改箭头线型",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "只把选中的箭头改为虚线，其他元素和属性不变。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": true
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "edge",
+                    "strokeStyle": "dashed"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "edge",
+                "strokeStyle": "dashed"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.53,
+      "run": 1
+    },
+    {
+      "id": "WB018",
+      "group": "style",
+      "name": "点线边框",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "把选中的框边框改为点线，不改颜色或线宽。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "strokeStyle": "dotted"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "strokeStyle": "dotted"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.62,
+      "run": 1
+    },
+    {
+      "id": "WB019",
+      "group": "style",
+      "name": "取消填充",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "把选中的框改为无填充，其余属性不变。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "backgroundColor": "transparent"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "backgroundColor": "transparent"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.51,
+      "run": 1
+    },
+    {
+      "id": "WB020",
+      "group": "style",
+      "name": "交叉线填充",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "把选中框填充色改为 #00ff00，填充样式为交叉线，不是纯色。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "backgroundColor": "#00ff00",
+                    "fillStyle": "cross-hatch"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "backgroundColor": "#00ff00",
+                "fillStyle": "cross-hatch"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.56,
+      "run": 1
+    },
+    {
+      "id": "WB021",
+      "group": "diagram",
+      "name": "三节点流程图及连线样式",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "画开始、审批、结束三个节点的流程图，按顺序连接，节点填充 #ffff00，连线为红色 #ff0000 虚线。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "nodes",
+                "count": 3,
+                "all": {
+                  "backgroundColor": "#ffff00"
+                },
+                "labels": [
+                  "开始",
+                  "审批",
+                  "结束"
+                ]
+              },
+              {
+                "collection": "edges",
+                "count": 2,
+                "all": {
+                  "strokeColor": "#ff0000",
+                  "strokeStyle": "dashed"
+                }
+              }
+            ]
+          },
+          "result": {
+            "type": "diagram",
+            "title": "审批流程图",
+            "nodes": [
+              {
+                "id": "n1",
+                "label": "开始",
+                "shape": "ellipse",
+                "backgroundColor": "#ffff00",
+                "fillStyle": "solid"
+              },
+              {
+                "id": "n2",
+                "label": "审批",
+                "shape": "diamond",
+                "backgroundColor": "#ffff00",
+                "fillStyle": "solid"
+              },
+              {
+                "id": "n3",
+                "label": "结束",
+                "shape": "ellipse",
+                "backgroundColor": "#ffff00",
+                "fillStyle": "solid"
+              }
+            ],
+            "edges": [
+              {
+                "source": "n1",
+                "target": "n2",
+                "strokeColor": "#ff0000",
+                "strokeStyle": "dashed"
+              },
+              {
+                "source": "n2",
+                "target": "n3",
+                "strokeColor": "#ff0000",
+                "strokeStyle": "dashed"
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.76,
+      "run": 1
+    },
+    {
+      "id": "WB022",
+      "group": "diagram",
+      "name": "条件分支标签",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "画三个节点：是否通过（菱形），通过后到归档，不通过到退回。两条分支分别标“通过”“不通过”，不要增加其他节点。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "nodes",
+                "count": 3,
+                "contains": [
+                  {
+                    "shape": "diamond"
+                  }
+                ]
+              },
+              {
+                "collection": "edges",
+                "count": 2,
+                "labels": [
+                  "通过",
+                  "不通过"
+                ]
+              }
+            ]
+          },
+          "result": {
+            "type": "diagram",
+            "title": "归档判断流程",
+            "nodes": [
+              {
+                "id": "n1",
+                "label": "是否通过",
+                "shape": "diamond"
+              },
+              {
+                "id": "n2",
+                "label": "归档",
+                "shape": "rect"
+              },
+              {
+                "id": "n3",
+                "label": "退回",
+                "shape": "rect"
+              }
+            ],
+            "edges": [
+              {
+                "source": "n1",
+                "target": "n2",
+                "label": "通过"
+              },
+              {
+                "source": "n1",
+                "target": "n3",
+                "label": "不通过"
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.63,
+      "run": 1
+    },
+    {
+      "id": "WB023",
+      "group": "diagram",
+      "name": "回边循环",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "画只有A、B、C三个节点的循环流程图，A到B，B到C，C回到A。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "nodes",
+                "count": 3,
+                "labels": [
+                  "A",
+                  "B",
+                  "C"
+                ]
+              },
+              {
+                "collection": "edges",
+                "count": 3
+              }
+            ],
+            "connections": [
+              [
+                "A",
+                "B"
+              ],
+              [
+                "B",
+                "C"
+              ],
+              [
+                "C",
+                "A"
+              ]
+            ]
+          },
+          "result": {
+            "type": "diagram",
+            "title": "三节点循环流程",
+            "nodes": [
+              {
+                "id": "A",
+                "label": "A",
+                "shape": "rect"
+              },
+              {
+                "id": "B",
+                "label": "B",
+                "shape": "rect"
+              },
+              {
+                "id": "C",
+                "label": "C",
+                "shape": "rect"
+              }
+            ],
+            "edges": [
+              {
+                "source": "A",
+                "target": "B"
+              },
+              {
+                "source": "B",
+                "target": "C"
+              },
+              {
+                "source": "C",
+                "target": "A"
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "回边从侧边绕行，不穿过节点文字",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.6,
+      "run": 1
+    },
+    {
+      "id": "WB024",
+      "group": "diagram",
+      "name": "允许无连线节点",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "画两个互不相连的流程节点，文字分别为“独立A”和“独立B”，明确不要连线。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "nodes",
+                "count": 2,
+                "labels": [
+                  "独立A",
+                  "独立B"
+                ]
+              },
+              {
+                "collection": "edges",
+                "count": 0
+              }
+            ]
+          },
+          "result": {
+            "type": "diagram",
+            "title": "两个独立节点",
+            "nodes": [
+              {
+                "id": "n1",
+                "label": "独立A",
+                "shape": "rect"
+              },
+              {
+                "id": "n2",
+                "label": "独立B",
+                "shape": "rect"
+              }
+            ],
+            "edges": [],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.49,
+      "run": 1
+    },
+    {
+      "id": "WB025",
+      "group": "diagram",
+      "name": "组织结构树",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "画五节点组织图：总经理下属研发部和销售部，研发部下属前端组和后端组。不要增加人员。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "nodes",
+                "count": 5,
+                "labels": [
+                  "总经理",
+                  "研发部",
+                  "销售部",
+                  "前端组",
+                  "后端组"
+                ]
+              },
+              {
+                "collection": "edges",
+                "count": 4
+              }
+            ],
+            "connections": [
+              [
+                "总经理",
+                "研发部"
+              ],
+              [
+                "总经理",
+                "销售部"
+              ],
+              [
+                "研发部",
+                "前端组"
+              ],
+              [
+                "研发部",
+                "后端组"
+              ]
+            ]
+          },
+          "result": {
+            "type": "diagram",
+            "title": "组织架构图",
+            "nodes": [
+              {
+                "id": "n1",
+                "label": "总经理",
+                "shape": "rect"
+              },
+              {
+                "id": "n2",
+                "label": "研发部",
+                "shape": "rect"
+              },
+              {
+                "id": "n3",
+                "label": "销售部",
+                "shape": "rect"
+              },
+              {
+                "id": "n4",
+                "label": "前端组",
+                "shape": "rect"
+              },
+              {
+                "id": "n5",
+                "label": "后端组",
+                "shape": "rect"
+              }
+            ],
+            "edges": [
+              {
+                "source": "n1",
+                "target": "n2"
+              },
+              {
+                "source": "n1",
+                "target": "n3"
+              },
+              {
+                "source": "n2",
+                "target": "n4"
+              },
+              {
+                "source": "n2",
+                "target": "n5"
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.84,
+      "run": 1
+    },
+    {
+      "id": "WB026",
+      "group": "text",
+      "name": "多行中英混排",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "只写一块独立文字，第一行“项目计划”，第二行“Sprint 1”，第三行“2026-10-23”，必须保留换行，字号24。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "count": 1,
+                "all": {
+                  "type": "text",
+                  "text": "项目计划\nSprint 1\n2026-10-23",
+                  "fontSize": 24
+                }
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "项目计划文字",
+            "elements": [
+              {
+                "type": "text",
+                "x": 0.0,
+                "y": 0.0,
+                "fontSize": 24,
+                "text": "项目计划\nSprint 1\n2026-10-23"
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.56,
+      "run": 1
+    },
+    {
+      "id": "WB027",
+      "group": "table",
+      "name": "零值与空单元格",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "生成表格，表头为物品、数量、备注，数据两行：[苹果,0,空字符串]、[梨,2,已到货]。0和空单元格不能丢失。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "tables",
+                "count": 1,
+                "all": {
+                  "headers": [
+                    "物品",
+                    "数量",
+                    "备注"
+                  ],
+                  "rows": [
+                    [
+                      "苹果",
+                      "0",
+                      ""
+                    ],
+                    [
+                      "梨",
+                      "2",
+                      "已到货"
+                    ]
+                  ]
+                }
+              }
+            ]
+          },
+          "result": {
+            "type": "component",
+            "kind": "table",
+            "title": "物品清单",
+            "headers": [
+              "物品",
+              "数量",
+              "备注"
+            ],
+            "rows": [
+              [
+                "苹果",
+                "0",
+                ""
+              ],
+              [
+                "梨",
+                "2",
+                "已到货"
+              ]
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.41,
+      "run": 1
+    },
+    {
+      "id": "WB028",
+      "group": "table",
+      "name": "表格颜色和原文",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "生成只有两列两行数据的表格：姓名、角色；张三、开发；李四、测试。填充 #fff3bf，文字 #000000。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "tables",
+                "count": 1,
+                "all": {
+                  "headers": [
+                    "姓名",
+                    "角色"
+                  ],
+                  "rows": [
+                    [
+                      "张三",
+                      "开发"
+                    ],
+                    [
+                      "李四",
+                      "测试"
+                    ]
+                  ],
+                  "backgroundColor": "#fff3bf",
+                  "textColor": "#000000"
+                }
+              }
+            ]
+          },
+          "result": {
+            "type": "component",
+            "kind": "table",
+            "title": "姓名与角色",
+            "headers": [
+              "姓名",
+              "角色"
+            ],
+            "rows": [
+              [
+                "张三",
+                "开发"
+              ],
+              [
+                "李四",
+                "测试"
+              ]
+            ],
+            "backgroundColor": "#fff3bf",
+            "textColor": "#000000",
+            "fillStyle": "solid",
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.45,
+      "run": 1
+    },
+    {
+      "id": "WB029",
+      "group": "mixed",
+      "name": "流程图加表格",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "左边画开始到结束的两节点流程图，旁边另放一个表格：姓名、角色；张三、开发。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "parts",
+                "count": 2,
+                "contains": [
+                  {
+                    "type": "diagram"
+                  },
+                  {
+                    "type": "component"
+                  }
+                ]
+              },
+              {
+                "collection": "nodes",
+                "count": 2
+              },
+              {
+                "collection": "tables",
+                "count": 1
+              }
+            ]
+          },
+          "result": {
+            "title": "开始到结束流程图与人员角色表",
+            "parts": [
+              {
+                "type": "diagram",
+                "title": "开始到结束流程",
+                "nodes": [
+                  {
+                    "id": "n1",
+                    "label": "开始",
+                    "shape": "ellipse"
+                  },
+                  {
+                    "id": "n2",
+                    "label": "结束",
+                    "shape": "ellipse"
+                  }
+                ],
+                "edges": [
+                  {
+                    "source": "n1",
+                    "target": "n2"
+                  }
+                ]
+              },
+              {
+                "type": "component",
+                "kind": "table",
+                "title": "人员角色表",
+                "headers": [
+                  "姓名",
+                  "角色"
+                ],
+                "rows": [
+                  [
+                    "张三",
+                    "开发"
+                  ]
+                ]
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.89,
+      "run": 1
+    },
+    {
+      "id": "WB030",
+      "group": "mixed",
+      "name": "流程图加具体图画",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "生成两个独立部分：一个开始到结束的流程图，旁边一个蓝色 #0000ff 的圆形图案。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "parts",
+                "count": 2,
+                "contains": [
+                  {
+                    "type": "diagram"
+                  },
+                  {
+                    "type": "drawing"
+                  }
+                ]
+              },
+              {
+                "collection": "elements",
+                "count": 1,
+                "all": {
+                  "type": "ellipse",
+                  "backgroundColor": "#0000ff"
+                }
+              }
+            ]
+          },
+          "result": {
+            "title": "流程图与蓝色圆形",
+            "parts": [
+              {
+                "type": "diagram",
+                "title": "开始到结束流程图",
+                "nodes": [
+                  {
+                    "id": "n1",
+                    "label": "开始",
+                    "shape": "ellipse"
+                  },
+                  {
+                    "id": "n2",
+                    "label": "执行步骤",
+                    "shape": "rect"
+                  },
+                  {
+                    "id": "n3",
+                    "label": "结束",
+                    "shape": "ellipse"
+                  }
+                ],
+                "edges": [
+                  {
+                    "source": "n1",
+                    "target": "n2"
+                  },
+                  {
+                    "source": "n2",
+                    "target": "n3"
+                  }
+                ]
+              },
+              {
+                "type": "drawing",
+                "title": "蓝色圆形",
+                "elements": [
+                  {
+                    "type": "ellipse",
+                    "x": -100.0,
+                    "y": -100.0,
+                    "strokeColor": "#0000ff",
+                    "backgroundColor": "#0000ff",
+                    "fillStyle": "solid",
+                    "width": 200.0,
+                    "height": 200.0
+                  }
+                ]
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 2.2,
+      "run": 1
+    },
+    {
+      "id": "WB031",
+      "group": "intent",
+      "name": "追加保持已有内容",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "在现有画布旁边再加一个绿色 #00ff00 的圆形，不能重画已有内容。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid"
+            }
+          ],
+          "expect": {
+            "mode": "append",
+            "checks": [
+              {
+                "collection": "elements",
+                "count": 1,
+                "all": {
+                  "type": "ellipse",
+                  "backgroundColor": "#00ff00"
+                }
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "绿色圆形",
+            "elements": [
+              {
+                "type": "ellipse",
+                "x": 560.0,
+                "y": 0.0,
+                "strokeColor": "#00ff00",
+                "backgroundColor": "#00ff00",
+                "textColor": "#000000",
+                "fillStyle": "solid",
+                "roughness": 1,
+                "opacity": 100,
+                "width": 120.0,
+                "height": 120.0
+              }
+            ],
+            "mode": "append"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.99,
+      "run": 1
+    },
+    {
+      "id": "WB032",
+      "group": "intent",
+      "name": "明确整体重画",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "清空当前画布重新画一个红色 #ff0000 的矩形，不保留任何旧内容。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid"
+            }
+          ],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "count": 1,
+                "all": {
+                  "type": "rectangle",
+                  "backgroundColor": "#ff0000"
+                }
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "红色矩形",
+            "elements": [
+              {
+                "type": "rectangle",
+                "x": -120.0,
+                "y": -80.0,
+                "strokeColor": "#ff0000",
+                "backgroundColor": "#ff0000",
+                "fillStyle": "solid",
+                "strokeWidth": 2,
+                "roughness": 0,
+                "width": 240.0,
+                "height": 160.0
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.43,
+      "run": 1
+    },
+    {
+      "id": "WB033",
+      "group": "scope",
+      "name": "删除选中对象",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "删除选中的框，其他内容保留。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "delete": true
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "delete": true
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.24,
+      "run": 1
+    },
+    {
+      "id": "WB034",
+      "group": "scope",
+      "name": "未选中时按名称删除",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "只删除文字为“结束”的节点，其他内容保留。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid"
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "end",
+                    "delete": true
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "end",
+                "delete": true
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.54,
+      "run": 1
+    },
+    {
+      "id": "WB035",
+      "group": "summary",
+      "name": "整体汇总不修改",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "总结一下这张画布，不修改画布。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid"
+            }
+          ],
+          "expect": {
+            "mode": "summarize",
+            "checks": [],
+            "summary_contains": [
+              "开始",
+              "结束"
+            ]
+          },
+          "result": {
+            "mode": "summarize",
+            "summary": "画布内容为一个极简流程图，共 3 个元素：\n1. 开始节点：矩形，文字“开始”，位于左上（0,0），尺寸 160×80，白底黑框。\n2. 结束节点：椭圆，文字“结束”，位于右上（300,0），尺寸 160×80，白底黑框。\n3. 连接线：一条水平实线箭头，从“开始”右侧指向“结束”左侧，线宽 2。\n整体表达“开始→结束”的单步流程，无分支、无其他标注。"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 2.0,
+      "run": 1
+    },
+    {
+      "id": "WB036",
+      "group": "summary",
+      "name": "只解释选中元素",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "只总结选中的这部分图形，它是什么、写着什么，不要改动，不要提及未选中的元素或它们的文字。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "summarize",
+            "checks": [],
+            "summary_contains": [
+              "开始"
+            ],
+            "summary_excludes": [
+              "结束"
+            ]
+          },
+          "result": {
+            "mode": "summarize",
+            "summary": "选中的是一个矩形节点，文字为“开始”，位于画布左上角，尺寸 160×80，黑色描边、白色填充、黑色文字，手绘风格，不透明度 100%。"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.94,
+      "run": 1
+    },
+    {
+      "id": "WB037",
+      "group": "scope",
+      "name": "同时修改两个选中对象",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "把选中的两个图形填充均改为纯红色 #ff0000，其他不变。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "count": 2,
+                "all": {
+                  "backgroundColor": "#ff0000",
+                  "fillStyle": "solid"
+                },
+                "ids": [
+                  "start",
+                  "end"
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "backgroundColor": "#ff0000",
+                "fillStyle": "solid"
+              },
+              {
+                "id": "end",
+                "backgroundColor": "#ff0000",
+                "fillStyle": "solid"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.64,
+      "run": 1
+    },
+    {
+      "id": "WB038",
+      "group": "intent",
+      "name": "否定重画只改文字色",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "不要新建，不要重画，只把“开始”的文字颜色改为 #ff0000。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid"
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "textColor": "#ff0000"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "textColor": "#ff0000"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.37,
+      "run": 1
+    },
+    {
+      "id": "WB039",
+      "group": "boundary",
+      "name": "空请求提示",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [],
+            "error_contains": "请输入操作描述"
+          },
+          "status": "PASS",
+          "expected_error": "请输入操作描述，或上传图片"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 0.0,
+      "run": 1
+    },
+    {
+      "id": "WB040",
+      "group": "boundary",
+      "name": "空画布汇总提示",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "总结一下画布",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [],
+            "error_contains": "画布是空的"
+          },
+          "status": "PASS",
+          "expected_error": "画布是空的，没有内容可汇总"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 0.0,
+      "run": 1
+    },
+    {
+      "id": "WB041",
+      "group": "conversation",
+      "name": "改色后再取消填充",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "把选中框填充改为纯红色 #ff0000。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "backgroundColor": "#ff0000",
+                    "fillStyle": "solid"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "backgroundColor": "#ff0000",
+                "fillStyle": "solid"
+              }
+            ]
+          },
+          "status": "PASS"
+        },
+        {
+          "turn": 2,
+          "user": "现在把它的填充取消，边框和文字保持原样。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ff0000",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true,
+              "fillStyle": "solid"
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "backgroundColor": "transparent"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "backgroundColor": "transparent",
+                "fillStyle": "solid"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 3.07,
+      "run": 1
+    },
+    {
+      "id": "WB042",
+      "group": "conversation",
+      "name": "改名后按新名字改文字色",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "把“开始”改名为“申请提交”，其他不变。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid"
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "text": "申请提交"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "text": "申请提交"
+              }
+            ]
+          },
+          "status": "PASS"
+        },
+        {
+          "turn": 2,
+          "user": "把“申请提交”的文字改为蓝色 #0000ff，其他不变。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "申请提交",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid"
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "textColor": "#0000ff"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "textColor": "#0000ff"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 3.08,
+      "run": 1
+    },
+    {
+      "id": "WB043",
+      "group": "conversation",
+      "name": "虚线恢复实线",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "把选中的箭头改为红色 #ff0000 虚线。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": true
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "edge",
+                    "strokeColor": "#ff0000",
+                    "strokeStyle": "dashed"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "edge",
+                "strokeColor": "#ff0000",
+                "strokeStyle": "dashed"
+              }
+            ]
+          },
+          "status": "PASS"
+        },
+        {
+          "turn": 2,
+          "user": "现在恢复实线，保留红色。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#ff0000",
+              "strokeWidth": 2,
+              "strokeStyle": "dashed",
+              "selected": true
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "edge",
+                    "strokeStyle": "solid"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "edge",
+                "strokeColor": "#ff0000",
+                "strokeStyle": "solid"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 2.7,
+      "run": 1
+    },
+    {
+      "id": "WB044",
+      "group": "conversation",
+      "name": "切换选区后修改",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "把选中的框边框改为 #ff0000。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "strokeColor": "#ff0000"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "strokeColor": "#ff0000"
+              }
+            ]
+          },
+          "status": "PASS"
+        },
+        {
+          "turn": 2,
+          "user": "这次把选中图形边框改为 #0000ff，不要影响刚才的框。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#ff0000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "end",
+                    "strokeColor": "#0000ff"
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "end",
+                "strokeColor": "#0000ff"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 3.08,
+      "run": 1
+    },
+    {
+      "id": "WB045",
+      "group": "conversation",
+      "name": "追加后定位新对象",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "旁边再加一个绿色圆形 #00ff00。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid"
+            }
+          ],
+          "expect": {
+            "mode": "append",
+            "checks": [
+              {
+                "collection": "elements",
+                "count": 1,
+                "all": {
+                  "type": "ellipse",
+                  "backgroundColor": "#00ff00"
+                }
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "绿色圆形",
+            "elements": [
+              {
+                "type": "ellipse",
+                "x": 520.0,
+                "y": -40.0,
+                "strokeColor": "#00ff00",
+                "backgroundColor": "#00ff00",
+                "fillStyle": "solid",
+                "width": 80.0,
+                "height": 80.0
+              }
+            ],
+            "mode": "append"
+          },
+          "status": "PASS"
+        },
+        {
+          "turn": 2,
+          "user": "只把刚加的绿色圆形填充改成纯蓝色 #0000ff，其他内容不变。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid"
+            },
+            {
+              "type": "ellipse",
+              "x": 520.0,
+              "y": -40.0,
+              "strokeColor": "#00ff00",
+              "backgroundColor": "#00ff00",
+              "fillStyle": "solid",
+              "width": 80.0,
+              "height": 80.0,
+              "id": "t1p0_d0"
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "count": 1,
+                "all": {
+                  "backgroundColor": "#0000ff",
+                  "fillStyle": "solid"
+                }
+              }
+            ],
+            "target_types": [
+              "ellipse"
+            ],
+            "target_before": {
+              "backgroundColor": "#00ff00"
+            }
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "t1p0_d0",
+                "strokeColor": "#0000ff",
+                "backgroundColor": "#0000ff",
+                "fillStyle": "solid"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 3.36,
+      "run": 1
+    },
+    {
+      "id": "WB046",
+      "group": "conversation",
+      "name": "新建后连续改色",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "画一个纯红色矩形 #ff0000。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "count": 1,
+                "all": {
+                  "type": "rectangle",
+                  "backgroundColor": "#ff0000"
+                }
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "纯红色矩形",
+            "elements": [
+              {
+                "type": "rectangle",
+                "x": -200.0,
+                "y": -120.0,
+                "strokeColor": "#ff0000",
+                "backgroundColor": "#ff0000",
+                "fillStyle": "solid",
+                "strokeWidth": 2,
+                "roughness": 0,
+                "width": 400.0,
+                "height": 240.0
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        },
+        {
+          "turn": 2,
+          "user": "将刚才的矩形填充改为纯蓝色 #0000ff。",
+          "context": [
+            {
+              "type": "rectangle",
+              "x": -200.0,
+              "y": -120.0,
+              "strokeColor": "#ff0000",
+              "backgroundColor": "#ff0000",
+              "fillStyle": "solid",
+              "strokeWidth": 2,
+              "roughness": 0,
+              "width": 400.0,
+              "height": 240.0,
+              "id": "t1p0_d0"
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "count": 1,
+                "all": {
+                  "backgroundColor": "#0000ff",
+                  "fillStyle": "solid"
+                }
+              }
+            ],
+            "target_types": [
+              "rectangle"
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "t1p0_d0",
+                "backgroundColor": "#0000ff",
+                "fillStyle": "solid"
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 3.02,
+      "run": 1
+    },
+    {
+      "id": "WB047",
+      "group": "conversation",
+      "name": "重画后汇总新内容",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "重新画一个流程图，只有“提交”和“完成”两个节点，提交指向完成。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid"
+            }
+          ],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "nodes",
+                "count": 2,
+                "labels": [
+                  "提交",
+                  "完成"
+                ]
+              },
+              {
+                "collection": "edges",
+                "count": 1
+              }
+            ]
+          },
+          "result": {
+            "type": "diagram",
+            "title": "提交到完成流程",
+            "nodes": [
+              {
+                "id": "n1",
+                "label": "提交",
+                "shape": "rect"
+              },
+              {
+                "id": "n2",
+                "label": "完成",
+                "shape": "ellipse"
+              }
+            ],
+            "edges": [
+              {
+                "source": "n1",
+                "target": "n2"
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        },
+        {
+          "turn": 2,
+          "user": "总结一下现在的画布。",
+          "context": [
+            {
+              "id": "t1p0_n1",
+              "label": "提交",
+              "shape": "rect",
+              "type": "rectangle",
+              "text": "提交",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80
+            },
+            {
+              "id": "t1p0_n2",
+              "label": "完成",
+              "shape": "ellipse",
+              "type": "ellipse",
+              "text": "完成",
+              "x": 0,
+              "y": 160,
+              "width": 160,
+              "height": 80
+            },
+            {
+              "source": "n1",
+              "target": "n2",
+              "id": "t1p0_e0",
+              "type": "arrow",
+              "fromId": "t1p0_n1",
+              "toId": "t1p0_n2"
+            }
+          ],
+          "expect": {
+            "mode": "summarize",
+            "checks": [],
+            "summary_contains": [
+              "提交",
+              "完成"
+            ],
+            "summary_excludes": [
+              "开始",
+              "结束"
+            ]
+          },
+          "result": {
+            "mode": "summarize",
+            "summary": "当前画布是一个简单的两步流程图：矩形节点「提交」通过箭头指向椭圆节点「完成」，表示从提交到完成的基本流程。"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 3.6,
+      "run": 1
+    },
+    {
+      "id": "WB048",
+      "group": "conversation",
+      "name": "透明度零值再恢复",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "将选中框的不透明度设为0，其他属性不变。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "opacity": 0
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "opacity": 0
+              }
+            ]
+          },
+          "status": "PASS"
+        },
+        {
+          "turn": 2,
+          "user": "将选中框的不透明度恢复为100，其他属性不变。",
+          "context": [
+            {
+              "id": "start",
+              "type": "rectangle",
+              "text": "开始",
+              "x": 0,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 0,
+              "selected": true
+            },
+            {
+              "id": "end",
+              "type": "ellipse",
+              "text": "结束",
+              "x": 300,
+              "y": 0,
+              "width": 160,
+              "height": 80,
+              "strokeColor": "#000000",
+              "backgroundColor": "#ffffff",
+              "textColor": "#000000",
+              "roughness": 1,
+              "opacity": 100,
+              "selected": false
+            },
+            {
+              "id": "edge",
+              "type": "arrow",
+              "x": 160,
+              "y": 40,
+              "points": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  140,
+                  0
+                ]
+              ],
+              "fromId": "start",
+              "toId": "end",
+              "strokeColor": "#000000",
+              "strokeWidth": 2,
+              "strokeStyle": "solid",
+              "selected": false
+            }
+          ],
+          "expect": {
+            "mode": "modify",
+            "checks": [
+              {
+                "collection": "edits",
+                "exact": [
+                  {
+                    "id": "start",
+                    "opacity": 100
+                  }
+                ]
+              }
+            ]
+          },
+          "result": {
+            "mode": "modify",
+            "title": "修改画布",
+            "edits": [
+              {
+                "id": "start",
+                "opacity": 100
+              }
+            ]
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "检查图形比例、文字可读性、布局和指令一致性",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 3.05,
+      "run": 1
+    },
+    {
+      "id": "WB049",
+      "group": "vision",
+      "name": "图片识别单个图形与颜色",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "按附图重现这个图形，保持形状、填充色和边框色，只输出一个图形，不要文字。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "elements",
+                "count": 1,
+                "all": {
+                  "type": "ellipse",
+                  "backgroundColor": "#00ff00",
+                  "strokeColor": "#0000ff"
+                }
+              }
+            ]
+          },
+          "result": {
+            "type": "drawing",
+            "title": "绿色圆形",
+            "elements": [
+              {
+                "type": "ellipse",
+                "x": -120.0,
+                "y": -120.0,
+                "strokeColor": "#0000ff",
+                "backgroundColor": "#00ff00",
+                "fillStyle": "solid",
+                "strokeWidth": 6,
+                "roughness": 0,
+                "width": 240.0,
+                "height": 240.0
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "人工对比参考图中的圆形比例、纯绿色填充和蓝色边框",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.85,
+      "run": 1
+    },
+    {
+      "id": "WB050",
+      "group": "vision",
+      "name": "图片识别流程关系与文字",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "将附图转为流程图，保留两个节点中的A和B及A到B的箭头，不要添加节点。",
+          "context": [],
+          "expect": {
+            "mode": "replace",
+            "checks": [
+              {
+                "collection": "nodes",
+                "count": 2,
+                "labels": [
+                  "A",
+                  "B"
+                ]
+              },
+              {
+                "collection": "edges",
+                "count": 1
+              }
+            ],
+            "connections": [
+              [
+                "A",
+                "B"
+              ]
+            ]
+          },
+          "result": {
+            "type": "diagram",
+            "title": "A到B流程图",
+            "nodes": [
+              {
+                "id": "n1",
+                "label": "A",
+                "shape": "rect"
+              },
+              {
+                "id": "n2",
+                "label": "B",
+                "shape": "rect"
+              }
+            ],
+            "edges": [
+              {
+                "source": "n1",
+                "target": "n2"
+              }
+            ],
+            "mode": "replace"
+          },
+          "status": "PASS"
+        }
+      ],
+      "visual_review": "人工核对A在左、B在右及箭头方向；当前自动布局可能调整为纵向",
+      "status": "PASS",
+      "unexecuted_turns": 0,
+      "seconds": 1.81,
+      "run": 1
+    }
+  ]
+}

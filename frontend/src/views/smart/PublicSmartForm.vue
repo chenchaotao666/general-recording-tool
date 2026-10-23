@@ -7,7 +7,7 @@
     </div>
     <div v-else-if="needPassword" class="psf-card psf-pw">
       <div class="psf-msg-t">请输入访问密码</div>
-      <el-input v-model="password" show-password placeholder="访问密码" @keyup.enter="load" />
+      <el-input class="st-control" v-model="password" show-password placeholder="访问密码" @keyup.enter="load" />
       <el-button type="primary" :loading="loading" @click="load">确定</el-button>
     </div>
     <div v-else-if="done" class="psf-card psf-msg">

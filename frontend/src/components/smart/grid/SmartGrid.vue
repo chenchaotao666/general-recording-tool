@@ -93,12 +93,12 @@
       :range-row-count="cellMenu.rows?.length || 0"
       :row-only="cellMenu.rowOnly"
       :can-create="canCreate" :can-delete="canDelete" :readonly="readonly"
-      @action="onMenuAction" @close="cellMenu = null" />
+      @layer="cellMenuLayer = $event" @action="onMenuAction" @close="cellMenu = null" />
     <!-- AI 列 / AI 单元格选中时：右侧浮出「✦ | ▾」生成按钮 -->
     <GridAiButton />
     <!-- 双击不可编辑的单元格：单元格下方提示（参照 PixPin_2026-10-17_16-22-09）「自动编号不可直接编辑 修改设置」 -->
     <teleport to="body">
-      <div v-if="blockedHint" class="st-blocked-hint" :style="{ left: `${blockedHint.x}px`, top: `${blockedHint.y}px` }" @mousedown.stop>
+      <div v-if="blockedHint" ref="blockedHintRef" class="st-blocked-hint" :style="{ left: `${blockedHint.x}px`, top: `${blockedHint.y}px` }" @mousedown.stop>
         <span>{{ blockedHint.text }}</span>
         <span v-if="blockedHint.field" class="st-blocked-link" @click="openBlockedConfig">修改设置</span>
       </div>
@@ -108,6 +108,7 @@
 
 <script setup>
 import { Teleport, computed, defineComponent, h, inject, nextTick, onActivated, onDeactivated, onMounted, onBeforeUnmount, provide, ref, watch } from 'vue'
+import { useFloatingPanel } from '../../../smart/utils/floatingPanel.js'
 import { createGridLayoutQueue } from '../../../smart/utils/gridLayoutQueue.js'
 import { updateGridDisplayRows } from '../../../smart/utils/gridDisplayRows.js'
 import { applyColumnWidths } from '../../../smart/utils/applyColumnWidths.js'
@@ -429,7 +430,7 @@ const RowExpandBtn = {
     const b = expandBtn.value
     if (!b) return null
     return h(Teleport, { to: 'body' }, h('span', {
-      class: 'st-row-expand', 'data-smart-tip': '展开记录',
+      class: 'st-row-expand', 'aria-label': '展开记录',
       style: { left: `${b.x}px`, top: `${b.y}px` },
       onMouseenter: cancelExpandHide, onMouseleave: scheduleExpandHide,
       onMousedown: (e) => e.stopPropagation(),
@@ -467,10 +468,8 @@ let wheelRemainder = 0
 let lastWheelTime = 0
 let wheelLogSequence = 0
 let wheelIdleLogTimer = 0
-function logWheelDom(event) {
-  if (event.ctrlKey) return
+function logScrollDom(direction) {
   const sequence = ++wheelLogSequence
-  const direction = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY) ? '横向' : '纵向'
   printWheelDom(sequence, direction, '滚动中')
   clearTimeout(wheelIdleLogTimer)
   wheelIdleLogTimer = setTimeout(() => {
@@ -481,8 +480,8 @@ function logWheelDom(event) {
 function printWheelDom(sequence, direction, phase) {
   // Diagnostic sampling after the event's rendering work; numbers are snapshots,
   // not live DOM objects whose console representation could change afterwards.
-  requestAnimationFrame(() => nextTick(() => {
-    if (phase !== '滚动中' && sequence !== wheelLogSequence) return
+  const sample = () => nextTick(() => {
+    if (sequence !== wheelLogSequence) return
     const table = gridRef.value
     const root = table?.$el
     if (!root?.isConnected) return
@@ -499,10 +498,14 @@ function printWheelDom(sequence, direction, phase) {
       scrollLeft: scroll.scrollLeft,
       scrollTop: scroll.scrollTop,
     })
-  }))
+  })
+  // Idle output must not depend on a paint frame (rAF pauses in background tabs).
+  if (phase === '滚动中') requestAnimationFrame(sample)
+  else sample()
 }
 function onGridWheel(event) {
-  logWheelDom(event)
+  // The custom wheel path uses scrollTo(), which may not emit VXE's scroll event.
+  if (!event.ctrlKey) logScrollDom(event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY) ? '横向' : '纵向')
   if (!event.ctrlKey && (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY))) columnBuffer.horizontal()
   // 横向手势、缩放和编辑器内滚动仍由原控件处理。
   if (event.ctrlKey || event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)
@@ -599,6 +602,7 @@ function onGridScroll(scroll) {
   if (top === lastScrollTop && left === lastScrollLeft) return
   if (left !== lastScrollLeft) columnBuffer.horizontal()
   else if (top !== lastScrollTop) columnBuffer.vertical()
+  logScrollDom(left !== lastScrollLeft ? '横向' : '纵向')
   if (!scrollActive) {
     scrollActive = true
     layoutQueue.pause()
@@ -806,6 +810,10 @@ function renderCell(props2, activeSelection, activeEditor) {
     ])
   }
   const ef = effOf(field)
+  // AI 运行状态优先于选中态预览，避免空值预览遮住生成进度或失败原因。
+  if (field.field_type === 'ai' && row.__ai?.[field.field_name] && !activeEditor) {
+    return h(SmartCell, { field, record: row })
+  }
   // 图片始终复用同一个锚点，选中/展开时不替换缩略图 DOM，避免尺寸和位置抖动。
   if (['image', 'file', 'url', 'relation'].includes(ef.field_type)) {
     const cell = { key: row.__key, fieldName: field.field_name }
@@ -900,6 +908,7 @@ function renderCell(props2, activeSelection, activeEditor) {
     return h(SmartCellEditor, {
       key: `preview:${row.__key}:${field.field_name}`,
       field: ef, record: row, preview: true, frozen: isFrozen(field.field_name),
+      'onContext-menu': event => openCellMenu(row, { field: field.field_name }, event),
       fillHandle: ef.field_type !== 'formula' && canEdit(row, field),
       onFillStart: (event, td, rect) => {
         cellRange.down(event, td, rect)
@@ -1172,6 +1181,9 @@ function onCellDblClick({ row, column }) {
 const BLOCKED_TEXT = BLOCKED_EDIT_TEXT
 const CONFIGURABLE = BLOCKED_CONFIGURABLE
 const blockedHint = ref(null)   // {x, y, text, field}
+const blockedHintRef = ref(null)
+const placeBlockedHint = useFloatingPanel(() => blockedHintRef.value)
+watch(blockedHint, hint => { if (hint) placeBlockedHint() })
 function showBlockedHint(row, f) {
   const ft = typeOf(f)
   const typeText = BLOCKED_TEXT[ft]
@@ -1182,7 +1194,7 @@ function showBlockedHint(row, f) {
     if (!td) return
     const r = td.getBoundingClientRect()
     const x = Math.max(8, Math.min(r.left, window.innerWidth - 280))
-    const y = r.bottom + 260 > window.innerHeight ? r.top - 46 : r.bottom + 6   // 下方放不下就放上方
+    const y = r.bottom + 58 > window.innerHeight ? Math.max(12, r.top - 46) : r.bottom + 6   // 下方放不下就放上方
     blockedHint.value = { x, y, text, field: typeText && CONFIGURABLE.includes(ft) && !props.readonly ? f : null }
     setTimeout(() => document.addEventListener('mousedown', onHintOutside, true), 0)
   }))
@@ -1251,24 +1263,29 @@ function onDocMouseDown(e) {
 
 // 通过 vxe 菜单钩子获取行列上下文，使用独立浮层统一菜单样式。
 const cellMenu = ref(null)
+const cellMenuLayer = ref(0)
+provide('smartCellContextMenuLayer', computed(() => cellMenu.value ? cellMenuLayer.value : 0))
 const menuConfig = computed(() => ({
   body: { options: [[{ code: 'expand', name: 'expand' }]] },
   visibleMethod: ({ row, column, $event, type }) => {
     cellMenu.value = null
     if (type !== 'body' || !row || row.__rowType) return false
-    const field = props.fields.find(f => f.field_name === column?.field)
-    const rangeRows = cellRange.contextRows(row, column?.field, column?.params?.rowNumber)
-    if (!rangeRows && field) {
-      clearColSelection()
-      selectedCell.value = { key: row.__key, fieldName: field.field_name }
-    } else if (!rangeRows && column?.params?.rowNumber) {
-      cellRange.selectRow(row)
-    }
-    const rowOnly = rangeRows ? cellRange.wholeRow.value && rangeRows.length === 1 : !!column?.params?.rowNumber
-    cellMenu.value = { row, field, rows: rangeRows, rowOnly, x: $event.clientX + 6, y: $event.clientY + 6 }
+    openCellMenu(row, column, $event)
     return false
   },
 }))
+function openCellMenu(row, column, event) {
+  const field = props.fields.find(f => f.field_name === column?.field)
+  const rangeRows = cellRange.contextRows(row, column?.field, column?.params?.rowNumber)
+  if (!rangeRows && field) {
+    clearColSelection()
+    selectedCell.value = { key: row.__key, fieldName: field.field_name }
+  } else if (!rangeRows && column?.params?.rowNumber) {
+    cellRange.selectRow(row)
+  }
+  const rowOnly = rangeRows ? cellRange.wholeRow.value && rangeRows.length === 1 : !!column?.params?.rowNumber
+  cellMenu.value = { row, field, rows: rangeRows, rowOnly, x: event.clientX + 6, y: event.clientY + 6 }
+}
 function onMenuAction(cmd, count) {
   if (cellMenu.value) emit('cell-menu', { row: cellMenu.value.row, field: cellMenu.value.field, rows: cellMenu.value.rows, cmd, count })
 }
@@ -1409,8 +1426,8 @@ defineExpose({
 }
 /* Expanded tag/person anchors own the visible border, so the fill handle follows
    their actual height instead of the underlying fixed-height table row. */
-.smart-vxe :deep(.cell-fill-handle:has(.sel-anchor, .grid-people-trigger))::after { display: none; }
-.smart-vxe :deep(.cell-fill-handle :is(.sel-anchor, .grid-people-trigger))::after {
+.smart-vxe :deep(.cell-fill-handle:has(.sel-anchor, .grid-people-trigger, .file-cell-trigger.selected, .relation-trigger.selected))::after { display: none; }
+.smart-vxe :deep(.cell-fill-handle :is(.sel-anchor, .grid-people-trigger, .file-cell-trigger.selected, .relation-trigger.selected))::after {
   content: ''; position: absolute; bottom: -2px; right: -2px; width: 6px; height: 6px;
   background: var(--st-primary); border: 1px solid white; box-sizing: border-box;
   pointer-events: auto; cursor: crosshair; z-index: 20;
@@ -1684,8 +1701,10 @@ defineExpose({
 .smart-vxe :deep(.row-last .vxe-body--column.cell-search-active)::after { border-color: #FCBA02; }
 .smart-vxe :deep(.vxe-body--column.cell-search-active.cell-editing .vxe-cell) { box-shadow: 0 0 0 2px #FCBA02 inset; }
 /* 不可编辑提示气泡（teleport 到 body） */
-:global(.st-blocked-hint) { position: fixed; z-index: 2200; display: inline-flex; align-items: center; gap: 14px; height: 40px; padding: 0 16px;
-  background: #fff; border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, .12); font-size: var(--st-font-size); color: var(--st-text-2); white-space: nowrap; }
+:global(.st-blocked-hint) { position: fixed; display: inline-flex; align-items: center; gap: 14px; min-height: 40px; padding: 8px 16px; box-sizing: border-box; overflow: auto;
+  background: #fff; border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, .12); font-size: var(--st-font-size); color: var(--st-text-2); overflow-wrap: anywhere; }
+:global(.st-blocked-hint > span) { min-width: 0; }
+:global(.st-blocked-link) { flex-shrink: 0; }
 :global(.st-blocked-link) { color: var(--st-primary); cursor: pointer; }
 /* 展开记录按钮（参照 hover-行.png）：白底细边圆角小方块 + 斜向双箭头，中心压在表格左边框上 */
 :global(.st-row-expand) { position: fixed; z-index: 2000; display: inline-flex; align-items: center; justify-content: center;

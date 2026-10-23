@@ -1,0 +1,111 @@
+[
+  {
+    "prompt": "在当前节点下继续展开分析，增加3个子节点",
+    "context": [
+      {
+        "id": "robot",
+        "type": "rectangle",
+        "text": "Robot",
+        "x": 0,
+        "y": 0,
+        "width": 160,
+        "height": 60,
+        "selected": true
+      },
+      {
+        "id": "sensor",
+        "type": "rectangle",
+        "text": "Sensors",
+        "x": 0,
+        "y": 200,
+        "width": 160,
+        "height": 60
+      }
+    ],
+    "result": {
+      "type": "diagram",
+      "title": "Robot 分析展开",
+      "nodes": [
+        {
+          "id": "robot_c1",
+          "label": "感知模块",
+          "shape": "rect"
+        },
+        {
+          "id": "robot_c2",
+          "label": "决策模块",
+          "shape": "rect"
+        },
+        {
+          "id": "robot_c3",
+          "label": "执行模块",
+          "shape": "rect"
+        }
+      ],
+      "edges": [
+        {
+          "source": "robot_c1",
+          "target": "robot_c2"
+        },
+        {
+          "source": "robot_c2",
+          "target": "robot_c3"
+        }
+      ],
+      "mode": "append",
+      "attachTo": "robot"
+    },
+    "passed": true
+  },
+  {
+    "prompt": "在Sensors节点下继续展开分析，增加2个子节点",
+    "context": [
+      {
+        "id": "robot",
+        "type": "rectangle",
+        "text": "Robot",
+        "x": 0,
+        "y": 0,
+        "width": 160,
+        "height": 60,
+        "selected": false
+      },
+      {
+        "id": "sensor",
+        "type": "rectangle",
+        "text": "Sensors",
+        "x": 0,
+        "y": 200,
+        "width": 160,
+        "height": 60,
+        "selected": false
+      }
+    ],
+    "result": {
+      "type": "diagram",
+      "title": "Sensors 子节点分析",
+      "nodes": [
+        {
+          "id": "sensor_camera",
+          "label": "Camera",
+          "shape": "rect"
+        },
+        {
+          "id": "sensor_lidar",
+          "label": "LiDAR",
+          "shape": "rect"
+        }
+      ],
+      "edges": [
+        {
+          "source": "sensor_camera",
+          "target": "sensor_lidar",
+          "label": "数据融合"
+        }
+      ],
+      "mode": "append",
+      "attachTo": "sensor"
+    },
+    "passed": true
+  }
+]

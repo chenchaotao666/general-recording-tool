@@ -1,29 +1,29 @@
 <template>
   <!-- 消息内容编辑器（§11.2）：标题（加粗）+ 正文富文本，变量为可单独删除的原子胶囊；
        底栏：添加表情 / 插入变量 / ＋ 添加按钮（对齐参照 右上角工具栏-新建自动化提醒.png） -->
-  <div class="me" :class="{ focus }">
-    <input v-model="title" class="me-title" placeholder="消息标题" @input="emitAll" />
+  <div ref="root" class="me" :class="{ focus }">
+    <input v-model="title" class="st-control st-control--native me-title" placeholder="消息标题" @input="emitAll" />
     <div ref="bodyRef" class="me-body" contenteditable="true" data-placeholder="请输入消息内容，可插入变量"
          @input="emitAll" @focus="focus = true" @blur="onBlur" @keydown="onKey" @click="onBodyClick" />
     <div class="me-bar">
       <span class="me-tool" @mousedown.prevent @click="toggleEmoji($event)"><StIcon name="emoji" :size="16" />添加表情</span>
       <span class="me-tool" @mousedown.prevent @click="openVars($event)">{x} 插入变量</span>
-      <el-popover v-model:visible="buttonOpen" :trigger="[]" :trigger-keys="[]" placement="bottom-end" :width="480" :hide-after="0" :show-arrow="false"
-                  :popper-style="{ maxWidth: 'calc(100vw - 24px)' }">
-        <template #reference><button type="button" class="me-tool me-right me-add-button" :disabled="buttons.length >= 2" @click="startButton()"><StIcon name="plus" :size="15" />添加按钮</button></template>
-        <div class="me-button-form">
-          <label>按钮标题</label><el-input v-model="buttonDraft.label" maxlength="20" placeholder="输入文本" />
+      <el-popover :visible="buttonOpen" :trigger="[]" :trigger-keys="[]" placement="bottom-end" :width="480" :hide-after="0" :show-arrow="false"
+                  :popper-style="{ maxWidth: 'calc(100vw - 24px)' }" :popper-options="{ modifiers: [{ name: 'preventOverflow', options: { altAxis: true, tether: false, padding: 12 } }] }">
+        <template #reference><button type="button" class="st-button me-tool me-right me-add-button" :disabled="buttons.length >= 2" @click="startButton()"><StIcon name="plus" :size="15" />添加按钮</button></template>
+        <div v-if="buttonOpen" class="me-button-form">
+          <label>按钮标题</label><el-input class="st-control" v-model="buttonDraft.label" maxlength="20" placeholder="输入文本" />
           <label>按钮链接</label>
           <div class="me-link-input">
-            <el-input v-if="!buttonDraft.variable" v-model="buttonDraft.url" placeholder="粘贴链接" />
+            <el-input class="st-control" v-if="!buttonDraft.variable" v-model="buttonDraft.url" placeholder="粘贴链接" />
             <button v-else type="button" class="me-link-chip" @click="buttonDraft.variable = null">{{ buttonDraft.variableLabel }} ×</button>
-            <el-popover v-model:visible="linkVarsOpen" trigger="click" placement="bottom-end" :width="232" :teleported="false"
-                        :popper-options="{ strategy: 'fixed' }" :hide-after="0" :show-arrow="false">
-              <template #reference><button type="button" class="me-var-link">{x}</button></template>
+            <el-popover :visible="linkVarsOpen" :trigger="[]" :trigger-keys="[]" placement="bottom-end" :width="232" :teleported="true"
+                        :popper-options="{ strategy: 'fixed', modifiers: [{ name: 'preventOverflow', options: { altAxis: true, tether: false, padding: 12 } }] }" :hide-after="0" :show-arrow="false">
+              <template #reference><button type="button" class="st-button st-button--icon me-var-link" aria-label="插入链接变量" @click="linkVarsOpen = !linkVarsOpen">{x}</button></template>
               <VarMenu v-if="linkVarsOpen" inline hide-time :steps="linkSteps" :dashboards="dashboards" :reports="reports" @pick="pickButtonLink" />
             </el-popover>
           </div>
-          <div class="me-button-actions"><el-button @click="buttonOpen = false">取消</el-button><el-button type="primary" :disabled="!buttonValid" @click="confirmButton">确定</el-button></div>
+          <div class="me-button-actions"><el-button class="st-button" @click="buttonOpen = false">取消</el-button><el-button class="st-button st-button--primary" type="primary" :disabled="!buttonValid" @click="confirmButton">确定</el-button></div>
         </div>
       </el-popover>
     </div>
@@ -31,14 +31,14 @@
       <div v-for="(b, i) in buttons" :key="i" class="me-btn-chip">
         <span>{{ b.label }}</span>
         <el-dropdown trigger="click" :hide-after="0" @command="cmd => cmd === 'edit' ? startButton(i) : removeButton(i)">
-          <button type="button" class="me-button-more" aria-label="按钮操作"><StIcon name="more-h" :size="16" /></button>
+          <button type="button" class="st-button st-button--icon me-button-more" aria-label="按钮操作"><StIcon name="more-h" :size="16" /></button>
           <template #dropdown><el-dropdown-menu><el-dropdown-item command="edit">编辑</el-dropdown-item><el-dropdown-item command="delete">删除</el-dropdown-item></el-dropdown-menu></template>
         </el-dropdown>
       </div>
     </div>
     <teleport to="body">
-      <div v-if="emoji.visible || vars.visible" class="me-mask" @mousedown="closeMenus" />
-      <div v-if="emoji.visible" class="me-emoji" :style="{ left: `${emoji.x}px`, top: `${emoji.y}px` }" @mousedown.prevent>
+      <div v-if="emoji.visible || vars.visible" class="me-mask" :style="{ zIndex: menuZIndex }" @mousedown="closeMenus" />
+      <div v-if="emoji.visible" ref="emojiPanel" class="me-emoji" :style="{ left: `${emoji.x}px`, top: `${emoji.y}px` }" @mousedown.prevent>
         <span v-for="e in EMOJIS" :key="e" class="me-e" @click="insertText(e)">{{ e }}</span>
       </div>
       <VarMenu v-if="vars.visible" :x="vars.x" :y="vars.y" :steps="steps" :dashboards="dashboards" @pick="insertVar" />
@@ -47,10 +47,12 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 import VarMenu from './VarMenu.vue'
 import { listReports } from '../../../api/index.js'
+import { useFloatingPanel } from '../../../smart/utils/floatingPanel.js'
+import { useZIndex } from 'element-plus'
 
 const props = defineProps({
   titleValue: { type: String, default: '' },
@@ -69,6 +71,14 @@ const buttons = ref([...(props.buttonsValue || [])])
 const bodyRef = ref(null)
 const focus = ref(false)
 const buttonOpen = ref(false)
+const root = ref(null)
+function onOutside(event) {
+  if (root.value?.contains(event.target) || event.target.closest?.('.el-popper, .vm-sub')) return
+  buttonOpen.value = false
+}
+watch(buttonOpen, open => { if (!open) linkVarsOpen.value = false })
+onMounted(() => document.addEventListener('pointerdown', onOutside, true))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, true))
 const reports = ref([])
 async function loadReports() {
   try { reports.value = await listReports() } catch { reports.value = [] }
@@ -83,6 +93,11 @@ const linkSteps = computed(() => props.steps.map(s => ({ ...s, vars: [
   ...(s.vars || []).filter(v => v.icon === 'url'),
 ] })))
 const emoji = reactive({ visible: false, x: 0, y: 0 })
+const emojiPanel = ref(null)
+const { nextZIndex } = useZIndex()
+const menuZIndex = ref(0)
+const placeEmoji = useFloatingPanel(() => emojiPanel.value)
+watch(() => emoji.visible, visible => { if (visible) placeEmoji() })
 const vars = reactive({ visible: false, x: 0, y: 0 })
 let savedRange = null
 let selfUpdate = false
@@ -187,18 +202,22 @@ function onKey(e) {
   }
 }
 function toggleEmoji(e) {
+  menuZIndex.value = nextZIndex()
   saveRange()
   const r = e.currentTarget.getBoundingClientRect()
   Object.assign(emoji, { visible: !emoji.visible, x: r.left, y: r.bottom + 6 })
 }
 function openVars(e) {
+  menuZIndex.value = nextZIndex()
   saveRange()
   const r = e.currentTarget.getBoundingClientRect()
   Object.assign(vars, { visible: true, x: r.left, y: r.bottom + 6 })
 }
 function closeMenus() { emoji.visible = false; vars.visible = false }
 function startButton(index = -1) {
+  if (index < 0 && buttonOpen.value) { buttonOpen.value = false; return }
   if (index < 0 && buttons.value.length >= 2) return
+  closeMenus()
   editIndex.value = index
   const b = buttons.value[index]
   Object.assign(buttonDraft, { label: b?.label || '', url: b?.link?.value || '', variable: b?.link?.var || null, variableLabel: b?.link?.label || '' })
@@ -250,7 +269,7 @@ function removeButton(index) { buttons.value.splice(index, 1); emitAll() }
 .me-tool:hover { color: var(--st-text-2); }
 .me-right { margin-left: auto; }
 .me-mask { position: fixed; inset: 0; z-index: 3990; }
-.me-emoji { position: fixed; z-index: 4000; background: #fff; border-radius: 10px; box-shadow: var(--st-shadow-pop); padding: 8px; display: grid; grid-template-columns: repeat(8, 32px); gap: 2px; }
+.me-emoji { position: fixed; z-index: 4000; background: #fff; border-radius: 10px; box-shadow: var(--st-shadow-pop); padding: 8px; display: grid; grid-template-columns: repeat(8, 32px); gap: 2px; box-sizing: border-box; overflow: auto; }
 .me-e { font-size: var(--st-font-size); text-align: center; cursor: pointer; border-radius: 6px; line-height: 32px; }
 .me-e:hover { background: var(--st-bg-hover); }
 </style>

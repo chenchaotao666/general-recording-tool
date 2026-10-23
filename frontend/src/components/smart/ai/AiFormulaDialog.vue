@@ -1,6 +1,6 @@
 <template>
   <!-- AI 生成公式（§9 与公式编辑器打通 / 场景市场「写公式」）：自然语言 → 公式表达式（服务端校验语法与字段） -->
-  <el-dialog :model-value="visible" title="AI 写公式" width="560px" append-to-body class="st-ai-dlg" @update:model-value="emit('close')">
+  <el-dialog :model-value="visible" title="AI 写公式" width="560px" append-to-body draggable class="st-ai-dlg" @update:model-value="emit('close')">
     <div class="afd">
       <div class="afd-l">用一句话描述你想计算什么</div>
       <el-input v-model="prompt" type="textarea" :rows="3" placeholder="例如：单价乘以数量，再打九折；如果状态是已完成则显示“完成”否则显示“进行中”"
@@ -8,19 +8,19 @@
       <div class="afd-fields">
         <span v-for="f in fields.slice(0, 16)" :key="f.field_name" class="afd-f" @click="prompt += f.label">{{ f.label }}</span>
       </div>
-      <el-button type="primary" class="afd-gen" :loading="loading" :disabled="!prompt.trim()" @click="generate">
+      <el-button type="primary" class="st-button st-button--large st-button--primary afd-gen" :loading="loading" :disabled="!prompt.trim()" @click="generate">
         <StIcon name="sparkle" :size="14" />生成公式
       </el-button>
       <div v-if="result" class="afd-result">
         <div class="afd-l">生成结果</div>
         <code class="afd-code">{{ result.display }}</code>
         <div class="afd-exp">{{ result.explanation }}（返回{{ result.returnType === 'number' ? '数字' : '文本' }}）</div>
-        <el-input v-if="withName" v-model="name" size="small" placeholder="字段名称" />
+        <el-input class="st-control st-control--small" v-if="withName" v-model="name" size="small" placeholder="字段名称" />
       </div>
     </div>
     <template #footer>
-      <el-button @click="emit('close')">取消</el-button>
-      <el-button type="primary" :disabled="!result" @click="apply">使用此公式</el-button>
+      <el-button class="st-button st-button--large" @click="emit('close')">取消</el-button>
+      <el-button class="st-button st-button--large st-button--primary" type="primary" :disabled="!result" @click="apply">使用此公式</el-button>
     </template>
   </el-dialog>
 </template>

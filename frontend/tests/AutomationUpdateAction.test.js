@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, DOMWrapper } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { expect, test, vi } from 'vitest'
 import AutomationEditor from '../src/components/smart/automation/AutomationEditor.vue'
@@ -21,7 +21,7 @@ test('step fields use the shared grouped picker and retain the variable descript
       vars: [{ key: 'f_1', label: '产品', icon: 'singleSelect', var: variable }] }] },
     global: { plugins: [ElementPlus] } })
   await wrapper.find('.has-sub').trigger('mouseenter')
-  expect(wrapper.find('.fpl-title').text()).toBe('选择字段')
+  expect(new DOMWrapper(document.body).find('.fpl-title').text()).toBe('选择字段')
   expect(wrapper.find('.fpl-group').text()).toBe('基本信息')
   await wrapper.find('.fpl-item.sub').trigger('click')
   expect(wrapper.emitted('pick')[0]).toEqual([variable, '第1步新增记录的 产品'])

@@ -4,7 +4,7 @@
              @update:model-value="emit('close')">
     <div class="amt">
       <div class="amt-l">根据以下字段的内容匹配「{{ field?.label }}」</div>
-      <el-select v-model="sources" multiple filterable placeholder="选择依据字段" class="amt-sel">
+      <el-select collapse-tags collapse-tags-tooltip v-model="sources" multiple filterable placeholder="选择依据字段" class="st-control amt-sel">
         <el-option v-for="f in candidates" :key="f.field_name" :value="f.field_name" :label="f.label" />
       </el-select>
       <el-checkbox v-model="onlyEmpty">仅处理「{{ field?.label }}」为空的记录</el-checkbox>
@@ -12,8 +12,8 @@
       <div class="amt-tip">单次最多处理 200 条记录；AI 写入的单元格「最后编辑人」显示为 AI 生成。</div>
     </div>
     <template #footer>
-      <el-button @click="emit('close')">取消</el-button>
-      <el-button type="primary" :loading="loading" :disabled="!sources.length" @click="run">开始匹配</el-button>
+      <el-button class="st-button st-button--large" @click="emit('close')">取消</el-button>
+      <el-button class="st-button st-button--large st-button--primary" type="primary" :loading="loading" :disabled="!sources.length" @click="run">开始匹配</el-button>
     </template>
   </el-dialog>
 </template>

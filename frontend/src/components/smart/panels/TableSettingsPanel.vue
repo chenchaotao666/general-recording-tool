@@ -18,7 +18,7 @@
             <span class="ts-drag st-icon-action"><StIcon name="drag" :size="14" /></span>
             <span class="g-caret st-icon-action"><StIcon :name="collapsed.has(row.group.id) ? 'chevron-right' : 'chevron-down'" :size="16" /></span>
             <span class="g-name">{{ row.group.name }}</span>
-            <span class="f-eye st-icon-action" :data-smart-tip="groupHidden(row) ? '显示' : '隐藏'" @click.stop="toggleGroupVisible(row)">
+            <span class="f-eye st-icon-action" :aria-label="groupHidden(row) ? '显示' : '隐藏'" @click.stop="toggleGroupVisible(row)">
               <StIcon :name="groupHidden(row) ? 'eye-off' : 'eye'" :size="20" :stroke-width="1.2" />
             </span>
             <span class="f-more f-more-ph" />
@@ -30,7 +30,7 @@
             <span class="ts-drag st-icon-action"><StIcon name="drag" :size="14" /></span>
             <StIcon :name="fieldIconName(row.field)" :size="16" class="ts-ico" />
             <span class="f-name">{{ row.field.label }}</span>
-            <span class="f-eye st-icon-action" :data-smart-tip="isHidden(row.field) ? '显示' : '隐藏'"
+            <span class="f-eye st-icon-action" :aria-label="isHidden(row.field) ? '显示' : '隐藏'"
                   @click.stop="$emit('toggle-visible', row.field, isHidden(row.field))">
               <StIcon :name="isHidden(row.field) ? 'eye-off' : 'eye'" :size="20" :stroke-width="1.2" />
             </span>

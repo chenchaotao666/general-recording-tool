@@ -77,7 +77,7 @@
           <!-- AI 生成：两种引擎都支持（excalidraw/drawio 各自实现转换层）；大按钮，与其它编辑器一致 -->
           <!-- drawio 是 iframe 无法注入其工具栏，AI 入口与标题一起悬浮在画布左上角（与记事本「AI 写作」同款紫色文字按钮） -->
           <button v-if="current.engine === 'drawio'" ref="aiBtnRef" type="button" class="wb-ai-btn" @click="onHeaderAi">
-            <el-icon><MagicStick /></el-icon><span>AI 生成</span>
+            <el-icon><MagicStick /></el-icon><span aria-live="polite">{{ aiToolbarText }}</span>
           </button>
           <div class="main-ops">
             <span class="save-state" :class="{ err: saveState === '保存失败' }">{{ saveState }}</span>
@@ -88,7 +88,7 @@
           <component
             :is="current.engine === 'drawio' ? DrawioBoard : ExcalidrawBoard"
             :key="current.id"
-            ref="editorRef" :initial="current.content" @change="onEditorChange"
+            ref="editorRef" :initial="current.content" :ai-status-text="aiToolbarText" @change="onEditorChange"
             @ai="onToolbarAi"
           />
         </div>
@@ -96,30 +96,28 @@
       <el-empty v-else description="选择左侧画板，或新建一个开始涂画" />
     </div>
 
-    <!-- AI 面板（统一 AiPromptPanel）：描述 + 模式（自动/替换/追加/修改/汇总）→ 后端 LLM → 编辑器转换渲染 -->
+    <!-- AI 自动判断需求；写入画布前展示变更说明并确认。 -->
     <AiPromptPanel
+      :key="`${current?.id}-${aiDraftVersion}`" preserve-draft
       v-model="aiVisible" title="✨ AI 生成" :anchor="aiAnchor"
-      :modes="WB_AI_MODES" v-model:mode="aiMode"
-      :placeholder="aiPlaceholder" :loading="aiGenerating"
-      hint="替换/修改覆盖当前画布（执行前确认）；追加保留现有内容；汇总不动画布。可附图按图生成"
+      placeholder="描述想做的事，例如：画一个举手的小人；把选中图形改成红色；总结一下画布" :loading="aiGenerating"
+      hint="先预览生成效果，确认后应用。可附图按图生成"
+      :confirmation="aiPending ? [] : null" visual-only
+      :preview="aiPending?.preview || ''" :loading-text="aiStage"
+      :application-mode="aiPending?.result.mode || ''" :allow-mode-change="aiPending?.allowModeChange || false"
+      :result="summaryText" result-title="画布汇总" :error="aiError"
+      @confirm="applyPendingAi" @cancel-confirmation="aiPending = null"
       @submit="onBoardAiSubmit"
     />
 
-    <!-- 汇总结果：只读展示 + 一键复制 -->
-    <el-dialog v-model="summaryVisible" title="画布汇总" width="520px">
-      <el-input v-model="summaryText" type="textarea" :rows="10" readonly />
-      <template #footer>
-        <el-button @click="summaryVisible = false">关闭</el-button>
-        <el-button type="primary" @click="copySummary">复制</el-button>
-      </template>
-    </el-dialog>
+
   </div>
 </template>
 
 <script setup>
 // 画板页：界面模式对齐记事本（Notes.vue）——左树右编辑器 + 防抖自动保存。
 // 双引擎：excalidraw 存其序列化 JSON；drawio 存 {"xml": ...}；前端不解析，直接透传存储。
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowRight, Brush, Connection, Expand, Fold, Folder, FolderAdd, MagicStick, MoreFilled, Plus, Search } from '@element-plus/icons-vue'
@@ -173,9 +171,25 @@ let dirty = false
 // ---------- AI 生成（excalidraw/drawio 双引擎，编辑器各自实现 applyAiContent/getContext） ----------
 const aiVisible = ref(false)
 const aiDesc = ref('')
-const aiMode = ref('auto')
 const aiImages = ref([])   // 附图（data URL），成功后清空
 const aiGenerating = ref(false)
+const aiStage = ref('AI 生成中…')
+const aiPending = shallowRef(null)
+const aiError = ref('')
+const aiDraftVersion = ref(0)
+const aiToolbarText = computed(() => aiGenerating.value ? aiStage.value
+  : aiPending.value ? 'AI 待确认'
+    : aiError.value ? 'AI 生成失败'
+      : summaryText.value ? 'AI 查看汇总' : 'AI 生成')
+let aiRequest = 0
+watch(() => current.value?.id, () => {
+  aiPending.value = null
+  aiError.value = ''
+  summaryText.value = ''
+  aiVisible.value = false
+  aiRequest++
+  aiGenerating.value = false
+}, { flush: 'sync' })
 const aiBtnRef = ref(null)
 // AI 面板锚点：drawio = 头部按钮；excalidraw = 画布工具栏最左侧注入的按钮（.wb-ai-tool）
 const aiAnchor = ref(null)
@@ -187,95 +201,91 @@ function onHeaderAi() {
   aiAnchor.value = aiBtnRef.value
   aiVisible.value = true
 }
-const summaryVisible = ref(false)
 const summaryText = ref('')
 
-const WB_AI_MODES = [
-  { value: 'auto', label: '自动判断' },
-  { value: 'replace', label: '替换画布' },
-  { value: 'append', label: '追加内容' },
-  { value: 'modify', label: '修改内容' },
-  { value: 'summarize', label: '汇总画布' },
-]
-
 // 面板提交：回填状态后走既有生成流程
-function onBoardAiSubmit({ instruction, images, mode }) {
+function onBoardAiSubmit({ instruction, images }) {
   aiDesc.value = instruction
   aiImages.value = images
-  if (mode) aiMode.value = mode
   generateAi()
 }
 
-const AI_PLACEHOLDERS = {
-  auto: '描述想做的事，例如：画一个举手的小人；再加一个审批节点；把开始节点改成圆形；总结一下画布',
-  replace: '描述想要的内容，例如：请假审批流程，主管审批通过后人事备案；或：画一个举手的小人',
-  append: '描述要追加的内容，例如：在右侧再加一个人事复核节点；旁边再画一只猫',
-  modify: '描述怎么改，例如：把主管审批改成部门经理审批；删除结束节点；把小人换成两个人',
-  summarize: '可选：说明想怎么汇总，例如：按阶段分组概括这张流程图',
-}
-const aiPlaceholder = computed(() => AI_PLACEHOLDERS[aiMode.value] || AI_PLACEHOLDERS.auto)
-
 async function generateAi() {
+  if (aiGenerating.value) return
   const desc = aiDesc.value.trim()
   // 只传图不写字也允许：后端会按图片内容生成（视觉模型路径）
   if (!desc && !aiImages.value.length) {
     ElMessage.warning('先描述一下想做的事，或上传图片')
     return
   }
-  const ctx = editorRef.value?.getContext?.() || []
-  if (aiMode.value === 'summarize' && !ctx.length && !aiImages.value.length) {
-    ElMessage.warning('画布是空的，没有内容可汇总')
-    return
-  }
+  const editor = editorRef.value
+  const boardId = current.value?.id
+  const ctx = editor?.getContext?.() || []
+  const unchanged = () => current.value?.id === boardId && editorRef.value === editor
+    && JSON.stringify(editor?.getContext?.() || []) === JSON.stringify(ctx)
+  const request = ++aiRequest
+  aiPending.value = null
+  aiError.value = ''
+  summaryText.value = ''
   aiGenerating.value = true
+  aiStage.value = 'AI 生成中…'
   try {
-    const d = await generateBoardContent(desc, aiMode.value, ctx, aiImages.value)
+    const d = await generateBoardContent(desc, 'auto', ctx, aiImages.value)
+    if (request !== aiRequest) return
+    if (current.value?.id !== boardId || editorRef.value !== editor) {
+      ElMessage.info('画板已切换，本次生成结果未应用')
+      return
+    }
     if (d.mode === 'summarize') {
       summaryText.value = d.summary || ''
-      summaryVisible.value = true
-      aiVisible.value = false
       aiDesc.value = ''
       aiImages.value = []
       return
     }
-    if (!d.nodes?.length && !d.elements?.length && !d.parts?.length && !d.headers?.length) {
+    if (!d.nodes?.length && !d.elements?.length && !d.parts?.length && !d.headers?.length && !d.edits?.length) {
+      aiError.value = '没有生成有效内容，换个说法再试试'
       ElMessage.warning('没有生成有效内容，换个说法再试试')
       return
     }
-    // 替换/修改是覆盖语义，画布已有内容时先确认；追加不动现有内容，无需确认。
-    // 修改且有选中元素时是局部替换（excalidraw 支持），确认文案区分两种范围
-    const selCount = ctx.filter((c) => c.selected).length
-    if ((d.mode === 'replace' || d.mode === 'modify') && ctx.length) {
-      const scoped = d.mode === 'modify' && selCount > 0
-      try {
-        await ElMessageBox.confirm(
-          scoped ? `生成结果将替换选中的 ${selCount} 个元素，其余内容不变，继续？` : '生成结果将替换当前画布内容，继续？',
-          'AI 生成', { confirmButtonText: scoped ? '替换选中' : '替换', cancelButtonText: '取消', type: 'warning' },
-        )
-      } catch { return }
-    }
-    const applied = editorRef.value?.applyAiContent(d, { append: d.mode === 'append' })
+    if (request !== aiRequest) return
+    aiStage.value = 'AI 渲染预览中…'
+    const preview = await editor.renderAiDraft(d, { fullScene: true, focusChanges: true })
+    if (request !== aiRequest) return
+    if (!preview) throw new Error('预览生成失败，请重试')
+    const allowModeChange = ['append', 'replace'].includes(d.mode) && !d.attachTo && !d.parts?.some(p => p.attachTo)
+    aiPending.value = { result: d, preview, editor, unchanged, allowModeChange }
+  } catch (e) {
+    if (request === aiRequest) aiError.value = e.message || '生成失败，请重试'
+  } finally {
+    if (request === aiRequest) aiGenerating.value = false
+  }
+}
+
+function applyPendingAi(mode) {
+  if (aiGenerating.value) return
+  const pending = aiPending.value
+  if (!pending) return
+  if (!pending.unchanged()) {
+    aiPending.value = null
+    ElMessage.info('画布或选区已改变，请重新生成，避免覆盖新修改')
+    return
+  }
+  try {
+    const d = pending.allowModeChange && ['append', 'replace'].includes(mode) && mode !== pending.result.mode
+      ? { ...pending.result, mode } : pending.result
+    const applied = pending.editor.applyAiContent(d, { append: d.mode === 'append' })
     if (applied === false) {
       ElMessage.warning('画板还没加载好，稍候再试')
       return
     }
+    aiPending.value = null
     aiVisible.value = false
+    aiDraftVersion.value++
     aiDesc.value = ''
     aiImages.value = []
     ElMessage.success(`已生成「${d.title || '图'}」，可在画布上继续调整`)
   } catch (e) {
     ElMessage.error(e.message)
-  } finally {
-    aiGenerating.value = false
-  }
-}
-
-async function copySummary() {
-  try {
-    await navigator.clipboard.writeText(summaryText.value)
-    ElMessage.success('已复制')
-  } catch {
-    ElMessage.warning('复制失败，请手动选择文字复制')
   }
 }
 
@@ -508,6 +518,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(async () => {
+  aiRequest++
   clearTimeout(saveTimer)
   if (dirty && editorRef.value) {
     latestContent = editorRef.value.getContent()

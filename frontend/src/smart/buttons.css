@@ -1,0 +1,59 @@
+/* 设置面板操作按钮：默认灰色 28px；主操作蓝色；大按钮显式使用 36px。
+ * 下拉选择触发框、选项行、封面/颜色预览及单元格不接入此规则。
+ * 保留原生和 Element Plus 按钮的事件、禁用及 loading 行为。
+ */
+:root {
+  --st-button-height: 28px;
+  --st-button-height-large: 36px;
+  --st-button-gray: #F2F3F5;
+  --st-button-gray-hover: #E6E8EB;
+  --st-button-gray-active: #DEE0E3;
+}
+.st-button.st-button {
+  --st-button-size: var(--st-button-height);
+  --st-button-bg: var(--st-button-gray);
+  --st-button-fg: var(--st-text-2);
+  --st-button-hover: var(--st-button-gray-hover);
+  --st-button-active: var(--st-button-gray-active);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: var(--st-button-size) !important;
+  min-height: var(--st-button-size) !important;
+  padding: 0 12px !important;
+  border: 1px solid transparent !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+  background: var(--st-button-bg) !important;
+  color: var(--st-button-fg) !important;
+  font-family: inherit;
+  font-size: var(--st-font-size) !important;
+  font-weight: 400 !important;
+  line-height: 22px !important;
+  text-decoration: none !important;
+  white-space: nowrap;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: background-color .15s, opacity .15s;
+}
+.st-button.st-button--large { --st-button-size: var(--st-button-height-large); padding-inline: 16px !important; }
+.st-button.st-button--primary {
+  --st-button-bg: var(--st-primary);
+  --st-button-fg: #fff;
+  --st-button-hover: var(--st-primary-hover);
+  --st-button-active: #1D50A8;
+}
+.st-button.st-button--icon { width: var(--st-button-size) !important; min-width: var(--st-button-size); padding: 0 !important; flex-shrink: 0; }
+.st-button.st-button:hover { background: var(--st-button-hover) !important; }
+.st-button.st-button:active { background: var(--st-button-active) !important; }
+.st-button.st-button:focus-visible { outline: 2px solid var(--st-primary); outline-offset: 2px; }
+.st-button.st-button:is(:disabled, .is-disabled, .is-loading, [aria-disabled="true"]) {
+  background: var(--st-button-bg) !important;
+  color: var(--st-button-fg) !important;
+  opacity: .45 !important;
+  cursor: not-allowed;
+}
+.st-button.el-button > span { display: inline-flex; align-items: center; gap: 6px; }
+.st-button.st-button svg { color: inherit; flex-shrink: 0; }

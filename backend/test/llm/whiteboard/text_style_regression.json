@@ -1,0 +1,32 @@
+{
+  "prompt": "选中节点，文字大号，左对齐，顶部对齐，漫画风格",
+  "context": [
+    {
+      "id": "node",
+      "type": "rectangle",
+      "text": "Hello World",
+      "selected": true,
+      "x": 100,
+      "y": 100,
+      "width": 240,
+      "height": 160,
+      "fontSize": 20,
+      "fontFamily": 5,
+      "textAlign": "center",
+      "verticalAlign": "middle"
+    }
+  ],
+  "result": {
+    "mode": "modify",
+    "title": "修改画布",
+    "edits": [
+      {
+        "id": "node",
+        "textAlign": "left",
+        "verticalAlign": "top",
+        "roughness": 2,
+        "fontSize": 28
+      }
+    ]
+  }
+}

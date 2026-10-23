@@ -4,15 +4,15 @@
        下（主体）：当前函数签名条 → 三栏：字段（搜索 + 第 1 行取值）｜ 函数（搜索 + 分类）｜ 说明（签名 / 示例，可一键插入）
        输入框内打字时在光标处弹出联想（函数 + 字段），↑↓ 选择，Tab / ⏎ 插入 -->
   <teleport to="body">
-    <div v-if="visible" v-show="!aiVisible" class="fxe-mask" @click.self="emit('close')">
-      <div class="fxe">
+    <div v-if="visible" v-show="!aiVisible" ref="layerRef" class="fxe-mask" @click.self="emit('close')">
+      <div ref="panelRef" v-panel-drag="{ handle: '.fxe-head' }" class="fxe">
         <div class="fxe-top">
           <div class="fxe-head">
             <span class="fxe-title">{{ title || '公式' }}</span>
-            <span class="fxe-tool" @click="format"><StIcon name="brush" :size="15" />格式优化</span>
+            <span class="fxe-tool" role="button" @click="format"><StIcon name="brush" :size="15" />格式优化</span>
             <span class="fxe-vsep" />
             <el-tooltip :hide-after="0" content="用一句话描述，AI 帮你写公式" placement="bottom">
-              <span class="fxe-tool" @click="aiVisible = true"><StIcon name="bulb" :size="16" />AI 写公式</span>
+              <span class="fxe-tool" role="button" @click="aiVisible = true"><StIcon name="bulb" :size="16" />AI 写公式</span>
             </el-tooltip>
             <span class="fxe-ico st-icon-action" @click="emit('close')"><StIcon name="close" :size="18" /></span>
           </div>
@@ -38,7 +38,7 @@
                 <span class="fxe-res-val">{{ result.display === '' ? '（空）' : result.display }}</span>
               </template>
             </div>
-            <el-button type="primary" class="fxe-ok" :disabled="!canSave" @click="save">确定</el-button>
+            <el-button type="primary" class="st-button st-button--large st-button--primary fxe-ok" :disabled="!canSave" @click="save">确定</el-button>
           </div>
         </div>
 
@@ -58,7 +58,7 @@
               <span>本表字段</span>
               <span class="fxe-col-sub">第 {{ result?.row_no || 1 }} 行取值</span>
             </div>
-            <el-input v-model="fieldKw" size="small" placeholder="搜索字段" clearable class="fxe-search" />
+            <el-input v-model="fieldKw" size="small" placeholder="搜索字段" clearable class="st-control st-control--small fxe-search" />
             <div class="fxe-col-list">
               <div v-for="f in fieldList" :key="f.field_name" class="fxe-item" :class="{ on: hover?.key === `f:${f.field_name}` }"
                    @mouseenter="hover = fieldItem(f)" @mousedown.prevent @click="insertItem(fieldItem(f))">
@@ -72,8 +72,8 @@
           <!-- 函数 -->
           <div class="fxe-col fxe-col-funcs">
             <div class="fxe-col-head">函数</div>
-            <div v-if="catalogError" class="fxe-none">函数加载失败，<button @click="loadCatalog">重新加载</button></div>
-            <el-input v-model="fnKw" size="small" placeholder="搜索函数，如 日期 / 拼接 / IF" clearable class="fxe-search" />
+            <div v-if="catalogError" class="fxe-none">函数加载失败，<button class="st-button" @click="loadCatalog">重新加载</button></div>
+            <el-input v-model="fnKw" size="small" placeholder="搜索函数，如 日期 / 拼接 / IF" clearable class="st-control st-control--small fxe-search" />
             <div v-if="!fnKw" class="fxe-cats">
               <span v-for="c in ['全部', ...catalog.categories, '运算符']" :key="c" class="fxe-cat" :class="{ on: fnCat === c }"
                     @click="fnCat = c">{{ c.replace('与时间函数', '').replace('函数', '') }}</span>
@@ -149,7 +149,7 @@
       </div>
 
       <!-- 光标处联想 -->
-      <div v-if="acItems.length && !aiVisible" class="fxe-ac" :style="{ left: `${ac.x}px`, top: `${ac.y}px` }" @mousedown.prevent>
+      <div v-if="acItems.length && !aiVisible" ref="acRef" class="fxe-ac" @mousedown.prevent>
         <div v-for="(it, i) in acItems" :key="it.key" class="fxe-ac-item" :class="{ on: i === ac.index }"
              @mouseenter="ac.index = i" @click="insertItem(it)">
           <StIcon v-if="it.kind === 'field'" :name="fieldIconName(it.field)" :size="14" class="fxe-item-ico" />
@@ -168,6 +168,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { updateFormulaSelection } from '../../../smart/utils/formulaSelection.js'
+import { vPanelDrag } from '../../../smart/utils/panelDrag.js'
+import { useFloatingPanel } from '../../../smart/utils/floatingPanel.js'
 import StIcon from '../icons/StIcon.vue'
 import AiFormulaDialog from '../ai/AiFormulaDialog.vue'
 import { FIELD_REGISTRY } from '../../../smart/registry/fieldRegistry.js'
@@ -195,6 +197,11 @@ const OPS = [
   { v: '""', label: '" "', tip: '文本（引号）', back: 1 }, { v: ', ', label: ',', tip: '参数分隔' },
 ]
 
+const panelRef = ref(null)
+const layerRef = ref(null)
+const acRef = ref(null)
+const refreshPanel = useFloatingPanel(() => panelRef.value, () => layerRef.value)
+const refreshAc = useFloatingPanel(() => acRef.value)
 const editorRef = ref(null)
 const catalog = ref({ categories: [], functions: [], operators: [] })
 const catalogError = ref(false)
@@ -317,7 +324,15 @@ const acItems = computed(() => {
   const list = fieldFirst ? [...fs, ...fns.map(fnItem)] : [...fns.map(fnItem), ...fs]
   return list.slice(0, 8)
 })
-watch(acItems, () => { ac.index = 0 })
+watch(acItems, async () => {
+  ac.index = 0
+  await nextTick()
+  if (acItems.value.length) { placeAc(); await refreshAc() }
+})
+watch(() => ac.index, () => nextTick(() => acRef.value?.querySelector('.on')?.scrollIntoView({ block: 'nearest' })))
+watch(() => [props.visible, aiVisible.value], async ([visible, ai]) => {
+  if (visible && !ai) { await nextTick(); await refreshPanel(); if (acItems.value.length) await refreshAc() }
+})
 
 // 说明栏：联想高亮项（正在输入时）> 悬停项 > 光标所在函数 > IF
 const docItem = computed(() => acItems.value[ac.index]
@@ -445,8 +460,13 @@ function placeAc() {
     rect = mark.getBoundingClientRect()
     mark.remove()
   }
-  ac.x = Math.min(rect.left, window.innerWidth - 380)
-  ac.y = Math.min(rect.bottom + 6, window.innerHeight - 320)
+  const width = Math.min(acRef.value?.getBoundingClientRect().width || 360, Math.max(0, window.innerWidth - 24))
+  const height = Math.min(acRef.value?.getBoundingClientRect().height || 320, Math.max(0, window.innerHeight - 24))
+  ac.x = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))
+  const below = rect.bottom + 6
+  const top = below + height > window.innerHeight - 12 ? rect.top - height - 6 : below
+  ac.y = Math.max(12, Math.min(top, window.innerHeight - height - 12))
+  if (acRef.value) Object.assign(acRef.value.style, { left: `${ac.x}px`, top: `${ac.y}px` })
 }
 function onEditorMouseDown(event) {
   const chip = event.target.closest?.('.fxe-chip')
@@ -652,12 +672,12 @@ watch(() => props.visible, async (v) => {
 </script>
 
 <style scoped>
-.fxe-mask { position: fixed; inset: 0; z-index: 3100; background: rgba(0, 0, 0, .25); display: flex; align-items: center; justify-content: center; --el-color-primary: var(--st-primary); }
-.fxe { width: 1000px; max-width: calc(100vw - 32px); height: 820px; max-height: calc(100vh - 32px); background: #F5F6F7; border-radius: 12px; overflow: hidden;
+.fxe-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, .25); display: flex; align-items: center; justify-content: center; --el-color-primary: var(--st-primary); }
+.fxe { width: 1000px; max-width: calc(100vw - 24px); height: 820px; max-height: calc(100vh - 24px); background: #F5F6F7; border-radius: 12px; overflow: auto;
        display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0, 0, 0, .18); }
 /* ---- 上：紧凑输入区 ---- */
 .fxe-top { background: #fff; flex: none; border-bottom: 1px solid var(--st-border); }
-.fxe-head { display: flex; align-items: center; gap: 8px; padding: 16px 20px 4px; }
+.fxe-head { display: flex; align-items: center; gap: 8px; padding: 16px 20px 4px; cursor: move; touch-action: none; }
 .fxe-title { font-size: var(--st-font-size-title); font-weight: 700; color: var(--st-text-1); margin-right: auto; }
 .fxe-tool { display: inline-flex; align-items: center; gap: 5px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; padding: 4px 8px; border-radius: 6px; }
 .fxe-tool:hover, .fxe-ico:hover { background: var(--st-bg-hover); }
@@ -692,7 +712,7 @@ watch(() => props.visible, async (v) => {
 .fxe-sig-dim { color: var(--st-text-4); font-family: var(--el-font-family); font-size: var(--st-font-size); }
 .fxe-sig-cur { background: #FDE6A3; border-radius: 3px; }
 /* ---- 下：三栏 ---- */
-.fxe-panes { flex: 1; display: flex; min-height: 0; }
+.fxe-panes { flex: 1 0 240px; display: flex; min-height: 240px; overflow-x: auto; }
 .fxe-col { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--st-border); }
 .fxe-col-fields { width: 270px; flex: none; }
 .fxe-col-funcs { width: 310px; flex: none; }
@@ -724,7 +744,7 @@ watch(() => props.visible, async (v) => {
 .fxe-item-val { flex: 1; min-width: 0; text-align: right; font-size: var(--st-font-size); color: var(--st-text-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fxe-mono { font-family: Menlo, Consolas, monospace; font-size: var(--st-font-size); }
 .fxe-none { padding: 20px 10px; color: var(--st-text-4); font-size: var(--st-font-size); }
-.fxe-doc { flex: 1; overflow: auto; padding: 16px 22px; min-width: 0; }
+.fxe-doc { flex: 1 0 320px; overflow: auto; padding: 16px 22px; min-width: 320px; box-sizing: border-box; }
 .fxe-doc-sig { font-size: var(--st-font-size-title); font-weight: 700; color: var(--st-text-1); line-height: 1.5; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: Menlo, Consolas, monospace; }
 .fxe-doc-desc { font-size: var(--st-font-size); color: var(--st-text-2); margin: 10px 0 14px; line-height: 1.7; }
 .fxe-doc-ex-t { font-size: var(--st-font-size); font-weight: 700; color: var(--st-text-1); margin-bottom: 8px; }
@@ -741,11 +761,21 @@ watch(() => props.visible, async (v) => {
 .fxe-doc-val { cursor: default; color: var(--st-text-2); font-size: var(--st-font-size); word-break: break-all; }
 .fxe-doc-val:hover { border-color: transparent; }
 /* ---- 光标处联想 ---- */
-.fxe-ac { position: fixed; z-index: 3200; width: 360px; background: #fff; border-radius: 8px; box-shadow: var(--st-shadow-pop); padding: 4px; }
+.fxe-ac { position: fixed; width: 360px; max-width: calc(100vw - 24px); max-height: min(320px, calc(100vh - 24px)); box-sizing: border-box; overflow: auto; background: #fff; border-radius: 8px; box-shadow: var(--st-shadow-pop); padding: 4px; }
 .fxe-ac-item { display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 6px; cursor: pointer; font-size: var(--st-font-size);  height: var(--st-list-item-height); box-sizing: border-box; }
 .fxe-ac-item.on { background: #E6E8EB; }
 .fxe-ac-fx { font-size: 11px; font-style: italic; color: var(--st-primary); width: 14px; flex: none; }
 .fxe-ac-name { flex: none; color: var(--st-text-2); }
 .fxe-ac-desc { flex: 1; min-width: 0; font-size: var(--st-font-size); color: var(--st-text-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fxe-tab { font-size: 11px; color: var(--st-text-2); background: #D9DBDE; border-radius: 3px; padding: 0 5px; flex: none; }
+.fxe-ac-name { max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fxe-sig, .fxe-err-m { overflow-wrap: anywhere; }
+@media (max-width: 540px) {
+  .fxe-head { flex-wrap: wrap; padding: 12px 12px 4px; gap: 4px; }
+  .fxe-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .fxe-tool { padding: 4px; }
+  .fxe-editor { margin-left: 12px; margin-right: 12px; }
+  .fxe-ops, .fxe-result, .fxe-sig { padding-left: 12px; padding-right: 12px; }
+  .fxe-res-main { flex-wrap: wrap; overflow-wrap: anywhere; }
+}
 </style>

@@ -1,3 +1,6 @@
+@import './controls.css';
+@import './buttons.css';
+
 /* 智慧表格设计令牌（对齐 docs/智慧表格差距分析.md §0 参照值） */
 :root {
   --st-font-size: 14px;
@@ -66,8 +69,25 @@
 /* 单字段筛选面板（工具栏固定条件胶囊的 el-popover）：与列头漏斗弹出的面板同尺寸同留白 */
 .el-popover.st-ffp-pop { padding: 18px 20px 16px; border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .14); }
 
+/* 传送到 body 的弹层也受视口约束；超高内容滚动可达，不改变 Popper 的翻转定位。 */
+body:has(.smart-home, .st-page, .dash-page) .el-popper {
+  box-sizing: border-box;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+body:has(.smart-home, .st-page, .dash-page) .el-dialog {
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - var(--el-dialog-margin-top, 15vh) - 12px);
+  overflow: auto;
+}
+body:has(.smart-home, .st-page, .dash-page) .el-dialog.is-align-center {
+  max-height: calc(100dvh - 24px);
+}
+body:has(.smart-home, .st-page, .dash-page) .el-popper .fpl { width: min(300px, 100%); }
+
 /* 双击表头弹出的非模态对话框（anchoredDialogAttrs）：左上角固定在双击位置，超高时内部滚动 */
-.el-dialog.st-at-dialog { position: fixed; margin: 0 !important; overflow-y: auto; box-shadow: 0 8px 32px rgba(0, 0, 0, .18); }
+.el-dialog.st-at-dialog { position: fixed; left: var(--st-dialog-left); top: var(--st-dialog-top); margin: 0 !important; overflow-y: auto; box-shadow: 0 8px 32px rgba(0, 0, 0, .18); }
 
 /* 仅加快非模态面板收起；包含传送到 body 的菜单、选择器及工具栏浮层。 */
 :root { --st-panel-close-duration: 80ms; }

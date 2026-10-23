@@ -15,6 +15,7 @@ test('specified columns preserve legacy watches and edit independent OR conditio
     global: { plugins: [ElementPlus], stubs: { ElPopover: { template: '<div><slot name="reference" /><slot /></div>' } } },
   })
   expect(wrapper.find('.ae-watch-trigger').text()).toBe('指定列')
+  await wrapper.find('.ae-watch-trigger').trigger('click')
   const panel = wrapper.find('.ae-watch-panel')
   expect(panel.findComponent(PermCondRow).props('cond')).toEqual({ fieldId: 'product', operator: 'changed' })
   const cond = { fieldId: 'product', operator: 'contains', value: '产品A' }

@@ -41,7 +41,7 @@
                    :data-field="f.field_name" @click="(e) => onValueClick(f, e)">
                 <!-- 文本/数字/日期：面板内联编辑，内边距/字号/行高与展示态一致，边框用内阴影——进出编辑不位移 -->
                 <template v-if="['image', 'file', 'url', 'relation'].includes(typeOf(f))">
-                  <component :is="detailMediaComponent[typeOf(f)]" :value="record[f.field_name] || null" v-bind="typeOf(f) === 'relation' ? { field: effOf(f), record } : {}" selected :readonly="!canEdit(f)"
+                  <component :is="detailMediaComponent[typeOf(f)]" :value="record[f.field_name] || null" v-bind="typeOf(f) === 'relation' ? { field: effOf(f), record } : typeOf(f) === 'image' ? { detail: true } : {}" selected :readonly="!canEdit(f)"
                              @open="editing = f.field_name" @collapse="closeMedia(f)" @cancel="closeMedia(f)"
                              @commit="v => commit(f, v, typeOf(f) === 'url')" />
                   <span v-if="isEmpty(f)" class="rd-media-placeholder rd-ph">{{ placeholderOf(f) }}</span>

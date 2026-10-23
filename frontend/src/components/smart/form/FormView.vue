@@ -5,10 +5,10 @@
   <div class="fv">
     <div class="fv-bar">
       <div class="fv-bar-l">
-        <button class="fv-ico st-icon-action" data-smart-tip="撤销" :disabled="!hist.past.length" @click="undo"><StIcon name="undo" :size="16" /></button>
-        <button class="fv-ico st-icon-action" data-smart-tip="重做" :disabled="!hist.future.length" @click="redo"><StIcon name="redo" :size="16" /></button>
+        <button class="st-button st-button--icon fv-ico" aria-label="撤销" :disabled="!hist.past.length" @click="undo"><StIcon name="undo" :size="16" /></button>
+        <button class="st-button st-button--icon fv-ico" aria-label="重做" :disabled="!hist.future.length" @click="redo"><StIcon name="redo" :size="16" /></button>
         <span class="fv-sep" />
-        <button class="fv-tool" @click="emit('open-automation')"><StIcon name="automation" :size="15" />设置自动化提醒</button>
+        <button class="st-button fv-tool" @click="emit('open-automation')"><StIcon name="automation" :size="15" />设置自动化提醒</button>
       </div>
       <div class="fv-tabs">
         <span class="fv-tab" :class="{ on: tab === 'edit' }" @click="tab = 'edit'">编辑表单</span>
@@ -23,8 +23,8 @@
     <div v-if="tab === 'edit'" class="fv-main">
       <div class="fv-left">
         <div class="fv-left-head"><span>可添加字段</span><div class="fv-left-actions">
-          <button class="fv-link-g" :disabled="!form.items.length" @click="removeAll">全部移出</button>
-          <button class="fv-link-g" :disabled="!availableFields.length" @click="addAll">全部添加</button>
+          <button class="st-button fv-link-g" :disabled="!form.items.length" @click="removeAll">全部移出</button>
+          <button class="st-button fv-link-g" :disabled="!availableFields.length" @click="addAll">全部添加</button>
         </div></div>
         <div class="fv-field-list">
         <div v-if="!availableFields.length" class="fv-avail-empty">所有字段都已添加至表单</div>
@@ -47,18 +47,18 @@
             <el-popover :hide-after="0" v-if="form.cover" v-model:visible="coverMenu" trigger="click" placement="bottom-end"
                         :width="150" popper-class="st-pop fv-cover-pop">
               <template #reference>
-                <button class="fv-cover-more st-icon-action" aria-label="封面设置" data-smart-tip="封面设置"><StIcon name="more-h" :size="18" /></button>
+                <button class="st-button st-button--icon fv-cover-more" aria-label="封面设置" data-smart-tip="封面设置"><StIcon name="more-h" :size="18" /></button>
               </template>
               <div class="fv-cover-menu">
-                <button @click="coverMenu = false; coverPicker = true">更换封面</button>
-                <button @click="coverMenu = false; setForm({ cover: null })">移除封面</button>
+                <button class="st-button" @click="coverMenu = false; coverPicker = true">更换封面</button>
+                <button class="st-button" @click="coverMenu = false; setForm({ cover: null })">移除封面</button>
               </div>
             </el-popover>
-            <button v-else class="fv-cover-btn" @click="coverPicker = true"><StIcon name="image" :size="15" />添加封面</button>
+            <button v-else class="st-button fv-cover-btn" @click="coverPicker = true"><StIcon name="image" :size="15" />添加封面</button>
           </div>
           <div class="fv-paper">
-            <input :value="form.title" class="fv-title" placeholder="表单标题" @change="(e) => setForm({ title: e.target.value })" />
-            <input :value="form.description" class="fv-desc" placeholder="添加描述" @change="(e) => setForm({ description: e.target.value })" />
+            <input :value="form.title" class="st-control st-control--native fv-title" placeholder="表单标题" @change="(e) => setForm({ title: e.target.value })" />
+            <input :value="form.description" class="st-control st-control--native fv-desc" placeholder="添加描述" @change="(e) => setForm({ description: e.target.value })" />
             <div class="fv-line" />
 
             <template v-for="(it, i) in itemsWithField" :key="it.fieldId">
@@ -69,9 +69,9 @@
               <span class="fv-drag st-icon-action" draggable="true" data-smart-tip="拖动排序" @dragstart.stop="startFieldDrag($event, it.fieldId, true)" @dragend.stop="endFieldDrag">
                 <StIcon name="drag" :size="14" /></span>
               <template v-if="active === it.fieldId">
-                <input :value="it.title || it.field.label" class="fv-q-title-in" @click.stop
+                <input :value="it.title || it.field.label" class="st-control st-control--native fv-q-title-in" @click.stop
                        @change="(e) => patchItem(i, { title: e.target.value === it.field.label ? null : e.target.value })" />
-                <input :value="it.description || ''" class="fv-q-desc-in" placeholder="添加问题描述" @click.stop
+                <input :value="it.description || ''" class="st-control st-control--native fv-q-desc-in" placeholder="添加问题描述" @click.stop
                        @change="(e) => patchItem(i, { description: e.target.value || null })" />
                 <!-- 选项编辑（与表格列共享数据源） -->
                 <div v-if="isSelect(it.field) && !isRefOptions(it.field)" class="fv-opts" @click.stop>
@@ -79,17 +79,17 @@
                        @dragover="dragOption($event, oi)" @drop="onOptionDrop($event, it.field, oi)">
                     <span class="fv-opt-drag st-icon-action" draggable="true" @dragstart.stop="optFrom = oi" @dragend.stop="optFrom = null; optOver = null"><StIcon name="drag" :size="12" /></span>
                     <span class="fv-opt-color" :style="{ background: optionColor(o.color).value }" data-smart-tip="切换颜色" @click="cycleColor(it.field, oi)" />
-                    <input :value="o.label" class="fv-opt-in" @change="(e) => renameOption(it.field, oi, e.target.value)" />
-                    <span class="fv-opt-rm st-icon-action" data-smart-tip="删除选项" @click="removeOption(it.field, oi)"><StIcon name="minus-circle" :size="16" /></span>
+                    <input :value="o.label" class="st-control st-control--small st-control--native fv-opt-in" @change="(e) => renameOption(it.field, oi, e.target.value)" />
+                    <span class="fv-opt-rm st-icon-action" aria-label="删除选项" @click="removeOption(it.field, oi)"><StIcon name="minus-circle" :size="16" /></span>
                   </div>
-                  <a class="fv-opt-add" @click="addOption(it.field)"><StIcon name="plus" :size="14" />添加选项</a>
+                  <a class="st-button fv-opt-add" @click="addOption(it.field)"><StIcon name="plus" :size="14" />添加选项</a>
                   <div class="fv-opt-tip">此处修改将影响表格列</div>
                 </div>
                 <FormControl v-else :item="it" preview />
                 <!-- 底部属性条 -->
                 <div class="fv-attrs" @click.stop>
                   <span class="fv-attr-l">字段</span>
-                  <el-select :model-value="it.fieldId" size="small" class="fv-attr-field" :teleported="false"
+                  <el-select :model-value="it.fieldId" size="small" class="st-control st-control--small fv-attr-field" :teleported="true"
                              @update:model-value="(fn) => rebind(i, fn)">
                     <template #prefix><StIcon :name="fieldIconName(it.field)" :size="13" /></template>
                     <el-option :value="it.fieldId" :label="it.field.label" />
@@ -97,7 +97,7 @@
                   </el-select>
                   <template v-if="it.field.field_type === 'singleSelect'">
                     <span class="fv-attr-sep" />
-                    <el-select :model-value="it.widget || 'inline'" size="small" class="fv-attr-widget" :teleported="false"
+                    <el-select :model-value="it.widget || 'inline'" size="small" class="st-control st-control--small fv-attr-widget" :teleported="true"
                                @update:model-value="(w) => patchItem(i, { widget: w })">
                       <el-option value="inline" label="平铺" /><el-option value="dropdown" label="下拉" />
                     </el-select>
@@ -106,39 +106,33 @@
                   <el-checkbox :model-value="!!it.required" :disabled="it.field.readonly" @update:model-value="(v) => patchItem(i, { required: v })">必填</el-checkbox>
                   <span class="fv-attr-sep" />
                   <el-tooltip :hide-after="0" v-if="i === 0" content="表单的首个问题不支持设置显示条件" placement="top">
-                    <span class="fv-attr-btn disabled" aria-disabled="true"><StIcon name="group" :size="14" />显示条件</span>
+                    <span class="st-button fv-attr-btn disabled" aria-disabled="true"><StIcon name="group" :size="14" />显示条件</span>
                   </el-tooltip>
-                  <el-popover :hide-after="0" v-else trigger="click" placement="bottom-start" :width="612" :popper-style="{ maxWidth: 'calc(100vw - 32px)' }" popper-class="st-pop fv-condition-pop">
+                  <el-popover :hide-after="0" v-else :visible="conditionField === it.fieldId" trigger="click" placement="bottom-start" :width="612" :popper-style="{ maxWidth: 'calc(100vw - 32px)' }" popper-class="st-pop fv-condition-pop">
                     <template #reference>
-                      <span class="fv-attr-btn" :class="{ on: it.visibility?.conditions?.length }"><StIcon name="group" :size="14" />显示条件{{ it.visibility?.conditions?.length ? ` ${it.visibility.conditions.length}` : '' }}</span>
+                      <span class="st-button fv-attr-btn" :class="{ on: it.visibility?.conditions?.length }" @click.stop="conditionField = conditionField === it.fieldId ? null : it.fieldId"><StIcon name="group" :size="14" />显示条件{{ it.visibility?.conditions?.length ? ` ${it.visibility.conditions.length}` : '' }}</span>
                     </template>
-                    <div class="fv-vis">
+                    <div v-if="conditionField === it.fieldId" class="fv-vis">
                       <div v-if="!it.visibility?.conditions?.length" class="fv-vis-t">仅在满足以下条件时显示</div>
                       <div v-else class="fv-vis-t">仅在满足以下
-                        <el-select :model-value="it.visibility?.match || 'all'" size="small" class="fv-vis-match" :teleported="false"
+                        <el-select :model-value="it.visibility?.match || 'all'" size="small" class="st-control st-control--small fv-vis-match" :teleported="true"
                                    @update:model-value="(m) => patchVis(i, { match: m })">
                           <el-option value="all" label="所有" /><el-option value="any" label="任一" />
                         </el-select>条件时显示</div>
                       <PermCondRow v-for="(c, ci) in it.visibility?.conditions || []" :key="ci" :cond="c" :fields="otherQuestionFields(it)"
                                    @update="(nc) => setVisCond(i, ci, nc)" @remove="removeVisCond(i, ci)" />
-                      <button class="fv-vis-add" :disabled="(it.visibility?.conditions?.length || 0) >= 10"
+                      <button class="st-button fv-vis-add" :disabled="(it.visibility?.conditions?.length || 0) >= 10"
                               @click.stop="addVisCond(i)"><StIcon name="plus" :size="15" />添加显示条件</button>
                     </div>
                   </el-popover>
                   <span class="fv-attr-sep" />
-                  <el-tooltip :hide-after="0" content="移出" placement="top">
-                    <span class="fv-attr-btn st-icon-action" aria-label="移出表单" @click="removeItem(i)"><StIcon name="minus-circle" :size="16" /></span>
-                  </el-tooltip>
+                  <span class="st-button st-button--icon fv-attr-btn" aria-label="移出表单" @click="removeItem(i)"><StIcon name="minus-circle" :size="16" /></span>
                   <span class="fv-attr-sep" />
-                  <el-tooltip :hide-after="0" content="编辑字段" placement="top">
-                    <button class="fv-attr-btn fv-attr-icon st-icon-action" aria-label="编辑字段" :disabled="!canManage"
-                            @click="editField(it.field, $event)"><StIcon name="pencil" :size="16" /></button>
-                  </el-tooltip>
+                  <button class="st-button st-button--icon fv-attr-btn fv-attr-icon" aria-label="编辑字段" :disabled="!canManage"
+                          @click="editField(it.field, $event)"><StIcon name="pencil" :size="16" /></button>
                   <span class="fv-attr-sep" />
-                  <el-tooltip :hide-after="0" content="删除字段" placement="top">
-                    <button class="fv-attr-btn fv-attr-icon danger st-icon-action" aria-label="删除字段" :disabled="!canManage"
-                            @click="emit('delete-field', it.field)"><StIcon name="trash" :size="16" /></button>
-                  </el-tooltip>
+                  <button class="st-button st-button--icon fv-attr-btn fv-attr-icon danger" aria-label="删除字段" :disabled="!canManage"
+                          @click="emit('delete-field', it.field)"><StIcon name="trash" :size="16" /></button>
                 </div>
               </template>
               <template v-else>
@@ -152,9 +146,9 @@
             <div v-if="itemsWithField.length && dragItem && dropIndex === itemsWithField.length" class="fv-drop-placeholder" :style="{ height: `${dragHeight}px` }"
                  @dragover.prevent.stop="dragPlaceholder($event, itemsWithField.length)" @drop.prevent.stop="dropField" />
             <div v-if="!itemsWithField.length" class="fv-empty" :class="{ 'drop-active': dragItem && dropIndex === 0 }">
-              <span>拖动字段到此或<button @click.stop="(e) => emit('add-field', e)">新建字段</button></span>
+              <span>拖动字段到此或<button class="st-button" @click.stop="(e) => emit('add-field', e)">新建字段</button></span>
             </div>
-            <div class="fv-add-wrap"><span class="fv-add-btn" @click.stop="(e) => emit('add-field', e)"><StIcon name="plus-circle" :size="15" />添加新字段</span></div>
+            <div class="fv-add-wrap"><span class="st-button fv-add-btn" @click.stop="(e) => emit('add-field', e)"><StIcon name="plus-circle" :size="15" />添加新字段</span></div>
           </div>
         </div>
       </div>
@@ -172,7 +166,7 @@
 <script setup>
 import { vReorderFeedback } from '../../../smart/utils/reorderFeedback.js'
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import StIcon from '../icons/StIcon.vue'
 import PermCondRow from '../perms/PermCondRow.vue'
@@ -200,6 +194,13 @@ const SYSTEM = ['createdBy', 'lastModifiedBy', 'createdTime', 'lastModifiedTime'
 const READONLY = ['formula', 'lookup', 'autoNumber', 'ai']
 const tab = ref('edit')
 const active = ref(null)
+const conditionField = ref(null)
+function closeConditions(event) {
+  if (!event.target.closest?.('.fv-condition-pop, .fv-attr-btn, .el-popper')) conditionField.value = null
+}
+watch(active, () => { conditionField.value = null })
+onMounted(() => document.addEventListener('click', closeConditions, true))
+onBeforeUnmount(() => document.removeEventListener('click', closeConditions, true))
 const form = reactive({ title: '', description: '', cover: null, items: [], submit: {} })
 const hist = reactive({ past: [], future: [] })
 let saveTimer = null

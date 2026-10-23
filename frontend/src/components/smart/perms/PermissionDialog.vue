@@ -55,7 +55,7 @@
                 <div class="pd-gc-t">{{ group?.name }} {{ hasGrant ? '已添加额外权限' : '无额外权限' }}</div>
                 <div class="pd-gc-s">全员权限为“{{ LEVEL_LABELS[cur.base.level] }}”，{{ group?.name }}{{ hasGrant ? '还有下方额外权限。' : '可在下方添加额外权限。' }}</div>
               </div>
-              <el-button v-if="hasGrant" class="pd-restore" @click="restore"><StIcon name="restore" :size="16" />恢复至全员权限</el-button>
+              <el-button v-if="hasGrant" class="st-button st-button--large pd-restore" @click="restore"><StIcon name="restore" :size="16" />恢复至全员权限</el-button>
             </div>
             <div class="pd-divider" />
           </template>
@@ -68,8 +68,8 @@
     </div>
 
     <template #footer>
-      <el-button type="primary" class="pd-btn" :loading="saving" :disabled="!dirtyIds.length" @click="save">保存</el-button>
-      <el-button class="pd-btn pd-cancel" @click="close">取消</el-button>
+      <el-button type="primary" class="st-button st-button--large st-button--primary pd-btn" :loading="saving" :disabled="!dirtyIds.length" @click="save">保存</el-button>
+      <el-button class="st-button st-button--large pd-btn pd-cancel" @click="close">取消</el-button>
     </template>
   </el-dialog>
 </template>

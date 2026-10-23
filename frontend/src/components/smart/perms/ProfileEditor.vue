@@ -4,7 +4,7 @@
   <div class="pe">
     <div class="pe-card pe-head">
       <div class="pe-title"><StIcon name="table-solid" :size="16" />{{ entryName }} 的权限</div>
-      <el-select :model-value="p.level" class="pe-level" :teleported="false" @update:model-value="setLevel">
+      <el-select :model-value="p.level" class="st-control pe-level" :teleported="true" @update:model-value="setLevel">
         <el-option v-for="o in levelOptions" :key="o.value" :value="o.value" :label="o.label" />
       </el-select>
       <template v-if="!isDashboard && (p.level === 'EDIT' || (p.level === 'FULL' && expanded))">
@@ -39,7 +39,7 @@
             <div class="pe-cond-title">满足此条件时才可查看</div>
             <PermCondRow v-for="(c, i) in p.record.viewConditions" :key="i" :cond="c" :fields="condFields" allow-viewer
                          @update="(nc) => setCond('viewConditions', i, nc)" @remove="removeCond('viewConditions', i)" />
-            <button class="pe-add-cond" @click="addCond('viewConditions')"><StIcon name="plus" :size="13" />添加条件</button>
+            <button class="st-button pe-add-cond" @click="addCond('viewConditions')"><StIcon name="plus" :size="13" />添加条件</button>
           </div>
         </template>
         <!-- 可编辑 / 全部权限：编辑范围 + fallback + 增删开关 -->
@@ -65,7 +65,7 @@
             </div>
             <PermCondRow v-for="(c, i) in p.record.editConditions" :key="i" :cond="c" :fields="condFields" allow-viewer
                          @update="(nc) => setCond('editConditions', i, nc)" @remove="removeCond('editConditions', i)" />
-            <button class="pe-add-cond" @click="addCond('editConditions')"><StIcon name="plus" :size="13" />添加条件</button>
+            <button class="st-button pe-add-cond" @click="addCond('editConditions')"><StIcon name="plus" :size="13" />添加条件</button>
           </div>
           <div class="pe-sep" />
           <div class="pe-row"><span class="pe-ico-label"><StIcon name="row-add" :size="16" />可以添加记录</span>

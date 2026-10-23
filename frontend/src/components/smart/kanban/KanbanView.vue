@@ -6,7 +6,7 @@
       <TbFieldSelect :model-value="groupField" :fields="selectFields" class="kb-sel" placeholder="选择单选字段"
                      :class="{ 'kb-disabled': !canManage }" @update:model-value="(v) => canManage && emit('config', { groupField: v })" />
       <span class="kb-label">卡片显示</span>
-      <el-select :model-value="cardFields" size="small" multiple collapse-tags class="kb-sel-m" placeholder="自动"
+      <el-select :model-value="cardFields" size="small" multiple collapse-tags class="st-control st-control--small kb-sel-m" placeholder="自动"
                  :disabled="!canManage" @update:model-value="(v) => emit('config', { cardFields: v })">
         <el-option v-for="f in fields" :key="f.field_name" :value="f.field_name" :label="f.label" />
       </el-select>

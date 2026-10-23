@@ -1,0 +1,123 @@
+/* 显式接入的智能表控件：默认 32px，st-control--small 为 24px。
+ * 不使用页面级后代选择器，避免影响单元格、详细数据及它们的浮层。
+ * 原生/自定义触发框加 st-control--native；Element 控件保留原组件和事件。
+ * 尺寸使用 important 收敛旧面板的 scoped 样式，宽度和布局仍由调用方决定。
+ */
+:root {
+  --st-control-height: 32px;
+  --st-control-height-small: 24px;
+  --st-control-radius: 4px;
+  --st-control-border: #DEE0E3;
+  --st-control-border-hover: #C9CDD4;
+}
+
+.st-control {
+  --st-control-size: var(--st-control-height);
+  --el-component-size: var(--st-control-size);
+  --el-component-size-small: var(--st-control-size);
+  --el-input-height: var(--st-control-size);
+  --el-input-border-color: var(--st-control-border);
+  --el-input-hover-border-color: var(--st-control-border-hover);
+  --el-input-focus-border-color: var(--st-primary);
+  --el-border-radius-base: var(--st-control-radius);
+  --el-color-primary: var(--st-primary);
+}
+.st-control--small { --st-control-size: var(--st-control-height-small); }
+
+.st-control:is(.el-input, .el-select, .el-input-number, .el-cascader, .el-date-editor),
+.st-control--native,
+.st-control :is(.el-input__wrapper, .el-select__wrapper),
+.st-control.el-range-editor {
+  box-sizing: border-box;
+  height: var(--st-control-size) !important;
+  min-height: var(--st-control-size) !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  font-size: var(--st-font-size) !important;
+  line-height: 22px;
+}
+.st-control--native,
+.st-control :is(.el-input__wrapper, .el-select__wrapper),
+.st-control.el-range-editor {
+  border-radius: var(--st-control-radius) !important;
+  background: #fff !important;
+  color: var(--st-text-2);
+}
+.st-control--native {
+  border: 1px solid var(--st-control-border) !important;
+  box-shadow: none !important;
+  outline: none;
+  font-family: inherit;
+}
+.st-control--native:hover { border-color: var(--st-control-border-hover) !important; }
+.st-control--native:is(:focus, :focus-within, .open) { border-color: var(--st-primary) !important; }
+.st-control--native::placeholder { color: var(--el-text-color-placeholder, #A8ABB2); }
+.st-control :is(.el-input__wrapper, .el-select__wrapper),
+.st-control.el-range-editor { box-shadow: 0 0 0 1px var(--st-control-border) inset !important; }
+.st-control :is(.el-input__wrapper, .el-select__wrapper):hover,
+.st-control.el-range-editor:hover { box-shadow: 0 0 0 1px var(--st-control-border-hover) inset !important; }
+.st-control :is(.el-input__wrapper.is-focus, .el-select__wrapper.is-focused),
+.st-control.el-range-editor.is-active { box-shadow: 0 0 0 1px var(--st-primary) inset !important; }
+.st-control .el-input__inner {
+  height: calc(var(--st-control-size) - 2px) !important;
+  line-height: calc(var(--st-control-size) - 2px) !important;
+  font-size: var(--st-font-size) !important;
+}
+.st-control .el-select__selection { flex-wrap: nowrap; }
+.st-control .el-select__selected-item { min-width: 0; }
+.st-control .el-tag { max-height: 20px; }
+.st-control.el-input-number { line-height: calc(var(--st-control-size) - 2px); }
+.st-control.el-input-number.is-controls-right :is(.el-input-number__increase, .el-input-number__decrease) {
+  height: calc((var(--st-control-size) - 2px) / 2);
+  line-height: calc((var(--st-control-size) - 2px) / 2);
+}
+.st-control--native:is(:disabled, [aria-disabled="true"]),
+.st-control.is-disabled :is(.el-input__wrapper, .el-select__wrapper),
+.st-control .el-select__wrapper.is-disabled {
+  background: var(--el-disabled-bg-color, #F5F7FA) !important;
+  color: var(--el-disabled-text-color, #A8ABB2);
+  cursor: not-allowed;
+}
+.st-control--native:disabled { border-color: var(--st-border) !important; }
+.st-control.is-disabled :is(.el-input__wrapper, .el-select__wrapper),
+.st-control .el-select__wrapper.is-disabled { box-shadow: 0 0 0 1px var(--st-border) inset !important; }
+
+/* 自定义多选保持单行，所有选项仍可在下拉面板查看和修改。 */
+.st-control.vi-enum-trigger { flex-wrap: nowrap; overflow: hidden; }
+.st-control.vi-enum-trigger .vi-option-tag { flex-shrink: 0; padding-block: 0; line-height: 20px; }
+
+/* 所有选择触发框共用相同的内容留白和箭头，边框内实际留白均为 8px。 */
+.st-control:is(.tbfs, .enum-val, .flp-color, .dvi-trigger, .stp-trigger, .vi-enum-trigger) {
+  padding-inline: 8px !important;
+  gap: 8px;
+}
+.st-control .el-select__wrapper { padding-inline: 9px !important; gap: 8px; }
+.st-control-caret,
+.st-control .el-select__caret:not(.el-select__clear) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  color: var(--st-text-3);
+  transition: transform .2s;
+}
+.st-control-caret::before,
+.st-control .el-select__caret:not(.el-select__clear)::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: translateY(-1.5px) rotate(45deg);
+}
+.st-control .el-select__caret:not(.el-select__clear) svg { display: none; }
+.st-control-caret.is-reverse { transform: rotate(-180deg); }
+
+/* 多行标签选择框：单行至少 32px，新增标签行时随内容增高。 */
+.st-control.st-control--wrap {
+  height: auto !important;
+  min-height: var(--st-control-height) !important;
+  padding-block: 3px !important;
+}

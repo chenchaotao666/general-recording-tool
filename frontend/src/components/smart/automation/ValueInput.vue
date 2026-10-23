@@ -1,19 +1,19 @@
 <template>
   <!-- 动作赋值：静态值（按目标字段类型给编辑器）或变量胶囊（{x} 选择「第 N 步的…」/ 自然时间） -->
-  <div class="vi">
+  <div ref="root" class="vi">
     <DateValueInput v-if="ft === 'date'" :model-value="modelValue" :field="field" :steps="steps" @update:model-value="v => emit('update:modelValue', v)" />
     <span v-else-if="isVar" class="vi-chip">{{ modelValue.label || '变量' }}<span class="vi-x" @click="emit('update:modelValue', undefined)">✕</span></span>
     <template v-else-if="field">
-      <el-popover v-if="isSelect" v-model:visible="optionsOpen" trigger="click" placement="top-start" :width="320"
-                  :hide-after="0" :show-arrow="false" :teleported="false" :popper-options="{ strategy: 'fixed' }" popper-class="vi-option-pop">
+      <el-popover v-if="isSelect" :visible="optionsOpen" :trigger="[]" :trigger-keys="[]" placement="top-start" :width="320"
+                  :hide-after="0" :show-arrow="false" :teleported="true" :popper-options="{ strategy: 'fixed', modifiers: [{ name: 'preventOverflow', options: { altAxis: true, tether: false, padding: 12 } }] }" :popper-style="{ maxWidth: 'calc(100vw - 24px)' }" popper-class="vi-option-pop">
         <template #reference>
-          <button type="button" class="vi-enum-trigger">
+          <button type="button" class="st-control st-control--native vi-enum-trigger" @click="togglePopover('options')">
             <span v-if="!chosenOptions.length" class="vi-placeholder">请选择</span>
             <span v-for="o in chosenOptions" :key="o.id" class="vi-option-tag" :style="tagStyle(o)">{{ o.label }}</span>
             <StIcon name="chevron-down" :size="14" class="vi-caret" />
           </button>
         </template>
-        <div class="vi-option-search"><el-input v-model="search" placeholder="搜索" clearable /></div>
+        <div class="vi-option-search"><el-input class="st-control" v-model="search" placeholder="搜索" clearable /></div>
         <div class="vi-option-list">
           <button v-for="o in filteredOptions" :key="o.id" type="button" class="vi-option-row" @click="pickOption(o)">
             <span class="vi-option-tag" :style="tagStyle(o)">{{ o.label }}</span>
@@ -21,30 +21,30 @@
           </button>
           <div v-if="!filteredOptions.length" class="vi-no-options">暂无匹配选项</div>
         </div>
-        <button v-if="chosenOptions.length" type="button" class="vi-clear-value" @click="setStatic(ft === 'multiSelect' ? [] : null)">清空值</button>
-        <VarMenu :steps="steps" value-mode inline @pick="pickVar" />
+        <button v-if="chosenOptions.length" type="button" class="st-button vi-clear-value" @click="setStatic(ft === 'multiSelect' ? [] : null)">清空值</button>
+        <VarMenu v-if="optionsOpen" :steps="steps" value-mode inline @pick="pickVar" />
       </el-popover>
-      <el-select v-else-if="ft === 'member'" :model-value="staticVal" multiple class="vi-in" :teleported="false"
+      <el-select collapse-tags collapse-tags-tooltip v-else-if="ft === 'member'" :model-value="staticVal" multiple class="st-control vi-in" :teleported="true"
                  placeholder="选择成员" @update:model-value="setStatic">
         <el-option v-for="m in members" :key="m.id" :value="m.id" :label="m.name" />
       </el-select>
       <el-switch v-else-if="ft === 'checkbox'" :model-value="!!staticVal" @update:model-value="setStatic" />
-      <el-input-number v-else-if="isNumber" :model-value="staticVal" class="vi-in" controls-position="right"
+      <el-input-number v-else-if="isNumber" :model-value="staticVal" class="st-control vi-in" controls-position="right"
                        @update:model-value="setStatic" />
-      <el-input v-else :model-value="staticVal" class="vi-in" placeholder="请输入" @update:model-value="setStatic" />
+      <el-input v-else :model-value="staticVal" class="st-control vi-in" placeholder="请输入" @update:model-value="setStatic" />
     </template>
     <span v-if="!field" class="vi-placeholder vi-in">请先选择字段</span>
-    <el-popover v-if="field && ft !== 'date' && (!isSelect || isVar)" v-model:visible="varsOpen" trigger="click"
-                placement="bottom-end" :width="232" :hide-after="0" :show-arrow="false" :teleported="false"
-                :popper-options="{ strategy: 'fixed' }" popper-class="vi-vars-pop">
-      <template #reference><button type="button" class="vi-var" aria-label="插入变量" data-smart-tip="插入变量">{x}</button></template>
-      <VarMenu :steps="steps" value-mode inline @pick="pickVar" />
+    <el-popover v-if="field && ft !== 'date' && (!isSelect || isVar)" :visible="varsOpen" :trigger="[]" :trigger-keys="[]"
+                placement="bottom-end" :width="232" :hide-after="0" :show-arrow="false" :teleported="true"
+                :popper-options="{ strategy: 'fixed', modifiers: [{ name: 'preventOverflow', options: { altAxis: true, tether: false, padding: 12 } }] }" :popper-style="{ maxWidth: 'calc(100vw - 24px)' }" popper-class="vi-vars-pop">
+      <template #reference><button type="button" class="st-button st-button--icon vi-var" @click="togglePopover('vars')" aria-label="插入变量" data-smart-tip="插入变量">{x}</button></template>
+      <VarMenu v-if="varsOpen" :steps="steps" value-mode inline @pick="pickVar" />
     </el-popover>
   </div>
 </template>
 
 <script setup>
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import VarMenu from './VarMenu.vue'
 import DateValueInput from './DateValueInput.vue'
 import StIcon from '../icons/StIcon.vue'
@@ -63,6 +63,20 @@ const isVar = computed(() => props.modelValue?.type === 'var')
 const isSelect = computed(() => ['singleSelect', 'multiSelect'].includes(ft.value))
 const isNumber = computed(() => ['number', 'percent', 'currency', 'progress'].includes(ft.value))
 const staticVal = computed(() => (props.modelValue?.type === 'static' ? props.modelValue.value : undefined))
+const root = ref(null)
+// Element Plus 的自动外点检测不认识 Teleport 到 body 的变量子菜单。
+function togglePopover(kind) {
+  const opening = !(kind === 'options' ? optionsOpen.value : varsOpen.value)
+  optionsOpen.value = kind === 'options' && opening
+  varsOpen.value = kind === 'vars' && opening
+}
+function onOutside(event) {
+  if (root.value?.contains(event.target) || event.target.closest?.('.el-popper, .vm-sub')) return
+  optionsOpen.value = false
+  varsOpen.value = false
+}
+onMounted(() => document.addEventListener('pointerdown', onOutside, true))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, true))
 const varsOpen = ref(false)
 const optionsOpen = ref(false)
 const search = ref('')

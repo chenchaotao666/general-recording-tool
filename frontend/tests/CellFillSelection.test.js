@@ -3,7 +3,7 @@ import { effectScope, nextTick, ref } from 'vue'
 import { expect, test, vi } from 'vitest'
 import { useCellRange } from '../src/smart/utils/useCellRange.js'
 
-test.each(['', 'sel-anchor', 'grid-people-trigger', 'text-preview'])('fill uses the visible corner of %s and keeps the resulting selection', async (anchorClass) => {
+test.each(['', 'sel-anchor', 'grid-people-trigger', 'file-cell-trigger selected', 'relation-trigger selected', 'text-preview'])('fill uses the visible corner of %s and keeps the resulting selection', async (anchorClass) => {
   const scope = effectScope()
   const rows = ref(Array.from({ length: 4 }, (_, i) => ({ id: i + 1, __key: `r_${i + 1}`, p: 43 })))
   const fields = ref([{ field_name: 'p', field_type: 'percent' }])

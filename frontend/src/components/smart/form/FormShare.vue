@@ -1,19 +1,20 @@
 <template>
-  <el-popover :hide-after="0" v-model:visible="visible" trigger="click" placement="bottom-end" :width="400"
+  <el-popover :hide-after="0" :visible="visible" placement="bottom-end" :width="400"
+              :popper-options="{ strategy: 'fixed', modifiers: [{ name: 'preventOverflow', options: { padding: 12, altAxis: true, tether: false } }] }"
               :popper-style="{ maxWidth: 'calc(100vw - 24px)', borderRadius: '8px' }" :show-arrow="false" popper-class="st-pop form-share-pop">
     <template #reference>
-      <button class="share-trigger" :disabled="!canManage"><StIcon name="link" :size="15" />分享表单</button>
+      <button ref="shareTrigger" class="st-button st-button--primary share-trigger" :disabled="!canManage" @click="visible = !visible"><StIcon name="link" :size="15" />分享表单</button>
     </template>
     <div class="fs-panel" v-loading="loading">
       <div class="fs-enable" :class="{ enabled: link }">
         <div><div class="fs-heading">启用表单链接</div><p>启用后，成员可通过表单链接添加记录，无需加入文档。</p></div>
         <el-switch :model-value="!!link" :disabled="loading || busy || failed" :loading="busy" aria-label="启用表单链接" @change="toggle" />
       </div>
-      <div v-if="failed" class="fs-error">链接加载失败<button @click="load">重试</button></div>
+      <div v-if="failed" class="fs-error">链接加载失败<button class="st-button" @click="load">重试</button></div>
       <div v-if="link" class="fs-body">
         <div class="fs-section">填写范围</div>
         <div class="fs-row"><span>谁可以填写</span>
-          <el-select :model-value="access" :disabled="!link || busy || loading || failed" :teleported="false" aria-label="谁可以填写" @change="changeAccess">
+          <el-select class="st-control" :model-value="access" :disabled="!link || busy || loading || failed" :teleported="true" aria-label="谁可以填写" @change="changeAccess">
             <el-option value="public" label="任何人（无需登录）" />
             <el-option value="password" label="凭密码访问" />
           </el-select>
@@ -21,17 +22,17 @@
         <div v-if="access === 'password'" class="fs-password">
           <div class="fs-password-state">{{ link?.has_password ? '已启用密码保护，留空保留原密码' : '设置密码后，填写者需输入密码才能访问' }}</div>
           <div class="fs-row">
-            <el-input v-model="password" type="password" show-password autocomplete="new-password"
+            <el-input class="st-control" v-model="password" type="password" show-password autocomplete="new-password"
                       placeholder="输入访问密码（至少 4 位）" :disabled="!link || busy" @keyup.enter="savePassword" />
-            <el-button :disabled="!link || busy || password.length < 4" :loading="busy" @click="savePassword">{{ link?.has_password ? '更新' : '保存' }}</el-button>
+            <el-button class="st-button" :disabled="!link || busy || password.length < 4" :loading="busy" @click="savePassword">{{ link?.has_password ? '更新' : '保存' }}</el-button>
           </div>
         </div>
         <div class="fs-section fs-invite">邀请填写</div>
         <div class="fs-actions">
-          <button class="fs-copy" :disabled="!ready" @click="copyLink"><StIcon name="link" :size="18" />复制链接</button>
-          <button class="fs-icon st-icon-action" :disabled="!ready" aria-label="打开表单" data-smart-tip="打开表单" @click="openForm"><StIcon name="open-form" :size="19" /></button>
-          <button class="fs-icon st-icon-action" :disabled="!ready" aria-label="表单二维码" data-smart-tip="表单二维码" @click="showQr"><StIcon name="qr-code" :size="18" /></button>
-          <button class="fs-icon st-icon-action" :disabled="!ready" aria-label="分享到微信" data-smart-tip="分享到微信" @click="showWechat"><StIcon name="wechat" :size="19" /></button>
+          <button class="st-button st-button--primary fs-copy" :disabled="!ready" @click="copyLink"><StIcon name="link" :size="18" />复制链接</button>
+          <button class="st-button st-button--icon fs-icon" :disabled="!ready" aria-label="打开表单" data-smart-tip="打开表单" @click="openForm"><StIcon name="open-form" :size="19" /></button>
+          <button class="st-button st-button--icon fs-icon" :disabled="!ready" aria-label="表单二维码" data-smart-tip="表单二维码" @click="showQr"><StIcon name="qr-code" :size="18" /></button>
+          <button class="st-button st-button--icon fs-icon" :disabled="!ready" aria-label="分享到微信" data-smart-tip="分享到微信" @click="showWechat"><StIcon name="wechat" :size="19" /></button>
         </div>
       </div>
     </div>
@@ -46,7 +47,7 @@
         <img v-if="qrSrc" :src="qrSrc" width="220" height="220" alt="扫码填写表单" />
         <p v-if="link?.has_password" class="fs-qr-password">此表单需输入访问密码</p>
       </div>
-      <el-button :loading="downloading" @click="downloadQr">保存二维码</el-button>
+      <el-button class="st-button" :loading="downloading" @click="downloadQr">保存二维码</el-button>
     </div>
   </el-dialog>
   <el-dialog v-model="wechatVisible" title="分享到微信" width="320px" align-center append-to-body
@@ -54,31 +55,38 @@
     <p class="fs-wechat-help">请复制链接并前往微信分享</p>
     <template v-if="wechatCopyFailed">
       <p class="fs-copy-help">自动复制失败，请手动复制下方链接后打开微信。</p>
-      <el-input :model-value="url" readonly aria-label="微信分享链接" @focus="$event.target.select()" />
+      <el-input class="st-control" :model-value="url" readonly aria-label="微信分享链接" @focus="$event.target.select()" />
     </template>
     <p v-if="wechatCopied" class="fs-copy-help fs-wechat-result">链接已复制。如未唤起微信，请手动打开微信粘贴分享。</p>
     <template #footer>
       <div class="fs-wechat-actions">
-        <el-button type="primary" :loading="wechatCopying" @click="copyAndOpenWechat">复制链接并打开微信</el-button>
-        <el-button @click="wechatVisible = false">取消</el-button>
+        <el-button class="st-button st-button--primary" type="primary" :loading="wechatCopying" @click="copyAndOpenWechat">复制链接并打开微信</el-button>
+        <el-button class="st-button" @click="wechatVisible = false">取消</el-button>
       </div>
     </template>
   </el-dialog>
   <el-dialog v-model="copyVisible" title="复制表单链接" width="420px" align-center append-to-body
              :style="{ maxWidth: 'calc(100vw - 24px)' }">
     <p class="fs-copy-help">浏览器未允许自动复制，请选中下方链接手动复制。</p>
-    <el-input :model-value="url" readonly aria-label="表单链接" @focus="$event.target.select()" />
+    <el-input class="st-control" :model-value="url" readonly aria-label="表单链接" @focus="$event.target.select()" />
   </el-dialog>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import StIcon from '../icons/StIcon.vue'
 import { smartGetFormLink, smartCreateFormLink, smartDeleteFormLink } from '../../../api/index.js'
 
 const props = defineProps({ viewId: { type: Number, required: true }, title: String, canManage: Boolean })
 const visible = ref(false)
+const shareTrigger = ref(null)
+function closeShareOutside(event) {
+  if (shareTrigger.value?.contains(event.target) || event.target.closest?.('.el-popper, .el-overlay')) return
+  visible.value = false
+}
+onMounted(() => document.addEventListener('click', closeShareOutside, true))
+onBeforeUnmount(() => document.removeEventListener('click', closeShareOutside, true))
 const loading = ref(false)
 const busy = ref(false)
 const failed = ref(false)

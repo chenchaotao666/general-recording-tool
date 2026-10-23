@@ -1,9 +1,9 @@
 <template>
-  <el-popover v-model:visible="open" trigger="click" placement="bottom-start" :width="320"
-              :hide-after="0" :show-arrow="false" :teleported="false" :popper-options="{ strategy: 'fixed' }"
-              popper-class="dvi-pop" @hide="specific = false">
+  <el-popover :visible="open" :trigger="[]" :trigger-keys="[]" placement="bottom-start" :width="320"
+              :hide-after="0" :show-arrow="false" :teleported="true" :popper-options="{ strategy: 'fixed', modifiers: [{ name: 'preventOverflow', options: { altAxis: true, tether: false, padding: 12 } }] }" :popper-style="{ maxWidth: 'calc(100vw - 24px)' }"
+              popper-class="dvi-pop">
     <template #reference>
-      <button type="button" class="dvi-trigger">
+      <button ref="trigger" type="button" class="st-control st-control--native dvi-trigger" @click="toggle">
         <span :class="{ placeholder: !label }">{{ label || '请选择' }}</span>
         <StIcon :name="open ? 'chevron-up' : 'chevron-down'" :size="14" />
       </button>
@@ -13,11 +13,11 @@
     </div>
     <div class="dvi-specific">
       <button type="button" class="dvi-item" @click="showSpecific">具体日期</button>
-      <div v-if="specific" class="dvi-calendar">
-        <el-date-picker ref="picker" :model-value="modelValue?.type === 'static' ? modelValue.value : null"
+      <div v-if="open && specific" class="dvi-calendar">
+        <el-date-picker class="st-control" ref="picker" :model-value="modelValue?.type === 'static' ? modelValue.value : null"
                         :type="field.options?.includeTime ? 'datetime' : 'date'"
                         :value-format="field.options?.includeTime ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD'"
-                        :teleported="false" placeholder="选择具体日期" @update:model-value="v => pick({ type: 'static', value: v })" />
+                        :teleported="true" :popper-options="{ modifiers: [{ name: 'preventOverflow', options: { altAxis: true, tether: false, padding: 12 } }] }" placeholder="选择具体日期" @update:model-value="v => pick({ type: 'static', value: v })" />
       </div>
     </div>
     <VarMenu v-if="open && steps.length" :steps="dateSteps" value-mode inline hide-time @pick="(v, text) => pick({ type: 'var', var: v, label: text })" />
@@ -26,7 +26,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 import VarMenu from './VarMenu.vue'
 const props = defineProps({ modelValue: { default: undefined }, field: { type: Object, required: true }, steps: { type: Array, default: () => [] } })
@@ -34,6 +34,16 @@ const emit = defineEmits(['update:modelValue'])
 const open = ref(false)
 const specific = ref(false)
 const picker = ref(null)
+const trigger = ref(null)
+function close() { open.value = false; specific.value = false }
+function toggle() { if (open.value) close(); else open.value = true }
+function onOutside(event) {
+  if (trigger.value?.contains(event.target) || event.target.closest?.('.el-popper, .vm-sub')) return
+  close()
+}
+watch(() => props.field?.field_name, close)
+onMounted(() => document.addEventListener('pointerdown', onOutside, true))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, true))
 const dateSteps = computed(() => props.steps.map(step => ({
   ...step,
   vars: (step.vars || []).filter(v => ['date', 'createdTime', 'lastModifiedTime'].includes(v.icon)),

@@ -37,6 +37,7 @@
 
 <script setup>
 import SmartListItem from '../common/SmartListItem.vue'
+import { useZIndex } from 'element-plus'
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useGridScrollCollapse } from '../../../smart/utils/useGridScrollCollapse.js'
 import StIcon from '../icons/StIcon.vue'
@@ -186,32 +187,46 @@ const rect = ref(null)
 // 左右不超出屏幕——保证选项面板始终完整可见（参照 PixPin_2026-10-17_17-05-34 底部被任务栏遮挡）
 const panelNat = ref(0)   // 面板自然高度（不受可用空间限制时）
 const panelW = ref(0)
+const { nextZIndex } = useZIndex()
+const panelZIndex = ref(0)
+const viewport = ref({ width: window.innerWidth, height: window.innerHeight })
 const panelStyle = computed(() => {
   const r = rect.value
   if (!r) return {}
-  const vh = window.innerHeight, vw = window.innerWidth, gap = 2, margin = 8
+  const { height: vh, width: vw } = viewport.value
+  const gap = 2, margin = 8
+  const maxHeight = Math.max(0, vh - margin * 2)
+  const maxWidth = Math.max(0, vw - margin * 2)
+  const minWidth = Math.min(Math.max(r.width, 200), maxWidth)
+  const widthLimit = Math.min(Math.max(r.width, 320), maxWidth)
   const below = vh - r.bottom - gap - margin
   const above = r.top - gap - margin
   const nat = panelNat.value || 320
   const up = nat > below && above > below
-  const avail = Math.max(120, up ? above : below)
+  const avail = Math.min(maxHeight, Math.max(0, up ? above : below))
   const h = Math.min(nat, avail)
-  const w = Math.max(panelW.value, Math.max(r.width, 200))
+  const w = Math.min(Math.max(panelW.value, minWidth), widthLimit)
   const left = Math.max(margin, Math.min(r.left, vw - w - margin))
-  return { left: `${left}px`, top: `${up ? r.top - gap - h : r.bottom + gap}px`,
-           minWidth: `${Math.max(r.width, 200)}px`, maxHeight: `${avail}px` }
+  const top = Math.max(margin, Math.min(up ? r.top - gap - h : r.bottom + gap, vh - margin - h))
+  return { left: `${left}px`, top: `${top}px`, width: 'max-content', zIndex: panelZIndex.value,
+           minWidth: `${minWidth}px`, maxWidth: `${widthLimit}px`, maxHeight: `${avail}px` }
 })
-watch(() => visibleOptions.value.length, () => nextTick(measurePanel))   // 搜索过滤后高度变化，重新定位
+watch([visibleOptions, creatable], () => nextTick(measurePanel))
 function measurePanel() {
   const el = panelRef.value
   if (!el) return
-  panelNat.value = el.scrollHeight
-  panelW.value = el.offsetWidth
+  // 去掉面板高度约束再测自然高度，否则已收缩的列表会让下一次定位低估内容。
+  const maxHeight = el.style.maxHeight
+  el.style.maxHeight = 'none'
+  panelNat.value = el.getBoundingClientRect().height
+  panelW.value = el.getBoundingClientRect().width
+  el.style.maxHeight = maxHeight
 }
 
 // 面板锚定锚点框（锚点随标签换行增高，面板要跟到底边）：ResizeObserver 跟踪锚点尺寸
 let anchorRO = null
 function updateRect() {
+  viewport.value = { width: window.innerWidth, height: window.innerHeight }
   const r = anchorRef.value?.getBoundingClientRect()
   if (r) rect.value = r
   nextTick(measurePanel)
@@ -220,7 +235,7 @@ function updateRect() {
 const panelOut = ref(false)
 let scrollRaf = 0
 function onAnyScroll(e) {
-  if (e?.target && panelRef.value?.contains?.(e.target)) return   // 面板内列表自身滚动
+  if (e?.target instanceof Node && panelRef.value?.contains(e.target)) return   // 面板内列表自身滚动；resize 的 target 是 window
   cancelAnimationFrame(scrollRaf)
   scrollRaf = requestAnimationFrame(() => {
     // 宿主不是表格单元格（详情面板）时以锚点自身判定，visibleCellRect 对非表格元素只返回其位置
@@ -244,17 +259,20 @@ onMounted(async () => {
   const td = anchorRef.value.closest('td')
   if (td && !isDisplayCell(td)) return
   if (props.closed) return   // 单击选中态：只显示锚点，不展开面板、不监听外部点击
+  panelZIndex.value = nextZIndex()
   updateRect()
   anchorRO = new ResizeObserver(updateRect)
   anchorRO.observe(anchorRef.value)
   document.addEventListener('mousedown', onDocMousedown, true)
   document.addEventListener('scroll', onAnyScroll, true)
+  window.addEventListener('resize', onAnyScroll)
   nextTick(() => kwRef.value?.focus({ preventScroll: true }))
 })
 onUnmounted(() => {
   anchorRO?.disconnect()
   document.removeEventListener('mousedown', onDocMousedown, true)
   document.removeEventListener('scroll', onAnyScroll, true)
+  window.removeEventListener('resize', onAnyScroll)
   cancelAnimationFrame(scrollRaf)
 })
 </script>
@@ -285,20 +303,20 @@ onUnmounted(() => {
 /* 下拉按钮（设计稿 PixPin_2026-10-15_00-56-40）：浅灰圆角小方块 + 单三角，点击切换展开/收起 */
 .sel-panel {
   display: flex; flex-direction: column;   /* 受 max-height 限制时由列表区收缩滚动 */
-  position: fixed; z-index: 3000; background: #fff; border-radius: 6px;
+  position: fixed; background: #fff; border-radius: 6px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, .12); border: 1px solid var(--el-border-color-lighter);
-  padding: 8px; box-sizing: border-box; max-width: 320px;
+  padding: 8px; box-sizing: border-box; overflow: auto;
   user-select: none;   /* 选项文字不可选中（搜索框内文字除外） */
 }
 .sel-search {
   width: 100%; box-sizing: border-box; border: none; outline: none;
   border-bottom: 1px solid var(--el-border-color-lighter);
   padding: 4px 2px 8px; font-size: var(--st-font-size); color: var(--el-text-color-primary);
-  user-select: text;
+  user-select: text; flex-shrink: 0; min-width: 0;
 }
 .sel-search::placeholder { color: var(--el-text-color-placeholder); }
-.sel-kind { font-size: var(--st-font-size); color: var(--el-text-color-secondary); padding: 8px 2px 4px; }
-.sel-list { max-height: 240px; min-height: 0; flex: 0 1 auto; overflow-y: auto; display: flex; flex-direction: column; }
+.sel-kind { font-size: var(--st-font-size); color: var(--el-text-color-secondary); padding: 8px 2px 4px; flex-shrink: 0; }
+.sel-list { max-height: 240px; min-height: 32px; flex: 0 1 auto; overflow-y: auto; display: flex; flex-direction: column; }
 .sel-item {
   display: flex; align-items: center;  padding: 0 8px;   /* 行高与单元格标签一致（标签 20px + 上下 3px） */
   cursor: pointer;

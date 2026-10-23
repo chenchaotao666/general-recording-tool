@@ -1,0 +1,56 @@
+[
+  {
+    "prompt": "选中节点填充红色",
+    "result": {
+      "mode": "modify",
+      "title": "修改画布",
+      "edits": [
+        {
+          "id": "selected",
+          "backgroundColor": "#ff0000",
+          "fillStyle": "solid"
+        }
+      ]
+    }
+  },
+  {
+    "prompt": "选中节点改成线条填充",
+    "result": {
+      "mode": "modify",
+      "title": "修改画布",
+      "edits": [
+        {
+          "id": "selected",
+          "backgroundColor": "transparent",
+          "fillStyle": "hachure"
+        }
+      ]
+    }
+  },
+  {
+    "prompt": "选中节点线条改成虚线",
+    "result": {
+      "mode": "modify",
+      "title": "修改画布",
+      "edits": [
+        {
+          "id": "selected",
+          "strokeStyle": "dashed"
+        }
+      ]
+    }
+  },
+  {
+    "prompt": "选中节点边框改成红色",
+    "result": {
+      "mode": "modify",
+      "title": "修改画布",
+      "edits": [
+        {
+          "id": "selected",
+          "strokeColor": "#ff0000"
+        }
+      ]
+    }
+  }
+]

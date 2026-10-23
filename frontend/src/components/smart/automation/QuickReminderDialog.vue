@@ -18,7 +18,7 @@
         <span>给</span>
       </div>
       <div class="qr-to">
-        <el-select v-model="to" multiple filterable class="qr-members" placeholder="选择成员" :teleported="false">
+        <el-select collapse-tags collapse-tags-tooltip v-model="to" multiple filterable class="st-control qr-members" placeholder="选择成员" :teleported="true">
           <el-option v-for="m in members" :key="m.id" :value="m.id" :label="m.name" />
         </el-select>
       </div>
@@ -26,8 +26,8 @@
     <template #footer>
       <div class="qr-foot">
         <a class="qr-more" @click="more">更多配置<StIcon name="chevron-right" :size="12" /></a>
-        <el-button type="primary" class="qr-btn" :loading="saving" @click="save">确定</el-button>
-        <el-button class="qr-btn qr-cancel" @click="emit('close')">取消</el-button>
+        <el-button type="primary" class="st-button st-button--large st-button--primary qr-btn" :loading="saving" @click="save">确定</el-button>
+        <el-button class="st-button st-button--large qr-btn qr-cancel" @click="emit('close')">取消</el-button>
       </div>
     </template>
   </el-dialog>

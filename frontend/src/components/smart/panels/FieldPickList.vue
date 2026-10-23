@@ -11,12 +11,12 @@
           <span class="fpl-name">{{ n.group.name }}</span>
         </SmartListItem>
         <template v-if="!n.group || !collapsed.has(n.group.id)">
-          <SmartListItem v-for="f in n.fields" :key="f.field_name" class="fpl-item" :class="{ sub: !!n.group }" :selected="isSelected(f.field_name)"
+          <SmartListItem v-for="f in n.fields" :key="f.field_name" class="fpl-item" :class="{ sub: !!n.group }"
                :role="multiple ? 'checkbox' : undefined" :aria-checked="multiple ? isSelected(f.field_name) : undefined"
                :tabindex="multiple ? 0 : undefined" :data-smart-tip="f.label" @click="emit('pick', f)"
                @keydown.enter.prevent="emit('pick', f)" @keydown.space.prevent="emit('pick', f)">
             <StIcon :name="fieldIconName(f)" :size="16" class="fpl-ico" /><span class="fpl-name">{{ f.label }}</span>
-            <span v-if="multiple" class="fpl-check" :class="{ checked: isSelected(f.field_name) }" aria-hidden="true">{{ isSelected(f.field_name) ? '✓' : '' }}</span>
+            <span class="fpl-check" aria-hidden="true"><StIcon v-if="isSelected(f.field_name)" name="check" :size="16" /></span>
           </SmartListItem>
         </template>
       </template>
@@ -69,7 +69,7 @@ const nodes = computed(() => {
 </script>
 
 <style scoped>
-/* 尺寸参照稿：标题 14px 灰；行 32px、字段名 15px、类型图标 16px 深色；编组成员再缩进一级；hover/选中浅灰圆角底 */
+/* 尺寸参照稿：标题 14px 灰；行 32px、字段名 15px、类型图标 16px 深色；编组成员再缩进一级；hover 浅灰圆角底，选中仅显示右侧勾号 */
 .fpl { width: 300px; }
 .fpl-title { font-size: var(--st-font-size); color: var(--st-text-3); padding: 4px 12px 8px; }
 .fpl-list { overflow-y: auto; }
@@ -81,7 +81,6 @@ const nodes = computed(() => {
 .fpl-ico { color: var(--st-text-2); flex: none; }
 .fpl-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fpl-empty { padding: 12px; font-size: var(--st-font-size); color: var(--st-text-3); text-align: center; }
-.fpl-check { margin-left: auto; width: 16px; height: 16px; flex: none; box-sizing: border-box; border: 1px solid #d5d9df; border-radius: 3px; font-size: var(--st-font-size); line-height: 14px; text-align: center; }
-.fpl-check.checked { background: var(--st-primary); border-color: var(--st-primary); color: #fff; }
+.fpl-check { display: inline-flex; align-items: center; justify-content: center; margin-left: auto; width: 16px; height: 16px; flex: none; color: var(--st-primary); }
 .fpl-item:focus-visible { outline: 2px solid var(--st-primary); outline-offset: -2px; }
 </style>

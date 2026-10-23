@@ -23,6 +23,7 @@
 // → 之后每次画布变动 iframe 自动发 autosave（带 xml）
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { buildMxfile, mergeMxfile, partUnits, shiftUnits, unitsBBox, xmlBBox, xmlContext } from './drawioAi'
+import { renderDrawioPreview } from './drawioPreview'
 
 const ORIGIN = 'https://embed.diagrams.net'
 // ui=kennedy 经典全套界面；libraries=1 开图形库侧栏；关掉保存/退出按钮（保存由画板页自动保存接管）
@@ -113,8 +114,19 @@ function getContent() {
 // 注意：drawio embed 协议拿不到 iframe 内的选区（跨域 + 协议无此消息），
 // 所以 modify 只能是整画布重新生成，不像 excalidraw 侧支持选中局部替换。
 // 返回是否真正写入（编辑器未就绪/无内容时 false，调用方据此提示）
+let previewDraft = null
+let previewXml = null
 function applyAiContent(d, { append = false } = {}) {
   if (!ready.value) return false
+  const xml = previewDraft === d && previewXml ? previewXml : prepareAiXml(d, append)
+  if (!xml) return false
+  loadXml(xml)
+  previewDraft = null
+  previewXml = null
+  return true
+}
+
+function prepareAiXml(d, append = d.mode === 'append') {
   const parts = d?.parts?.length ? d.parts : [d]
   const stamp = Date.now().toString(36)
   // 逐部分转 units：id 带时间戳前缀（与画布已有元素、跨部分都隔离），横向排开
@@ -131,13 +143,11 @@ function applyAiContent(d, { append = false } = {}) {
   if (append) {
     const merged = mergeMxfile(latestXml, shiftToRight(units))
     if (merged) {
-      loadXml(merged)
-      return true
+      return merged
     }
     // 现有 XML 为空/损坏：按替换处理
   }
-  loadXml(buildMxfile(units, frameEl.value?.clientWidth || 960, frameEl.value?.clientHeight || 640))
-  return true
+  return buildMxfile(units, frameEl.value?.clientWidth || 960, frameEl.value?.clientHeight || 640)
 }
 
 // 下发 load 动作并同步 latestXml + 触发保存：load 本身不会让 drawio 标脏，
@@ -172,7 +182,15 @@ onBeforeUnmount(() => {
   window.removeEventListener('message', onMessage)
 })
 
-defineExpose({ getContent, applyAiContent, getContext })
+async function renderAiDraft(d, { focusChanges = false } = {}) {
+  const xml = prepareAiXml(d)
+  if (!xml) throw new Error('没有可预览的内容')
+  const image = await renderDrawioPreview(focusChanges && d.mode === 'append' ? prepareAiXml(d, false) : xml)
+  previewDraft = d
+  previewXml = xml
+  return image
+}
+defineExpose({ getContent, applyAiContent, getContext, renderAiDraft })
 </script>
 
 <style scoped>

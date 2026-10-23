@@ -18,6 +18,7 @@ test('find records config edits match mode and conditions inside its popover', a
     } },
   })
   expect(wrapper.find('.ae-find-trigger').text()).toBe('满足条件的记录0')
+  await wrapper.find('.ae-find-trigger').trigger('click')
   const panel = wrapper.find('.ae-find-conditions')
   panel.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', 'any')
   await flushPromises()

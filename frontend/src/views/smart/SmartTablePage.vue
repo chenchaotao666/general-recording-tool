@@ -78,7 +78,7 @@
           </div>
           <div class="rh-custom">自定义行高
             <el-input-number :model-value="typeof cfg.rowHeight === 'number' ? cfg.rowHeight : null" :min="1" :max="20" :controls="false"
-                             size="small" class="rh-num" placeholder="" @change="(v) => v && patchConfig({ rowHeight: Math.round(v) })" />行
+                             size="small" class="st-control st-control--small rh-num" placeholder="" @change="(v) => v && patchConfig({ rowHeight: Math.round(v) })" />行
           </div>
         </div>
       </el-popover>
@@ -104,11 +104,11 @@
 
       <div class="tb-right">
         <!-- 条件胶囊（pin 的筛选条件）：点击弹单字段筛选浮层（运算符+勾选清单，与列头「筛选」同款） -->
-        <el-popover :hide-after="0" v-for="c in pinnedConditions" :key="c.id" trigger="click" placement="bottom-start" :width="480" popper-class="st-pop st-ffp-pop">
+        <el-popover :hide-after="0" v-for="c in pinnedConditions" :key="c.id" :visible="activePanel === `pinned:${c.id}`" placement="bottom-start" :width="480" popper-class="st-pop st-ffp-pop">
           <template #reference>
-            <span class="chip"><StIcon name="filter" :size="12" />{{ labelOf(c.fieldId) }}<StIcon name="chevron-down" :size="12" /></span>
+            <span class="chip" @click="togglePanel(`pinned:${c.id}`)"><StIcon name="filter" :size="12" />{{ labelOf(c.fieldId) }}<StIcon name="chevron-down" :size="12" /></span>
           </template>
-          <FieldFilterPop v-if="fieldOfName(c.fieldId)" :field="fieldOfName(c.fieldId)" :condition="c" pinned
+          <FieldFilterPop v-if="activePanel === `pinned:${c.id}` && fieldOfName(c.fieldId)" :field="fieldOfName(c.fieldId)" :condition="c" pinned
                           :scope-text="filterScope === 'personal' ? '调整仅你可见' : '对所有人生效'"
                           @change="(cond) => applyFieldCondition(c.fieldId, cond)"
                           @pin="(v) => setFieldPinned(c.fieldId, v)" @open-panel="setPanel('filter', true)" />
@@ -121,8 +121,8 @@
           <button class="tb-ico st-icon-action" :disabled="!contentPerm.viewManage" @click="generateForm"><StIcon name="form-add" :size="16" /></button>
         </el-tooltip>
         <span class="tb-sep" />
-        <button class="tb-ico st-icon-action" data-smart-tip="撤销" :disabled="!undoStack.canUndo" @click="doUndo"><StIcon name="undo" :size="16" /></button>
-        <button class="tb-ico st-icon-action" data-smart-tip="重做" :disabled="!undoStack.canRedo" @click="doRedo"><StIcon name="redo" :size="16" /></button>
+        <button class="tb-ico st-icon-action" aria-label="撤销" :disabled="!undoStack.canUndo" @click="doUndo"><StIcon name="undo" :size="16" /></button>
+        <button class="tb-ico st-icon-action" aria-label="重做" :disabled="!undoStack.canRedo" @click="doRedo"><StIcon name="redo" :size="16" /></button>
         <button class="tb-ico st-icon-action" data-smart-tip="查找替换" @click="openFind($event)"><StIcon name="search" :size="16" /></button>
       </div>
     </div>
@@ -198,32 +198,29 @@
     <!-- 新建/修改编组弹窗（设计文档 §6.1：编组名称 + 包含字段，默认含当前列） -->
     <!-- 非模态（同字段编辑框）：双击编组表头时在鼠标位置弹出，点外部收起 -->
     <el-dialog :model-value="groupDialog.visible" :title="groupDialog.id ? '修改编组' : '新建编组'"
-               width="470px" class="st-fcd" :show-close="false" append-to-body
-               v-bind="anchoredDialogAttrs(groupDialog.at, 470, 250)"
-               @opened="focusGroupName" @close="groupDialog.visible = false; groupFieldsOpen = false">
-      <div class="gd-form">
-        <input ref="groupNameRef" v-model="groupDialog.name" class="gd-name" placeholder="编组名称" aria-label="编组名称" maxlength="100"
+               width="320px" class="st-fcd st-fcd-compact" :show-close="false" append-to-body destroy-on-close
+               v-bind="anchoredDialogAttrs(groupDialog.at, 320, 250)"
+               @opened="placeGroupDialog(); focusGroupName()" @close="groupDialog.visible = false; groupFieldsOpen = false">
+      <div class="gd-form" v-panel-drag="{ panel: '.el-dialog' }">
+        <div class="fcd-move" data-panel-drag-handle />
+        <input ref="groupNameRef" v-model="groupDialog.name" class="st-control st-control--native gd-name" placeholder="编组名称" aria-label="编组名称" maxlength="100"
                @keydown.enter="saveGroupDialog" @keydown.esc="groupDialog.visible = false" />
         <el-popover v-model:visible="groupFieldsOpen" trigger="click" placement="bottom-start" :width="324"
                     :hide-after="0" :show-arrow="false" popper-class="st-tbpanel st-pick-pop">
           <template #reference>
-            <div class="gd-fields" :class="{ open: groupFieldsOpen }" role="button" tabindex="0" aria-label="选择包含字段"
+            <div class="st-control st-control--native st-control--wrap gd-fields" :class="{ open: groupFieldsOpen }" role="button" tabindex="0" aria-label="选择包含字段"
                  :aria-expanded="groupFieldsOpen" @keydown.enter.prevent="groupFieldsOpen = !groupFieldsOpen">
               <StIcon name="colgroup" :size="17" />
-              <div class="gd-tags">
-                <span v-if="!groupDialog.members.length" class="gd-placeholder">包含字段</span>
-                <el-tag v-for="name in groupDialog.members" :key="name" closable size="small" @close="toggleGroupField({ field_name: name })" @click.stop>
-                  {{ fields.find(f => f.field_name === name)?.label || name }}
-                </el-tag>
-              </div>
+              <SmartTagList :items="groupDialog.members.map(name => ({ value: name, label: fields.find(f => f.field_name === name)?.label || name }))"
+                            placeholder="包含字段" @remove="name => toggleGroupField({ field_name: name })" />
               <StIcon :name="groupFieldsOpen ? 'chevron-up' : 'chevron-down'" :size="14" />
             </div>
           </template>
           <FieldPickList :fields="fields" :column-groups="columnGroups" :selected="groupDialog.members" @pick="toggleGroupField" />
         </el-popover>
         <div class="gd-foot">
-          <button type="button" class="gd-btn primary" @click="saveGroupDialog">确定</button>
-          <button type="button" class="gd-btn" @click="groupDialog.visible = false">取消</button>
+          <button type="button" class="st-button st-button--primary gd-btn primary" @click="saveGroupDialog">确定</button>
+          <button type="button" class="st-button gd-btn" @click="groupDialog.visible = false">取消</button>
         </div>
       </div>
     </el-dialog>
@@ -231,7 +228,7 @@
     <!-- 字段列头菜单 -->
     <teleport to="body">
       <div v-if="fieldMenu.visible" class="fm-mask field-menu-layer">
-        <div v-menu-bounds="fieldMenu" class="fm" @click.stop>
+        <SmartMenu v-menu-bounds="fieldMenu" class="fm" @click.stop>
           <div class="mi" @click="fieldAct('edit')"><StIcon name="pencil" :size="15" />修改字段</div>
           <div class="mi has-sub">
             <StIcon name="move-into" :size="15" />插入字段 <span class="sub-caret"><StIcon name="chevron-right" :size="12" /></span>
@@ -305,25 +302,21 @@
           </div>
           <div v-if="menuIsSelect" class="mi" @click="fieldAct('aiTags')"><StIcon name="sparkle" :size="15" class="fm-ai" />AI 匹配标签</div>
           <div class="mi" @click="fieldAct('reminder')"><StIcon name="play-circle" :size="15" />内容变更时提醒</div>
-          <!-- 底部图标快捷栏：副本/列宽/冻结/隐藏/删除，统一浅色提示框 -->
+          <!-- 底部图标快捷栏：副本/列宽/冻结/隐藏/删除 -->
           <div class="fm-bar">
-            <el-tooltip :hide-after="0" content="创建副本" placement="top" :show-after="150" :z-index="3100">
+            <el-tooltip :hide-after="0" content="创建副本" placement="top" :show-after="150">
               <span class="fb-item st-icon-action" @click="fieldAct('duplicate')"><StIcon name="copy" :size="16" /></span>
             </el-tooltip>
-            <el-tooltip :hide-after="0" content="自动调整列宽" placement="top" :show-after="150" :z-index="3100">
+            <el-tooltip :hide-after="0" content="自动调整列宽" placement="top" :show-after="150">
               <span class="fb-item st-icon-action" @click="fieldAct('autoFit')"><StIcon name="autofit" :size="16" /></span>
             </el-tooltip>
-            <el-tooltip :hide-after="0" :content="menuFieldFrozen ? '取消冻结' : menuFreezeBlocked ? '无法冻结，窗口宽度不足' : '冻结至此列'" placement="top" :show-after="150" :z-index="3100">
+            <el-tooltip :hide-after="0" :content="menuFieldFrozen ? '取消冻结' : menuFreezeBlocked ? '无法冻结，窗口宽度不足' : '冻结至此列'" placement="top" :show-after="150">
               <span class="fb-item st-icon-action" :class="{ 'freeze-disabled': menuFreezeBlocked }" :aria-disabled="menuFreezeBlocked" @click="fieldAct('freeze')"><StIcon :name="menuFieldFrozen ? 'unfreeze' : 'freeze'" :size="16" /></span>
             </el-tooltip>
-            <el-tooltip :hide-after="0" content="隐藏" placement="top" :show-after="150" :z-index="3100">
-              <span class="fb-item st-icon-action" @click="fieldAct('hide')"><StIcon name="eye-off" :size="16" /></span>
-            </el-tooltip>
-            <el-tooltip :hide-after="0" content="删除" placement="top" :show-after="150" :z-index="3100">
-              <span class="fb-item st-icon-action" @click="fieldAct('delete')"><StIcon name="trash" :size="16" /></span>
-            </el-tooltip>
+            <span class="fb-item st-icon-action" aria-label="隐藏" @click="fieldAct('hide')"><StIcon name="eye-off" :size="16" /></span>
+            <span class="fb-item st-icon-action" aria-label="删除" @click="fieldAct('delete')"><StIcon name="trash" :size="16" /></span>
           </div>
-        </div>
+        </SmartMenu>
       </div>
     </teleport>
 
@@ -353,7 +346,7 @@
     <teleport to="body">
       <div v-if="statMenu.visible" class="fm-mask" @click="statMenu.visible = false"
            @contextmenu.prevent="statMenu.visible = false">
-        <div class="fm stat-fm" :style="{ left: `${statMenu.x}px`, top: `${statMenu.y}px` }" @click.stop>
+        <div v-menu-bounds="statMenu" class="fm stat-fm" @click.stop>
           <div v-for="o in statOptions" :key="o.key" class="mi stat-mi" @click="statAct(o.key)">
             <span class="sm-check">{{ statCurrent === o.key ? '✓' : '' }}</span>
             <span class="sm-label">{{ o.label }}</span>
@@ -372,10 +365,7 @@
       <AddFieldPop v-if="addFieldPop.visible" :x="addFieldPop.x" :y="addFieldPop.y"
                    @pick="(p) => onTypePick(p, false)" @pick-again="(p) => onTypePick(p, true)"
                    @close="addFieldPop.visible = false" @ai="onAiFromAddField" />
-      <AiFieldEditor v-if="aiPanel.visible && aiPanel.field" :x="aiPanel.x" :y="aiPanel.y" :table-id="tableId" :fields="resolvedFields"
-                     :field="aiPanel.field" :rows="dataRows" @close="aiPanel.visible = false" @save="onAiSave"
-                     @run="({ scope }) => runAiField(aiPanel.field, scope)" />
-      <AiFieldPanel v-if="aiPanel.visible && !aiPanel.field" :x="aiPanel.x" :y="aiPanel.y" :table-id="tableId" :fields="resolvedFields"
+      <AiFieldPanel v-if="aiPanel.visible" :at="aiPanel.at" :field="aiPanel.field || undefined" :x="aiPanel.x" :y="aiPanel.y" :table-id="tableId" :fields="resolvedFields"
                     :rows="dataRows" :total-rows="total"
                     :preset-label="aiPanel.label" @close="aiPanel.visible = false" @save="onAiSave"
                     @run="({ scope }) => runAiField(aiPanel.field, scope)"
@@ -397,7 +387,7 @@
     <teleport to="body">
       <div v-if="fieldFilter.visible" class="fm-mask" @click="fieldFilter.visible = false"
            @contextmenu.prevent="fieldFilter.visible = false">
-        <div class="fm ffp-wrap" :style="{ left: `${fieldFilter.x}px`, top: `${fieldFilter.y}px` }" @click.stop>
+        <div v-menu-bounds="fieldFilter" class="fm ffp-wrap" @click.stop>
           <FieldFilterPop v-if="fieldFilter.field" :field="fieldFilter.field"
                           :condition="panelConditions.find(c => c.fieldId === fieldFilter.field?.field_name) || null"
                           :pinned="!!panelConditions.find(c => c.fieldId === fieldFilter.field?.field_name)?.pinned"
@@ -419,6 +409,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import SmartGrid from '../../components/smart/grid/SmartGrid.vue'
 import StIcon from '../../components/smart/icons/StIcon.vue'
+import SmartMenu from '../../components/smart/common/SmartMenu.vue'
 import ViewTabs from '../../components/smart/ViewTabs.vue'
 import FilterPanel from '../../components/smart/panels/FilterPanel.vue'
 import SortPanel from '../../components/smart/panels/SortPanel.vue'
@@ -433,16 +424,17 @@ import FindReplaceDialog from '../../components/smart/panels/FindReplaceDialog.v
 import PermissionPanel from '../../components/smart/perms/PermissionPanel.vue'
 import AutomationDrawer from '../../components/smart/automation/AutomationDrawer.vue'
 import FieldPickList from '../../components/smart/panels/FieldPickList.vue'
+import SmartTagList from '../../components/smart/common/SmartTagList.vue'
 import QuickReminderDialog from '../../components/smart/automation/QuickReminderDialog.vue'
 import FormView from '../../components/smart/form/FormView.vue'
 import KanbanView from '../../components/smart/kanban/KanbanView.vue'
 import AiFieldPanel from '../../components/smart/ai/AiFieldPanel.vue'
-import AiFieldEditor from '../../components/smart/ai/AiFieldEditor.vue'
 import AiFormulaDialog from '../../components/smart/ai/AiFormulaDialog.vue'
 import AiMatchTagsDialog from '../../components/smart/ai/AiMatchTagsDialog.vue'
 import { FIELD_REGISTRY, filterOpsOf, OP_LABELS, OPTION_COLORS, sortDirectionLabels,
          footerStatsOf, STAT_LABELS, formatStatValue } from '../../smart/registry/fieldRegistry.js'
-import { anchoredDialogAttrs, useNonModalOutsideClose } from '../../smart/utils/anchorDialog.js'
+import { anchoredDialogAttrs, useButtonAnchoredDialog, useNonModalOutsideClose } from '../../smart/utils/anchorDialog.js'
+import { vPanelDrag } from '../../smart/utils/panelDrag.js'
 import { isRuleComplete, isCondValueEmpty, createUndoStack, formatDate } from '../../smart/utils/format.js'
 import { resolveRefOptions } from '../../smart/utils/refOptions.js'
 import { resolveEnumTags } from '../../smart/utils/enumTags.js'
@@ -1318,7 +1310,7 @@ const allTables = ref([])
 
 function openFieldConfig(f, insertCtx = null, at = null) {
   if (f?.field_type === 'ai') {   // AI 字段：场景市场面板编辑
-    Object.assign(aiPanel, { visible: true, field: f, label: f.label, x: window.innerWidth - 40, y: 90 })
+    Object.assign(aiPanel, { visible: true, field: f, label: f.label, at, x: window.innerWidth - 40, y: 90 })
     return
   }
   fieldDialog.field = f
@@ -1706,12 +1698,12 @@ async function addMoreCharts(d) {
 }
 
 // ---------- AI 字段 ----------
-const aiPanel = reactive({ visible: false, x: 0, y: 0, field: null, label: '' })
+const aiPanel = reactive({ visible: false, x: 0, y: 0, at: null, field: null, label: '' })
 const aiFormulaDlg = reactive({ visible: false })
 const aiTags = reactive({ visible: false, field: null })
 function onAiFromAddField({ label, x, y }) {
   addFieldPop.visible = false
-  Object.assign(aiPanel, { visible: true, field: null, label, x: x + 480, y })
+  Object.assign(aiPanel, { visible: true, field: null, label, at: null, x: x + 480, y })
 }
 // run：first5 = 生成前 5 行 / all = 生成全部 / none = 仅保存配置；编辑态 null = 仅保存
 async function onAiSave({ label, config, run }) {
@@ -1817,6 +1809,7 @@ async function copyStats() {
 // ---------- 列编组（设计文档 §6.3：新建/修改弹窗 + 移入移出；字段最多属于一个编组） ----------
 const groupDialog = reactive({ visible: false, id: null, name: '', members: [], at: null })
 const groupNameRef = ref(null)
+const placeGroupDialog = useButtonAnchoredDialog(() => groupNameRef.value?.parentElement, () => groupDialog.at, () => groupDialog.visible)
 const groupFieldsOpen = ref(false)
 function toggleGroupField(field) {
   const name = field.field_name
@@ -2182,8 +2175,8 @@ onUnmounted(() => {
 .fm-mask { position: fixed; inset: 0; z-index: 3000; }
 .field-menu-layer, .group-menu-layer { pointer-events: none; }
 .field-menu-layer > .fm, .group-menu-layer > .fm { pointer-events: auto; }
-.fm { position: fixed; background: #fff; border-radius: 8px; box-shadow: var(--st-shadow-pop); padding: 4px; min-width: 170px; }
-.mi {
+.fm:not(.smart-menu) { position: fixed; background: #fff; border-radius: 8px; box-shadow: var(--st-shadow-pop); padding: 4px; min-width: min(170px, calc(100vw - 16px)); max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); box-sizing: border-box; overflow: auto; }
+.fm:not(.smart-menu) .mi {
   display: flex; align-items: center; gap: 8px; padding: 0 12px; font-size: var(--st-font-size);
   border-radius: 4px; cursor: pointer; white-space: nowrap; color: var(--st-text-2);
  height: var(--st-list-item-height); box-sizing: border-box; }
@@ -2194,8 +2187,9 @@ onUnmounted(() => {
 /* 列头菜单的移入编组子菜单：hover 右侧飞出 */
 .mi.has-sub { position: relative; display: flex; align-items: center; }
 .sub-caret { margin-left: auto; color: var(--st-text-3); display: inline-flex; }
-.fm-sub {
-  display: none; position: absolute; left: calc(100% - 2px); top: -4px; z-index: 1;
+.fm-sub { display: none; }
+.fm:not(.smart-menu) .fm-sub {
+  position: absolute; left: calc(100% - 2px); top: -4px; z-index: 1;
   background: #fff; border-radius: 8px; box-shadow: var(--st-shadow-pop); padding: 4px; min-width: 140px;
 }
 .mi.has-sub:hover > .fm-sub { display: block; }
@@ -2206,7 +2200,7 @@ onUnmounted(() => {
 .fm-group-t { font-size: var(--st-font-size); color: var(--st-text-3); padding: 6px 12px 2px; }
 .fm-free { margin-left: 6px; }
 .fm-ai { color: var(--st-ai) !important; }
-.fm-viz { min-width: 260px; }
+.fm .fm-viz { min-width: 260px; }
 .fm-sub-t { font-size: var(--st-font-size); color: var(--st-text-3); padding: 6px 12px 2px; }
 .mi-2 { align-items: flex-start; }
 .mi-2 > .st-icon { margin-top: 2px; }
@@ -2221,9 +2215,7 @@ onUnmounted(() => {
 .gd-fields:hover { box-shadow: 0 0 0 1px #C9CDD4 inset; }
 .gd-fields.open, .gd-fields:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--st-primary) inset; }
 .gd-fields > .st-icon { flex: none; }
-.gd-tags { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
-.gd-placeholder { color: var(--el-text-color-placeholder); font-size: var(--st-font-size); }
-.gd-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; border-top: 1px solid #EBECEE; margin: 16px -24px 0; padding: 16px 24px 0; }
+.gd-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; border-top: 1px solid #EBECEE; margin: 16px -16px 0; padding: 16px 16px 0; }
 .gd-btn { height: 32px; padding: 0 16px; border-radius: 6px; border: none; background: #F2F3F5; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
 .gd-btn:hover { background: #E6E8EA; }
 .gd-btn.primary { background: var(--st-primary); color: #fff; }
@@ -2234,7 +2226,7 @@ onUnmounted(() => {
 .sm-check { width: 14px; color: var(--st-primary); }
 .sm-label { flex: 1; }
 .sm-val { color: var(--st-text-2); font-variant-numeric: tabular-nums; }
-.fm-divider { height: 1px; background: var(--st-border); margin: 4px 6px; }
+.fm:not(.smart-menu) .fm-divider { height: 1px; background: var(--st-border); margin: 4px 6px; }
 /* 排序项行尾：当前方向内联灰字（参照 表头-工具栏.png「选项正序 ›」） */
 .mi-tail { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; color: var(--st-text-3); font-size: var(--st-font-size); }
 .mi.has-sub .mi-tail .sub-caret { margin-left: 0; }

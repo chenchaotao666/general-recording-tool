@@ -15,14 +15,14 @@
       </button>
     </div>
     <div class="cover-upload">
-      <button :disabled="uploading" @click="fileInput?.click()">{{ uploading ? '正在上传…' : '上传自定义封面' }}</button>
+      <button class="st-button" :disabled="uploading" @click="fileInput?.click()">{{ uploading ? '正在上传…' : '上传自定义封面' }}</button>
       <span>建议使用横向图片</span>
       <input ref="fileInput" type="file" accept="image/*" hidden @change="upload" />
     </div>
     <template #footer>
       <div class="cover-actions">
-        <el-button type="primary" :disabled="uploading" @click="confirm">确定</el-button>
-        <el-button @click="visible = false">取消</el-button>
+        <el-button class="st-button st-button--primary" type="primary" :disabled="uploading" @click="confirm">确定</el-button>
+        <el-button class="st-button" @click="visible = false">取消</el-button>
       </div>
     </template>
   </el-dialog>

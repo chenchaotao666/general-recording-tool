@@ -3,12 +3,13 @@
        字段名称 → 字段类型（带图标）→ [类型说明] → 分隔线 → 类型专属设置（灰色小标题分区）→
        底部：左侧 AI 入口（使用 AI 生成/计算/判断/匹配标签/生成公式），右侧 确定 / 取消。
        无标题栏；所有入口均非模态，at 存在时锚定在打开位置（anchoredDialogAttrs），点击外部收起 -->
-  <el-dialog :model-value="visible" :width="`${panelWidth}px`" :show-close="false" class="st-fcd" :class="{ 'st-fcd-number': isNumberFamily, 'st-fcd-compact': form.field_type !== 'ai' }" append-to-body
+  <el-dialog :model-value="visible" :width="`${panelWidth}px`" :show-close="false" class="st-fcd" :class="{ 'st-fcd-number': isNumberFamily, 'st-fcd-compact': form.field_type !== 'ai', 'st-fcd-options': isSelect && !isRef }" append-to-body
              v-bind="anchoredDialogAttrs(at, panelWidth, 560)" :close-on-press-escape="!fxEditor && !aiFormula" @opened="placeEditor" @update:model-value="$emit('close')" destroy-on-close>
-    <div ref="editorBody" class="fcd">
-      <input ref="nameRef" v-model="form.label" class="fcd-input fcd-name" placeholder="字段名称" maxlength="100"
+    <div ref="editorBody" class="fcd" v-panel-drag="{ panel: '.el-dialog' }">
+      <div class="fcd-move" data-panel-drag-handle />
+      <input ref="nameRef" v-model="form.label" class="st-control st-control--native fcd-input fcd-name" placeholder="字段名称" maxlength="100"
              @keydown.enter="save" @keydown.esc="$emit('close')" />
-      <el-select v-model="form.field_type" class="fcd-select fcd-type" popper-class="fcd-pop" :disabled="!!field && isSystemLike"
+      <el-select v-model="form.field_type" class="st-control fcd-select fcd-type" popper-class="fcd-pop" :disabled="!!field && isSystemLike"
                  @change="onTypeChange">
         <template #prefix><StIcon :name="form.field_type" :size="17" class="fcd-pre" /></template>
         <el-option-group v-for="g in TYPE_GROUPS" :key="g.key">
@@ -36,7 +37,7 @@
             <div class="fcd-optbox">
               <SmartListItem v-for="(o, i) in form.config.options" :key="o.id" v-reorder-feedback="dropCls(i)" class="fcd-opt-row" :class="dropCls(i)"
                    @dragover.prevent="overIdx = i" @drop.prevent="dropOpt(i)">
-                <span class="fcd-del st-icon-action" data-smart-tip="删除选项" @click="form.config.options.splice(i, 1)"><StIcon name="minus-circle" :size="20" /></span>
+                <span class="fcd-del st-icon-action" aria-label="删除选项" @click="form.config.options.splice(i, 1)"><StIcon name="minus-circle" :size="20" /></span>
                 <el-popover :hide-after="0" trigger="click" placement="bottom-start" :width="208" popper-class="fcd-color-pop" :show-arrow="false">
                   <template #reference>
                     <span class="fcd-color" :style="{ background: optionColor(o.color).value }" data-smart-tip="选择颜色" />
@@ -46,22 +47,22 @@
                           :style="{ background: c.value }" :data-smart-tip="c.label" @click="o.color = c.key" />
                   </div>
                 </el-popover>
-                <input v-model="o.label" class="fcd-opt-in" />
+                <input v-model="o.label" class="st-control st-control--small st-control--native fcd-opt-in" />
                 <span class="fcd-drag st-icon-action" draggable="true" data-smart-tip="拖拽调整顺序" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = -1">
                   <StIcon name="drag" :size="16" /></span>
               </SmartListItem>
-              <div class="fcd-add" @click="addOption"><StIcon name="plus-circle" :size="20" />添加选项</div>
+              <div class="st-button fcd-add" @click="addOption"><StIcon name="plus-circle" :size="20" />添加选项</div>
             </div>
             <el-checkbox v-model="form.config.allowAddOptionWhenEditing" class="fcd-ck">允许填写时新增选项</el-checkbox>
           </template>
           <template v-else>
             <div class="fcd-row2">
-              <el-select v-model="form.config.reference.tableId" class="fcd-select" placeholder="选择表" filterable popper-class="fcd-pop"
+              <el-select v-model="form.config.reference.tableId" class="st-control fcd-select" placeholder="选择表" filterable popper-class="fcd-pop"
                          @change="form.config.reference.fieldId = null">
                 <template #prefix><StIcon name="table" :size="16" class="fcd-pre" /></template>
                 <el-option v-for="t in tables" :key="t.id" :value="t.id" :label="t.label" />
               </el-select>
-              <el-select v-model="form.config.reference.fieldId" class="fcd-select" placeholder="选择字段" popper-class="fcd-pop">
+              <el-select v-model="form.config.reference.fieldId" class="st-control fcd-select" placeholder="选择字段" popper-class="fcd-pop">
                 <template v-if="refFieldObj" #prefix><StIcon :name="fieldIconName(refFieldObj)" :size="16" class="fcd-pre" /></template>
                 <el-option v-for="f in refSelectFields" :key="f.field_name" :value="f.field_name" :label="f.label">
                   <span class="fcd-opt"><StIcon :name="fieldIconName(f)" :size="15" />{{ f.label }}</span>
@@ -79,11 +80,11 @@
               </div>
               <div v-for="(c, i) in form.config.optionLinkage.conditions" :key="i" class="fcd-cond">
                 <FieldSel v-model="c.localFieldId" :fields="fields" placeholder="本表的字段" class="fcd-c1" />
-                <el-select v-model="c.operator" class="fcd-select fcd-c2" popper-class="fcd-pop"><el-option value="eq" label="等于" /></el-select>
+                <el-select v-model="c.operator" class="st-control fcd-select fcd-c2" popper-class="fcd-pop"><el-option value="eq" label="等于" /></el-select>
                 <FieldSel v-model="c.remoteFieldId" :fields="refFields" placeholder="引用表的字段" class="fcd-c3" />
                 <span class="fcd-del st-icon-action" @click="form.config.optionLinkage.conditions.splice(i, 1)"><StIcon name="minus-circle" :size="20" /></span>
               </div>
-              <div class="fcd-add gray" @click="form.config.optionLinkage.conditions.push({ localFieldId: null, operator: 'eq', remoteFieldId: null })">
+              <div class="st-button fcd-add gray" @click="form.config.optionLinkage.conditions.push({ localFieldId: null, operator: 'eq', remoteFieldId: null })">
                 <StIcon name="plus" :size="16" />添加条件</div>
             </div>
           </template>
@@ -103,7 +104,7 @@
           </div>
           <template v-if="form.field_type === 'currency'">
             <div class="fcd-label">货币符号</div>
-            <el-select v-model="form.config.currencyCode" class="fcd-select" popper-class="fcd-pop" @change="(c) => (form.config.currencySymbol = CURRENCIES[c].s)">
+            <el-select v-model="form.config.currencyCode" class="st-control fcd-select" popper-class="fcd-pop" @change="(c) => (form.config.currencySymbol = CURRENCIES[c].s)">
               <el-option v-for="(c, code) in CURRENCIES" :key="code" :value="code" :label="`${code} - ${c.s}`">
                 <span class="fcd-opt-lr"><span>{{ code }} - {{ c.s }}</span><span class="fcd-sub">{{ c.name }}</span></span>
               </el-option>
@@ -129,19 +130,19 @@
             <div class="fcd-row2">
               <div class="fcd-col">
                 <div class="fcd-label">数字格式</div>
-                <el-select v-model="form.config.numberFormat" class="fcd-select" popper-class="fcd-pop">
+                <el-select v-model="form.config.numberFormat" class="st-control fcd-select" popper-class="fcd-pop">
                   <el-option value="value" label="数值" /><el-option value="percent" label="百分比" />
                 </el-select>
               </div>
               <div class="fcd-col">
                 <div class="fcd-label">小数位数</div>
-                <el-select v-model="form.config.precision" class="fcd-select" popper-class="fcd-pop">
+                <el-select v-model="form.config.precision" class="st-control fcd-select" popper-class="fcd-pop">
                   <el-option v-for="p in PRECISIONS" :key="String(p.v)" :value="p.v" :label="p.l" />
                 </el-select>
               </div>
             </div>
             <div class="fcd-label">进度条范围</div>
-            <div class="fcd-range">
+            <div class="st-control st-control--native fcd-range">
               <span class="fcd-range-value">
                 <input v-model.number="form.config.range.min" inputmode="decimal" class="fcd-range-in" aria-label="进度最小值"
                        :style="{ width: `${Math.max(1, String(form.config.range.min).length)}ch` }" />
@@ -158,7 +159,7 @@
           </template>
           <template v-else>
             <div class="fcd-label">小数位数</div>
-            <el-select v-model="form.config.precision" class="fcd-select" popper-class="fcd-pop">
+            <el-select v-model="form.config.precision" class="st-control fcd-select" popper-class="fcd-pop">
               <el-option v-for="p in PRECISIONS" :key="String(p.v)" :value="p.v" :label="p.l">
                 <span class="fcd-opt-lr"><span>{{ p.l }}</span><span class="fcd-sub">{{ precisionSample(p.v) }}</span></span>
               </el-option>
@@ -171,7 +172,7 @@
         <!-- ========== 日期 / 创建时间 / 最后编辑时间 ========== -->
         <template v-if="isDateFamily">
           <div class="fcd-label">格式设置</div>
-          <el-select v-model="form.config.format" class="fcd-select" popper-class="fcd-pop fcd-date-pop">
+          <el-select v-model="form.config.format" class="st-control fcd-select" popper-class="fcd-pop fcd-date-pop">
             <el-option v-for="d in DATE_FORMATS" :key="d.v" :value="d.v" :label="d.l">
               <span class="fcd-date-check"><StIcon v-if="form.config.format === d.v" name="check" :size="16" /></span>{{ d.l }}
             </el-option>
@@ -196,7 +197,7 @@
           <div class="fcd-label">格式设置</div>
           <div class="fcd-lrow">
             <span>展示样式</span>
-            <el-select v-model="form.config.displayStyle" class="fcd-select fcd-w200" popper-class="fcd-pop">
+            <el-select v-model="form.config.displayStyle" class="st-control fcd-select fcd-w200" popper-class="fcd-pop">
               <template #prefix><StIcon :name="form.config.displayStyle === 'text' ? 'link' : 'view-grid'" :size="15" class="fcd-pre" /></template>
               <el-option value="text" label="文字"><span class="fcd-opt"><StIcon name="link" :size="15" />文字</span></el-option>
               <el-option value="iconText" label="图标文字"><span class="fcd-opt"><StIcon name="view-grid" :size="15" />图标文字</span></el-option>
@@ -207,7 +208,7 @@
         <!-- ========== 关联 ========== -->
         <template v-if="form.field_type === 'relation'">
           <div class="fcd-label">关联的智能表</div>
-          <el-select v-model="form.config.targetTableId" class="fcd-select" placeholder="选择要关联的智能表" filterable popper-class="fcd-pop">
+          <el-select v-model="form.config.targetTableId" class="st-control fcd-select" placeholder="选择要关联的智能表" filterable popper-class="fcd-pop">
             <template #prefix><StIcon name="table" :size="16" class="fcd-pre" /></template>
             <el-option v-for="t in tables" :key="t.id" :value="t.id" :label="t.label" />
           </el-select>
@@ -215,7 +216,7 @@
             <el-checkbox v-model="form.config.bidirectional" :disabled="!form.config.targetTableId">在「{{ targetTableName || '关联表' }}」表显示</el-checkbox>
             <el-checkbox v-model="form.config.multiple">允许多选</el-checkbox>
             <el-checkbox :model-value="!!form.config.viewId" :disabled="!form.config.targetTableId" @change="(v) => (form.config.viewId = v ? (targetViews[0]?.id || null) : null)">指定视图</el-checkbox>
-            <el-select v-if="form.config.viewId" v-model="form.config.viewId" class="fcd-select" popper-class="fcd-pop">
+            <el-select v-if="form.config.viewId" v-model="form.config.viewId" class="st-control fcd-select" popper-class="fcd-pop">
               <el-option v-for="v in targetViews" :key="v.id" :value="v.id" :label="v.name" />
             </el-select>
           </div>
@@ -224,7 +225,7 @@
         <!-- ========== 自动编号 ========== -->
         <template v-if="form.field_type === 'autoNumber'">
           <div class="fcd-label">编号类型</div>
-          <el-select v-model="form.config.numberType" class="fcd-select" popper-class="fcd-pop">
+          <el-select v-model="form.config.numberType" class="st-control fcd-select" popper-class="fcd-pop">
             <el-option value="autoIncrement" label="自增数字" /><el-option value="custom" label="自定义编号" />
           </el-select>
           <div v-if="form.config.numberType === 'autoIncrement'" class="fcd-hint">从 1 开始连续递增的数字编号，如：1、2、3</div>
@@ -238,19 +239,19 @@
                   <StIcon name="minus-circle" :size="20" /></span>
                 <span class="fcd-seg-l">{{ SEG_LABELS[s.type] }}</span>
                 <div class="fcd-seg-ctl">
-                  <div v-if="s.type === 'autoIncrement'" class="fcd-digits">
+                  <div v-if="s.type === 'autoIncrement'" class="st-control st-control--native fcd-digits">
                     <input v-model.number="s.digits" type="number" min="1" max="8" class="fcd-digits-in" /><span class="fcd-sub">位</span>
                     <span class="fcd-steps"><span @click="s.digits = Math.min(8, (s.digits || 3) + 1)">▲</span><span @click="s.digits = Math.max(1, (s.digits || 3) - 1)">▼</span></span>
                   </div>
-                  <input v-else-if="s.type === 'fixedText'" v-model="s.text" class="fcd-input fcd-seg-in" placeholder="请输入" />
-                  <el-select v-else v-model="s.format" class="fcd-select" popper-class="fcd-pop">
+                  <input v-else-if="s.type === 'fixedText'" v-model="s.text" class="st-control st-control--native fcd-input fcd-seg-in" placeholder="请输入" />
+                  <el-select v-else v-model="s.format" class="st-control fcd-select" popper-class="fcd-pop">
                     <el-option v-for="(l, k) in DATE_SEG_FORMATS" :key="k" :value="k" :label="l" />
                   </el-select>
                 </div>
                 <span class="fcd-drag st-icon-action" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = -1"><StIcon name="drag" :size="16" /></span>
               </div>
               <el-dropdown :hide-after="0" trigger="click" @command="addSeg">
-                <div class="fcd-add dark"><StIcon name="plus-circle" :size="20" />添加编号字段</div>
+                <div class="st-button fcd-add dark"><StIcon name="plus-circle" :size="20" />添加编号字段</div>
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="fixedText">固定字符</el-dropdown-item>
@@ -284,7 +285,7 @@
         <template v-if="form.field_type === 'lookup'">
           <div class="fcd-label">要引用的字段</div>
           <div class="fcd-row2">
-            <el-select v-model="form.config.sourceTableId" class="fcd-select" placeholder="选择表" filterable popper-class="fcd-pop"
+            <el-select v-model="form.config.sourceTableId" class="st-control fcd-select" placeholder="选择表" filterable popper-class="fcd-pop"
                        @change="form.config.sourceFieldId = null" @visible-change="open => { if (open) refreshLookupOptions() }">
               <template #prefix><StIcon name="table" :size="16" class="fcd-pre" /></template>
               <el-option v-for="t in lookupTables" :key="t.id" :value="t.id" :label="t.label" />
@@ -307,22 +308,22 @@
             <template v-if="lookupMode === 'cond'">
               <div v-for="(c, i) in form.config.conditions" :key="i" class="fcd-cond">
                 <FieldSel v-model="c.sourceFieldId" :fields="srcFields" placeholder="引用表的字段" class="fcd-c1" />
-                <el-select v-model="c.op" class="fcd-select fcd-c2" popper-class="fcd-pop" :disabled="!c.sourceFieldId">
+                <el-select v-model="c.op" class="st-control fcd-select fcd-c2" popper-class="fcd-pop" :disabled="!c.sourceFieldId">
                   <el-option value="eq" label="等于" /><el-option value="neq" label="不等于" /><el-option value="contains" label="包含" />
                 </el-select>
-                <input v-if="c.useValue" v-model="c.rightValue" class="fcd-input fcd-c3 fcd-small" placeholder="输入值" />
+                <input v-if="c.useValue" v-model="c.rightValue" class="st-control st-control--native fcd-input fcd-c3 fcd-small" placeholder="输入值" />
                 <FieldSel v-else v-model="c.rightFieldId" :fields="fields" placeholder="本表的字段" class="fcd-c3" />
                 <el-tooltip :hide-after="0" :content="c.useValue ? '改为引用本表字段' : '改为输入固定值'" placement="top">
                   <span class="fcd-swap" :class="{ off: !c.sourceFieldId }" @click="toggleCondValue(c)">A<sub>⇆</sub></span>
                 </el-tooltip>
                 <span class="fcd-del st-icon-action" @click="form.config.conditions.splice(i, 1)"><StIcon name="minus-circle" :size="20" /></span>
               </div>
-              <div class="fcd-add gray" @click="form.config.conditions.push({ sourceFieldId: null, op: 'eq', rightFieldId: null })">
+              <div class="st-button fcd-add gray" @click="form.config.conditions.push({ sourceFieldId: null, op: 'eq', rightFieldId: null })">
                 <StIcon name="plus" :size="16" />添加条件</div>
             </template>
           </div>
           <div class="fcd-label">统计方式</div>
-          <el-select v-model="form.config.aggregation" class="fcd-select" popper-class="fcd-pop">
+          <el-select v-model="form.config.aggregation" class="st-control fcd-select" popper-class="fcd-pop">
             <el-option v-for="(l, k) in LOOKUP_AGGS" :key="k" :value="k" :label="l" />
           </el-select>
         </template>
@@ -332,8 +333,8 @@
       <div class="fcd-foot" :class="{ sep: !hasBody }">
         <span v-if="aiAction" class="fcd-ai" @click="onAi"><span class="fcd-ai-logo"><StIcon name="sparkle" :size="11" /></span>{{ aiAction }}</span>
         <span class="fcd-flex" />
-        <button class="fcd-btn primary" :disabled="!form.label.trim()" @click="save">确定</button>
-        <button class="fcd-btn" @click="$emit('close')">取消</button>
+        <button class="st-button st-button--primary fcd-btn primary" :disabled="!form.label.trim()" @click="save">确定</button>
+        <button class="st-button fcd-btn" @click="$emit('close')">取消</button>
       </div>
     </div>
 
@@ -358,6 +359,7 @@ import FormulaEditor from '../formula/FormulaEditor.vue'
 import { referencedTableIds, tokenize } from '../../../smart/utils/formula.js'
 import { FIELD_REGISTRY, OPTION_COLORS, PROGRESS_COLORS, optionColor, progressColor } from '../../../smart/registry/fieldRegistry.js'
 import { anchoredDialogAttrs, useButtonAnchoredDialog, useNonModalOutsideClose } from '../../../smart/utils/anchorDialog.js'
+import { vPanelDrag } from '../../../smart/utils/panelDrag.js'
 import { smartListViews } from '../../../api/index.js'
 
 const props = defineProps({
@@ -805,6 +807,13 @@ function save() {
 .el-dialog.st-fcd .el-dialog__header { display: none; }
 .el-dialog.st-fcd .el-dialog__body { padding: 24px; }
 .el-dialog.st-fcd-compact .el-dialog__body { padding: 16px; }
+/* 单选/多选只让选项列表收缩滚动，名称、类型与底部操作留在面板内。 */
+.el-dialog.st-fcd-options { display: flex; flex-direction: column; overflow: hidden !important; }
+.el-dialog.st-fcd-options .el-dialog__body { display: flex; flex-direction: column; min-height: 0; }
+.el-dialog.st-fcd-options .fcd { min-height: 0; }
+.el-dialog.st-fcd-options .fcd > * { flex-shrink: 0; }
+.el-dialog.st-fcd-options .fcd-optbox { flex-shrink: 1; min-height: 0; max-height: 380px; overflow-y: auto; overscroll-behavior: contain; }
+.el-dialog.st-fcd .fcd-move { height: 16px; margin: -16px -16px 0; cursor: move; touch-action: none; user-select: none; }
 .el-dialog.st-fcd-number .fcd-qt { height: 56px; }
 .el-dialog.st-fcd-compact .fcd-sep { margin-left: -16px; margin-right: -16px; }
 .el-dialog.st-fcd-compact .fcd-foot.sep { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }

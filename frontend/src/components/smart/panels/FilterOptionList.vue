@@ -4,7 +4,7 @@
        searchMode：always = 搜索框常显（单字段面板）；toggle = 点计数行的 🔍 才展开（多条件面板，省空间） -->
   <div class="fol">
     <!-- 搜索框：always 模式常显在最上方；toggle 模式点 🔍 后展开在计数行下方（参照 PixPin_2026-10-18_00-35-43） -->
-    <input v-if="searchMode === 'always'" ref="kwRef" v-model="kw" class="fol-search"
+    <input v-if="searchMode === 'always'" ref="kwRef" v-model="kw" class="st-control st-control--native fol-search"
            :placeholder="kind === 'member' ? '搜索成员' : '搜索'" />
     <!-- 计数行：未选时「请选择」（参照 PixPin_2026-10-18_00-27-29），已选时「已选择 N 项 · 清空」 -->
     <div class="fol-count">
@@ -14,11 +14,11 @@
         <span v-if="selected.length" class="fol-clear" @click="$emit('clear')">清空</span>
         <template v-if="searchMode === 'toggle'">
           <span v-if="selected.length" class="fol-vsep" />
-          <span class="fol-act st-icon-action" :class="{ on: searchOpen }" data-smart-tip="搜索" @click="toggleSearch"><StIcon name="search" :size="14" /></span>
+          <span class="fol-act st-icon-action" :class="{ on: searchOpen }" aria-label="搜索" @click="toggleSearch"><StIcon name="search" :size="14" /></span>
         </template>
       </span>
     </div>
-    <input v-if="searchMode === 'toggle' && searchOpen" ref="kwRef" v-model="kw" class="fol-search"
+    <input v-if="searchMode === 'toggle' && searchOpen" ref="kwRef" v-model="kw" class="st-control st-control--native fol-search"
            :placeholder="kind === 'member' ? '搜索成员' : '搜索'" />
     <div class="fol-list" :style="maxHeight ? { maxHeight: `${maxHeight}px` } : {}">
       <SmartListItem tag="label" v-for="o in filtered" :key="o.id" class="fol-item">

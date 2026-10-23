@@ -4,6 +4,23 @@ import { expect, test, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import ImageCellPanel from '../src/components/smart/grid/ImageCellPanel.vue'
 
+test('detail gallery shows every image and filename; read-only allows preview without upload or removal', async () => {
+  const upload = vi.fn()
+  const value = Array.from({ length: 4 }, (_, i) => ({ url: `/image-${i}.png`, name: `图片${i}.png` }))
+  const wrapper = mount(ImageCellPanel, { props: { value, detail: true, readonly: true, upload }, global: { plugins: [ElementPlus] } })
+  expect(wrapper.findAll('.image-card')).toHaveLength(4)
+  expect(wrapper.findAll('.image-card-name').map(n => n.text())).toEqual(value.map(v => v.name))
+  expect(wrapper.find('.image-cell-thumbs').exists()).toBe(false)
+  expect(wrapper.find('.image-card-actions').exists()).toBe(false)
+  expect(wrapper.find('.image-local-upload').exists()).toBe(false)
+  await wrapper.find('.image-drop-wrap').trigger('drop', { dataTransfer: { files: [new File(['a'], 'a.png', { type: 'image/png' })] } })
+  expect(upload).not.toHaveBeenCalled()
+  await wrapper.setProps({ readonly: false })
+  await wrapper.find('[aria-label="删除图片"]').trigger('click')
+  expect(wrapper.emitted('commit').at(-1)[0]).toEqual(value.slice(1))
+  wrapper.unmount()
+})
+
 function setup(upload) {
   return mount(ImageCellPanel, { props: { value: ['existing'], upload }, global: { plugins: [ElementPlus],
     stubs: { 'el-popover': { template: '<div><slot name="reference" /><slot /></div>' } } } })

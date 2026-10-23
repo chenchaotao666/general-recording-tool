@@ -15,20 +15,20 @@
       <div v-if="memberIds.length" class="mg-list">
         <div v-for="m in chosen" :key="m.id" class="mg-member">
           <span class="mg-av">{{ m.name[0] }}</span><span class="mg-name">{{ m.name }}</span>
-          <span class="mg-rm st-icon-action" data-smart-tip="移除" @click="memberIds = memberIds.filter(x => x !== m.id)"><StIcon name="minus-circle" :size="16" /></span>
+          <span class="mg-rm st-icon-action" aria-label="移除" @click="memberIds = memberIds.filter(x => x !== m.id)"><StIcon name="minus-circle" :size="16" /></span>
         </div>
       </div>
       <el-select v-if="picking || !memberIds.length" ref="pickRef" v-model="memberIds" multiple filterable
-                 :teleported="false" class="mg-pick" placeholder="搜索成员" collapse-tags collapse-tags-tooltip>
+                 :teleported="true" class="st-control mg-pick" placeholder="搜索成员" collapse-tags collapse-tags-tooltip>
         <el-option v-for="m in members" :key="m.id" :value="m.id" :label="m.name" />
       </el-select>
-      <button v-if="!memberIds.length" class="mg-choose" @click="openPick">选择指定成员</button>
-      <a v-else class="mg-add" @click="openPick"><StIcon name="plus" :size="13" />添加指定成员</a>
+      <button v-if="!memberIds.length" class="st-button mg-choose" @click="openPick">选择指定成员</button>
+      <a v-else class="st-button mg-add" @click="openPick"><StIcon name="plus" :size="13" />添加指定成员</a>
     </div>
     <div class="mg-card">
       <div class="mg-t">备注</div>
       <div class="mg-d">为指定成员添加名称，如“负责人”、“跟进人”等。指定成员也能看到这个名称。</div>
-      <el-select v-model="name" filterable allow-create default-first-option :teleported="false" class="mg-remark"
+      <el-select v-model="name" filterable allow-create default-first-option :teleported="true" class="st-control mg-remark"
                  placeholder="填写或选择备注" :reserve-keyword="false">
         <el-option-group v-for="c in dictionary" :key="c.category" :label="c.category">
           <el-option v-for="it in c.items" :key="`${c.category}-${it}`" :value="it" :label="it" />
@@ -37,8 +37,8 @@
     </div>
     <template #footer>
       <div class="mg-foot">
-        <el-button type="primary" class="mg-btn" :loading="saving" @click="submit">{{ group ? '保存' : '继续添加权限' }}</el-button>
-        <el-button class="mg-btn mg-cancel" @click="emit('close')">取消</el-button>
+        <el-button type="primary" class="st-button st-button--large st-button--primary mg-btn" :loading="saving" @click="submit">{{ group ? '保存' : '继续添加权限' }}</el-button>
+        <el-button class="st-button st-button--large mg-btn mg-cancel" @click="emit('close')">取消</el-button>
       </div>
     </template>
   </el-dialog>

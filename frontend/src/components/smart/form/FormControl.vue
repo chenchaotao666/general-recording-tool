@@ -5,7 +5,7 @@
 
     <!-- 单选：平铺 radio（默认）/ 下拉 -->
     <template v-else-if="ft === 'singleSelect'">
-      <el-select v-if="item.widget === 'dropdown'" :model-value="modelValue" class="fc-in" :disabled="preview"
+      <el-select v-if="item.widget === 'dropdown'" :model-value="modelValue" class="st-control fc-in" :disabled="preview"
                  placeholder="请选择" clearable @update:model-value="emitV">
         <el-option v-for="o in options" :key="o.id" :value="o.id" :label="o.label" />
       </el-select>
@@ -41,28 +41,28 @@
     <!-- 人员 -->
     <template v-else-if="ft === 'member'">
       <div v-if="preview || !members" class="fc-ph">{{ preview ? '待填写人完成' : '该题仅限登录成员填写' }}</div>
-      <el-select v-else :model-value="modelValue || []" multiple filterable class="fc-in" placeholder="选择人员" @update:model-value="emitV">
+      <el-select collapse-tags collapse-tags-tooltip v-else :model-value="modelValue || []" multiple filterable class="st-control fc-in" placeholder="选择人员" @update:model-value="emitV">
         <el-option v-for="m in members" :key="m.id" :value="m.id" :label="m.name" />
       </el-select>
     </template>
 
     <!-- 日期 -->
-    <el-date-picker v-else-if="ft === 'date' && !preview" :model-value="modelValue" class="fc-in"
+    <el-date-picker v-else-if="ft === 'date' && !preview" :model-value="modelValue" class="st-control fc-in"
                     :type="item.field.options?.includeTime ? 'datetime' : 'date'"
                     :value-format="item.field.options?.includeTime ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD'"
                     placeholder="选择日期" @update:model-value="emitV" />
     <!-- 数字类 -->
     <el-slider v-else-if="ft === 'progress' && !preview" :model-value="Number(modelValue) || 0"
                :min="item.field.options?.range?.min ?? 0" :max="item.field.options?.range?.max ?? 100" @update:model-value="emitV" />
-    <el-input-number v-else-if="isNumber && !preview" :model-value="modelValue" class="fc-in fc-num" controls-position="right"
+    <el-input-number v-else-if="isNumber && !preview" :model-value="modelValue" class="st-control fc-in fc-num" controls-position="right"
                      @update:model-value="emitV" />
     <!-- 链接：{url, text} -->
-    <el-input v-else-if="ft === 'url' && !preview" :model-value="modelValue?.url || ''" class="fc-in" placeholder="https://"
+    <el-input v-else-if="ft === 'url' && !preview" :model-value="modelValue?.url || ''" class="st-control fc-in" placeholder="https://"
               @update:model-value="(v) => emitV(v ? { url: v, text: v } : null)" />
     <div v-else-if="ft === 'relation'" class="fc-ph">{{ preview ? '待填写人完成' : '关联记录请在表格中填写' }}</div>
     <!-- 文本类 / 预览占位 -->
     <div v-else-if="preview" class="fc-ph">待填写人完成</div>
-    <el-input v-else :model-value="modelValue" class="fc-in" :type="ft === 'text' ? 'textarea' : 'text'" :autosize="{ minRows: 1, maxRows: 6 }"
+    <el-input v-else :model-value="modelValue" class="st-control fc-in" :type="ft === 'text' ? 'textarea' : 'text'" :autosize="{ minRows: 1, maxRows: 6 }"
               placeholder="请输入" @update:model-value="emitV" />
   </div>
 </template>

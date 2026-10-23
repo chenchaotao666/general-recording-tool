@@ -1,0 +1,88 @@
+{
+  "context": [
+    {
+      "id": "selected",
+      "type": "rectangle",
+      "text": "A",
+      "selected": true,
+      "x": 0,
+      "y": 0,
+      "width": 100,
+      "height": 60,
+      "backgroundColor": "#ffec99",
+      "fillStyle": "hachure",
+      "strokeColor": "#1971c2",
+      "strokeStyle": "solid",
+      "strokeWidth": 2
+    },
+    {
+      "id": "other",
+      "type": "rectangle",
+      "text": "B",
+      "x": 200,
+      "y": 0,
+      "width": 100,
+      "height": 60,
+      "backgroundColor": "transparent"
+    }
+  ],
+  "cases": [
+    {
+      "prompt": "选中节点填充红色",
+      "result": {
+        "mode": "modify",
+        "title": "修改画布",
+        "edits": [
+          {
+            "id": "selected",
+            "backgroundColor": "#ff0000",
+            "fillStyle": "hachure"
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "prompt": "选中节点改成线条填充",
+      "result": {
+        "mode": "modify",
+        "title": "修改画布",
+        "edits": [
+          {
+            "id": "selected",
+            "fillStyle": "hachure"
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "prompt": "选中节点线条改成虚线",
+      "result": {
+        "mode": "modify",
+        "title": "修改画布",
+        "edits": [
+          {
+            "id": "selected",
+            "strokeStyle": "dashed"
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "prompt": "选中节点边框改成红色",
+      "result": {
+        "mode": "modify",
+        "title": "修改画布",
+        "edits": [
+          {
+            "id": "selected",
+            "strokeColor": "#ff0000"
+          }
+        ]
+      },
+      "passed": true
+    }
+  ]
+}

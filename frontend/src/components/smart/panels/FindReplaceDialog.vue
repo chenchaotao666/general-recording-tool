@@ -6,39 +6,39 @@
     <div class="fr-panel" @keydown.esc.stop.prevent="closePanel">
       <div class="fr-head" @pointerdown="startDrag" @pointermove="moveDrag" @pointerup="stopDrag" @pointercancel="stopDrag" @lostpointercapture="stopDrag">
         <span class="fr-title">{{ expanded ? '查找替换' : '查找' }}</span>
-        <button class="fr-close st-icon-action" type="button" aria-label="关闭" @click="closePanel">
+        <button class="st-button st-button--icon fr-close" type="button" aria-label="关闭" @click="closePanel">
           <StIcon name="close" :size="16" />
         </button>
       </div>
 
       <div class="fr-find-wrap">
-        <input ref="findInputRef" v-model="find" class="fr-input fr-find-input"
+        <input ref="findInputRef" v-model="find" class="st-control st-control--native fr-input fr-find-input"
                :class="{ 'has-nav': searched }" placeholder="输入查找内容"
                :readonly="busy" @input="onFindInput" @keydown.enter.prevent="onFindEnter" />
         <div v-if="searched" class="fr-nav" aria-label="查找结果导航">
-          <button class="st-icon-action" type="button" aria-label="上一个" :disabled="!matches.length || busy" @click="findPrev">
+          <button class="st-button st-button--icon " type="button" aria-label="上一个" :disabled="!matches.length || busy" @click="findPrev">
             <StIcon name="back" :size="14" />
           </button>
           <span class="fr-count">{{ currentIndex >= 0 ? currentIndex + 1 : 0 }}/{{ matches.length }}</span>
-          <button class="st-icon-action" type="button" aria-label="下一个" :disabled="!matches.length || busy" @click="findNext">
+          <button class="st-button st-button--icon " type="button" aria-label="下一个" :disabled="!matches.length || busy" @click="findNext">
             <StIcon name="chevron-right" :size="14" />
           </button>
         </div>
       </div>
 
-      <button v-if="!expanded" class="fr-expand" type="button" @click="expanded = true">
+      <button v-if="!expanded" class="st-button fr-expand" type="button" @click="expanded = true">
         <span>替换</span><StIcon name="chevron-down" :size="13" />
       </button>
 
       <template v-if="expanded">
         <label class="fr-label" for="smart-find-replace">替换为</label>
-        <input id="smart-find-replace" v-model="replace" class="fr-input" placeholder="输入替换内容"
+        <input id="smart-find-replace" v-model="replace" class="st-control st-control--native fr-input" placeholder="输入替换内容"
                :disabled="busy" @input="status = ''" @keydown.enter.prevent="doReplaceCurrent" />
         <div class="fr-ops">
-          <button class="fr-btn fr-primary" type="button" :disabled="!find || busy" @click="doFind">查找</button>
+          <button class="st-button st-button--primary fr-btn fr-primary" type="button" :disabled="!find || busy" @click="doFind">查找</button>
           <div class="fr-replace-ops">
-            <button class="fr-btn" type="button" :disabled="!canReplace" @click="doReplaceCurrent">替换</button>
-            <button class="fr-btn" type="button" :disabled="!canReplace" @click="confirmVisible = true">全部替换</button>
+            <button class="st-button fr-btn" type="button" :disabled="!canReplace" @click="doReplaceCurrent">替换</button>
+            <button class="st-button fr-btn" type="button" :disabled="!canReplace" @click="confirmVisible = true">全部替换</button>
           </div>
         </div>
       </template>
@@ -54,8 +54,8 @@
     </div>
     <template #footer>
       <div class="fr-confirm-ops">
-        <button class="fr-btn fr-primary" type="button" :disabled="busy" @click="doReplaceAll">确定</button>
-        <button class="fr-btn" type="button" :disabled="busy" @click="confirmVisible = false">取消</button>
+        <button class="st-button st-button--primary fr-btn fr-primary" type="button" :disabled="busy" @click="doReplaceAll">确定</button>
+        <button class="st-button fr-btn" type="button" :disabled="busy" @click="confirmVisible = false">取消</button>
       </div>
     </template>
   </el-dialog>
@@ -313,7 +313,7 @@ defineExpose({ refresh: refreshSearch })
 .fr-input::placeholder { color: #A8ABB0; }
 .fr-input:focus { border-color: var(--st-primary); }
 .fr-input:disabled { background: #FFF; color: var(--st-text-2); }
-.fr-find-input.has-nav { padding-right: 126px; }
+.fr-find-input.has-nav { padding-right: 150px; }
 .fr-nav { position: absolute; top: 50%; right: 11px; transform: translateY(-50%); display: flex; align-items: center; gap: 9px; padding-left: 8px; background: #FFF; color: var(--st-text-2); }
 .fr-nav button { width: 16px; height: 24px; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; display: grid; place-items: center; }
 .fr-nav button:disabled { opacity: .4; cursor: not-allowed; }

@@ -2,16 +2,18 @@
   <!-- 填色面板（§5.5，对齐参照 docs/智慧表格/表格上方按钮/填色.png）：
        规则行 = ⋮⋮ + 字段 + 目标/条件（字段名称 / 所有内容 / 筛选运算符）+ [值] → 色块 ▾ + ⊖；
        色板：9 色 × 3 深浅 + 整行填色。条件不完整不生效不计数；即时生效 -->
-  <el-popover :hide-after="0" trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="760" popper-class="st-tbpanel">
-    <template #reference><slot /></template>
-    <div class="flp">
+  <el-popover :hide-after="0" :visible="visible" placement="bottom-start" :width="760"
+              :popper-options="FIXED_POPPER" :popper-style="{ maxWidth: 'calc(100vw - 24px)', boxSizing: 'border-box' }" popper-class="st-tbpanel">
+    <template #reference><span class="flp-ref" @click="emit('update:visible', !visible)"><slot /></span></template>
+    <div v-if="visible" class="flp">
       <div class="flp-head"><span class="tbp-title">填色</span></div>
+      <div class="flp-scroll">
       <div v-for="(r, i) in draft" :key="r.id" v-reorder-feedback="dropClass(i)" class="flp-row" :class="dropClass(i)"
            @dragover.prevent="overIdx = i" @drop.prevent="dropRow(i)">
         <span class="tbp-drag st-icon-action" draggable="true" @dragstart="dragIdx = i" @dragend="dragIdx = overIdx = null"><StIcon name="drag" :size="15" /></span>
         <TbFieldSelect :model-value="r.fieldId" :fields="fields" placeholder="字段" class="flp-field"
                        @update:model-value="(v) => update(i, { fieldId: v, fillTarget: 'all', operator: null, value: undefined })" />
-        <el-select :teleported="false" :model-value="targetOf(r)" :class="needsValue(r) ? 'flp-op' : 'flp-target'" placeholder="条件"
+        <el-select class="st-control" :teleported="true" :popper-options="FIXED_POPPER" :model-value="targetOf(r)" :class="needsValue(r) ? 'flp-op' : 'flp-target'" placeholder="条件"
                    @change="(v) => onTargetChange(i, v)">
           <el-option value="__header" label="字段名称" />
           <el-option value="__all" label="所有内容" />
@@ -23,29 +25,38 @@
           <ConditionValue :field="fieldOf(r)" :operator="r.operator" :value="r.value" @update="(v) => update(i, { value: v })" />
         </div>
         <span class="flp-arrow">→</span>
-        <div class="flp-color" :class="{ open: paletteIdx === i }" @click.stop="togglePalette(i)">
-          <span class="flp-swatch" :style="{ background: r.color || '#fff' }" />
-          <StIcon :name="paletteIdx === i ? 'caret-up' : 'caret-down'" :size="11" class="flp-caret" />
-          <div v-if="paletteIdx === i" class="flp-pal" @click.stop @mousedown.stop>
+        <el-popover :visible="paletteIdx === i" @update:visible="v => { if (v) paletteIdx = i; else if (paletteIdx === i) paletteIdx = null }"
+                    trigger="click" :hide-after="0" placement="bottom-end" :width="320" :teleported="true" :show-arrow="false"
+                    :popper-options="FIXED_POPPER" :popper-style="{ padding: '18px 20px 14px', maxWidth: 'calc(100vw - 24px)', boxSizing: 'border-box' }"
+                    popper-class="fill-palette-pop">
+          <template #reference>
+          <div class="st-control st-control--native flp-color" :class="{ open: paletteIdx === i }">
+            <span class="flp-swatch" :style="{ background: r.color || '#fff' }" />
+            <SmartSelectArrow :open="paletteIdx === i" />
+          </div>
+          </template>
+          <div class="flp-pal" @click.stop @mousedown.stop>
             <div v-for="(row, ri) in FILL_PALETTE" :key="ri" class="flp-pal-row">
               <span v-for="c in row" :key="c" class="flp-cell" :class="{ on: r.color === c }" :style="{ background: c }" @click="pickColor(i, c)" />
             </div>
             <label class="flp-whole"><el-checkbox :model-value="!!r.wholeRow" @change="(v) => update(i, { wholeRow: v })" />整行填色</label>
           </div>
-        </div>
-        <span class="tbp-del st-icon-action" data-smart-tip="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
+        </el-popover>
+        <span class="tbp-del st-icon-action" aria-label="删除" @click="remove(i)"><StIcon name="minus-circle" :size="20" /></span>
       </div>
-      <button class="tbp-add flp-add" @click="add"><StIcon name="plus" :size="15" />添加条件</button>
+      </div>
+      <button class="st-button tbp-add flp-add" @click="add"><StIcon name="plus" :size="15" />添加条件</button>
     </div>
   </el-popover>
 </template>
 
 <script setup>
 import { vReorderFeedback } from '../../../smart/utils/reorderFeedback.js'
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import ConditionValue from './ConditionValue.vue'
 import TbFieldSelect from './TbFieldSelect.vue'
 import StIcon from '../icons/StIcon.vue'
+import SmartSelectArrow from '../common/SmartSelectArrow.vue'
 import { filterOpsOf, opLabel, NO_VALUE_OPS, FILL_PALETTE } from '../../../smart/registry/fieldRegistry.js'
 
 const props = defineProps({
@@ -54,7 +65,10 @@ const props = defineProps({
   rules: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['update:visible', 'change'])
-const visibleModel = computed({ get: () => props.visible, set: (v) => emit('update:visible', v) })
+// 外层仅受 props 控制，外点关闭复用 SmartTablePage 对 .el-popper 的判定。
+const FIXED_POPPER = { strategy: 'fixed', modifiers: [
+  { name: 'preventOverflow', options: { boundary: [], rootBoundary: 'viewport', padding: 12, altAxis: true, tether: false } },
+] }
 
 const draft = ref([])
 const paletteIdx = ref(null)   // 色板：同一时间只开一行
@@ -102,25 +116,19 @@ function dropRow(i) {
   commit()
 }
 
-// 色板外点关闭
-function togglePalette(i) { paletteIdx.value = paletteIdx.value === i ? null : i }
+// 选择颜色后保持色板打开，可继续勾选整行填色；外点关闭由 ElPopover 处理。
 function pickColor(i, c) { update(i, { color: c }) }
-watch(paletteIdx, (v) => {
-  if (v == null) return
-  const close = (e) => {
-    if (e.target.closest?.('.flp-pal') || e.target.closest?.('.flp-color')) return
-    paletteIdx.value = null
-    document.removeEventListener('mousedown', close)
-  }
-  setTimeout(() => document.addEventListener('mousedown', close), 0)
-})
 </script>
 
 <style scoped>
-.flp { display: flex; flex-direction: column; gap: 6px; }
+.flp-ref { display: inline-flex; }
+.flp { display: flex; flex-direction: column; gap: 6px; min-width: 0; max-height: calc(100dvh - 64px); overflow: hidden; }
+.flp-head, .flp-add { flex-shrink: 0; }
+.flp-scroll { display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow: auto; }
+.flp-scroll > .flp-row { flex-shrink: 0; }
 .flp-head { margin-bottom: 6px; }
 .flp-row { display: flex; align-items: center; gap: 10px; border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
-.flp-field { width: 180px; flex: none; }
+.flp-row :deep(.flp-field) { width: 180px; flex: none; }
 .flp-target { flex: 1; min-width: 0; }
 .flp-op { width: 112px; flex: none; }
 /* 值列吃掉剩余宽度；里面的编辑器（日期/数字/标签选择）一律撑满本列、不得溢出盖住「→」和色块 */
@@ -138,14 +146,20 @@ watch(paletteIdx, (v) => {
 .flp-color { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px 0 5px;
              border: 1px solid var(--st-border); border-radius: 6px; cursor: pointer; flex: none; background: #fff; }
 .flp-color:hover, .flp-color.open { border-color: #C9CCD1; }
-.flp-swatch { width: 64px; height: 26px; border-radius: 4px; }
+.flp-swatch { width: 64px; height: 20px; border-radius: 3px; }
 .flp-caret { color: var(--st-text-3); }
-.flp-pal { position: absolute; right: -30px; top: calc(100% + 8px); z-index: 20; background: #fff; border-radius: 10px;
-           box-shadow: 0 6px 24px rgba(0, 0, 0, .14); padding: 18px 20px 14px; cursor: default; }
-.flp-pal-row { display: flex; gap: 8px; margin-bottom: 8px; }
-.flp-cell { width: 24px; height: 24px; border-radius: 3px; cursor: pointer; box-sizing: border-box; }
+.flp-pal { max-height: calc(100dvh - 60px); overflow: auto; cursor: default; }
+.flp-pal-row { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
+.flp-cell { aspect-ratio: 1; border-radius: 3px; cursor: pointer; box-sizing: border-box; }
 .flp-cell.on { box-shadow: 0 0 0 1px #fff inset, 0 0 0 2px var(--st-primary); }
 .flp-cell:hover { transform: scale(1.08); }
 .flp-whole { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
 .flp-add { margin-left: 0; align-self: flex-start; }
+@media (max-width: 720px) {
+  .flp-row { flex-wrap: wrap; padding: 6px 0; gap: 8px; }
+  .flp-row :deep(.flp-field) { width: calc(100% - 32px); min-width: 0; }
+  .flp-op, .flp-target { flex: 1 1 120px; width: auto; }
+  .flp-val { flex: 1 1 160px; }
+  .flp-swatch { width: 40px; }
+}
 </style>

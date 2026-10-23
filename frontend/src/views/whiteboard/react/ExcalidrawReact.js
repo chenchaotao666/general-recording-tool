@@ -27,6 +27,8 @@ const LIB_CSS = `
   .wb-excalidraw .help-icon { display: none !important; }
   .wb-excalidraw .HintViewer { display: none !important; }   /* 工具栏下方的操作提示文字（"要移动画布…"） */
   .wb-excalidraw .main-menu-trigger { display: none !important; }
+  /* 主菜单隐藏后补足左侧顶部空间，让设置面板避开悬浮标题栏（top:18px + height:36px）。 */
+  .wb-excalidraw .App-menu_top__left { padding-top: 24px; }
   .wb-excalidraw .App-toolbar__extra-tools-trigger { display: none !important; }
   .wb-excalidraw .App-toolbar__extra-tools-trigger + .App-toolbar__divider,
   .wb-excalidraw .App-toolbar__divider:has(+ .App-toolbar__extra-tools-trigger) { display: none !important; }
@@ -113,28 +115,12 @@ function bindRightDragPan(host, apiRef) {
   }
 }
 
-// 「更多工具」下拉的 4 个工具平铺到主工具栏（Generate 走官方 AI 服务，不放）：
-// 画框 / 嵌入网页 / 激光笔 直接 setActiveTool；Mermaid 打开官方转换对话框
+// 「更多工具」仅保留激光笔，平铺到主工具栏。
 const EXTRA_TOOLS = [
-  {
-    key: 'frame', title: '画框工具 — F',
-    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg>',
-    action: (api) => api.setActiveTool({ type: 'frame' }),
-  },
-  {
-    key: 'embeddable', title: '嵌入网页',
-    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-2.5 2.6-3.5 5.6-3.5 9s1 6.4 3.5 9c2.5-2.6 3.5-5.6 3.5-9s-1-6.4-3.5-9z"/></svg>',
-    action: (api) => api.setActiveTool({ type: 'embeddable' }),
-  },
   {
     key: 'laser', title: '激光笔 — K',
     svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20L16 8M14 6l4 4M18 4l2 2"/><circle cx="5" cy="19" r="1.4" fill="currentColor" stroke="none"/></svg>',
     action: (api) => api.setActiveTool({ type: 'laser' }),
-  },
-  {
-    key: 'mermaid', title: 'Mermaid 至 Excalidraw',
-    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><path d="M10 6.5h4M17.5 10v4M10 17.5H6.5V10"/></svg>',
-    action: (api) => api.updateScene({ appState: { openDialog: { name: 'ttd', tab: 'mermaid' } } }),
   },
 ]
 

@@ -17,24 +17,24 @@
             <el-radio-button value="stacked">堆积柱状图</el-radio-button>
           </el-radio-group>
         </template>
-        <el-select v-model="form.config.sourceTableId" placeholder="数据源（智能表）" filterable
+        <el-select class="st-control" v-model="form.config.sourceTableId" placeholder="数据源（智能表）" filterable
                    @change="onSourceChange">
           <el-option v-for="t in tables" :key="t.id" :value="t.id" :label="t.label" />
         </el-select>
-        <el-select v-model="form.config.dimension" placeholder="横轴（类别字段）">
+        <el-select class="st-control" v-model="form.config.dimension" placeholder="横轴（类别字段）">
           <el-option v-for="f in srcFields" :key="f.field_name" :value="f.field_name" :label="f.label" />
         </el-select>
         <el-checkbox v-model="form.config.splitMulti" size="small">多选项拆分统计</el-checkbox>
-        <el-select v-model="form.config.subDimension" placeholder="二级类别字段（可选）" clearable>
+        <el-select class="st-control" v-model="form.config.subDimension" placeholder="二级类别字段（可选）" clearable>
           <el-option v-for="f in srcFields" :key="f.field_name" :value="f.field_name" :label="f.label" />
         </el-select>
         <div class="metric-row">
-          <el-select v-model="form.config.metric.agg" style="width: 110px">
+          <el-select class="st-control" v-model="form.config.metric.agg" style="width: 110px">
             <el-option value="count" label="记录行数" />
             <el-option value="sum" label="求和" /><el-option value="avg" label="平均值" />
             <el-option value="max" label="最大值" /><el-option value="min" label="最小值" />
           </el-select>
-          <el-select v-if="form.config.metric.agg !== 'count'" v-model="form.config.metric.field" placeholder="指标字段">
+          <el-select class="st-control" v-if="form.config.metric.agg !== 'count'" v-model="form.config.metric.field" placeholder="指标字段">
             <el-option v-for="f in numFields" :key="f.field_name" :value="f.field_name" :label="f.label" />
           </el-select>
         </div>
@@ -44,8 +44,8 @@
       </div>
     </div>
     <template #footer>
-      <el-button @click="$emit('close')">取消</el-button>
-      <el-button type="primary" :disabled="!form.config.sourceTableId || !form.config.dimension" @click="save">
+      <el-button class="st-button st-button--large" @click="$emit('close')">取消</el-button>
+      <el-button class="st-button st-button--large st-button--primary" type="primary" :disabled="!form.config.sourceTableId || !form.config.dimension" @click="save">
         {{ widget ? '保存' : '添加' }}
       </el-button>
     </template>

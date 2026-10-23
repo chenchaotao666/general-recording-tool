@@ -38,11 +38,8 @@ test('message buttons require valid links, support variables, and stop at two', 
     label: '查看', link: { type: 'static', value: 'https://example.com' },
   })
   await wrapper.find('.me-add-button').trigger('click')
-  await inputs[0].setValue('仪表盘')
-  // Open the nested variable picker through its popover model.
-  const popovers = wrapper.findAllComponents({ name: 'ElPopover' })
-  popovers.at(-1).vm.$emit('update:visible', true)
-  await wrapper.vm.$nextTick()
+  await wrapper.find('.me-button-form input').setValue('仪表盘')
+  await wrapper.find('.me-var-link').trigger('click')
   wrapper.findComponent(VarMenu).vm.$emit('pick', { kind: 'dashboard', entryId: 7 }, '仪表盘7')
   await wrapper.vm.$nextTick()
   await wrapper.find('.me-button-actions .el-button--primary').trigger('click')

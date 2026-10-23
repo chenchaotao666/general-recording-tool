@@ -1,19 +1,18 @@
 <template>
   <!-- 工具栏面板通用字段下拉（排序 / 分组 / 填色）：带边框选择框（字段类型图标 + 名称 + ▾），
        点开为统一的「选择字段」面板（FieldPickList：编组为可折叠节点，参照 docs/PixPin_2026-10-18_01-05-36.png）。
-       :teleported="false"：面板渲染在外层工具栏面板内部，点选字段不会被当成"点击外部"而关掉外层面板；
-       strategy fixed：不被外层面板的滚动区裁剪 -->
-  <el-popover :hide-after="0" v-model:visible="open" trigger="click" :placement="placement" :width="324" :teleported="false"
+       挂到 body 脱离父滚动区；父页面的外点关闭会保留 .el-popper 内的交互。 -->
+  <el-popover :hide-after="0" v-model:visible="open" trigger="click" :placement="placement" :width="324" :teleported="true"
               :show-arrow="false" :popper-options="popperOptions" popper-class="st-tbpanel st-pick-pop">
     <template #reference>
-      <div ref="trigger" class="tbfs" :class="{ borderless, open }">
+      <div ref="trigger" v-bind="$attrs" class="st-control st-control--native tbfs" :class="{ borderless, open }">
         <StIcon v-if="current" :name="fieldIconName(current)" :size="16" class="tbfs-ico" />
         <span class="tbfs-label" :class="{ ph: !hasSelection }">{{ selectionLabel || placeholder }}</span>
-        <span v-if="clearable && hasSelection" class="tbfs-clear st-icon-action" data-smart-tip="清除" @click.stop="emit('update:modelValue', multiple ? [] : null)"><StIcon name="close" :size="12" /></span>
-        <StIcon :name="open ? 'chevron-up' : 'chevron-down'" :size="14" class="tbfs-caret" />
+        <span v-if="clearable && hasSelection" class="tbfs-clear st-icon-action" aria-label="清除" @click.stop="emit('update:modelValue', multiple ? [] : null)"><StIcon name="close" :size="12" /></span>
+        <SmartSelectArrow :open="open" />
       </div>
     </template>
-    <FieldPickList :fields="fields" :column-groups="columnGroups" :selected="modelValue" :max-height="listHeight" @pick="pick" />
+    <FieldPickList class="tbfs-list" :fields="fields" :column-groups="columnGroups" :selected="modelValue" :max-height="listHeight" @pick="pick" />
   </el-popover>
 </template>
 
@@ -21,8 +20,10 @@
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import StIcon from '../icons/StIcon.vue'
+import SmartSelectArrow from '../common/SmartSelectArrow.vue'
 import FieldPickList from './FieldPickList.vue'
 
+defineOptions({ inheritAttrs: false })
 const props = defineProps({
   modelValue: { type: [String, Array], default: null },
   fields: { type: Array, default: () => [] },
@@ -91,6 +92,7 @@ function pick(f) {
 </script>
 
 <style scoped>
+.tbfs-list { width: 100%; min-width: 0; }
 .tbfs { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 10px 0 12px; box-sizing: border-box;
   border-radius: 6px; box-shadow: 0 0 0 1px var(--el-border-color) inset; background: #fff; cursor: pointer; font-size: var(--st-font-size); }
 .tbfs:hover { box-shadow: 0 0 0 1px var(--el-border-color-hover) inset; }

@@ -4,7 +4,7 @@
        ↑↓←→ 移动，⏎ 选定，Tab 选定并继续添加下一列（emit pick-again），Esc 关闭 -->
   <div class="afp-mask" @click="$emit('close')" @contextmenu.prevent="$emit('close')">
     <div ref="popRef" class="afp" :style="{ left: `${pos.x}px`, top: `${pos.y}px` }" @click.stop @mousedown.stop>
-      <input ref="nameRef" v-model="name" class="afp-name" placeholder="字段名称"
+      <input ref="nameRef" v-model="name" class="st-control st-control--native afp-name" placeholder="字段名称"
              @keydown="onKey" @keydown.esc.stop="$emit('close')" />
       <div class="afp-ai" @click="ai">
         <StIcon name="sparkle" :size="15" class="afp-ai-icon" />AI 字段
@@ -27,6 +27,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 import { FIELD_REGISTRY } from '../../../smart/registry/fieldRegistry.js'
+import { useFloatingPanel } from '../../../smart/utils/floatingPanel.js'
 
 const props = defineProps({
   x: { type: Number, default: 200 },
@@ -44,6 +45,7 @@ const name = ref('')
 const idx = ref(0)
 const nameRef = ref(null)
 const popRef = ref(null)
+useFloatingPanel(() => popRef.value, () => popRef.value?.closest('.afp-mask'))
 
 // 位置钳制在视口内
 // 按浮层实际尺寸限制在视口内（固定估值会让右侧/底部最后一行被裁掉）
@@ -79,7 +81,7 @@ function ai() { emit('ai', { label: name.value.trim(), x: pos.value.x, y: pos.va
 <style scoped>
 .afp-mask { position: fixed; inset: 0; z-index: 3000; }
 .afp {
-  position: fixed; width: 480px; background: #fff; border-radius: 8px;
+  position: fixed; width: 480px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); box-sizing: border-box; overflow: auto; background: #fff; border-radius: 8px;
   box-shadow: var(--st-shadow-pop); padding: 16px 16px 10px; display: flex; flex-direction: column;
 }
 .afp-name {
@@ -96,7 +98,8 @@ function ai() { emit('ai', { label: name.value.trim(), x: pos.value.x, y: pos.va
 .afp-ai-caret { margin-left: auto; color: var(--st-text-3); }
 .afp-divider { height: 1px; background: var(--st-border); margin: 4px 0; }
 .afp-label { font-size: var(--st-font-size); color: var(--st-text-3); padding: 6px 2px; }
-.afp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; max-height: 380px; overflow: auto; }
+.afp > :not(.afp-grid) { flex-shrink: 0; }
+.afp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; min-height: 0; max-height: 380px; overflow: auto; }
 .afp-type {
   display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: var(--st-font-size);
   cursor: pointer; border-radius: 6px; color: var(--st-text-2);

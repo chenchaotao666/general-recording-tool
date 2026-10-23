@@ -90,7 +90,7 @@
               v-if="row.key.startsWith('feature_')" :model-value="!!row.value"
               @change="(v) => (row.value = v ? 1 : 0)"
             />
-            <el-input-number v-else v-model="row.value" :min="0" placeholder="空=不限" style="width: 100%" />
+            <el-input-number v-else v-model="row.value" :min="0" :precision="row.key === 'smart_ai_calls_monthly' ? 0 : undefined" placeholder="空=不限" style="width: 100%" />
           </template>
         </el-table-column>
         <el-table-column label="" width="60">
@@ -118,6 +118,7 @@ const KNOWN_KEYS = [
   { value: 'max_tables', label: '数据表上限' },
   { value: 'max_rows', label: '记录总条数上限' },
   { value: 'max_storage_mb', label: '存储上限 MB' },
+  { value: 'smart_ai_calls_monthly', label: 'AI 调用次数上限（次/月）' },
   { value: 'max_seats', label: '席位上限' },
   { value: 'min_seats', label: '最低起购席位' },
   { value: 'quota_grace_days', label: '超配额宽限天数' },
@@ -155,6 +156,7 @@ function entBrief(ents) {
   if (ents.max_rows != null) parts.push(`记录${ents.max_rows}`)
   if (ents.max_storage_mb != null) parts.push(`存储${ents.max_storage_mb}MB`)
   if (ents.max_seats != null) parts.push(`席位${ents.max_seats}`)
+  if (ents.smart_ai_calls_monthly != null) parts.push(`AI ${ents.smart_ai_calls_monthly}次/月`)
   const feats = Object.keys(ents).filter((k) => k.startsWith('feature_') && ents[k]).length
   if (feats) parts.push(`功能×${feats}`)
   return parts.join(' · ') || '不限'

@@ -11,26 +11,32 @@
       <el-tooltip :hide-after="0" :content="pinned ? '取消固定' : '固定到工具栏'" placement="top" :show-after="300">
         <span class="ffp-icon st-icon-action" :class="{ on: pinned }" @click="$emit('pin', !pinned)"><StIcon name="pin" :size="16" /></span>
       </el-tooltip>
-      <span class="ffp-more-wrap">
-        <span class="ffp-icon st-icon-action" :class="{ on: moreOpen }" @click="moreOpen = !moreOpen"><StIcon name="more-h" :size="16" /></span>
-        <div v-if="moreOpen" class="ffp-menu" @mouseleave="moreOpen = false">
+      <el-popover v-model:visible="moreOpen" trigger="click" :hide-after="0" placement="bottom-end" :width="180"
+                  :teleported="true" :show-arrow="false" :popper-options="MENU_POPPER" :popper-style="MENU_STYLE" popper-class="ffp-more-pop">
+        <template #reference>
+          <span class="ffp-icon st-icon-action" :class="{ on: moreOpen }" aria-label="更多"><StIcon name="more-h" :size="16" /></span>
+        </template>
+        <div class="ffp-menu" @click.stop @mousedown.stop>
           <div class="ffp-mi" @click="moreOpen = false; $emit('open-panel')"><StIcon name="filter" :size="14" />打开筛选面板</div>
           <div class="ffp-mi danger" :class="{ off: !hasCondition }" @click="hasCondition && remove()"><StIcon name="trash" :size="14" />删除条件</div>
         </div>
-      </span>
+      </el-popover>
     </div>
 
     <div class="ffp-card">
       <div class="ffp-oprow">
-        <span class="ffp-op-wrap">
-          <span class="ffp-op" @click="opOpen = !opOpen">{{ opLabel(field, op) }}<StIcon name="chevron-down" :size="13" /></span>
-          <div v-if="opOpen" class="ffp-menu ffp-op-menu" @mouseleave="opOpen = false">
+        <el-popover v-model:visible="opOpen" trigger="click" :hide-after="0" placement="bottom-start" :width="180"
+                    :teleported="true" :show-arrow="false" :popper-options="MENU_POPPER" :popper-style="MENU_STYLE" popper-class="ffp-operator-pop">
+          <template #reference>
+            <span class="ffp-op">{{ opLabel(field, op) }}<StIcon name="chevron-down" :size="13" /></span>
+          </template>
+          <div class="ffp-menu ffp-op-menu" @click.stop @mousedown.stop>
             <div v-for="o in ops" :key="o" class="ffp-mi" :class="{ cur: o === op }" @click="pickOp(o)">
               {{ opLabel(field, o) }}<StIcon v-if="o === op" name="check" :size="13" class="ffp-mi-ck" />
             </div>
           </div>
-        </span>
-        <span v-if="needsValue && (isEnum || isMember)" class="ffp-icon sq st-icon-action" data-smart-tip="搜索" @click="focusSearch"><StIcon name="search" :size="15" /></span>
+        </el-popover>
+        <span v-if="needsValue && (isEnum || isMember)" class="ffp-icon sq st-icon-action" aria-label="搜索" @click="focusSearch"><StIcon name="search" :size="15" /></span>
       </div>
 
       <template v-if="needsValue">
@@ -42,7 +48,7 @@
         </template>
         <!-- 文本类：灰底输入框 + ✕ 清除 -->
         <div v-else-if="isTextLike" class="ffp-text">
-          <input ref="textRef" v-model="textVal" class="ffp-input" placeholder="请输入" @input="onText" />
+          <input ref="textRef" v-model="textVal" class="st-control st-control--native ffp-input" placeholder="请输入" @input="onText" />
           <span v-if="textVal" class="ffp-x st-icon-action" @click="clearText"><StIcon name="close" :size="14" /></span>
         </div>
         <!-- 数字/日期等：通用值编辑器 -->
@@ -68,6 +74,11 @@ const props = defineProps({
 })
 const emit = defineEmits(['change', 'pin', 'open-panel'])
 const members = inject('smartMembers', { value: [] })
+// 菜单独立挂到 body，使用视口边界翻转；低视口保留菜单内部滚动。
+const MENU_POPPER = { strategy: 'fixed', modifiers: [
+  { name: 'preventOverflow', options: { boundary: [], rootBoundary: 'viewport', padding: 12, altAxis: true, tether: false } },
+] }
+const MENU_STYLE = { padding: '6px', maxWidth: 'calc(100vw - 24px)', boxSizing: 'border-box' }
 
 // AI 字段按输出类型筛选
 const ftype = computed(() => (props.field.field_type === 'ai' ? (props.field.options?.outputType || 'text') : props.field.field_type))
@@ -139,9 +150,8 @@ function remove() { moreOpen.value = false; emit('change', null, { unpin: true }
 .ffp-icon.on :deep(svg) { color: var(--st-text-2); }
 .ffp-icon.sq { width: 30px; height: 30px; background: #F2F3F5; }
 .ffp-icon.sq:hover { background: #E6E8EA; }
-.ffp-more-wrap, .ffp-op-wrap { position: relative; }
-.ffp-menu { position: absolute; right: 0; top: 34px; z-index: 5; background: #fff; border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, .14); padding: 6px; min-width: 150px; }
-.ffp-op-menu { left: 0; right: auto; top: 30px; min-width: 140px; max-height: 280px; overflow-y: auto; }
+.ffp-menu { min-width: 0; max-height: min(280px, calc(100dvh - 40px)); overflow-y: auto; }
+.ffp-mi { min-height: 32px; }
 .ffp-mi { display: flex; align-items: center; gap: 8px;  padding: 0 10px; border-radius: 6px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; white-space: nowrap;  height: var(--st-list-item-height); box-sizing: border-box; }
 .ffp-mi:hover { background: #F2F3F5; }
 .ffp-mi.cur { color: var(--st-primary); }

@@ -1,6 +1,7 @@
 """Prompt 模板集中管理。"""
 import json
 import re
+from .board_rules import expansion_targets, is_node_expansion
 
 ANALYZE_SYSTEM = (
     "你是数据结构分析专家。用户会给你一张 Excel 表的表头、每列的本地类型推断结果和脱敏样例数据，"
@@ -702,17 +703,18 @@ _BOARD_SCHEMA_SPEC = (
     '- "component"：行列结构的表格数据，如人员名单、对比表、排期表、清单。'
     "描述里出现「表格/清单/对比/排期/名单」时选它，用原生表格组件而不是矩形拼接\n\n"
     "【diagram 格式】要求：\n"
-    "1. 节点 5~15 个，label 简洁（2~8 个字），id 用 n1、n2、… 顺序编号\n"
+    "1. 节点数严格遵循用户要求，不擅自补节点；未指定时通常 3~15 个，label 简洁，id 唯一\n"
     "2. shape 取值：ellipse=开始/结束节点，diamond=判断/审批节点，rect=普通步骤（默认）\n"
     "3. edges 表达流向，source/target 必须是已定义的节点 id；判断节点的分支边要写 label（如 通过/驳回）\n"
     "4. 不要输出坐标，布局由程序自动完成\n"
     f"示例：\n{json.dumps(_BOARD_DIAGRAM_EXAMPLE, ensure_ascii=False, indent=2)}\n\n"
     "【drawing 格式】要求：\n"
-    "1. 用基础图形拼出图案，element 的 type 取值：rectangle/ellipse/diamond/line/arrow，共 3~40 个\n"
+    "1. 优先用基础图形组合图案，type 可为 rectangle/ellipse/diamond/line/arrow/text；数量遵循需求，单个图形也允许\n"
     "2. 图形元素（rectangle/ellipse/diamond）给 x、y、width、height\n"
     "3. 线元素（line/arrow）给 x、y 和 points：points 是相对 x,y 的折点数组，第一个点用 [0,0]，至少 2 个点\n"
     "4. 以画面中心为坐标原点 (0,0)，整体尺寸控制在 800×800 以内\n"
-    "5. 像简笔画一样概括轮廓，注意各部件的位置和比例关系\n"
+    "5. 像简笔画一样概括轮廓，注意各部件的位置、比例和遮挡关系，优先使用清晰简洁的图形组合，最多60个元素\n"
+    "6. text 元素给 x、y、text、fontSize；图形内文字用 label:{text:文字}，不要用矩形代替文字\n"
     f"示例：\n{json.dumps(_BOARD_DRAWING_EXAMPLE, ensure_ascii=False, indent=2)}\n\n"
     "【component 格式】kind 目前只有 table，要求：\n"
     "1. headers 为表头数组（1~6 列，每列 2~6 个字），rows 为数据行数组（0~12 行，每行单元格数与表头一致）\n"
@@ -722,18 +724,32 @@ _BOARD_SCHEMA_SPEC = (
     "如\"画一个辞职流程图和一个人喝咖啡的画\"），输出 parts 数组，每个部分各自遵循上面的 diagram/drawing/component "
     "格式（各自带 type/title 和 nodes+edges 或 elements 或 headers+rows），程序会把各部分横向排开渲染；"
     "单个内容时不要包 parts，直接输出。\n"
-    f"示例：\n{json.dumps(_BOARD_PARTS_EXAMPLE, ensure_ascii=False, indent=2)}"
+    f"示例：\n{json.dumps(_BOARD_PARTS_EXAMPLE, ensure_ascii=False, indent=2)}\n"
+    "【样式】nodes、edges、elements、table 均支持 strokeColor（边框/线颜色）、backgroundColor（填充）、"
+    "textColor（文字颜色）、fillStyle（solid/hachure/cross-hatch）、strokeStyle（solid/dashed/dotted）、"
+    "strokeWidth（1~8）、roughness（0~2，0=平滑）、opacity（0~100）、fontSize（12~72）、textAlign（left/center/right）、verticalAlign（top/middle/bottom）、fontFamily（1手写/2常规/3等宽/5手绘/6圆体/7标题/8漫画/9无衬线）。"
+    "颜色用 #RRGGBB；无填充用 transparent；纯色填充必须用 fillStyle:solid。"
+    "用户指定的颜色、线型、数量必须准确写入每个相关元素，不得只在 title 里描述。"
+    "不要把手绘风理解为一定使用黑色或必须画流程图。\n"
 )
 
 # 画布上下文（前端提取的元素概要）截断上限，防 token 爆炸
 _BOARD_CONTEXT_MAX_ITEMS = 200
-_BOARD_CONTEXT_MAX_CHARS = 6000
+_BOARD_CONTEXT_MAX_CHARS = 30000
 
 
 def _format_board_context(context: list | None) -> str:
     if not context:
         return ""
-    return json.dumps(context[:_BOARD_CONTEXT_MAX_ITEMS], ensure_ascii=False)[:_BOARD_CONTEXT_MAX_CHARS]
+    items = []
+    for item in sorted(context, key=lambda c: not bool(c.get('selected'))):
+        if len(items) >= _BOARD_CONTEXT_MAX_ITEMS:
+            break
+        candidate = json.dumps([*items, item], ensure_ascii=False)
+        if len(candidate) > _BOARD_CONTEXT_MAX_CHARS:
+            continue
+        items.append(item)
+    return json.dumps(items, ensure_ascii=False)
 
 
 def build_board_prompt(description: str, mode: str = "auto", context: list | None = None) -> str:
@@ -785,4 +801,35 @@ def build_board_prompt(description: str, mode: str = "auto", context: list | Non
         }[mode]
         task = f"任务：{note}输出时带上 \"mode\": \"{mode}\" 字段。\n\n"
 
-    return f"用户需求：{description}\n\n{ctx_block}{task}{_BOARD_SCHEMA_SPEC}"
+    edit_rule = ''
+    if any(c.get('id') for c in (context or [])):
+        edit_rule = (
+            '\n【节点续写/展开】在当前节点下继续分析、细化或增加子节点时，必须使用 append，保留原图。'
+            '单目标输出 diagram，并在顶层添加 attachTo:"目标节点的原始ID"。'
+            '指定第几层时按已有 fromId/toId 连线从根节点（第一层）计算层级，展开该层全部节点；否则优先使用选中节点，或按名称定位。'
+            '多目标必须输出 {"mode":"append","parts":[{"type":"diagram","attachTo":"已有父节点ID","nodes":[...],"edges":[...]},...]}，每个父节点一个 part。'
+            '节点展开不受普通复合内容 4 部分限制，最多可展开 64 个目标，不能遗漏目标。'
+            '每个 part 直接生成该父节点更具体的下级分析，不能把父节点或其他已有节点再次放进 nodes，不能复制原有层级或仅重复标题。'
+            'nodes/edges 只包含本次新增的子节点及其内部连线，不得重复目标节点或已有节点，不要输出另一张完整图。'
+            '程序会把所有新增根节点连接到 attachTo 并放在它下方；edges 的端点只能是新增节点 ID。'
+            '已有子节点和分支也应保留，不重复已有分析。明确要求独立画图或在旁边追加时不使用 attachTo。'
+            '\n【原位修改优先】修改颜色、填充、线型、粗细、透明度、文字或删除已有元素时，不重新生成图形。'
+            '返回 {"mode":"modify","edits":[{"id":"上下文的原始ID","backgroundColor":"#ff0000","fillStyle":"solid"}]}。'
+            'edits 每项只含 id 和实际要改的样式字段，改文字用 text，删除用 delete:true。'
+            '不要输出未修改的元素，不改变位置、尺寸、连线绑定；不允许编造 ID。'
+            '有选区时只修改 selected=true 的元素，整体画布操作需要先取消选区。'
+            '没有选区时按需求精确匹配目标；只有用户说全部时才修改全部。'
+            '仅调整样式不是 replace，也不是 append。创建红色矩形则是生成新内容，不是修改。'
+            '填充颜色 backgroundColor、填充样式 fillStyle、边框颜色 strokeColor、边框线型 strokeStyle 必须独立处理。'
+            '“线条填充/斜线填充”是 fillStyle:hachure，“交叉线填充”是 cross-hatch，不是边框虚线。'
+            '改变填充样式时保留原 backgroundColor；原来透明时使用原 strokeColor 作为填充颜色，绝不能返回透明颜色导致填充不可见。'
+            '只改变填充颜色时保留原 fillStyle，不得擅自改成 solid；只有明确要求纯色/实心填充才设 solid。'
+            '“线条改虚线”是 strokeStyle:dashed，“边框改红色”只改 strokeColor，不得改变填充。'
+            '文字大号是 fontSize:28，中号20，小号16，超大号36；左对齐 textAlign:left，顶部对齐 verticalAlign:top。'
+            '漫画风格/漫画家对应原生线条风格 roughness:2，不改字体；只有明确说漫画字体才设置 fontFamily:8（Comic Shanns）。'
+            '这些文字属性放在目标节点的 edits 中，程序会应用到节点内绑定的文字。组合指令必须同时包含所有指定属性，不得遗漏。'
+        )
+    targets = expansion_targets(description, context or []) if is_node_expansion(description) else []
+    if targets:
+        edit_rule += '\n程序识别的展开目标 ID（必须逐个覆盖）：' + json.dumps(targets, ensure_ascii=False)
+    return f"用户需求：{description}\n\n{ctx_block}{task}{_BOARD_SCHEMA_SPEC}{edit_rule}"

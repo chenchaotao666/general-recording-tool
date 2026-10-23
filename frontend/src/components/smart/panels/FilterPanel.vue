@@ -3,17 +3,17 @@
        标题 + 作用域胶囊（调整仅你可见 | 对所有人生效 | ⋯）→「满足以下 全部条件 ▾」→ 条件卡片
        （头：字段 ▾ + ⊖ 📌 ︿；体：运算符 ▾ + 值；人员/选项为内联勾选清单）→「＋ 添加筛选条件」（选择字段下拉）。
        即时生效：本地保留草稿（含未填完的条件），每次变更只把完整条件提交给父级 -->
-  <el-popover :hide-after="0" trigger="click" v-model:visible="visibleModel" placement="bottom-start" :width="560"
+  <el-popover :hide-after="0" :visible="visible" placement="bottom-start" :width="560"
               popper-class="filter-popover st-tbpanel">
-    <template #reference><span ref="refEl" class="fp-ref"><slot /></span></template>
+    <template #reference><span ref="refEl" class="fp-ref" @click="emit('update:visible', !visible)"><slot /></span></template>
     <!-- 高度上限 = 按钮下方可用空间：条件多时中间列表区滚动，标题与「添加筛选条件」常驻可见，不被屏幕底部遮挡 -->
-    <div class="fp" :style="{ maxHeight: `${maxH}px` }">
+    <div v-if="visible" class="fp" :style="{ maxHeight: `${maxH}px` }">
       <div class="fp-head">
         <span class="tbp-title">筛选</span>
         <span class="fp-scope">
           <span class="fp-scope-item" :class="{ on: scope === 'personal' }" @click="$emit('scope-change', 'personal')">调整仅你可见</span>
           <span class="fp-scope-item" :class="{ on: scope === 'shared' }" @click="$emit('scope-change', 'shared')">对所有人生效</span>
-          <el-dropdown :hide-after="0" trigger="click" :teleported="false" :popper-options="FIXED_POPPER" @command="onMore">
+          <el-dropdown :hide-after="0" trigger="click" :teleported="true" :popper-options="FIXED_POPPER" @command="onMore">
             <span class="fp-scope-more st-icon-action"><StIcon name="more-h" :size="16" /></span>
             <template #dropdown>
               <el-dropdown-menu>
@@ -27,7 +27,7 @@
 
       <div v-if="draft.length" class="fp-scroll">
       <div class="fp-conj">满足以下
-        <el-dropdown :hide-after="0" trigger="click" :teleported="false" :popper-options="FIXED_POPPER" @command="(v) => { draftConj = v; commit() }">
+        <el-dropdown :hide-after="0" trigger="click" :teleported="true" :popper-options="FIXED_POPPER" @command="(v) => { draftConj = v; commit() }">
           <a class="fp-link">{{ draftConj === 'or' ? '任一条件' : '全部条件' }}<StIcon name="chevron-down" :size="12" /></a>
           <template #dropdown>
             <el-dropdown-menu>
@@ -45,18 +45,18 @@
             <span class="fp-field-name">{{ fieldOf(c)?.label || '选择字段' }}</span></span>
           <!-- 切换字段：统一「选择字段」面板（编组可折叠，参照 PixPin_2026-10-18_01-05-36） -->
           <el-popover :hide-after="0" v-else :visible="fieldPickId === c.id" @update:visible="(v) => (fieldPickId = v ? c.id : null)" trigger="click"
-                      placement="bottom-start" :width="324" :teleported="false" :show-arrow="false"
+                      placement="bottom-start" :width="324" :teleported="true" :show-arrow="false"
                       :popper-options="FIXED_POPPER" popper-class="st-tbpanel st-pick-pop">
             <template #reference>
               <span class="fp-field" @click.stop><StIcon :name="fieldIconName(fieldOf(c))" :size="18" />
                 {{ fieldOf(c)?.label || '选择字段' }}<StIcon name="chevron-down" :size="13" class="fp-caret" /></span>
             </template>
-            <FieldPickList :fields="fields" :column-groups="columnGroups" :selected="c.fieldId"
+            <FieldPickList class="fp-field-list" :fields="fields" :column-groups="columnGroups" :selected="c.fieldId"
                            @pick="(f) => { fieldPickId = null; if (f.field_name !== c.fieldId) changeField(i, f.field_name) }" />
           </el-popover>
           <span v-if="!isOpen(c)" class="fp-sum">{{ summaryOf(c) }}</span>
           <span class="fp-acts">
-            <el-tooltip :hide-after="0" content="删除条件" placement="top" :show-after="300"><span class="fp-act st-icon-action" @click.stop="remove(i)"><StIcon name="minus-circle" :size="18" /></span></el-tooltip>
+            <span class="fp-act st-icon-action" aria-label="删除条件" @click.stop="remove(i)"><StIcon name="minus-circle" :size="18" /></span>
             <el-tooltip :hide-after="0" :content="c.pinned ? '取消固定' : '固定到工具栏'" placement="top" :show-after="300">
               <span class="fp-act st-icon-action" :class="{ on: c.pinned }" @click.stop="update(i, { pinned: !c.pinned })"><StIcon name="pin" :size="18" /></span></el-tooltip>
             <span class="fp-vsep" />
@@ -65,9 +65,9 @@
         </div>
         <div v-if="isOpen(c) && fieldOf(c)" class="fp-card-body">
           <!-- 运算符（参照 PixPin_2026-10-18_00-48-13）：当前项 ✓ 在右；展开时触发文字带灰底 -->
-          <el-dropdown :hide-after="0" trigger="click" placement="bottom-start" :teleported="false" :popper-options="FIXED_POPPER" popper-class="fp-op-pop"
+          <el-dropdown :hide-after="0" trigger="click" placement="bottom-start" :teleported="true" :popper-options="FIXED_POPPER" popper-class="fp-op-pop"
                        @visible-change="(v) => (opOpenId = v ? c.id : null)" @command="(op) => changeOp(i, op)">
-            <a class="fp-op" :class="{ open: opOpenId === c.id }">{{ opLabel(fieldOf(c), c.operator) || '选择条件' }}<StIcon name="chevron-down" :size="14" /></a>
+            <a class="st-control st-control--native fp-op" :class="{ open: opOpenId === c.id }">{{ opLabel(fieldOf(c), c.operator) || '选择条件' }}<StIcon name="chevron-down" :size="14" /></a>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item v-for="op in opsOf(c)" :key="op" :command="op">
@@ -91,10 +91,10 @@
       </div>
       </div>
 
-      <el-popover :hide-after="0" v-model:visible="picking" trigger="click" placement="bottom-start" :width="324" :teleported="false"
-                  popper-class="st-tbpanel st-pick-pop" :show-arrow="false">
-        <template #reference><button class="tbp-add"><StIcon name="plus" :size="15" />添加筛选条件</button></template>
-        <FieldPickList :fields="fields" :column-groups="columnGroups" @pick="add" />
+      <el-popover :hide-after="0" v-model:visible="picking" trigger="click" placement="bottom-start" :width="324" :teleported="true"
+                  :popper-options="FIXED_POPPER" popper-class="st-tbpanel st-pick-pop" :show-arrow="false">
+        <template #reference><button class="st-button tbp-add"><StIcon name="plus" :size="15" />添加筛选条件</button></template>
+        <FieldPickList class="fp-field-list" :fields="fields" :column-groups="columnGroups" @pick="add" />
       </el-popover>
     </div>
   </el-popover>
@@ -102,7 +102,7 @@
 
 <script setup>
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
-import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import ConditionValue from './ConditionValue.vue'
 import FieldPickList from './FieldPickList.vue'
 import FilterOptionList from './FilterOptionList.vue'
@@ -119,18 +119,20 @@ const props = defineProps({
   scope: { type: String, default: 'personal' },
 })
 const emit = defineEmits(['update:visible', 'change', 'scope-change'])
-const visibleModel = computed({ get: () => props.visible, set: (v) => emit('update:visible', v) })
+// 外层仅受 props 控制；由 SmartTablePage 的外点判定关闭，保留 body 上的子浮层交互。
 const members = inject('smartMembers', { value: [] })
 
 const MEMBER_TYPES = ['member', 'createdBy', 'lastModifiedBy']
-// 面板内的下拉（字段 / 运算符 / 全部条件 / ⋯）一律 :teleported="false" 渲染在面板内部：
-// 挂到 body 时点选项会被外层 el-popover 当成"点击外部"直接关掉整个面板（条件设置失败）；
-// strategy fixed：不被条件区的滚动容器裁剪
-const FIXED_POPPER = { strategy: 'fixed' }
+// 子浮层挂到 body，定位边界只看视口，避免父条件区滚动裁切。
+const FIXED_POPPER = { strategy: 'fixed', modifiers: [
+  { name: 'preventOverflow', options: { boundary: [], rootBoundary: 'viewport', padding: 12 } },
+] }
 const draft = ref([])
 const draftConj = ref('and')
 const openIds = ref(new Set())
 const picking = ref(false)
+const opOpenId = ref(null)
+const fieldPickId = ref(null)   // 正在切换字段的条件 id
 
 // 面板最大高度：按钮底边以下的视口空间 − 弹出间距(12) − 底部留白(16) − 面板上下内边距(42)
 const refEl = ref(null)
@@ -145,7 +147,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateMaxH))
 
 // 打开时从 props 复制草稿；面板开着期间父级回写不覆盖草稿（保留未填完的条件）
 watch(() => props.visible, (v) => {
-  if (!v) { picking.value = false; return }
+  if (!v) { picking.value = false; fieldPickId.value = null; opOpenId.value = null; return }
   updateMaxH()
   nextTick(updateMaxH)
   draft.value = props.conditions.map((c) => ({ ...c, id: c.id || `c_${Math.random().toString(36).slice(2, 8)}` }))
@@ -200,8 +202,6 @@ function update(i, patch) {
   commit()
 }
 // 切运算符：无值运算符清空取值；日期模式不在新运算符可选范围内（如 等于 本周 → 晚于）也清空，避免保留看不见的条件
-const opOpenId = ref(null)
-const fieldPickId = ref(null)   // 正在切换字段的条件 id
 function changeOp(i, op) {
   const c = draft.value[i]
   let value = NO_VALUE_OPS.includes(op) ? undefined : c.value
@@ -254,6 +254,8 @@ function onMore(cmd) {
 .fp-op-pop .fp-op-ck { color: var(--st-primary); }
 </style>
 <style scoped>
+.fp-field-list { width: 100%; min-width: 0; }
+.fp-field-list :deep(.fpl-list) { max-height: min(420px, calc(100dvh - 100px)) !important; }
 .fp { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .fp-ref { display: inline-flex; }
 .fp > :not(.fp-scroll) { flex: none; }   /* 限高时只压缩条件区，标题与「添加筛选条件」保持原高 */
@@ -269,7 +271,7 @@ function onMore(cmd) {
 .fp-link { color: var(--st-primary); cursor: pointer; display: inline-flex; align-items: center; gap: 2px; font-size: var(--st-font-size); }
 /* 条件卡片（参照 PixPin_2026-10-18_00-27-29 取色）：卡片与内框同为 #FAFBFB 底、#EDEFEF 细边，内框四周缩进 6px */
 .fp-card { border: 1px solid #EDEFEF; border-radius: 8px; background: #FAFBFB; }
-.fp-card-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 14px 20px; cursor: pointer; }
+.fp-card-head { display: flex; align-items: center; gap: 8px; padding: 8px 16px 8px 20px; cursor: pointer; }
 .fp-field { display: inline-flex; align-items: center; gap: 6px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
 .fp-field.static { flex: none; max-width: 50%; min-width: 0; }
 .fp-field-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -281,9 +283,9 @@ function onMore(cmd) {
 .fp-act:hover { color: var(--st-text-2); background: #EDEFEF; }
 .fp-act.on { color: var(--st-text-2); background: #E2E3E4; }   /* 已固定到工具栏：灰底方块 */
 .fp-vsep { width: 1px; height: 14px; background: #DCDEE0; }
-.fp-card-body { margin: 0 6px 6px; background: #FAFBFB; border: 1px solid #EDEFEF; border-radius: 8px; padding: 14px 16px 16px;
+.fp-card-body { margin: 0 6px 6px; background: #FAFBFB; border: 1px solid #EDEFEF; border-radius: 8px; padding: 12px;
   display: flex; flex-direction: column; gap: 12px; }
-.fp-op { color: var(--st-text-2); font-size: var(--st-font-size); cursor: pointer; display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px; border-radius: 4px; }
+.fp-op { color: var(--st-text-2); font-size: var(--st-font-size); cursor: pointer; display: inline-flex; align-items: center; gap: 2px; padding: 2px 8px; border-radius: 4px; }
 .fp-op:hover, .fp-op.open { background: #E2E3E4; }
 /* 条件值输入：白底 #DADBDD 细边、38px 高、15px 字（参照稿日期框） */
 .fp-val :deep(.el-input__wrapper), .fp-val :deep(.el-select__wrapper) {

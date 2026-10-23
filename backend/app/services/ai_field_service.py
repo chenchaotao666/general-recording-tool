@@ -284,6 +284,13 @@ def process(db: Session, table_id: int, field_name: str, record_ids: list[int], 
         db.commit()
         try:
             scene = SCENE_BY_KEY.get((field.options or {}).get("scene") or "custom", SCENE_BY_KEY["custom"])
+            if not preserve_editor and not _is_local(scene) and scene["key"] != "custom":
+                inputs = [f for f in fields if f.field_name in ((field.options or {}).get("inputFields") or [])]
+                if not inputs:
+                    raise ValueError("请先在 AI 字段设置中选择输入字段")
+                if not any(record.get(f.field_name) not in (None, "", []) for f in inputs):
+                    names = "、".join(f"「{f.label or f.field_name}」" for f in inputs)
+                    raise ValueError(f"本行输入为空，请先填写{names}后重新生成")
             if not _is_local(scene) and not _quota_ok(db, mt.tenant_id):
                 raise ValueError("本月 AI 调用次数已用完，请升级套餐")
             field = db.get(MetaField, field.id)   # 选项可能被上一行新建，重新取

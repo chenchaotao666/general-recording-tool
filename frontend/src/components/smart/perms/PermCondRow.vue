@@ -4,7 +4,7 @@
   <div class="pcr">
     <!-- 字段：统一「选择字段」面板（编组可折叠） -->
     <TbFieldSelect :model-value="cond.fieldId" :fields="fields" :column-groups="columnGroups" class="pcr-field" @update:model-value="onField" />
-    <el-select v-if="field && (!memberLike || allowChanged)" :model-value="cond.operator" class="pcr-op" :teleported="teleported"
+    <el-select v-if="field && (!memberLike || allowChanged)" :model-value="cond.operator" class="st-control pcr-op" :teleported="teleported"
                @update:model-value="(v) => emit('update', { ...cond, operator: v })">
       <el-option v-for="op in ops" :key="op" :value="op" :label="op === 'changed' ? '有变更' : opLabel(field, op)" />
     </el-select>
@@ -14,8 +14,8 @@
                       @update="(v) => emit('update', { ...cond, value: v })" />
     </div>
     <div v-else-if="!field" class="pcr-val pcr-ph">请先选择字段</div>
-    <button v-if="compact" type="button" class="pcr-del st-icon-action" aria-label="删除条件" data-smart-tip="删除条件" @click="emit('remove')"><StIcon name="trash" :size="16" /></button>
-    <span v-else class="pcr-del st-icon-action" data-smart-tip="删除条件" @click="emit('remove')"><StIcon name="minus-circle" :size="18" /></span>
+    <button v-if="compact" type="button" class="st-button st-button--icon pcr-del" aria-label="删除条件" @click="emit('remove')"><StIcon name="trash" :size="16" /></button>
+    <span v-else class="pcr-del st-icon-action" aria-label="删除条件" @click="emit('remove')"><StIcon name="minus-circle" :size="18" /></span>
   </div>
 </template>
 
@@ -32,7 +32,7 @@ const props = defineProps({
   cond: { type: Object, required: true },
   fields: { type: Array, default: () => [] },
   allowViewer: { type: Boolean, default: false },   // 人员类值是否提供「查看者本人」
-  teleported: { type: Boolean, default: false },
+  teleported: { type: Boolean, default: true },
   allowChanged: { type: Boolean, default: false },
   compact: { type: Boolean, default: false },
 })

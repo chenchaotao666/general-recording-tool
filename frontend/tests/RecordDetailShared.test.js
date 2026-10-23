@@ -21,7 +21,7 @@ for (const component of [RecordDetailPanel, RecordDetailFloating]) {
     await wrapper.find('textarea').setValue('Updated')
     await wrapper.find('textarea').trigger('blur')
     expect(commit).toHaveBeenCalledWith({ row: { id: 1, title: 'Original' }, field, value: 'Updated' })
-    const buttons = wrapper.findAll('button').filter(b => b.attributes('data-smart-tip') === '下一条')
+    const buttons = wrapper.findAll('button').filter(b => b.attributes('aria-label') === '下一条')
     await buttons[0].trigger('click')
     expect(nav).toHaveBeenCalledWith(1)
     await wrapper.setProps({ readonly: true, record: { id: 2, title: 'Second' } })

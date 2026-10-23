@@ -1,0 +1,448 @@
+{
+  "timestamp": "2026-10-23T03:00:42.789591+00:00",
+  "passed": 15,
+  "total": 15,
+  "cases": [
+    {
+      "id": "selected_color",
+      "prompt": "把选中的框填充改成 #ff0000 纯红色，边框改为 #0000ff 蓝色，其他内容和位置不变。",
+      "result": {
+        "mode": "modify",
+        "title": "修改画布",
+        "edits": [
+          {
+            "id": "box1",
+            "strokeColor": "#0000ff",
+            "backgroundColor": "#ff0000",
+            "fillStyle": "solid"
+          }
+        ]
+      },
+      "passed": true,
+      "seconds": 1.24
+    },
+    {
+      "id": "red_rectangle",
+      "prompt": "画一个矩形，纯红色填充 #ff0000、蓝色边框 #0000ff，不要文字，不要其他图形。",
+      "result": {
+        "type": "drawing",
+        "title": "红色矩形",
+        "elements": [
+          {
+            "type": "rectangle",
+            "x": -150.0,
+            "y": -100.0,
+            "strokeColor": "#0000ff",
+            "backgroundColor": "#ff0000",
+            "fillStyle": "solid",
+            "strokeStyle": "solid",
+            "strokeWidth": 2,
+            "width": 300.0,
+            "height": 200.0
+          }
+        ],
+        "mode": "replace"
+      },
+      "passed": true,
+      "seconds": 1.73
+    },
+    {
+      "id": "append_circle",
+      "prompt": "再加一个绿色圆形，填充 #00ff00，不能修改已有内容。",
+      "result": {
+        "type": "drawing",
+        "title": "绿色圆形",
+        "elements": [
+          {
+            "type": "ellipse",
+            "x": -60.0,
+            "y": -60.0,
+            "strokeColor": "#00ff00",
+            "backgroundColor": "#00ff00",
+            "fillStyle": "solid",
+            "width": 120.0,
+            "height": 120.0
+          }
+        ],
+        "mode": "append"
+      },
+      "passed": true,
+      "seconds": 1.13
+    },
+    {
+      "id": "diagram_colors",
+      "prompt": "画一个只有开始、审批、结束三个节点的审批流程图，节点填充 #ffff00，箭头红色 #ff0000、虚线。",
+      "result": {
+        "type": "diagram",
+        "title": "审批流程图",
+        "nodes": [
+          {
+            "id": "n1",
+            "label": "开始",
+            "shape": "ellipse",
+            "backgroundColor": "#ffff00",
+            "fillStyle": "solid"
+          },
+          {
+            "id": "n2",
+            "label": "审批",
+            "shape": "diamond",
+            "backgroundColor": "#ffff00",
+            "fillStyle": "solid"
+          },
+          {
+            "id": "n3",
+            "label": "结束",
+            "shape": "ellipse",
+            "backgroundColor": "#ffff00",
+            "fillStyle": "solid"
+          }
+        ],
+        "edges": [
+          {
+            "source": "n1",
+            "target": "n2",
+            "strokeColor": "#ff0000",
+            "strokeStyle": "dashed"
+          },
+          {
+            "source": "n2",
+            "target": "n3",
+            "strokeColor": "#ff0000",
+            "strokeStyle": "dashed"
+          }
+        ],
+        "mode": "replace"
+      },
+      "passed": true,
+      "seconds": 1.79
+    },
+    {
+      "id": "delete_selected",
+      "prompt": "删除选中的框，其余元素保留。",
+      "result": {
+        "mode": "modify",
+        "title": "修改画布",
+        "edits": [
+          {
+            "id": "box1",
+            "delete": true
+          }
+        ]
+      },
+      "passed": true,
+      "seconds": 1.44
+    },
+    {
+      "id": "standalone_text",
+      "prompt": "只写一段文字“你好世界”，文字为蓝色 #0000ff，字号32，不要矩形、流程图或其他图形。",
+      "result": {
+        "type": "drawing",
+        "title": "你好世界",
+        "elements": [
+          {
+            "type": "text",
+            "x": 0.0,
+            "y": 0.0,
+            "textColor": "#0000ff",
+            "fontSize": 32,
+            "text": "你好世界"
+          }
+        ],
+        "mode": "replace"
+      },
+      "passed": true,
+      "seconds": 1.62
+    },
+    {
+      "id": "summary",
+      "prompt": "总结一下这张画布，不修改画布。",
+      "result": {
+        "mode": "summarize",
+        "summary": "画布内容为一个极简流程图，共 3 个元素：\n1. 矩形节点「开始」（box1），位于左上（0,0），尺寸 140×80，白底黑边。\n2. 椭圆节点「结束」（box2），位于右上（300,0），尺寸 140×80。\n3. 箭头（arrow1）从「开始」右侧（140,40）指向「结束」，表示单向流程。\n整体结构为「开始 → 结束」的线性流程，无分支、无其他说明文字，属于最基础的起止流程图。"
+      },
+      "passed": true,
+      "seconds": 2.53
+    },
+    {
+      "id": "mixed_parts",
+      "prompt": "画一个两节点流程图（开始到结束），旁边另放一个人员表格，表头姓名、角色，内容张三、开发。",
+      "result": {
+        "title": "流程图与人员表",
+        "parts": [
+          {
+            "type": "diagram",
+            "title": "两节点流程图",
+            "nodes": [
+              {
+                "id": "n1",
+                "label": "开始",
+                "shape": "ellipse"
+              },
+              {
+                "id": "n2",
+                "label": "结束",
+                "shape": "ellipse"
+              }
+            ],
+            "edges": [
+              {
+                "source": "n1",
+                "target": "n2"
+              }
+            ]
+          },
+          {
+            "type": "component",
+            "kind": "table",
+            "title": "人员表",
+            "headers": [
+              "姓名",
+              "角色"
+            ],
+            "rows": [
+              [
+                "张三",
+                "开发"
+              ]
+            ]
+          }
+        ],
+        "mode": "replace"
+      },
+      "passed": true,
+      "seconds": 1.72
+    },
+    {
+      "id": "explicit_append",
+      "prompt": "画一个紫色矩形，填充 #800080。",
+      "result": {
+        "type": "drawing",
+        "title": "紫色矩形",
+        "elements": [
+          {
+            "type": "rectangle",
+            "x": -70.0,
+            "y": -40.0,
+            "strokeColor": "#800080",
+            "backgroundColor": "#800080",
+            "fillStyle": "solid",
+            "width": 140.0,
+            "height": 80.0
+          }
+        ],
+        "mode": "append"
+      },
+      "passed": true,
+      "seconds": 1.83
+    },
+    {
+      "id": "outline_only",
+      "prompt": "把选中的框改成无填充，边框为 #e03131 红色虚线，线宽4，完全平滑，保持文字不变。",
+      "result": {
+        "mode": "modify",
+        "title": "修改画布",
+        "edits": [
+          {
+            "id": "box1",
+            "strokeColor": "#e03131",
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeStyle": "dashed",
+            "strokeWidth": 4,
+            "roughness": 0
+          }
+        ]
+      },
+      "passed": true,
+      "seconds": 1.91
+    },
+    {
+      "id": "text_color_only",
+      "prompt": "不要重画，只把“开始”节点的文字颜色改为 #ff0000，边框和填充都不动。",
+      "result": {
+        "mode": "modify",
+        "title": "修改画布",
+        "edits": [
+          {
+            "id": "box1",
+            "textColor": "#ff0000"
+          }
+        ]
+      },
+      "passed": true,
+      "seconds": 1.63
+    },
+    {
+      "id": "edge_color_only",
+      "prompt": "只将两个节点之间的箭头改成 #0000ff 蓝色，虚线，线宽3，节点不动。",
+      "result": {
+        "mode": "modify",
+        "title": "修改画布",
+        "edits": [
+          {
+            "id": "arrow1",
+            "strokeColor": "#0000ff",
+            "strokeStyle": "dashed",
+            "strokeWidth": 3
+          }
+        ]
+      },
+      "passed": true,
+      "seconds": 2.25
+    },
+    {
+      "id": "rename_label",
+      "prompt": "将选中框里的“开始”改为“申请提交”，不改颜色和大小位置。",
+      "result": {
+        "mode": "modify",
+        "title": "修改画布",
+        "edits": [
+          {
+            "id": "box1",
+            "text": "申请提交"
+          }
+        ]
+      },
+      "passed": true,
+      "seconds": 1.54
+    },
+    {
+      "id": "table_not_summary",
+      "prompt": "用一个表格总结两个方案：方案A便宜但慢，方案B贵但快。列为方案、成本、速度。不要文字汇总段落。",
+      "result": {
+        "type": "component",
+        "kind": "table",
+        "title": "方案对比",
+        "headers": [
+          "方案",
+          "成本",
+          "速度"
+        ],
+        "rows": [
+          [
+            "方案A",
+            "便宜",
+            "慢"
+          ],
+          [
+            "方案B",
+            "贵",
+            "快"
+          ]
+        ],
+        "mode": "replace"
+      },
+      "passed": true,
+      "seconds": 1.99
+    },
+    {
+      "id": "drawing_not_diagram",
+      "prompt": "画一个简笔画小人，举起右手，头用圆形、身体和四肢用线，线条颜色 #1971c2，不要流程图，不要文字。",
+      "result": {
+        "type": "drawing",
+        "title": "举起右手的小人",
+        "elements": [
+          {
+            "type": "ellipse",
+            "x": -40.0,
+            "y": -180.0,
+            "strokeColor": "#1971c2",
+            "backgroundColor": "transparent",
+            "strokeWidth": 2,
+            "width": 80.0,
+            "height": 80.0
+          },
+          {
+            "type": "line",
+            "x": 0.0,
+            "y": -100.0,
+            "strokeColor": "#1971c2",
+            "strokeWidth": 2,
+            "points": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                130.0
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "x": 0.0,
+            "y": -70.0,
+            "strokeColor": "#1971c2",
+            "strokeWidth": 2,
+            "points": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                70.0,
+                -70.0
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "x": 0.0,
+            "y": -70.0,
+            "strokeColor": "#1971c2",
+            "strokeWidth": 2,
+            "points": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                -70.0,
+                10.0
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "x": 0.0,
+            "y": 30.0,
+            "strokeColor": "#1971c2",
+            "strokeWidth": 2,
+            "points": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                -45.0,
+                90.0
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "x": 0.0,
+            "y": 30.0,
+            "strokeColor": "#1971c2",
+            "strokeWidth": 2,
+            "points": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                45.0,
+                90.0
+              ]
+            ]
+          }
+        ],
+        "mode": "replace"
+      },
+      "passed": true,
+      "seconds": 2.54
+    }
+  ]
+}

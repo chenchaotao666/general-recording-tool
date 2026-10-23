@@ -2,22 +2,18 @@
   <!-- 条件值编辑器：按字段类型分发。
        单选/多选/人员=标签锚点 + 浮动选项面板（查找/✓勾选/✕移除，设计稿 PixPin_2026-10-15_20-39-09）；
        数字=数字框，日期=日期，其余=文本 -->
-  <div v-if="isEnum || isMember" class="enum-val" @click.stop="openPop">
-    <div class="ev-tags">
-      <template v-if="selectedOptions.length">
-        <span v-for="o in selectedOptions" :key="o.id" class="ev-tag"
-              :style="isEnum ? { background: optionColor(o.color).value, color: optionColor(o.color).text } : {}">
-          {{ o.label }}
-          <span class="ev-x" data-smart-tip="移除" @click.stop="removeOpt(o.id)">✕</span>
-        </span>
-      </template>
-      <span v-else class="ev-ph">请选择</span>
-    </div>
-    <span class="ev-caret st-icon-action"><StIcon :name="open ? 'caret-up' : 'caret-down'" :size="10" /></span>
-
-    <!-- 浮动选项面板 -->
-    <div v-if="open" class="ev-pop" @click.stop @mousedown.stop>
-      <el-input v-model="kw" size="small" :placeholder="isMember ? '查找成员' : '查找选项'" clearable />
+  <el-popover v-if="isEnum || isMember" v-model:visible="open" trigger="click" :hide-after="0"
+              placement="bottom-start" :width="256" :teleported="true" :show-arrow="false"
+              :popper-options="FIXED_POPPER" :popper-style="{ padding: '8px', maxWidth: 'calc(100vw - 24px)' }"
+              popper-class="condition-value-pop">
+    <template #reference>
+      <SmartMultiSelectTrigger class="enum-val" :open="open"
+                               :items="selectedOptions.map(o => ({ value: o.id, label: o.label, style: isEnum ? { background: optionColor(o.color).value, color: optionColor(o.color).text } : {} }))"
+                               @toggle="open = !open" @remove="removeOpt" />
+    </template>
+    <!-- body 浮层：搜索与选择不再受父条件区的 overflow 影响。 -->
+    <div class="ev-pop" @click.stop @mousedown.stop>
+      <el-input class="st-control st-control--small" v-model="kw" size="small" :placeholder="isMember ? '查找成员' : '查找选项'" clearable />
       <div class="ev-sub">多选</div>
       <div class="ev-list">
         <div v-for="o in filteredOptions" :key="o.id" class="ev-item" @click="toggle(o.id)">
@@ -29,15 +25,14 @@
         <div v-if="!filteredOptions.length" class="opt-empty">无匹配{{ isMember ? '成员' : '选项' }}</div>
       </div>
     </div>
-  </div>
-  <el-input-number v-else-if="isNumber" v-model="val" size="small" class="val-editor" :controls="numberControls"
+  </el-popover>
+  <el-input-number v-else-if="isNumber" v-model="val" size="small" class="st-control val-editor" :controls="numberControls"
                    @change="$emit('update', val)" />
   <!-- 日期（参照 PixPin_2026-10-18_00-16-20）：左侧日期模式（具体日期 / 今天 / 本周 / 过去 7 天内…），
        选「具体日期」时右侧出日期选择。值 = { mode, date? }，相对模式查询时按当天换算（后端 pyquery.date_mode_range）。
-       :teleported="false"：弹层渲染在面板内部——teleport 到 body 时点选项会被外层 el-popover 视为"点击外部"
-       而关掉整个筛选/填色面板；strategy fixed：不被筛选面板的滚动区裁剪 -->
+       日期模式与日历挂到 body；父页面统一识别 .el-popper 内的点击。 -->
   <div v-else-if="isDate" class="date-val">
-    <el-select :model-value="dateMode" size="small" class="dv-mode" :teleported="false" clearable placeholder="请选择"
+    <el-select :model-value="dateMode" size="small" class="st-control dv-mode" :teleported="true" clearable placeholder="请选择"
                popper-class="dv-mode-pop" :popper-options="FIXED_POPPER" @change="onModeChange" @clear="onModeClear">
       <el-option v-for="o in modeOptions" :key="o.value" :value="o.value" :label="o.label"
                  :class="{ 'dv-exact': o.value === 'exact' }">
@@ -45,22 +40,22 @@
       </el-option>
     </el-select>
     <el-date-picker v-if="dateMode === 'exact'" :model-value="exactDate" type="date" value-format="YYYY-MM-DD"
-                    :format="dateFormat" placeholder="选择日期" size="small" class="dv-date" :teleported="false"
+                    :format="dateFormat" placeholder="选择日期" size="small" class="st-control dv-date" :teleported="true"
                     :popper-options="FIXED_POPPER" @update:model-value="onExactDate" />
   </div>
-  <el-input-number v-else-if="isRelativeDate" v-model="val" size="small" class="val-editor" :controls="numberControls"
+  <el-input-number v-else-if="isRelativeDate" v-model="val" size="small" class="st-control val-editor" :controls="numberControls"
                    :min="1" placeholder="天数" @change="$emit('update', val)" />
-  <el-input v-else v-model="val" size="small" class="val-editor" placeholder="请输入"
+  <el-input v-else v-model="val" size="small" class="st-control val-editor" placeholder="请输入"
             @input="$emit('update', val)" />
 </template>
 
 <script setup>
 import { computed, inject, ref, watch } from 'vue'
-import StIcon from '../icons/StIcon.vue'
+import SmartMultiSelectTrigger from '../common/SmartMultiSelectTrigger.vue'
 import { optionColor } from '../../../smart/registry/fieldRegistry.js'
 import { dateModesFor, dayjsDateFormat, isDateModeValue } from '../../../smart/utils/format.js'
 
-const props = defineProps({ field: Object, operator: String, value: [String, Number, Array], numberControls: { type: Boolean, default: true } })
+const props = defineProps({ field: Object, operator: String, value: [String, Number, Array, Object], numberControls: { type: Boolean, default: true } })
 const emit = defineEmits(['update'])
 
 const members = inject('smartMembers', { value: [] })
@@ -82,7 +77,9 @@ const isRelativeDate = computed(() => ['date', 'createdTime', 'lastModifiedTime'
   && ['pastDays', 'withinDays'].includes(props.operator))
 
 // ---------- 日期模式值 { mode, date? }；旧数据为 'YYYY-MM-DD' 字符串，视为「具体日期」 ----------
-const FIXED_POPPER = { strategy: 'fixed' }
+const FIXED_POPPER = { strategy: 'fixed', modifiers: [
+  { name: 'preventOverflow', options: { boundary: [], rootBoundary: 'viewport', padding: 12, altAxis: true, tether: false } },
+] }
 const dateValue = computed(() => {
   const v = props.value
   if (isDateModeValue(v)) return v
@@ -119,16 +116,6 @@ const filteredOptions = computed(() => {
   const k = kw.value.trim().toLowerCase()
   return k ? listOptions.value.filter(o => String(o.label).toLowerCase().includes(k)) : listOptions.value
 })
-function openPop() {
-  if (open.value) return
-  open.value = true
-  const close = (e) => {
-    if (e.target.closest?.('.ev-pop') || e.target.closest?.('.enum-val')) return
-    open.value = false
-    document.removeEventListener('mousedown', close)
-  }
-  setTimeout(() => document.addEventListener('mousedown', close), 0)
-}
 // 切换字段时收起面板（选项集已变）
 watch(() => props.field?.field_name, () => { open.value = false; kw.value = '' })
 
@@ -154,30 +141,23 @@ function removeOpt(id) {
 /* 参照稿：两个框为白底细边（筛选面板 .fp-val 给输入框统一灰底，这里覆盖） */
 .date-val :deep(.el-select__wrapper), .date-val :deep(.el-input__wrapper) { background: #fff !important; }
 
-/* 枚举/人员值：标签锚点（选中项彩色标签 + ✕ + ▾），点击展开浮动面板。
-   单行不换行：选中项放不下就在 .ev-tags 内截断（.enum-val 自身不能 overflow:hidden——
-   绝对定位的浮动面板 .ev-pop 是它的子元素，会被一并裁掉） */
+/* 枚举/人员值：标签锚点，选中项单行截断；选项浮层独立挂到 body。 */
 .enum-val {
   flex: 1; min-width: 120px; height: 26px; box-sizing: border-box; position: relative;
   display: flex; align-items: center; flex-wrap: nowrap; gap: 4px;
   border: 1px solid var(--el-border-color); border-radius: 4px; padding: 2px 6px; cursor: pointer;
 }
 .enum-val:hover { border-color: var(--el-color-primary); }
-.ev-tags { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow: hidden; }
-.ev-tag { flex: none; display: inline-flex; align-items: center; gap: 2px; border-radius: 4px; padding: 1px 6px; font-size: var(--st-font-size); white-space: nowrap; }
-.ev-x { cursor: pointer; opacity: .6; font-size: 10px; }
-.ev-x:hover { opacity: 1; }
-.ev-ph { color: var(--el-text-color-placeholder); font-size: var(--st-font-size); }
-.ev-caret { flex: none; color: var(--el-text-color-placeholder); font-size: 10px; }
 
 /* 浮动选项面板：查找框 + ✓ 勾选清单 */
 .ev-pop {
-  position: absolute; left: 0; top: calc(100% + 4px); z-index: 20; width: 240px;
-  background: #fff; border-radius: 8px; box-shadow: var(--el-box-shadow);
-  padding: 8px; display: flex; flex-direction: column; gap: 6px; cursor: default;
+  min-width: 0; max-height: calc(100dvh - 48px); overflow: hidden;
+  display: flex; flex-direction: column; gap: 6px; cursor: default;
 }
 .ev-sub { font-size: var(--st-font-size); color: var(--el-text-color-secondary); }
-.ev-list { display: flex; flex-direction: column; max-height: 220px; overflow: auto; }
+.ev-pop > :not(.ev-list) { flex-shrink: 0; }
+.ev-list { display: flex; flex-direction: column; min-height: 0; max-height: 220px; overflow: auto; }
+.ev-item { flex-shrink: 0; }
 .ev-item { display: flex; align-items: center; gap: 6px; padding: 0 6px; border-radius: 4px; cursor: pointer;  height: var(--st-list-item-height); box-sizing: border-box; }
 .ev-item:hover { background: var(--el-fill-color-light); }
 .ev-check { flex: none; width: 14px; color: var(--el-color-primary); font-size: var(--st-font-size); }
@@ -187,7 +167,7 @@ function removeOpt(id) {
 </style>
 
 <style>
-/* 日期模式下拉（:teleported=false 渲染在面板内，类名不带作用域）：✓ 当前项；「具体日期」与相对日期之间分隔线 */
+/* 日期模式 body 浮层：✓ 当前项；「具体日期」与相对日期之间分隔线 */
 .dv-mode-pop .el-select-dropdown__item { display: flex; align-items: center; font-weight: 400; color: var(--st-text-2); }
 .dv-mode-pop .el-select-dropdown__item.is-selected { color: var(--st-text-2); background: var(--st-bg-hover); }
 .dv-mode-pop .dv-ck { width: 22px; flex: none; color: var(--st-primary); }

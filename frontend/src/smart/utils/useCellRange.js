@@ -47,7 +47,7 @@ export function useCellRange({ table, rows, fields, selected, editing, buffer, d
     stopScroll(); drag = null
     const b = bounds.value
     const td = fillTarget || e.target.closest?.('td.cell-fill-handle')
-    const handleAnchor = td?.querySelector('.sel-anchor, .grid-people-trigger') || td
+    const handleAnchor = td?.querySelector('.sel-anchor, .grid-people-trigger, .file-cell-trigger.selected, .relation-trigger.selected') || td
     const rect = fillRect || handleAnchor?.getBoundingClientRect()
     if (e.button === 0 && rect && b && !pending && !editing.value
       && e.clientX >= rect.right - 9 && e.clientX <= rect.right + 2

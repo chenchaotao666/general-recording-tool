@@ -44,11 +44,6 @@
       </div>
     </template>
 
-    <div v-if="feedback" class="asc-fb">
-      <span>提交反馈帮助提升效果</span>
-      <span class="asc-fb-btn st-icon-action" :class="{ on: fb === 'up' }" data-smart-tip="有帮助" @click="vote('up')"><StIcon name="thumb-up" :size="16" /></span>
-      <span class="asc-fb-btn st-icon-action" :class="{ on: fb === 'down' }" data-smart-tip="不准确" @click="vote('down')"><StIcon name="thumb-down" :size="16" /></span>
-    </div>
     <slot />
   </div>
 </template>
@@ -56,7 +51,6 @@
 <script setup>
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
 import StIcon from '../icons/StIcon.vue'
 import SmartCell from '../grid/SmartCell.vue'
 import AiBadge from './AiBadge.vue'
@@ -72,17 +66,10 @@ const props = defineProps({
   preview: { type: Object, default: null },     // 真实试算 {rows, config}
   outLabel: { type: String, default: '' },
   dim: { type: Boolean, default: false },
-  feedback: { type: Boolean, default: false },
   bare: { type: Boolean, default: false },      // 嵌入表单：只要效果表（无卡片底/内边距/「效果」标题）
 })
 
 const promptOpen = ref(false)
-const fb = ref(null)
-function vote(v) {
-  fb.value = fb.value === v ? null : v
-  if (fb.value) ElMessage.success(v === 'up' ? '感谢反馈！' : '感谢反馈，我们会持续改进')
-}
-
 const iconOf = fieldIconName
 
 const descSegments = computed(() => {
@@ -148,9 +135,8 @@ const table = computed(() => {
 .asc { background: #fff; border-radius: 16px; padding: 22px 22px 20px; transition: opacity .2s; }
 .asc.dim > :not(.asc-keep) { opacity: .45; }
 .asc.bare { padding: 0; background: none; border-radius: 0; }
-.asc.bare .asc-tr { min-height: 44px; }
+.asc.bare .asc-tr { min-height: 36px; }
 .asc.bare .asc-td { font-size: var(--st-font-size); }
-.asc.bare .asc-fb { margin-top: 8px; padding-top: 0; border-top: none; font-size: var(--st-font-size); }
 .asc-desc { font-size: var(--st-font-size); line-height: 30px; color: var(--st-text-2); }
 .asc-chip { display: inline-flex; align-items: center; gap: 4px; height: 26px; line-height: 26px; padding: 0 8px; margin: 0 4px;
             background: #F2F3F5; border-radius: 4px; font-size: var(--st-font-size); vertical-align: 1px; }
@@ -181,9 +167,4 @@ const table = computed(() => {
 @keyframes asc-shine { from { background-position: 200% 0; } to { background-position: 0 0; } }
 .asc-err { color: var(--el-color-danger); font-size: var(--st-font-size); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .asc-empty { padding: 18px; text-align: center; font-size: var(--st-font-size); color: var(--st-text-3); border-top: 1px solid #E5E6E8; }
-.asc-fb { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 14px; padding-top: 12px;
-          border-top: 1px solid #EBECEE; font-size: var(--st-font-size); color: #B5B9C0; }
-.asc-fb-btn { display: inline-flex; padding: 3px; border-radius: 4px; color: var(--st-text-2); cursor: pointer; }
-.asc-fb-btn:hover { background: #F2F3F5; }
-.asc-fb-btn.on { color: var(--st-primary); }
 </style>

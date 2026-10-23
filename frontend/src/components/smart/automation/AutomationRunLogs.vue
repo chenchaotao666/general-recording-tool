@@ -2,16 +2,16 @@
   <div class="arl">
     <template v-if="!selected">
       <div class="arl-filters">
-        <el-date-picker v-model="dates" type="daterange" value-format="YYYY-MM-DD" format="YYYY/MM/DD"
+        <el-date-picker class="st-control" v-model="dates" type="daterange" value-format="YYYY-MM-DD" format="YYYY/MM/DD"
                         range-separator="-" start-placeholder="开始日期" end-placeholder="结束日期"
                         :shortcuts="shortcuts" :disabled-date="futureDate" @change="reload" />
-        <el-select v-model="statuses" multiple collapse-tags collapse-tags-tooltip placeholder="全部状态" clearable @change="reload">
+        <el-select class="st-control" v-model="statuses" multiple collapse-tags collapse-tags-tooltip placeholder="全部状态" clearable @change="reload">
           <el-option v-for="(label, key) in STATUS" :key="key" :value="key" :label="label" />
         </el-select>
-        <el-select v-model="duration" placeholder="运行耗时" clearable @change="reload">
+        <el-select class="st-control" v-model="duration" placeholder="运行耗时" clearable @change="reload">
           <el-option v-for="o in DURATIONS" :key="o.value" v-bind="o" />
         </el-select>
-        <el-button class="arl-refresh" :loading="loading" aria-label="刷新运行日志" title="刷新" @click="load">
+        <el-button class="st-button st-button--icon arl-refresh" :loading="loading" aria-label="刷新运行日志" @click="load">
           <StIcon v-if="!loading" name="refresh" :size="18" />
         </el-button>
       </div>
@@ -23,12 +23,12 @@
               <td>{{ formatTime(run.started_at) }}</td>
               <td><span class="arl-status" :class="run.status"><i>{{ statusIcon(run.status) }}</i>{{ STATUS[run.status] || run.status }}</span></td>
               <td>{{ elapsed(run) }}</td>
-              <td><button class="arl-link" @click="selected = run">详情</button></td>
+              <td><button class="st-button arl-link" @click="selected = run">详情</button></td>
             </tr>
           </tbody>
         </table>
         <el-empty v-if="!loading && !runs.length && !error" description="暂无符合条件的运行记录" :image-size="64" />
-        <div v-if="error" class="arl-error">{{ error }} <button class="arl-link" @click="load">重试</button></div>
+        <div v-if="error" class="arl-error">{{ error }} <button class="st-button arl-link" @click="load">重试</button></div>
       </div>
       <el-pagination v-if="total > 20" v-model:current-page="page" :page-size="20" :total="total"
                      layout="total, prev, pager, next" small @current-change="load" />

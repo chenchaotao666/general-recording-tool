@@ -1,0 +1,577 @@
+{
+  "prompt": "基于第三层节点继续展开分析，每个节点生成两个更具体的子节点",
+  "context": [
+    {
+      "id": "root",
+      "type": "ellipse",
+      "text": "Robotics"
+    },
+    {
+      "id": "group0",
+      "type": "rectangle",
+      "text": "Math"
+    },
+    {
+      "id": "rg0",
+      "fromId": "root",
+      "toId": "group0"
+    },
+    {
+      "id": "group1",
+      "type": "rectangle",
+      "text": "Programming"
+    },
+    {
+      "id": "rg1",
+      "fromId": "root",
+      "toId": "group1"
+    },
+    {
+      "id": "group2",
+      "type": "rectangle",
+      "text": "Mechanics"
+    },
+    {
+      "id": "rg2",
+      "fromId": "root",
+      "toId": "group2"
+    },
+    {
+      "id": "group3",
+      "type": "rectangle",
+      "text": "Perception"
+    },
+    {
+      "id": "rg3",
+      "fromId": "root",
+      "toId": "group3"
+    },
+    {
+      "id": "group4",
+      "type": "rectangle",
+      "text": "Navigation"
+    },
+    {
+      "id": "rg4",
+      "fromId": "root",
+      "toId": "group4"
+    },
+    {
+      "id": "leaf0",
+      "type": "rectangle",
+      "text": "Linear algebra"
+    },
+    {
+      "id": "gl0",
+      "fromId": "group0",
+      "toId": "leaf0"
+    },
+    {
+      "id": "leaf1",
+      "type": "rectangle",
+      "text": "Probability"
+    },
+    {
+      "id": "gl1",
+      "fromId": "group0",
+      "toId": "leaf1"
+    },
+    {
+      "id": "leaf2",
+      "type": "rectangle",
+      "text": "Optimization"
+    },
+    {
+      "id": "gl2",
+      "fromId": "group0",
+      "toId": "leaf2"
+    },
+    {
+      "id": "leaf3",
+      "type": "rectangle",
+      "text": "Python"
+    },
+    {
+      "id": "gl3",
+      "fromId": "group1",
+      "toId": "leaf3"
+    },
+    {
+      "id": "leaf4",
+      "type": "rectangle",
+      "text": "C++"
+    },
+    {
+      "id": "gl4",
+      "fromId": "group1",
+      "toId": "leaf4"
+    },
+    {
+      "id": "leaf5",
+      "type": "rectangle",
+      "text": "ROS"
+    },
+    {
+      "id": "gl5",
+      "fromId": "group1",
+      "toId": "leaf5"
+    },
+    {
+      "id": "leaf6",
+      "type": "rectangle",
+      "text": "Kinematics"
+    },
+    {
+      "id": "gl6",
+      "fromId": "group2",
+      "toId": "leaf6"
+    },
+    {
+      "id": "leaf7",
+      "type": "rectangle",
+      "text": "Dynamics"
+    },
+    {
+      "id": "gl7",
+      "fromId": "group2",
+      "toId": "leaf7"
+    },
+    {
+      "id": "leaf8",
+      "type": "rectangle",
+      "text": "Control"
+    },
+    {
+      "id": "gl8",
+      "fromId": "group2",
+      "toId": "leaf8"
+    },
+    {
+      "id": "leaf9",
+      "type": "rectangle",
+      "text": "Computer vision"
+    },
+    {
+      "id": "gl9",
+      "fromId": "group3",
+      "toId": "leaf9"
+    },
+    {
+      "id": "leaf10",
+      "type": "rectangle",
+      "text": "Sensor fusion"
+    },
+    {
+      "id": "gl10",
+      "fromId": "group3",
+      "toId": "leaf10"
+    },
+    {
+      "id": "leaf11",
+      "type": "rectangle",
+      "text": "Deep learning"
+    },
+    {
+      "id": "gl11",
+      "fromId": "group3",
+      "toId": "leaf11"
+    },
+    {
+      "id": "leaf12",
+      "type": "rectangle",
+      "text": "PID"
+    },
+    {
+      "id": "gl12",
+      "fromId": "group4",
+      "toId": "leaf12"
+    },
+    {
+      "id": "leaf13",
+      "type": "rectangle",
+      "text": "Path planning"
+    },
+    {
+      "id": "gl13",
+      "fromId": "group4",
+      "toId": "leaf13"
+    },
+    {
+      "id": "leaf14",
+      "type": "rectangle",
+      "text": "SLAM"
+    },
+    {
+      "id": "gl14",
+      "fromId": "group4",
+      "toId": "leaf14"
+    }
+  ],
+  "result": {
+    "title": "",
+    "parts": [
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la0a",
+            "label": "矩阵运算",
+            "shape": "rect"
+          },
+          {
+            "id": "la0b",
+            "label": "特征值分解",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la0a",
+            "target": "la0b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf0"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la1a",
+            "label": "贝叶斯推断",
+            "shape": "rect"
+          },
+          {
+            "id": "la1b",
+            "label": "随机过程",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la1a",
+            "target": "la1b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf1"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la2a",
+            "label": "凸优化",
+            "shape": "rect"
+          },
+          {
+            "id": "la2b",
+            "label": "梯度下降",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la2a",
+            "target": "la2b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf2"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la3a",
+            "label": "NumPy",
+            "shape": "rect"
+          },
+          {
+            "id": "la3b",
+            "label": "PyTorch",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la3a",
+            "target": "la3b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf3"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la4a",
+            "label": "STL 模板",
+            "shape": "rect"
+          },
+          {
+            "id": "la4b",
+            "label": "内存管理",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la4a",
+            "target": "la4b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf4"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la5a",
+            "label": "话题通信",
+            "shape": "rect"
+          },
+          {
+            "id": "la5b",
+            "label": "服务调用",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la5a",
+            "target": "la5b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf5"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la6a",
+            "label": "正运动学",
+            "shape": "rect"
+          },
+          {
+            "id": "la6b",
+            "label": "逆运动学",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la6a",
+            "target": "la6b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf6"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la7a",
+            "label": "拉格朗日方程",
+            "shape": "rect"
+          },
+          {
+            "id": "la7b",
+            "label": "牛顿欧拉法",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la7a",
+            "target": "la7b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf7"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la8a",
+            "label": "状态空间控制",
+            "shape": "rect"
+          },
+          {
+            "id": "la8b",
+            "label": "模型预测控制",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la8a",
+            "target": "la8b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf8"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la9a",
+            "label": "图像特征提取",
+            "shape": "rect"
+          },
+          {
+            "id": "la9b",
+            "label": "目标检测",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la9a",
+            "target": "la9b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf9"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la10a",
+            "label": "卡尔曼滤波",
+            "shape": "rect"
+          },
+          {
+            "id": "la10b",
+            "label": "粒子滤波",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la10a",
+            "target": "la10b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf10"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la11a",
+            "label": "卷积神经网络",
+            "shape": "rect"
+          },
+          {
+            "id": "la11b",
+            "label": "强化学习",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la11a",
+            "target": "la11b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf11"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la12a",
+            "label": "参数整定",
+            "shape": "rect"
+          },
+          {
+            "id": "la12b",
+            "label": "串级控制",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la12a",
+            "target": "la12b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf12"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la13a",
+            "label": "A* 算法",
+            "shape": "rect"
+          },
+          {
+            "id": "la13b",
+            "label": "RRT 算法",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la13a",
+            "target": "la13b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf13"
+      },
+      {
+        "type": "diagram",
+        "title": "",
+        "nodes": [
+          {
+            "id": "la14a",
+            "label": "激光 SLAM",
+            "shape": "rect"
+          },
+          {
+            "id": "la14b",
+            "label": "视觉 SLAM",
+            "shape": "rect"
+          }
+        ],
+        "edges": [
+          {
+            "source": "la14a",
+            "target": "la14b"
+          }
+        ],
+        "mode": "append",
+        "attachTo": "leaf14"
+      }
+    ],
+    "mode": "append"
+  },
+  "passed": true
+}

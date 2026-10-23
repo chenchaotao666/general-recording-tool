@@ -1,5 +1,7 @@
 """LLM 网关：按配置选择供应商，结构化输出解析与重试，结果对齐。"""
 import json
+import math
+from .board_rules import clean_style, clean_edits, resolve_mode, clean_attachment, is_selected_style_edit
 
 from sqlalchemy.orm import Session
 
@@ -1100,8 +1102,8 @@ def assist_chat(db: Session, user, message: str, history: list | None, context: 
 _DIAGRAM_SHAPES = {"rect", "ellipse", "diamond"}
 _DIAGRAM_MAX_NODES = 30
 
-_DRAWING_TYPES = {"rectangle", "ellipse", "diamond", "line", "arrow"}
-_DRAWING_MAX_ELEMENTS = 60
+_DRAWING_TYPES = {"rectangle", "ellipse", "diamond", "line", "arrow", "text", "curve"}
+_DRAWING_MAX_ELEMENTS = 180
 _DRAWING_COORD_LIMIT = 2000   # 坐标/尺寸上限（像素），挡住模型偶发的离谱数值
 
 
@@ -1110,6 +1112,8 @@ def _num(value, limit=_DRAWING_COORD_LIMIT) -> float | None:
     try:
         v = float(value)
     except (TypeError, ValueError):
+        return None
+    if not math.isfinite(v):
         return None
     return max(-limit, min(limit, v))
 
@@ -1130,7 +1134,9 @@ def _clean_diagram(data: dict) -> dict:
             nid = f"n{i + 1}"
         used.add(nid)
         shape = n.get("shape") if n.get("shape") in _DIAGRAM_SHAPES else "rect"
-        nodes.append({"id": nid, "label": label, "shape": shape})
+        while nid in {node['id'] for node in nodes}:
+            nid += '_'
+        nodes.append({"id": nid, "label": label, "shape": shape, **clean_style(n)})
     if not nodes:
         raise ValueError("没有有效节点")
     # LLM 编号被打乱/重号时边可能指到不存在的 id：以清洗后的 id 集为准
@@ -1144,7 +1150,7 @@ def _clean_diagram(data: dict) -> dict:
         if s not in valid_ids or t not in valid_ids or (s, t) in seen:
             continue
         seen.add((s, t))
-        edge = {"source": s, "target": t}
+        edge = {"source": s, "target": t, **clean_style(e)}
         if str(e.get("label") or "").strip():
             edge["label"] = str(e["label"]).strip()[:16]
         edges.append(edge)
@@ -1164,15 +1170,26 @@ def _clean_drawing(data: dict) -> dict:
         raise ValueError("输出缺少 elements 数组")
 
     elements = []
-    for e in raw[:_DRAWING_MAX_ELEMENTS]:
+    if len(raw) > _DRAWING_MAX_ELEMENTS:
+        raise ValueError('绘画最多 180 个元素，请精简笔触而不是截断图层')
+    for e in raw:
         etype = e.get("type")
         if etype not in _DRAWING_TYPES:
             continue
         x, y = _num(e.get("x")), _num(e.get("y"))
         if x is None or y is None:
             continue
-        item = {"type": etype, "x": round(x, 1), "y": round(y, 1)}
-        if etype in ("line", "arrow"):
+        item = {"type": etype, "x": round(x, 1), "y": round(y, 1), **clean_style(e)}
+        if etype == 'text':
+            text = str(e.get('text') or '').strip()[:1000]
+            if not text:
+                continue
+            item['text'] = text
+            elements.append(item)
+            continue
+        if isinstance(e.get('label'), dict) and isinstance(e['label'].get('text'), str):
+            item['label'] = {'text': e['label']['text'][:200]}
+        if etype in ("line", "arrow", "curve"):
             pts_in = e.get("points")
             if not isinstance(pts_in, list) or len(pts_in) < 2:
                 continue
@@ -1189,6 +1206,9 @@ def _clean_drawing(data: dict) -> dict:
             if len(pts) < 2:
                 continue
             item["points"] = pts
+            if etype == 'curve':
+                item['closed'] = e.get('closed') is True
+                item.setdefault('roughness', 0)
         else:
             w, h = _num(e.get("width"), 800), _num(e.get("height"), 800)
             if w is None or h is None or w < 2 or h < 2:
@@ -1244,6 +1264,7 @@ def _clean_component(data: dict) -> dict:
         "title": str(data.get("title") or "")[:64],
         "headers": headers,
         "rows": rows,
+        **clean_style(data),
     }
 
 
@@ -1259,17 +1280,17 @@ def _clean_one_part(part: dict) -> dict:
 
 
 def _clean_content(data: dict) -> dict:
-    """清洗内容输出：单部分直接清洗；parts 数组逐部分清洗（无效部分丢弃，全无效则报错触发重试）。"""
+    """清洗全部内容；复合需求中任一部分无效均重试，避免静默漏掉半个任务。"""
     parts_in = data.get("parts")
     if isinstance(parts_in, list) and parts_in:
         parts = []
-        for p in parts_in[:_BOARD_MAX_PARTS]:
+        limit = 64 if any(isinstance(p, dict) and p.get('attachTo') for p in parts_in) else _BOARD_MAX_PARTS
+        if len(parts_in) > limit:
+            raise ValueError(f'parts 最多 {limit} 项，不能截断展开目标')
+        for p in parts_in:
             if not isinstance(p, dict):
-                continue
-            try:
-                parts.append(_clean_one_part(p))
-            except ValueError:
-                continue
+                raise ValueError('parts 中的每一项都必须是内容对象')
+            parts.append(_clean_one_part(p))
         if not parts:
             raise ValueError("parts 中没有有效内容")
         return {"title": str(data.get("title") or "")[:64], "parts": parts}
@@ -1280,7 +1301,7 @@ def generate_board_content(db: Session, description: str, mode: str = "auto",
                            context: list | None = None, images: list[str] | None = None) -> dict:
     """LLM 画板操作：replace/append/modify 产出内容（结构图 nodes/edges 或绘画 elements；
     复合需求返回 parts 数组，每部分各自是一种内容），summarize 产出文字汇总。
-    mode=auto 时由模型判断（以其输出的 mode 为准，非法值回退 replace）。
+    mode=auto 时先识别明确操作意图，其余交给模型；非法 mode 触发重试。
     images 为附图 data URL（截图/照片），非空时走视觉模型结合图片内容生成。
     JSON 解析失败回喂重试一次。"""
     from .prompts import BOARD_SYSTEM, build_board_prompt
@@ -1295,6 +1316,8 @@ def generate_board_content(db: Session, description: str, mode: str = "auto",
     if mode not in _BOARD_MODES and mode != "auto":
         mode = "auto"
     ctx = [c for c in (context or []) if isinstance(c, dict)][:200]
+    if mode == 'auto':
+        mode = resolve_mode(desc, ctx)
     # 空画布降级：追加/修改等同替换；汇总无意义直接报错（有附图除外——可以汇总图片内容）
     if not ctx:
         if mode == "summarize" and not img_bytes:
@@ -1323,15 +1346,22 @@ def generate_board_content(db: Session, description: str, mode: str = "auto",
             if mode == "auto":
                 out_mode = str(data.get("mode") or "").lower()
                 if out_mode not in _BOARD_MODES:
-                    out_mode = "replace"   # 模型没给/给错：按替换处理（前端替换前会确认）
+                    raise ValueError('自动判断必须返回合法的 mode：replace/append/modify/summarize')
                 if not ctx and out_mode in ("append", "modify"):
                     out_mode = "replace"
             else:
                 out_mode = mode
             if out_mode == "summarize":
                 return _clean_summary(data)
+            if is_selected_style_edit(desc, ctx) and 'edits' not in data:
+                raise ValueError('选中节点的样式修改必须返回 edits 和原始节点 ID，不能重新生成或替换图形')
+            if 'edits' in data:
+                if out_mode != 'modify':
+                    raise ValueError('edits 只能用于 modify 模式')
+                return clean_edits(data, ctx, desc)
             result = _clean_content(data)
             result["mode"] = out_mode
+            clean_attachment(data, result, ctx, desc)
             return result
         except LLMError:
             raise

@@ -1,0 +1,3723 @@
+{
+  "prompt": "画一个很逼真的美女，头肩肖像，精细手绘风",
+  "draft": {
+    "type": "drawing",
+    "title": "头肩肖像·精细手绘风",
+    "elements": [
+      {
+        "type": "rectangle",
+        "x": -400.0,
+        "y": -400.0,
+        "strokeColor": "transparent",
+        "backgroundColor": "#e8e2da",
+        "fillStyle": "solid",
+        "strokeWidth": 1,
+        "roughness": 0,
+        "width": 800,
+        "height": 800
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "transparent",
+        "backgroundColor": "#ede6dd",
+        "strokeWidth": 1,
+        "roughness": 0,
+        "opacity": 60,
+        "fillStyle": "solid",
+        "points": [
+          [
+            -260.0,
+            -380.0
+          ],
+          [
+            120.0,
+            -390.0
+          ],
+          [
+            300.0,
+            -200.0
+          ],
+          [
+            280.0,
+            120.0
+          ],
+          [
+            120.0,
+            330.0
+          ],
+          [
+            -140.0,
+            340.0
+          ],
+          [
+            -300.0,
+            140.0
+          ],
+          [
+            -320.0,
+            -160.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#1e1815",
+        "backgroundColor": "#2b2320",
+        "strokeWidth": 2,
+        "roughness": 0.6,
+        "fillStyle": "solid",
+        "points": [
+          [
+            -150.0,
+            -300.0
+          ],
+          [
+            -60.0,
+            -330.0
+          ],
+          [
+            60.0,
+            -320.0
+          ],
+          [
+            140.0,
+            -260.0
+          ],
+          [
+            170.0,
+            -150.0
+          ],
+          [
+            160.0,
+            -40.0
+          ],
+          [
+            120.0,
+            60.0
+          ],
+          [
+            60.0,
+            120.0
+          ],
+          [
+            -20.0,
+            140.0
+          ],
+          [
+            -90.0,
+            110.0
+          ],
+          [
+            -140.0,
+            40.0
+          ],
+          [
+            -160.0,
+            -60.0
+          ],
+          [
+            -165.0,
+            -180.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "backgroundColor": "#f2d6c2",
+        "strokeWidth": 1.5,
+        "roughness": 0.4,
+        "fillStyle": "solid",
+        "points": [
+          [
+            -120.0,
+            -250.0
+          ],
+          [
+            -40.0,
+            -290.0
+          ],
+          [
+            60.0,
+            -280.0
+          ],
+          [
+            120.0,
+            -220.0
+          ],
+          [
+            140.0,
+            -140.0
+          ],
+          [
+            130.0,
+            -60.0
+          ],
+          [
+            100.0,
+            10.0
+          ],
+          [
+            50.0,
+            60.0
+          ],
+          [
+            -10.0,
+            80.0
+          ],
+          [
+            -70.0,
+            60.0
+          ],
+          [
+            -110.0,
+            10.0
+          ],
+          [
+            -130.0,
+            -70.0
+          ],
+          [
+            -135.0,
+            -170.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "backgroundColor": "#f2d6c2",
+        "strokeWidth": 1.5,
+        "roughness": 0.4,
+        "fillStyle": "solid",
+        "points": [
+          [
+            -60.0,
+            70.0
+          ],
+          [
+            -40.0,
+            120.0
+          ],
+          [
+            -30.0,
+            170.0
+          ],
+          [
+            0.0,
+            200.0
+          ],
+          [
+            40.0,
+            205.0
+          ],
+          [
+            70.0,
+            180.0
+          ],
+          [
+            80.0,
+            140.0
+          ],
+          [
+            70.0,
+            90.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "backgroundColor": "#d9cfc4",
+        "strokeWidth": 1.5,
+        "roughness": 0.5,
+        "fillStyle": "solid",
+        "points": [
+          [
+            -30.0,
+            190.0
+          ],
+          [
+            -90.0,
+            215.0
+          ],
+          [
+            -170.0,
+            240.0
+          ],
+          [
+            -230.0,
+            290.0
+          ],
+          [
+            -260.0,
+            360.0
+          ],
+          [
+            -270.0,
+            420.0
+          ],
+          [
+            270.0,
+            420.0
+          ],
+          [
+            260.0,
+            350.0
+          ],
+          [
+            220.0,
+            280.0
+          ],
+          [
+            150.0,
+            235.0
+          ],
+          [
+            70.0,
+            210.0
+          ],
+          [
+            40.0,
+            200.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.5,
+        "roughness": 0.4,
+        "points": [
+          [
+            -30.0,
+            195.0
+          ],
+          [
+            -10.0,
+            230.0
+          ],
+          [
+            30.0,
+            235.0
+          ],
+          [
+            60.0,
+            215.0
+          ],
+          [
+            70.0,
+            185.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c5a4a",
+        "backgroundColor": "#ffffff",
+        "strokeWidth": 1.2,
+        "roughness": 0.3,
+        "fillStyle": "solid",
+        "points": [
+          [
+            -95.0,
+            -40.0
+          ],
+          [
+            -60.0,
+            -55.0
+          ],
+          [
+            -20.0,
+            -52.0
+          ],
+          [
+            10.0,
+            -38.0
+          ],
+          [
+            5.0,
+            -20.0
+          ],
+          [
+            -30.0,
+            -12.0
+          ],
+          [
+            -70.0,
+            -18.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "backgroundColor": "#5a463c",
+        "strokeWidth": 1,
+        "roughness": 0.3,
+        "fillStyle": "solid",
+        "points": [
+          [
+            -88.0,
+            -38.0
+          ],
+          [
+            -60.0,
+            -46.0
+          ],
+          [
+            -30.0,
+            -44.0
+          ],
+          [
+            -8.0,
+            -34.0
+          ],
+          [
+            -30.0,
+            -28.0
+          ],
+          [
+            -62.0,
+            -30.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "ellipse",
+        "x": -58.0,
+        "y": -42.0,
+        "strokeColor": "#1e1815",
+        "backgroundColor": "#2b2320",
+        "fillStyle": "solid",
+        "strokeWidth": 1,
+        "roughness": 0.2,
+        "width": 16.0,
+        "height": 16.0
+      },
+      {
+        "type": "ellipse",
+        "x": -52.0,
+        "y": -40.0,
+        "strokeColor": "transparent",
+        "backgroundColor": "#ffffff",
+        "fillStyle": "solid",
+        "strokeWidth": 1,
+        "roughness": 0,
+        "width": 5.0,
+        "height": 5.0
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.4,
+        "points": [
+          [
+            -100.0,
+            -52.0
+          ],
+          [
+            -70.0,
+            -66.0
+          ],
+          [
+            -30.0,
+            -64.0
+          ],
+          [
+            0.0,
+            -50.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c5a4a",
+        "backgroundColor": "#ffffff",
+        "strokeWidth": 1.2,
+        "roughness": 0.3,
+        "fillStyle": "solid",
+        "points": [
+          [
+            30.0,
+            -40.0
+          ],
+          [
+            65.0,
+            -55.0
+          ],
+          [
+            105.0,
+            -50.0
+          ],
+          [
+            130.0,
+            -32.0
+          ],
+          [
+            125.0,
+            -14.0
+          ],
+          [
+            90.0,
+            -8.0
+          ],
+          [
+            50.0,
+            -14.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "backgroundColor": "#5a463c",
+        "strokeWidth": 1,
+        "roughness": 0.3,
+        "fillStyle": "solid",
+        "points": [
+          [
+            38.0,
+            -38.0
+          ],
+          [
+            68.0,
+            -46.0
+          ],
+          [
+            100.0,
+            -42.0
+          ],
+          [
+            122.0,
+            -30.0
+          ],
+          [
+            98.0,
+            -24.0
+          ],
+          [
+            64.0,
+            -26.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "ellipse",
+        "x": 72.0,
+        "y": -40.0,
+        "strokeColor": "#1e1815",
+        "backgroundColor": "#2b2320",
+        "fillStyle": "solid",
+        "strokeWidth": 1,
+        "roughness": 0.2,
+        "width": 16.0,
+        "height": 16.0
+      },
+      {
+        "type": "ellipse",
+        "x": 78.0,
+        "y": -38.0,
+        "strokeColor": "transparent",
+        "backgroundColor": "#ffffff",
+        "fillStyle": "solid",
+        "strokeWidth": 1,
+        "roughness": 0,
+        "width": 5.0,
+        "height": 5.0
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.4,
+        "points": [
+          [
+            30.0,
+            -50.0
+          ],
+          [
+            62.0,
+            -64.0
+          ],
+          [
+            100.0,
+            -60.0
+          ],
+          [
+            128.0,
+            -46.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.5,
+        "roughness": 0.4,
+        "points": [
+          [
+            -6.0,
+            -30.0
+          ],
+          [
+            -2.0,
+            -8.0
+          ],
+          [
+            6.0,
+            8.0
+          ],
+          [
+            14.0,
+            14.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c5a4a",
+        "strokeWidth": 1.2,
+        "roughness": 0.3,
+        "points": [
+          [
+            -14.0,
+            16.0
+          ],
+          [
+            0.0,
+            20.0
+          ],
+          [
+            14.0,
+            16.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c5a4a",
+        "backgroundColor": "#c96a62",
+        "strokeWidth": 1.2,
+        "roughness": 0.3,
+        "fillStyle": "solid",
+        "points": [
+          [
+            -30.0,
+            42.0
+          ],
+          [
+            -10.0,
+            36.0
+          ],
+          [
+            10.0,
+            38.0
+          ],
+          [
+            32.0,
+            46.0
+          ],
+          [
+            10.0,
+            58.0
+          ],
+          [
+            -12.0,
+            56.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c5a4a",
+        "strokeWidth": 1,
+        "roughness": 0.3,
+        "points": [
+          [
+            -30.0,
+            42.0
+          ],
+          [
+            -10.0,
+            38.0
+          ],
+          [
+            10.0,
+            40.0
+          ],
+          [
+            32.0,
+            46.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "backgroundColor": "#f2d6c2",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "fillStyle": "solid",
+        "points": [
+          [
+            -130.0,
+            -60.0
+          ],
+          [
+            -150.0,
+            -20.0
+          ],
+          [
+            -148.0,
+            30.0
+          ],
+          [
+            -130.0,
+            60.0
+          ],
+          [
+            -118.0,
+            40.0
+          ],
+          [
+            -122.0,
+            -10.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1,
+        "roughness": 0.3,
+        "points": [
+          [
+            -138.0,
+            -10.0
+          ],
+          [
+            -128.0,
+            0.0
+          ],
+          [
+            -132.0,
+            20.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 3,
+        "roughness": 0.6,
+        "points": [
+          [
+            -150.0,
+            -300.0
+          ],
+          [
+            -190.0,
+            -220.0
+          ],
+          [
+            -210.0,
+            -120.0
+          ],
+          [
+            -200.0,
+            -20.0
+          ],
+          [
+            -180.0,
+            60.0
+          ],
+          [
+            -160.0,
+            120.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.6,
+        "points": [
+          [
+            -120.0,
+            -310.0
+          ],
+          [
+            -170.0,
+            -240.0
+          ],
+          [
+            -195.0,
+            -150.0
+          ],
+          [
+            -190.0,
+            -50.0
+          ],
+          [
+            -170.0,
+            40.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.6,
+        "points": [
+          [
+            -60.0,
+            -330.0
+          ],
+          [
+            -110.0,
+            -280.0
+          ],
+          [
+            -150.0,
+            -200.0
+          ],
+          [
+            -165.0,
+            -110.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.6,
+        "points": [
+          [
+            20.0,
+            -330.0
+          ],
+          [
+            -30.0,
+            -300.0
+          ],
+          [
+            -90.0,
+            -250.0
+          ],
+          [
+            -130.0,
+            -180.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.6,
+        "points": [
+          [
+            100.0,
+            -300.0
+          ],
+          [
+            60.0,
+            -260.0
+          ],
+          [
+            10.0,
+            -210.0
+          ],
+          [
+            -40.0,
+            -160.0
+          ],
+          [
+            -80.0,
+            -100.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.6,
+        "points": [
+          [
+            150.0,
+            -240.0
+          ],
+          [
+            120.0,
+            -180.0
+          ],
+          [
+            90.0,
+            -110.0
+          ],
+          [
+            70.0,
+            -40.0
+          ],
+          [
+            60.0,
+            20.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.6,
+        "points": [
+          [
+            170.0,
+            -150.0
+          ],
+          [
+            150.0,
+            -80.0
+          ],
+          [
+            130.0,
+            0.0
+          ],
+          [
+            110.0,
+            60.0
+          ],
+          [
+            90.0,
+            110.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.5,
+        "roughness": 0.5,
+        "points": [
+          [
+            -100.0,
+            -260.0
+          ],
+          [
+            -60.0,
+            -290.0
+          ],
+          [
+            -10.0,
+            -300.0
+          ],
+          [
+            40.0,
+            -290.0
+          ],
+          [
+            90.0,
+            -260.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.5,
+        "roughness": 0.5,
+        "points": [
+          [
+            -80.0,
+            -230.0
+          ],
+          [
+            -30.0,
+            -260.0
+          ],
+          [
+            30.0,
+            -262.0
+          ],
+          [
+            80.0,
+            -235.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -140.0,
+            -120.0
+          ],
+          [
+            -110.0,
+            -160.0
+          ],
+          [
+            -70.0,
+            -190.0
+          ],
+          [
+            -20.0,
+            -205.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            120.0,
+            -160.0
+          ],
+          [
+            100.0,
+            -100.0
+          ],
+          [
+            80.0,
+            -40.0
+          ],
+          [
+            70.0,
+            20.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 1,
+        "roughness": 0.5,
+        "points": [
+          [
+            -120.0,
+            -200.0
+          ],
+          [
+            -90.0,
+            -230.0
+          ],
+          [
+            -50.0,
+            -250.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "points": [
+          [
+            -100.0,
+            -80.0
+          ],
+          [
+            -70.0,
+            -100.0
+          ],
+          [
+            -30.0,
+            -105.0
+          ],
+          [
+            0.0,
+            -95.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "points": [
+          [
+            40.0,
+            -90.0
+          ],
+          [
+            80.0,
+            -100.0
+          ],
+          [
+            115.0,
+            -85.0
+          ],
+          [
+            135.0,
+            -60.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1,
+        "roughness": 0.4,
+        "points": [
+          [
+            -90.0,
+            20.0
+          ],
+          [
+            -60.0,
+            10.0
+          ],
+          [
+            -30.0,
+            8.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1,
+        "roughness": 0.4,
+        "points": [
+          [
+            40.0,
+            10.0
+          ],
+          [
+            70.0,
+            4.0
+          ],
+          [
+            100.0,
+            10.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "points": [
+          [
+            -40.0,
+            90.0
+          ],
+          [
+            -20.0,
+            110.0
+          ],
+          [
+            10.0,
+            115.0
+          ],
+          [
+            40.0,
+            100.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "points": [
+          [
+            -60.0,
+            150.0
+          ],
+          [
+            -30.0,
+            170.0
+          ],
+          [
+            10.0,
+            175.0
+          ],
+          [
+            50.0,
+            160.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -30.0,
+            200.0
+          ],
+          [
+            -60.0,
+            240.0
+          ],
+          [
+            -100.0,
+            270.0
+          ],
+          [
+            -150.0,
+            290.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            40.0,
+            205.0
+          ],
+          [
+            80.0,
+            240.0
+          ],
+          [
+            130.0,
+            265.0
+          ],
+          [
+            190.0,
+            285.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -260.0,
+            420.0
+          ],
+          [
+            -200.0,
+            380.0
+          ],
+          [
+            -120.0,
+            350.0
+          ],
+          [
+            -40.0,
+            340.0
+          ],
+          [
+            40.0,
+            345.0
+          ],
+          [
+            120.0,
+            360.0
+          ],
+          [
+            200.0,
+            390.0
+          ],
+          [
+            270.0,
+            420.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#b8a898",
+        "strokeWidth": 1.5,
+        "roughness": 0.5,
+        "points": [
+          [
+            -180.0,
+            300.0
+          ],
+          [
+            -120.0,
+            320.0
+          ],
+          [
+            -60.0,
+            330.0
+          ],
+          [
+            0.0,
+            332.0
+          ],
+          [
+            60.0,
+            328.0
+          ],
+          [
+            120.0,
+            315.0
+          ],
+          [
+            180.0,
+            295.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 1.5,
+        "roughness": 0.4,
+        "points": [
+          [
+            -40.0,
+            340.0
+          ],
+          [
+            -20.0,
+            370.0
+          ],
+          [
+            0.0,
+            380.0
+          ],
+          [
+            20.0,
+            372.0
+          ],
+          [
+            40.0,
+            345.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#ffffff",
+        "strokeWidth": 2,
+        "roughness": 0.2,
+        "opacity": 70,
+        "points": [
+          [
+            -70.0,
+            -30.0
+          ],
+          [
+            -50.0,
+            -36.0
+          ],
+          [
+            -30.0,
+            -34.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#ffffff",
+        "strokeWidth": 2,
+        "roughness": 0.2,
+        "opacity": 70,
+        "points": [
+          [
+            60.0,
+            -28.0
+          ],
+          [
+            80.0,
+            -34.0
+          ],
+          [
+            100.0,
+            -30.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#ffffff",
+        "strokeWidth": 1.5,
+        "roughness": 0.2,
+        "opacity": 60,
+        "points": [
+          [
+            -10.0,
+            10.0
+          ],
+          [
+            0.0,
+            12.0
+          ],
+          [
+            10.0,
+            10.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#ffffff",
+        "strokeWidth": 1.5,
+        "roughness": 0.2,
+        "opacity": 50,
+        "points": [
+          [
+            -20.0,
+            50.0
+          ],
+          [
+            -5.0,
+            46.0
+          ],
+          [
+            10.0,
+            48.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c5a4a",
+        "strokeWidth": 1,
+        "roughness": 0.4,
+        "points": [
+          [
+            -160.0,
+            -40.0
+          ],
+          [
+            -150.0,
+            -10.0
+          ],
+          [
+            -155.0,
+            20.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "points": [
+          [
+            -120.0,
+            60.0
+          ],
+          [
+            -100.0,
+            90.0
+          ],
+          [
+            -70.0,
+            110.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "points": [
+          [
+            100.0,
+            60.0
+          ],
+          [
+            80.0,
+            95.0
+          ],
+          [
+            50.0,
+            115.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -200.0,
+            -100.0
+          ],
+          [
+            -180.0,
+            -60.0
+          ],
+          [
+            -170.0,
+            -10.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -190.0,
+            -180.0
+          ],
+          [
+            -170.0,
+            -130.0
+          ],
+          [
+            -160.0,
+            -80.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            140.0,
+            -100.0
+          ],
+          [
+            120.0,
+            -50.0
+          ],
+          [
+            105.0,
+            0.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            160.0,
+            -180.0
+          ],
+          [
+            140.0,
+            -120.0
+          ],
+          [
+            125.0,
+            -60.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#b8a898",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -230.0,
+            290.0
+          ],
+          [
+            -200.0,
+            330.0
+          ],
+          [
+            -180.0,
+            380.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#b8a898",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            220.0,
+            280.0
+          ],
+          [
+            240.0,
+            330.0
+          ],
+          [
+            255.0,
+            380.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 1,
+        "roughness": 0.5,
+        "points": [
+          [
+            -60.0,
+            -290.0
+          ],
+          [
+            -20.0,
+            -305.0
+          ],
+          [
+            30.0,
+            -300.0
+          ],
+          [
+            70.0,
+            -285.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 1,
+        "roughness": 0.5,
+        "points": [
+          [
+            -140.0,
+            -160.0
+          ],
+          [
+            -120.0,
+            -200.0
+          ],
+          [
+            -90.0,
+            -230.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1,
+        "roughness": 0.4,
+        "points": [
+          [
+            -50.0,
+            120.0
+          ],
+          [
+            -30.0,
+            140.0
+          ],
+          [
+            0.0,
+            145.0
+          ],
+          [
+            30.0,
+            135.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#b8a898",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -100.0,
+            240.0
+          ],
+          [
+            -60.0,
+            260.0
+          ],
+          [
+            -20.0,
+            268.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#b8a898",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            60.0,
+            255.0
+          ],
+          [
+            100.0,
+            245.0
+          ],
+          [
+            140.0,
+            235.0
+          ]
+        ],
+        "closed": false
+      }
+    ],
+    "mode": "replace",
+    "visualReviewRequested": true
+  },
+  "reviewed": {
+    "type": "drawing",
+    "title": "头肩肖像·精细手绘风",
+    "elements": [
+      {
+        "type": "rectangle",
+        "x": -400.0,
+        "y": -400.0,
+        "strokeColor": "transparent",
+        "backgroundColor": "#e8e2da",
+        "fillStyle": "solid",
+        "strokeWidth": 1,
+        "roughness": 0,
+        "width": 800,
+        "height": 800
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "transparent",
+        "backgroundColor": "#ede6dd",
+        "fillStyle": "solid",
+        "strokeWidth": 1,
+        "roughness": 0,
+        "opacity": 60,
+        "points": [
+          [
+            -260.0,
+            -380.0
+          ],
+          [
+            120.0,
+            -390.0
+          ],
+          [
+            300.0,
+            -200.0
+          ],
+          [
+            280.0,
+            120.0
+          ],
+          [
+            120.0,
+            330.0
+          ],
+          [
+            -140.0,
+            340.0
+          ],
+          [
+            -300.0,
+            140.0
+          ],
+          [
+            -320.0,
+            -160.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#1e1815",
+        "backgroundColor": "#2b2320",
+        "fillStyle": "solid",
+        "strokeWidth": 2,
+        "roughness": 0.6,
+        "points": [
+          [
+            -150.0,
+            -300.0
+          ],
+          [
+            -60.0,
+            -330.0
+          ],
+          [
+            60.0,
+            -320.0
+          ],
+          [
+            140.0,
+            -260.0
+          ],
+          [
+            170.0,
+            -150.0
+          ],
+          [
+            160.0,
+            -40.0
+          ],
+          [
+            120.0,
+            60.0
+          ],
+          [
+            60.0,
+            120.0
+          ],
+          [
+            -20.0,
+            140.0
+          ],
+          [
+            -90.0,
+            110.0
+          ],
+          [
+            -140.0,
+            40.0
+          ],
+          [
+            -160.0,
+            -60.0
+          ],
+          [
+            -165.0,
+            -180.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "backgroundColor": "#f2d6c2",
+        "fillStyle": "solid",
+        "strokeWidth": 1.5,
+        "roughness": 0.4,
+        "points": [
+          [
+            -120.0,
+            -250.0
+          ],
+          [
+            -40.0,
+            -290.0
+          ],
+          [
+            60.0,
+            -280.0
+          ],
+          [
+            120.0,
+            -220.0
+          ],
+          [
+            140.0,
+            -140.0
+          ],
+          [
+            130.0,
+            -60.0
+          ],
+          [
+            100.0,
+            10.0
+          ],
+          [
+            50.0,
+            60.0
+          ],
+          [
+            -10.0,
+            80.0
+          ],
+          [
+            -70.0,
+            60.0
+          ],
+          [
+            -110.0,
+            10.0
+          ],
+          [
+            -130.0,
+            -70.0
+          ],
+          [
+            -135.0,
+            -170.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "backgroundColor": "#f2d6c2",
+        "fillStyle": "solid",
+        "strokeWidth": 1.5,
+        "roughness": 0.4,
+        "points": [
+          [
+            -60.0,
+            70.0
+          ],
+          [
+            -40.0,
+            120.0
+          ],
+          [
+            -30.0,
+            170.0
+          ],
+          [
+            0.0,
+            200.0
+          ],
+          [
+            40.0,
+            205.0
+          ],
+          [
+            70.0,
+            180.0
+          ],
+          [
+            80.0,
+            140.0
+          ],
+          [
+            70.0,
+            90.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "backgroundColor": "#d9cfc4",
+        "fillStyle": "solid",
+        "strokeWidth": 1.5,
+        "roughness": 0.5,
+        "points": [
+          [
+            -30.0,
+            190.0
+          ],
+          [
+            -90.0,
+            215.0
+          ],
+          [
+            -170.0,
+            240.0
+          ],
+          [
+            -230.0,
+            290.0
+          ],
+          [
+            -260.0,
+            360.0
+          ],
+          [
+            -270.0,
+            420.0
+          ],
+          [
+            270.0,
+            420.0
+          ],
+          [
+            260.0,
+            350.0
+          ],
+          [
+            220.0,
+            280.0
+          ],
+          [
+            150.0,
+            235.0
+          ],
+          [
+            70.0,
+            210.0
+          ],
+          [
+            40.0,
+            200.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.5,
+        "roughness": 0.4,
+        "points": [
+          [
+            -30.0,
+            195.0
+          ],
+          [
+            -10.0,
+            230.0
+          ],
+          [
+            30.0,
+            235.0
+          ],
+          [
+            60.0,
+            215.0
+          ],
+          [
+            70.0,
+            185.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c5a4a",
+        "backgroundColor": "#ffffff",
+        "fillStyle": "solid",
+        "strokeWidth": 1.2,
+        "roughness": 0.3,
+        "points": [
+          [
+            -95.0,
+            -40.0
+          ],
+          [
+            -60.0,
+            -55.0
+          ],
+          [
+            -20.0,
+            -52.0
+          ],
+          [
+            10.0,
+            -38.0
+          ],
+          [
+            5.0,
+            -20.0
+          ],
+          [
+            -30.0,
+            -12.0
+          ],
+          [
+            -70.0,
+            -18.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "backgroundColor": "#5a463c",
+        "fillStyle": "solid",
+        "strokeWidth": 1,
+        "roughness": 0.3,
+        "points": [
+          [
+            -88.0,
+            -38.0
+          ],
+          [
+            -60.0,
+            -46.0
+          ],
+          [
+            -30.0,
+            -44.0
+          ],
+          [
+            -8.0,
+            -34.0
+          ],
+          [
+            -30.0,
+            -28.0
+          ],
+          [
+            -62.0,
+            -30.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "ellipse",
+        "x": -58.0,
+        "y": -42.0,
+        "strokeColor": "#1e1815",
+        "backgroundColor": "#2b2320",
+        "fillStyle": "solid",
+        "strokeWidth": 1,
+        "roughness": 0.2,
+        "width": 16.0,
+        "height": 16.0
+      },
+      {
+        "type": "ellipse",
+        "x": -52.0,
+        "y": -40.0,
+        "strokeColor": "transparent",
+        "backgroundColor": "#ffffff",
+        "fillStyle": "solid",
+        "strokeWidth": 1,
+        "roughness": 0,
+        "width": 5.0,
+        "height": 5.0
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.4,
+        "points": [
+          [
+            -100.0,
+            -52.0
+          ],
+          [
+            -70.0,
+            -66.0
+          ],
+          [
+            -30.0,
+            -64.0
+          ],
+          [
+            0.0,
+            -50.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c5a4a",
+        "backgroundColor": "#ffffff",
+        "fillStyle": "solid",
+        "strokeWidth": 1.2,
+        "roughness": 0.3,
+        "points": [
+          [
+            30.0,
+            -40.0
+          ],
+          [
+            65.0,
+            -55.0
+          ],
+          [
+            105.0,
+            -50.0
+          ],
+          [
+            130.0,
+            -32.0
+          ],
+          [
+            125.0,
+            -14.0
+          ],
+          [
+            90.0,
+            -8.0
+          ],
+          [
+            50.0,
+            -14.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "backgroundColor": "#5a463c",
+        "fillStyle": "solid",
+        "strokeWidth": 1,
+        "roughness": 0.3,
+        "points": [
+          [
+            38.0,
+            -38.0
+          ],
+          [
+            68.0,
+            -46.0
+          ],
+          [
+            100.0,
+            -42.0
+          ],
+          [
+            122.0,
+            -30.0
+          ],
+          [
+            98.0,
+            -24.0
+          ],
+          [
+            64.0,
+            -26.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "ellipse",
+        "x": 72.0,
+        "y": -40.0,
+        "strokeColor": "#1e1815",
+        "backgroundColor": "#2b2320",
+        "fillStyle": "solid",
+        "strokeWidth": 1,
+        "roughness": 0.2,
+        "width": 16.0,
+        "height": 16.0
+      },
+      {
+        "type": "ellipse",
+        "x": 78.0,
+        "y": -38.0,
+        "strokeColor": "transparent",
+        "backgroundColor": "#ffffff",
+        "fillStyle": "solid",
+        "strokeWidth": 1,
+        "roughness": 0,
+        "width": 5.0,
+        "height": 5.0
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.4,
+        "points": [
+          [
+            30.0,
+            -50.0
+          ],
+          [
+            62.0,
+            -64.0
+          ],
+          [
+            100.0,
+            -60.0
+          ],
+          [
+            128.0,
+            -46.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.5,
+        "roughness": 0.4,
+        "points": [
+          [
+            -6.0,
+            -30.0
+          ],
+          [
+            -2.0,
+            -8.0
+          ],
+          [
+            6.0,
+            8.0
+          ],
+          [
+            14.0,
+            14.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c5a4a",
+        "strokeWidth": 1.2,
+        "roughness": 0.3,
+        "points": [
+          [
+            -14.0,
+            16.0
+          ],
+          [
+            0.0,
+            20.0
+          ],
+          [
+            14.0,
+            16.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c5a4a",
+        "backgroundColor": "#c96a62",
+        "fillStyle": "solid",
+        "strokeWidth": 1.2,
+        "roughness": 0.3,
+        "points": [
+          [
+            -30.0,
+            42.0
+          ],
+          [
+            -10.0,
+            36.0
+          ],
+          [
+            10.0,
+            38.0
+          ],
+          [
+            32.0,
+            46.0
+          ],
+          [
+            10.0,
+            58.0
+          ],
+          [
+            -12.0,
+            56.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c5a4a",
+        "strokeWidth": 1,
+        "roughness": 0.3,
+        "points": [
+          [
+            -30.0,
+            42.0
+          ],
+          [
+            -10.0,
+            38.0
+          ],
+          [
+            10.0,
+            40.0
+          ],
+          [
+            32.0,
+            46.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "backgroundColor": "#f2d6c2",
+        "fillStyle": "solid",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "points": [
+          [
+            -130.0,
+            -60.0
+          ],
+          [
+            -150.0,
+            -20.0
+          ],
+          [
+            -148.0,
+            30.0
+          ],
+          [
+            -130.0,
+            60.0
+          ],
+          [
+            -118.0,
+            40.0
+          ],
+          [
+            -122.0,
+            -10.0
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1,
+        "roughness": 0.3,
+        "points": [
+          [
+            -138.0,
+            -10.0
+          ],
+          [
+            -128.0,
+            0.0
+          ],
+          [
+            -132.0,
+            20.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 3,
+        "roughness": 0.6,
+        "points": [
+          [
+            -150.0,
+            -300.0
+          ],
+          [
+            -190.0,
+            -220.0
+          ],
+          [
+            -210.0,
+            -120.0
+          ],
+          [
+            -200.0,
+            -20.0
+          ],
+          [
+            -180.0,
+            60.0
+          ],
+          [
+            -160.0,
+            120.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.6,
+        "points": [
+          [
+            -120.0,
+            -310.0
+          ],
+          [
+            -170.0,
+            -240.0
+          ],
+          [
+            -195.0,
+            -150.0
+          ],
+          [
+            -190.0,
+            -50.0
+          ],
+          [
+            -170.0,
+            40.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.6,
+        "points": [
+          [
+            -60.0,
+            -330.0
+          ],
+          [
+            -110.0,
+            -280.0
+          ],
+          [
+            -150.0,
+            -200.0
+          ],
+          [
+            -165.0,
+            -110.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.6,
+        "points": [
+          [
+            20.0,
+            -330.0
+          ],
+          [
+            -30.0,
+            -300.0
+          ],
+          [
+            -90.0,
+            -250.0
+          ],
+          [
+            -130.0,
+            -180.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.6,
+        "points": [
+          [
+            100.0,
+            -300.0
+          ],
+          [
+            60.0,
+            -260.0
+          ],
+          [
+            10.0,
+            -210.0
+          ],
+          [
+            -40.0,
+            -160.0
+          ],
+          [
+            -80.0,
+            -100.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.6,
+        "points": [
+          [
+            150.0,
+            -240.0
+          ],
+          [
+            120.0,
+            -180.0
+          ],
+          [
+            90.0,
+            -110.0
+          ],
+          [
+            70.0,
+            -40.0
+          ],
+          [
+            60.0,
+            20.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#2b2320",
+        "strokeWidth": 2.5,
+        "roughness": 0.6,
+        "points": [
+          [
+            170.0,
+            -150.0
+          ],
+          [
+            150.0,
+            -80.0
+          ],
+          [
+            130.0,
+            0.0
+          ],
+          [
+            110.0,
+            60.0
+          ],
+          [
+            90.0,
+            110.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.5,
+        "roughness": 0.5,
+        "points": [
+          [
+            -100.0,
+            -260.0
+          ],
+          [
+            -60.0,
+            -290.0
+          ],
+          [
+            -10.0,
+            -300.0
+          ],
+          [
+            40.0,
+            -290.0
+          ],
+          [
+            90.0,
+            -260.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.5,
+        "roughness": 0.5,
+        "points": [
+          [
+            -80.0,
+            -230.0
+          ],
+          [
+            -30.0,
+            -260.0
+          ],
+          [
+            30.0,
+            -262.0
+          ],
+          [
+            80.0,
+            -235.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -140.0,
+            -120.0
+          ],
+          [
+            -110.0,
+            -160.0
+          ],
+          [
+            -70.0,
+            -190.0
+          ],
+          [
+            -20.0,
+            -205.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            120.0,
+            -160.0
+          ],
+          [
+            100.0,
+            -100.0
+          ],
+          [
+            80.0,
+            -40.0
+          ],
+          [
+            70.0,
+            20.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 1,
+        "roughness": 0.5,
+        "points": [
+          [
+            -120.0,
+            -200.0
+          ],
+          [
+            -90.0,
+            -230.0
+          ],
+          [
+            -50.0,
+            -250.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "points": [
+          [
+            -100.0,
+            -80.0
+          ],
+          [
+            -70.0,
+            -100.0
+          ],
+          [
+            -30.0,
+            -105.0
+          ],
+          [
+            0.0,
+            -95.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "points": [
+          [
+            40.0,
+            -90.0
+          ],
+          [
+            80.0,
+            -100.0
+          ],
+          [
+            115.0,
+            -85.0
+          ],
+          [
+            135.0,
+            -60.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1,
+        "roughness": 0.4,
+        "points": [
+          [
+            -90.0,
+            20.0
+          ],
+          [
+            -60.0,
+            10.0
+          ],
+          [
+            -30.0,
+            8.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1,
+        "roughness": 0.4,
+        "points": [
+          [
+            40.0,
+            10.0
+          ],
+          [
+            70.0,
+            4.0
+          ],
+          [
+            100.0,
+            10.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "points": [
+          [
+            -40.0,
+            90.0
+          ],
+          [
+            -20.0,
+            110.0
+          ],
+          [
+            10.0,
+            115.0
+          ],
+          [
+            40.0,
+            100.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "points": [
+          [
+            -60.0,
+            150.0
+          ],
+          [
+            -30.0,
+            170.0
+          ],
+          [
+            10.0,
+            175.0
+          ],
+          [
+            50.0,
+            160.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -30.0,
+            200.0
+          ],
+          [
+            -60.0,
+            240.0
+          ],
+          [
+            -100.0,
+            270.0
+          ],
+          [
+            -150.0,
+            290.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            40.0,
+            205.0
+          ],
+          [
+            80.0,
+            240.0
+          ],
+          [
+            130.0,
+            265.0
+          ],
+          [
+            190.0,
+            285.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -260.0,
+            420.0
+          ],
+          [
+            -200.0,
+            380.0
+          ],
+          [
+            -120.0,
+            350.0
+          ],
+          [
+            -40.0,
+            340.0
+          ],
+          [
+            40.0,
+            345.0
+          ],
+          [
+            120.0,
+            360.0
+          ],
+          [
+            200.0,
+            390.0
+          ],
+          [
+            270.0,
+            420.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#b8a898",
+        "strokeWidth": 1.5,
+        "roughness": 0.5,
+        "points": [
+          [
+            -180.0,
+            300.0
+          ],
+          [
+            -120.0,
+            320.0
+          ],
+          [
+            -60.0,
+            330.0
+          ],
+          [
+            0.0,
+            332.0
+          ],
+          [
+            60.0,
+            328.0
+          ],
+          [
+            120.0,
+            315.0
+          ],
+          [
+            180.0,
+            295.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 1.5,
+        "roughness": 0.4,
+        "points": [
+          [
+            -40.0,
+            340.0
+          ],
+          [
+            -20.0,
+            370.0
+          ],
+          [
+            0.0,
+            380.0
+          ],
+          [
+            20.0,
+            372.0
+          ],
+          [
+            40.0,
+            345.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#ffffff",
+        "strokeWidth": 2,
+        "roughness": 0.2,
+        "opacity": 70,
+        "points": [
+          [
+            -70.0,
+            -30.0
+          ],
+          [
+            -50.0,
+            -36.0
+          ],
+          [
+            -30.0,
+            -34.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#ffffff",
+        "strokeWidth": 2,
+        "roughness": 0.2,
+        "opacity": 70,
+        "points": [
+          [
+            60.0,
+            -28.0
+          ],
+          [
+            80.0,
+            -34.0
+          ],
+          [
+            100.0,
+            -30.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#ffffff",
+        "strokeWidth": 1.5,
+        "roughness": 0.2,
+        "opacity": 60,
+        "points": [
+          [
+            -10.0,
+            10.0
+          ],
+          [
+            0.0,
+            12.0
+          ],
+          [
+            10.0,
+            10.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#ffffff",
+        "strokeWidth": 1.5,
+        "roughness": 0.2,
+        "opacity": 50,
+        "points": [
+          [
+            -20.0,
+            50.0
+          ],
+          [
+            -5.0,
+            46.0
+          ],
+          [
+            10.0,
+            48.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c5a4a",
+        "strokeWidth": 1,
+        "roughness": 0.4,
+        "points": [
+          [
+            -160.0,
+            -40.0
+          ],
+          [
+            -150.0,
+            -10.0
+          ],
+          [
+            -155.0,
+            20.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "points": [
+          [
+            -120.0,
+            60.0
+          ],
+          [
+            -100.0,
+            90.0
+          ],
+          [
+            -70.0,
+            110.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1.2,
+        "roughness": 0.4,
+        "points": [
+          [
+            100.0,
+            60.0
+          ],
+          [
+            80.0,
+            95.0
+          ],
+          [
+            50.0,
+            115.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -200.0,
+            -100.0
+          ],
+          [
+            -180.0,
+            -60.0
+          ],
+          [
+            -170.0,
+            -10.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -190.0,
+            -180.0
+          ],
+          [
+            -170.0,
+            -130.0
+          ],
+          [
+            -160.0,
+            -80.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            140.0,
+            -100.0
+          ],
+          [
+            120.0,
+            -50.0
+          ],
+          [
+            105.0,
+            0.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#5a463c",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            160.0,
+            -180.0
+          ],
+          [
+            140.0,
+            -120.0
+          ],
+          [
+            125.0,
+            -60.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#b8a898",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -230.0,
+            290.0
+          ],
+          [
+            -200.0,
+            330.0
+          ],
+          [
+            -180.0,
+            380.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#b8a898",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            220.0,
+            280.0
+          ],
+          [
+            240.0,
+            330.0
+          ],
+          [
+            255.0,
+            380.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 1,
+        "roughness": 0.5,
+        "points": [
+          [
+            -60.0,
+            -290.0
+          ],
+          [
+            -20.0,
+            -305.0
+          ],
+          [
+            30.0,
+            -300.0
+          ],
+          [
+            70.0,
+            -285.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#8c7a6a",
+        "strokeWidth": 1,
+        "roughness": 0.5,
+        "points": [
+          [
+            -140.0,
+            -160.0
+          ],
+          [
+            -120.0,
+            -200.0
+          ],
+          [
+            -90.0,
+            -230.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#c98f7a",
+        "strokeWidth": 1,
+        "roughness": 0.4,
+        "points": [
+          [
+            -50.0,
+            120.0
+          ],
+          [
+            -30.0,
+            140.0
+          ],
+          [
+            0.0,
+            145.0
+          ],
+          [
+            30.0,
+            135.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#b8a898",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            -100.0,
+            240.0
+          ],
+          [
+            -60.0,
+            260.0
+          ],
+          [
+            -20.0,
+            268.0
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "type": "curve",
+        "x": 0.0,
+        "y": 0.0,
+        "strokeColor": "#b8a898",
+        "strokeWidth": 1.2,
+        "roughness": 0.5,
+        "points": [
+          [
+            60.0,
+            255.0
+          ],
+          [
+            100.0,
+            245.0
+          ],
+          [
+            140.0,
+            235.0
+          ]
+        ],
+        "closed": false
+      }
+    ],
+    "mode": "replace",
+    "visualReview": "revised"
+  }
+}

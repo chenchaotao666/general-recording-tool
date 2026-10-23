@@ -10,9 +10,9 @@
          @keyup="saveRange" @mouseup="saveRange" @blur="saveRange" @paste="onPaste" />
     <div class="aic-foot">
       <div class="aic-ins-wrap">
-        <button class="aic-ins" type="button" @mousedown.prevent @click="togglePicker"><StIcon name="plus-circle" :size="16" />插入字段</button>
+        <button class="st-button aic-ins" type="button" @mousedown.prevent @click="togglePicker"><StIcon name="plus-circle" :size="16" />插入字段</button>
         <div v-if="picker" class="aic-pick" @mousedown.prevent>
-          <input ref="kwRef" v-model="kw" class="aic-pick-kw" placeholder="搜索字段" @keydown.stop="onPickKey" />
+          <input ref="kwRef" v-model="kw" class="st-control st-control--small st-control--native aic-pick-kw" placeholder="搜索字段" @keydown.stop="onPickKey" />
           <div class="aic-pick-list">
             <div v-for="(f, i) in pickList" :key="f.field_name" class="aic-pick-item" :class="{ on: i === pickIdx }"
                  @mouseenter="pickIdx = i" @click="pick(f)">
@@ -22,15 +22,16 @@
           </div>
         </div>
       </div>
-      <button class="aic-send st-icon-action" type="button" :class="{ on: canSend }" :disabled="!canSend" data-smart-tip="发送（Enter）" @click="send">
-        <StIcon name="arrow-right" :size="18" :stroke-width="2" />
+      <button class="st-button st-button--primary aic-send" type="button" :class="{ on: canSend, 'with-label': sendLabel }" :disabled="!canSend" :aria-label="sendLabel || '发送'" @click="send">
+        <span v-if="sendLabel">{{ sendLabel }}</span>
+        <StIcon v-else name="arrow-right" :size="18" :stroke-width="2" />
       </button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 import { FIELD_TYPE_ICONS, fieldIconName } from '../../../smart/registry/fieldIcons.js'
 
@@ -40,14 +41,21 @@ const props = defineProps({
   placeholder: { type: String, default: '选择字段或补充描述' },
   allowEmpty: { type: Boolean, default: false },   // 修改模式：允许空发送（用当前配置重新生成）
   compact: { type: Boolean, default: false },      // 紧凑版（嵌在编辑面板底部）
+  sendLabel: { type: String, default: '' },
+  initialText: { type: String, default: '' },
+  initialFields: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['send'])
+const emit = defineEmits(['send', 'change'])
 
 const editorRef = ref(null)
 const kwRef = ref(null)
 const isEmpty = ref(true)
 const hasContent = ref(false)
 const picker = ref(false)
+watch(() => [props.initialText, props.initialFields], async ([text, fields]) => {
+  await nextTick()
+  setContent(text, fields)
+}, { immediate: true, deep: true })
 const kw = ref('')
 const pickIdx = ref(0)
 let range = null
@@ -64,16 +72,45 @@ function chipHtml(f) {
   const svg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"
     stroke-linecap="round" stroke-linejoin="round">${FIELD_TYPE_ICONS[iconOf(f)] || FIELD_TYPE_ICONS.text}</svg>`
   const esc = String(f.label).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
-  return `<span class="aic-chip" contenteditable="false" data-fn="${f.field_name}" data-label="${esc}">${svg}<span>${esc}</span><i class="aic-chip-x" data-smart-tip="移除">×</i></span>`
+  return `<span class="aic-chip" contenteditable="false" data-fn="${f.field_name}" data-label="${esc}">${svg}<span>${esc}</span><i class="aic-chip-x" aria-label="移除">×</i></span>`
 }
 
 function refresh() {
   const el = editorRef.value
   if (!el) return
-  const text = el.innerText.replace(/​/g, '').trim()
+  const text = (el.innerText ?? el.textContent ?? '').replace(/​/g, '').trim()
   const chips = el.querySelectorAll('.aic-chip').length
   hasContent.value = !!text || chips > 0
   isEmpty.value = !text && !chips
+  emit('change', serialize())
+}
+function setContent(text = '', fieldNames = []) {
+  const el = editorRef.value
+  if (!el) return
+  el.replaceChildren()
+  const fields = fieldNames.map(fn => props.fields.find(f => f.field_name === fn)).filter(Boolean)
+  const used = new Set()
+  const appendChip = f => {
+    const tpl = document.createElement('template')
+    tpl.innerHTML = chipHtml(f)
+    el.append(tpl.content, document.createTextNode(' '))
+    used.add(f.field_name)
+  }
+  let offset = 0
+  for (const match of text.matchAll(/\[([^\]]+)\]/g)) {
+    const f = fields.find(f => f.label === match[1])
+    if (!f) continue
+    el.append(document.createTextNode(text.slice(offset, match.index)))
+    appendChip(f)
+    offset = match.index + match[0].length
+  }
+  el.append(document.createTextNode(text.slice(offset)))
+  for (const f of fields) if (!used.has(f.field_name)) {
+    el.append(document.createTextNode(' '))
+    appendChip(f)
+  }
+  range = null
+  refresh()
 }
 function saveRange() {
   const sel = window.getSelection()
@@ -186,7 +223,7 @@ function onDocDown(e) {
 document.addEventListener('mousedown', onDocDown)
 onBeforeUnmount(() => document.removeEventListener('mousedown', onDocDown))
 
-defineExpose({ insertField, clear, focus: () => nextTick(placeCaretEnd) })
+defineExpose({ insertField, clear, setContent, focus: () => nextTick(placeCaretEnd) })
 </script>
 
 <style scoped>
@@ -196,10 +233,11 @@ defineExpose({ insertField, clear, focus: () => nextTick(placeCaretEnd) })
 .aic.compact .aic-foot { margin-top: 4px; }
 .aic.compact .aic-ins { height: 30px; font-size: var(--st-font-size); padding: 0 10px; }
 .aic.compact .aic-send { width: 34px; height: 34px; border-radius: 8px; }
+.aic .aic-send.with-label { width: auto; padding: 0 14px; white-space: nowrap; font-size: var(--st-font-size); }
 .aic-hint { display: flex; align-items: center; gap: 6px; background: #F5F6F7; border-radius: 10px; padding: 9px 12px;
             font-size: var(--st-font-size); color: var(--st-text-2); }
 .aic-hint-ico { color: var(--st-primary); }
-.aic-editor { min-height: 64px; max-height: 160px; overflow-y: auto; outline: none; padding: 12px 4px 6px; font-size: var(--st-font-size);
+.aic-editor { min-height: 64px; max-height: 160px; overflow-y: auto; outline: none; font-size: var(--st-font-size);
               line-height: 26px; color: var(--st-text-2); white-space: pre-wrap; word-break: break-all; }
 .aic-editor.empty::before { content: attr(data-ph); color: #B5B9C0; pointer-events: none; }
 .aic-editor :deep(.aic-chip) { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px; margin: 0 3px;
