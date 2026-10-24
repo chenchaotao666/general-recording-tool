@@ -1,6 +1,6 @@
 <template>
   <!-- 添加列：锚定浮层（对齐参照 添加列-所有字段类型.png）：
-       字段名输入（蓝下划线）→ AI 字段通栏入口 → 「选择字段类型」两列图标网格 → 底部快捷键提示。
+       字段名输入 → AI 字段通栏入口 → 「选择字段类型」两列图标网格。
        ↑↓←→ 移动，⏎ 选定，Tab 选定并继续添加下一列（emit pick-again），Esc 关闭 -->
   <div class="afp-mask" @click="$emit('close')" @contextmenu.prevent="$emit('close')">
     <div ref="popRef" class="afp" :style="{ left: `${pos.x}px`, top: `${pos.y}px` }" @click.stop @mousedown.stop>
@@ -10,15 +10,13 @@
         <StIcon name="sparkle" :size="15" class="afp-ai-icon" />AI 字段
         <StIcon name="chevron-right" :size="13" class="afp-ai-caret" />
       </div>
-      <div class="afp-divider" />
-      <div class="afp-label">选择字段类型</div>
-      <div class="afp-grid">
-        <div v-for="(t, i) in typeList" :key="t.key" class="afp-type" :class="{ on: i === idx }"
-             @mouseenter="idx = i" @click="pick(t, false)">
+      <div v-for="group in typeGroups" :key="group.key" class="afp-grid" :aria-label="group.label">
+        <div class="afp-group-title">{{ group.label }}</div>
+        <div v-for="t in group.types" :key="t.key" class="afp-type" :class="{ on: t.index === idx }"
+             @mouseenter="idx = t.index" @click="pick(t, false)">
           <StIcon :name="t.key" :size="15" />{{ t.label }}
         </div>
       </div>
-      <div class="afp-hint">↑↓ 选择　⏎ 完成　Tab 再添加一列</div>
     </div>
   </div>
 </template>
@@ -35,11 +33,24 @@ const props = defineProps({
 })
 const emit = defineEmits(['pick', 'pick-again', 'close', 'ai'])
 
-// 参照顺序：基础 → 协作/媒体 → 标识 → 关联 → 计算 → 系统（只列 FIELD_REGISTRY 支持的类型）
-const ORDER = ['text', 'singleSelect', 'multiSelect', 'number', 'percent', 'currency', 'progress', 'date',
-               'member', 'image', 'file', 'relation', 'url', 'checkbox', 'autoNumber',
-               'formula', 'lookup', 'createdBy', 'lastModifiedBy', 'createdTime', 'lastModifiedTime']
-const typeList = computed(() => ORDER.filter(k => FIELD_REGISTRY[k]).map(k => ({ key: k, label: FIELD_REGISTRY[k].label })))
+// 按用途分类，只展示已支持的字段类型。
+const GROUPS = [
+  { key: 'basic', label: '基础数据', types: ['text', 'number', 'percent', 'currency', 'date'] },
+  { key: 'status', label: '选项与状态', types: ['singleSelect', 'multiSelect', 'checkbox', 'progress'] },
+  { key: 'resources', label: '人员与资源', types: ['member', 'image', 'file', 'url'] },
+  { key: 'calculation', label: '关联与计算', types: ['relation', 'lookup', 'formula'] },
+  { key: 'system', label: '自动记录', types: ['autoNumber', 'createdBy', 'lastModifiedBy', 'createdTime', 'lastModifiedTime'] },
+]
+const typeGroups = computed(() => {
+  let index = 0
+  return GROUPS.map(group => ({ ...group, types: group.types.filter(k => FIELD_REGISTRY[k]).map(k => ({ key: k, label: FIELD_REGISTRY[k].label, index: index++ })) }))
+})
+const typeList = computed(() => typeGroups.value.flatMap(group => group.types))
+const typeRows = computed(() => typeGroups.value.flatMap(group => {
+  const rows = []
+  for (let i = 0; i < group.types.length; i += 2) rows.push(group.types.slice(i, i + 2))
+  return rows
+}))
 
 const name = ref('')
 const idx = ref(0)
@@ -49,7 +60,7 @@ useFloatingPanel(() => popRef.value, () => popRef.value?.closest('.afp-mask'))
 
 // 位置钳制在视口内
 // 按浮层实际尺寸限制在视口内（固定估值会让右侧/底部最后一行被裁掉）
-const size = ref({ w: 500, h: 480 })
+const size = ref({ w: 320, h: 480 })
 const pos = computed(() => ({
   x: Math.max(8, Math.min(props.x, window.innerWidth - size.value.w - 8)),
   y: Math.max(8, Math.min(props.y, window.innerHeight - size.value.h - 8)),
@@ -63,12 +74,19 @@ onMounted(async () => {
 
 function onKey(e) {
   const n = typeList.value.length
-  if (e.key === 'ArrowDown') { e.preventDefault(); idx.value = Math.min(n - 1, idx.value + 2) }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); idx.value = Math.max(0, idx.value - 2) }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    const rows = typeRows.value
+    const rowIndex = rows.findIndex(row => row.some(t => t.index === idx.value))
+    const column = rows[rowIndex].findIndex(t => t.index === idx.value)
+    const target = rows[rowIndex + (e.key === 'ArrowDown' ? 1 : -1)]
+    if (target) idx.value = target[Math.min(column, target.length - 1)].index
+  }
   else if (e.key === 'ArrowRight') { e.preventDefault(); idx.value = Math.min(n - 1, idx.value + 1) }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); idx.value = Math.max(0, idx.value - 1) }
   else if (e.key === 'Enter') { e.preventDefault(); pick(typeList.value[idx.value], false) }
   else if (e.key === 'Tab') { e.preventDefault(); pick(typeList.value[idx.value], true) }
+  if (e.key.startsWith('Arrow')) nextTick(() => popRef.value?.querySelector('.afp-type.on')?.scrollIntoView({ block: 'nearest' }))
 }
 function pick(t, again) {
   if (!t) return
@@ -81,30 +99,31 @@ function ai() { emit('ai', { label: name.value.trim(), x: pos.value.x, y: pos.va
 <style scoped>
 .afp-mask { position: fixed; inset: 0; z-index: 3000; }
 .afp {
-  position: fixed; width: 480px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); box-sizing: border-box; overflow: auto; background: #fff; border-radius: 8px;
-  box-shadow: var(--st-shadow-pop); padding: 16px 16px 10px; display: flex; flex-direction: column;
+  position: fixed; width: 320px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); box-sizing: border-box; overflow: auto; scrollbar-width: none; background: #fff; border-radius: 8px;
+  box-shadow: var(--st-shadow-pop); padding: 12px; display: flex; flex-direction: column;
 }
 .afp-name {
-  border: none; outline: none; font-size: var(--st-font-size); padding: 4px 2px 8px; width: 100%;
-  border-bottom: 2px solid var(--st-primary); box-sizing: border-box;
+  outline: none; font-size: var(--st-font-size); padding: 0 10px; width: 100%; height: 32px; line-height: normal;
+  border: 1px solid var(--st-border); border-radius: 4px; box-sizing: border-box;
 }
 .afp-name::placeholder { color: var(--st-text-4); }
 .afp-ai {
-  display: flex; align-items: center; gap: 8px; padding: 10px 2px; margin-top: 6px;
+  display: flex; align-items: center; gap: 8px; padding: 6px 2px; margin-top: 4px;
   font-size: var(--st-font-size); cursor: pointer; border-radius: 6px; color: var(--st-text-2);
 }
 .afp-ai:hover { background: var(--st-bg-hover); }
 .afp-ai-icon { color: var(--st-ai); }
 .afp-ai-caret { margin-left: auto; color: var(--st-text-3); }
-.afp-divider { height: 1px; background: var(--st-border); margin: 4px 0; }
-.afp-label { font-size: var(--st-font-size); color: var(--st-text-3); padding: 6px 2px; }
 .afp > :not(.afp-grid) { flex-shrink: 0; }
-.afp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; min-height: 0; max-height: 380px; overflow: auto; }
+.afp::-webkit-scrollbar { display: none; }
+.afp-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; flex-shrink: 0; }
+.afp-grid + .afp-grid { margin-top: 6px; }
+.afp-group-title { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 2px; font-size: 12px; line-height: 18px; color: var(--st-text-3); }
+.afp-group-title::after { content: ''; flex: 1; height: 1px; background: var(--st-border); }
 .afp-type {
-  display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: var(--st-font-size);
+  display: flex; align-items: center; gap: 8px; height: 28px; box-sizing: border-box; padding: 0 8px; font-size: var(--st-font-size); line-height: 20px;
   cursor: pointer; border-radius: 6px; color: var(--st-text-2);
 }
 .afp-type .st-icon { color: var(--st-text-2); }
 .afp-type.on { background: var(--st-bg-hover); }
-.afp-hint { font-size: 11px; color: var(--st-text-4); padding: 8px 2px 2px; }
 </style>

@@ -22,61 +22,59 @@
         <div class="afe-card">
           <div class="afe-row2">
             <div class="afe-col">
-            <div class="afe-l">AI 场景<span class="afe-hint">选择模板，或描述自己的处理规则</span></div>
-            <el-select :model-value="sceneKey" filterable class="st-control afe-sel" :disabled="running || trying" :popper-options="selectPopperOptions" @change="chooseScene">
-              <el-option-group v-for="group in sceneGroups" :key="group.key" :label="group.label">
-                <el-option v-for="s in group.scenes" :key="s.key" :value="s.key" :label="s.label" :disabled="s.disabled" />
-              </el-option-group>
-            </el-select>
+            <div class="afe-l">AI 场景<span class="afe-hint">可选择 “模板” 或 “自定义AI字段”</span></div>
+            <AiScenePicker :model-value="sceneKey" :scenes="scenes" :categories="categories" :disabled="running || trying" :popper-options="selectPopperOptions" @change="chooseScene" />
             </div>
-            <div class="afe-col narrow">
+
+          </div>
+          <AiTemplateHelp v-if="scene && sceneKey !== 'custom'" :scene="scene" @edit-formula="editTemplateFormula" />
+          <div v-if="scene?.inputRoles?.length" class="afe-bindings">
+            <div class="afe-l">输入字段映射<span class="afe-hint">按用途选择字段</span></div>
+            <div v-for="role in scene.inputRoles" :key="role.key" class="afe-binding">
+              <label :for="`ai-role-${role.key}`">{{ role.label }}<span v-if="!role.required" class="afe-hint">（可选）</span></label>
+              <el-select :id="`ai-role-${role.key}`" :model-value="draft.inputBindings[role.key]" clearable class="st-control" :aria-label="role.label" :disabled="running || trying" :popper-options="selectPopperOptions" @change="bindInput(role.key, $event)">
+                <el-option v-for="f in roleCandidates(role)" :key="f.field_name" :value="f.field_name" :label="f.label" />
+              </el-select>
+            </div>
+          </div>
+          <div v-if="scene?.parameters?.length" class="afe-bindings">
+            <div v-for="parameter in scene.parameters" :key="parameter.key" class="afe-binding">
+              <label :for="`ai-param-${parameter.key}`">{{ parameter.label }}</label>
+              <el-input :id="`ai-param-${parameter.key}`" v-model="draft.parameters[parameter.key]" class="st-control" :maxlength="parameter.maxLength" :disabled="running || trying" />
+            </div>
+          </div>
+      <div class="afe-ai">
+        <div v-if="!scene?.inputRoles?.length" class="afe-l">{{ scene?.local ? '选择输入字段' : '处理要求' }}<span class="afe-hint">{{ scene?.local ? '使用模板固定规则计算' : '描述你希望得到的结果' }}</span></div>
+        <AiComposer v-if="!scene?.inputRoles?.length" :enter-to-send="false" :disabled="running || trying" :key="sceneKey" ref="composerRef" :initial-text="initialInstruction" :initial-fields="initialFields" :fields="composeFields" :send-label="running ? '生成指令中…' : trying ? '生成预览中…' : scene?.local ? '应用模板' : '生成并预览'" :secondary-send-label="scene?.local ? '' : '仅生成指令'" :allow-empty="!trying && (inputList.length > 0 || NO_INPUT.includes(sceneKey))" :placeholder="scene?.local ? '插入要处理的字段；计算规则请查看模板介绍。' : '插入字段、描述处理规则、分类方式或输出长度；留空则使用场景默认规则。'"
+                    @change="onRequirementsChange" @send="generateAndPreview" @send-secondary="onAiModify" />
+        <section class="afe-instructions">
+          <div v-if="!scene?.local && !scene?.formula" class="afe-sec">
+            <div class="afe-l">AI 执行指令
+              <button type="button" class="st-button" :disabled="running || trying" @click="togglePromptEdit">{{ promptEdit ? '完成编辑' : '编辑指令' }}</button>
+            </div>
+            <el-input ref="promptInputRef" v-model="draft.systemPrompt" class="afe-prompt-input" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }"
+                      :readonly="!promptEdit || running || trying" placeholder="填写处理要求后，点击“生成指令”" />
+          </div>
+          <div class="afe-instruction-actions">
+            <div class="afe-output">
               <div class="afe-l">输出类型</div>
-              <el-select v-model="draft.outputType" :teleported="true" :popper-options="selectPopperOptions" class="st-control afe-sel" @change="onTypeChange">
+              <el-select :model-value="outputChoice" :teleported="true" :popper-options="selectPopperOptions" class="st-control afe-sel" @change="changeOutputChoice" :disabled="running || trying || scene?.asset">
                 <template #prefix><StIcon :name="draft.outputType" :size="15" /></template>
+                <el-option value="auto" :label="autoOutputLabel" />
                 <el-option v-for="t in OUT_TYPES" :key="t.v" :value="t.v" :label="t.l">
                   <span class="afe-opt"><StIcon :name="t.v" :size="15" />{{ t.l }}</span>
                 </el-option>
               </el-select>
             </div>
           </div>
-            <div v-if="scene?.desc" class="afe-scene-desc">{{ scene.desc.replace('{input}', selectedInput?.label || '所选字段') }}</div>
-      <div class="afe-ai">
-        <div class="afe-l">处理要求<span class="afe-hint">描述你希望得到的结果</span></div>
-        <div v-if="running" class="afe-running">
-          <span class="afe-spin" />AI 正在生成配置和预览…
-          <span class="afe-stop st-icon-action" aria-label="停止" @click="stopRun"><StIcon name="stop" :size="16" /></span>
-        </div>
-        <AiComposer v-show="!running" :key="sceneKey" ref="composerRef" :initial-text="initialInstruction" :initial-fields="initialFields" :fields="composeFields" :send-label="triedPreview || !isNew ? '更新预览' : '生成预览'" :allow-empty="!trying && (inputList.length > 0 || NO_INPUT.includes(sceneKey))" placeholder="描述处理规则、分类方式或输出长度；留空则使用场景默认规则。"
-                    @change="onRequirementsChange" @send="onAiModify" />
-        <details class="afe-instructions">
-          <summary>AI 执行指令<span class="afe-hint">查看或微调实际使用的规则</span></summary>
-          <p class="afe-instruction-help">根据场景和处理要求生成，AI 将按这份指令处理数据。手动修改后可按当前指令预览；再次提交处理要求时，指令可能会重新生成。</p>
-          <div class="afe-sec">
-            <div class="afe-l">执行内容
-              <button v-if="!scene?.local" type="button" class="st-button" :disabled="running || trying" @click="promptEdit = !promptEdit">{{ promptEdit ? '完成编辑' : '编辑指令' }}</button>
-            </div>
-            <div v-if="scene?.local" class="afe-prompt muted">本地计算，不调用大模型、不消耗 AI 次数</div>
-            <el-input v-else-if="promptEdit" v-model="draft.systemPrompt" type="textarea" :autosize="{ minRows: 4, maxRows: 10 }"
-                      :disabled="running || trying" placeholder="你是一个……&#10;任务：……&#10;输入：……" />
-            <div v-else class="afe-prompt" :class="{ folded: longPrompt && !promptOpen }" @click="promptOpen = !promptOpen">
-              {{ draft.systemPrompt || '生成预览后，可在这里查看执行指令' }}
-              <span v-if="longPrompt && !promptOpen" class="afe-prompt-more">展开</span>
-            </div>
-          </div>
-          <button type="button" class="st-button afe-instruction-preview" :disabled="!canSave" @click="tryRun">{{ trying ? '试算中…' : '按当前指令预览' }}</button>
-        </details>
-        <div v-if="!inputList.length && !NO_INPUT.includes(sceneKey)" class="afe-field-hint">请插入要处理的字段</div>
-        <div v-if="undoSnap" class="afe-banner">
-          <StIcon name="check" :size="14" />预览已更新，确认效果后保存
-          <span class="afe-link" @click="undo">撤销</span>
-        </div>
+        </section>
         <div v-if="error" class="afe-error"><StIcon name="warn" :size="14" />{{ error }}</div>
         <div v-else-if="warning" class="afe-warning">{{ warning }}</div>
       </div>
           <!-- 效果预览 -->
           <div class="afe-sec">
-            <div class="afe-l">效果预览
-              <span v-if="stale" class="afe-stale">设置已修改</span>
+            <div class="afe-l afe-preview-heading">效果预览<span class="afe-hint">使用表格前 3 条数据</span><span v-if="stale" class="afe-stale">配置已修改，请重新生成预览</span>
+              <button type="button" class="st-button st-button--primary afe-instruction-preview" :disabled="!canSave" @click="tryRun">{{ trying ? '试算中…' : '生成预览' }}</button>
             </div>
             <AiSceneCard bare :fields="fields" :preview="preview" :out-label="draft.label" :output-type="draft.outputType" />
           </div>
@@ -109,7 +107,7 @@
 
           <div class="afe-auto">
             <el-checkbox v-model="draft.autoUpdate" size="small">自动更新</el-checkbox>
-            <span class="afe-hint">新增记录或依据字段变化时，自动重新生成该行</span>
+            <span class="afe-hint">{{ scene?.scope === 'table' ? '新增、删除记录或依据字段变化时，重新计算整表' : '新增记录或依据字段变化时，自动重新生成该行' }}</span>
           </div>
         </div>
 
@@ -121,8 +119,8 @@
           <el-option label="保存并生成全部" value="all" />
         </el-select>
         <span class="afe-flex" />
-        <button class="st-button st-button--large afe-btn" @click="emit('close')">取消</button>
-        <button class="st-button st-button--large st-button--primary afe-btn primary" :disabled="!canSave" @click="save(saveScope)">{{ isNew ? '创建字段' : '保存' }}</button>
+        <button class="st-button afe-btn" @click="emit('close')">取消</button>
+        <button class="st-button st-button--primary afe-btn primary" :disabled="!canSave" @click="save(saveScope)">{{ isNew ? '创建字段' : '保存' }}</button>
       </div>
     </div>
   </div>
@@ -136,8 +134,10 @@ import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 import AiBadge from './AiBadge.vue'
+import AiScenePicker from './AiScenePicker.vue'
 import AiComposer from './AiComposer.vue'
 import AiSceneCard from './AiSceneCard.vue'
+import AiTemplateHelp from './AiTemplateHelp.vue'
 import { OPTION_COLORS, optionColor } from '../../../smart/registry/fieldRegistry.js'
 import { smartAiConfigure, smartAiPreview, smartAiScenes } from '../../../api/index.js'
 
@@ -152,7 +152,19 @@ const props = defineProps({
   presetLabel: { type: String, default: '' },
   totalRows: { type: Number, default: 0 },
 })
-const emit = defineEmits(['close', 'save', 'run', 'write-formula'])
+const emit = defineEmits(['close', 'save', 'run', 'write-formula', 'edit-formula'])
+function editTemplateFormula() {
+  const current = scene.value
+  const formula = (current.formula || current.formulaDisplay).replace(/\[([^\]]+)\]/g, (match, key) => {
+    const role = current.inputRoles?.find(r => r.key === key || r.label === key)
+    if (!role) return match
+    const field = props.fields.find(f => f.field_name === draft.inputBindings[role.key])
+    return field ? `[${field.field_name}]` : role.required ? `[${role.label}]` : '""'
+  })
+  const outputType = current.outputType || draft.outputType
+  const returnType = ['number', 'percent', 'progress', 'currency'].includes(outputType) ? 'number' : outputType === 'date' ? 'date' : 'text'
+  emit('edit-formula', { label: draft.label.trim() || current.label, field_type: 'formula', config: { formula, returnType } })
+}
 const isNew = computed(() => !props.field.field_name)
 const saveScope = ref(isNew.value ? 'first5' : 'none')
 
@@ -164,27 +176,44 @@ const selectPopperOptions = { strategy: 'fixed', modifiers: [{ name: 'preventOve
 
 const scenes = ref([])
 const categories = ref([])
-const sceneGroups = computed(() => [...categories.value.map(c => ({ ...c, scenes: scenes.value.filter(s => s.category === c.key && s.key !== 'custom') })),
-  { key: 'custom', label: '自定义', scenes: scenes.value.filter(s => s.key === 'custom') }].filter(c => c.scenes.length))
 const sceneKey = ref('custom')
 const scene = computed(() => scenes.value.find(s => s.key === sceneKey.value) || null)
 const moreOpen = ref(false)
 const promptEdit = ref(false)
-const promptOpen = ref(false)
+const promptInputRef = ref(null)
+async function togglePromptEdit() {
+  promptEdit.value = !promptEdit.value
+  if (promptEdit.value) {
+    await nextTick()
+    promptInputRef.value?.focus()
+  }
+}
 const running = ref(false)
 const trying = ref(false)
 const error = ref('')
 const warning = ref('')
-const undoSnap = ref(null)
 const triedPreview = ref(null)   // 试算 / AI 修改得到的预览
 const stale = ref(false)
+const requirementsDirty = ref(false)
+const generatedInstruction = ref(false)
 const composerRef = ref(null)
 const initialInstruction = ref('')
 const initialFields = ref([])
 let abortCtl = null
 
-const draft = reactive({ label: '', title: '', desc: '', inputLabel: '', systemPrompt: '', inputFields: null,
+const draft = reactive({ label: '', title: '', desc: '', inputLabel: '', systemPrompt: '', inputFields: null, inputBindings: {}, parameters: {},
                          outputType: 'text', options: [], autoUpdate: true, allowNewOptions: true, instruction: '' })
+const manualOutput = ref(!isNew.value)
+const outputChoice = computed(() => manualOutput.value ? draft.outputType : 'auto')
+const autoOutputLabel = computed(() => {
+  const label = draft.outputType === 'file' ? '附件' : OUT_TYPES.find(t => t.v === draft.outputType)?.l || ''
+  return (generatedInstruction.value || triedPreview.value || sceneKey.value !== 'custom') ? `自动确定（${label}）` : '自动确定'
+})
+function changeOutputChoice(value) {
+  manualOutput.value = value !== 'auto'
+  if (manualOutput.value) { draft.outputType = value; onTypeChange(value) }
+  stale.value = true
+}
 const originalOptionIds = new Set((props.field.options?.options || []).map(o => o.id))
 
 const iconOf = fieldIconName
@@ -225,10 +254,14 @@ onMounted(async () => {
     inputLabel: c.inputLabel || '',
     systemPrompt: c.systemPrompt || (c.scene === 'custom' || !c.scene ? (c.prompt || '') : (sc?.prompt || '')),
     inputFields: [...(c.inputFields || [])],
+    inputBindings: { ...(c.inputBindings || Object.fromEntries((sc?.inputRoles || []).map((r, i) => [r.key, c.inputFields?.[i]]))) },
+    parameters: { ...Object.fromEntries((sc?.parameters || []).map(p => [p.key, p.default])), ...(c.parameters || {}) },
     outputType: c.outputType || sc?.outputType || 'text', options: JSON.parse(JSON.stringify(c.options || [])),
     autoUpdate: c.autoUpdate !== false, allowNewOptions: c.allowNewOptions !== false, instruction: c.instruction || '',
   })
   await nextTick()
+  await nextTick()
+  requirementsDirty.value = false
   stale.value = false
 })
 
@@ -236,11 +269,16 @@ function chooseScene(key) {
   const next = scenes.value.find(s => s.key === key)
   if (!next || next.disabled) return
   if (next.action === 'formula') { emit('write-formula'); return }
+  requirementsDirty.value = false
+  generatedInstruction.value = false
+  manualOutput.value = false
   sceneKey.value = key
   draft.desc = next.desc || ''
   draft.systemPrompt = next.prompt || ''
   draft.outputType = next.outputType || 'text'
   draft.inputFields = []
+  draft.inputBindings = {}
+  draft.parameters = Object.fromEntries((next.parameters || []).map(p => [p.key, p.default]))
   draft.options = []
   draft.instruction = ''
   initialInstruction.value = ''
@@ -248,7 +286,6 @@ function chooseScene(key) {
   if (isNew.value && !props.presetLabel) draft.label = next.label
   onTypeChange(draft.outputType)
   triedPreview.value = null
-  undoSnap.value = null
   error.value = ''
   warning.value = ''
 }
@@ -256,23 +293,33 @@ function chooseScene(key) {
 // 说明：[字段名] → chip
 const inputCandidates = computed(() => {
   const t = scene.value?.input
-  if (t === 'image') return props.fields.filter(f => f.field_type === 'image')
-  if (t === 'file') return props.fields.filter(f => f.field_type === 'file')
+  const kind = f => f.field_type === 'ai' ? f.options?.outputType : f.field_type
+  if (scene.value?.acceptedInputs) return props.fields.filter(f => scene.value.acceptedInputs.includes(kind(f)))
+  if (t === 'image') return props.fields.filter(f => kind(f) === 'image')
+  if (t === 'file') return props.fields.filter(f => kind(f) === 'file')
   return props.fields.filter(f => f.field_name !== props.field.field_name && f.field_type !== 'ai')
 })
 const composeFields = computed(() => inputCandidates.value.filter(f => f.field_name !== props.field.field_name))
 const selectedInput = computed(() => props.fields.find(f => f.field_name === inputList.value[0]))
 const inputList = computed(() => (Array.isArray(draft.inputFields) ? draft.inputFields : (draft.inputFields ? [draft.inputFields] : [])))
 // 指令超过 3 行（或很长）才折叠
-const longPrompt = computed(() => (draft.systemPrompt || '').split('\n').length > 3 || (draft.systemPrompt || '').length > 120)
 const isSelectOut = computed(() => ['singleSelect', 'multiSelect'].includes(draft.outputType))
 const onlyExisting = computed({ get: () => !draft.allowNewOptions, set: (v) => { draft.allowNewOptions = !v } })
-const canSave = computed(() => !running.value && !trying.value && !!draft.label.trim() && (scene.value?.local || !!draft.systemPrompt.trim()) && (inputList.value.length > 0 || NO_INPUT.includes(sceneKey.value)))
+const canSave = computed(() => !scene.value?.disabled && !running.value && !trying.value && !requirementsDirty.value && !!draft.label.trim() && (scene.value?.local || !!draft.systemPrompt.trim()) && (inputList.value.length > 0 || NO_INPUT.includes(sceneKey.value)) && (scene.value?.inputRoles || []).every(r => !r.required || draft.inputBindings[r.key]))
+
+function roleCandidates(role) { return props.fields.filter(f => f.field_name !== props.field.field_name && role.types.includes(f.field_type)) }
+function bindInput(key, name) {
+  draft.inputBindings[key] = name || ''
+  draft.inputFields = [...new Set((scene.value?.inputRoles || []).map(r => draft.inputBindings[r.key]).filter(Boolean))]
+  requirementsDirty.value = false
+  stale.value = true
+}
 
 function currentConfig() {
   return {
     ...(props.field.options || {}),
     scene: sceneKey.value, inputFields: inputList.value, title: draft.label.trim() || draft.title, desc: draft.desc,
+    templateVersion: 2, inputBindings: { ...draft.inputBindings }, parameters: { ...draft.parameters },
     inputLabel: draft.inputLabel, systemPrompt: draft.systemPrompt, outputType: draft.outputType,
     options: draft.options.filter(o => String(o.label || '').trim()).map((o, i) => ({ ...o, label: String(o.label).trim(), order: i })),
     autoUpdate: draft.autoUpdate, allowNewOptions: draft.allowNewOptions, instruction: draft.instruction,
@@ -293,7 +340,7 @@ const preview = computed(() => {
                            loading: ['pending', 'running'].includes(r.__ai?.[fn]?.status), error: r.__ai?.[fn]?.error || null })),
   }
 })
-watch(() => [draft.inputFields, draft.instruction, draft.outputType, draft.systemPrompt, draft.allowNewOptions], () => {
+watch(() => [draft.inputFields, draft.inputBindings, draft.parameters, draft.instruction, draft.outputType, draft.systemPrompt, draft.allowNewOptions], () => {
   if (triedPreview.value || !isNew.value) stale.value = true
 }, { deep: true })
 
@@ -322,7 +369,10 @@ async function tryRun() {
   }
 }
 
-// ---------- 让 AI 修改：直接改写设置，可撤销 ----------
+// ---------- 根据处理要求生成执行指令 ----------
+async function generateAndPreview(payload) {
+  if (await onAiModify(payload)) await tryRun()
+}
 async function onAiModify({ inputFields, instruction }) {
   if (running.value || trying.value || (!instruction && !inputFields.length && !inputList.value.length && !NO_INPUT.includes(sceneKey.value))) return
   error.value = ''
@@ -331,14 +381,15 @@ async function onAiModify({ inputFields, instruction }) {
     return
   }
   warning.value = ''
-  const snap = { draft: JSON.parse(JSON.stringify(draft)), preview: triedPreview.value }
   running.value = true
   const ctl = new AbortController()
   abortCtl = ctl
   try {
+    const base = currentConfig()
+    if (!manualOutput.value) delete base.outputType
     const r = await smartAiConfigure(props.tableId, {
-      scene: sceneKey.value, instruction, input_fields: inputFields,
-      base: currentConfig(), field_name: props.field.field_name,
+      scene: sceneKey.value, instruction, input_fields: inputFields, include_preview: false,
+      base, field_name: props.field.field_name,
     }, { signal: ctl.signal })
     if (ctl.signal.aborted) return
     warning.value = r.warning || ''
@@ -350,10 +401,11 @@ async function onAiModify({ inputFields, instruction }) {
       outputType: c.outputType, options: JSON.parse(JSON.stringify(c.options || [])),
       instruction: instruction || draft.instruction,
     })
-    triedPreview.value = { config: { ...c }, rows: r.preview }
-    undoSnap.value = snap
+    generatedInstruction.value = true
+    requirementsDirty.value = false
     await nextTick()
-    stale.value = false
+    stale.value = true
+    return true
   } catch (e) {
     if (!ctl.signal.aborted) error.value = e.message || 'AI 修改失败，请重试'
   } finally {
@@ -362,16 +414,9 @@ async function onAiModify({ inputFields, instruction }) {
 }
 function stopRun() { abortCtl?.abort(); running.value = false }
 function onRequirementsChange({ inputFields, instruction }) {
+  if (!scene.value?.local && (draft.systemPrompt || generatedInstruction.value) && (draft.instruction !== instruction || JSON.stringify(inputList.value) !== JSON.stringify(inputFields))) requirementsDirty.value = true
   draft.inputFields = inputFields
   draft.instruction = instruction
-}
-function undo() {
-  const s = undoSnap.value
-  if (!s) return
-  Object.assign(draft, s.draft)
-  composerRef.value?.setContent(s.draft.instruction, s.draft.inputFields || [])
-  triedPreview.value = s.preview
-  undoSnap.value = null
 }
 
 // ---------- 选项编辑 ----------
@@ -414,8 +459,9 @@ function run(scope) { moreOpen.value = false; emit('run', { scope }) }
 
 <style scoped>
 .afe-save-scope { width: 220px; max-width: 100%; }
+.afe-bindings { display: flex; flex-direction: column; gap: 10px; }
+.afe-binding { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(160px, 1.5fr); gap: 12px; align-items: center; font-size: var(--st-font-size); color: var(--st-text-2); }
 .afe-warning { margin: 8px 4px 0; font-size: var(--st-font-size); color: #B7791F; }
-.afe-scene-desc { font-size: var(--st-font-size); color: var(--st-text-3); line-height: 1.6; }
 /* 非模态：遮罩层不拦截鼠标（表格仍可滚动/点击），只有面板本身可交互 */
 .afe-mask { position: fixed; inset: 0; pointer-events: none; }
 .afe { pointer-events: auto; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow: auto; }
@@ -423,7 +469,7 @@ function run(scope) { moreOpen.value = false; emit('run', { scope }) }
 .afe { position: fixed; width: 600px; display: flex; flex-direction: column; border-radius: 18px; box-sizing: border-box;
        background: linear-gradient(170deg, #ECE6FF 0%, #F8EEF3 70px, #F4F5F7 150px); box-shadow: 0 8px 32px rgba(0, 0, 0, .16);
        --el-color-primary: var(--st-primary); }
-.afe-head { display: flex; align-items: center; gap: 8px; padding: 16px 16px 4px 20px; cursor: move; touch-action: none; }
+.afe-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px 0px 20px; cursor: move; touch-action: none; }
 .afe-logo { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, #8B6CF6, #E96BD8); color: #fff;
             display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .afe-logo.sm { width: 16px; height: 16px; border-radius: 4px; }
@@ -446,7 +492,13 @@ function run(scope) { moreOpen.value = false; emit('run', { scope }) }
 .afe-card { background: #fff; border-radius: 14px; padding: 18px 20px 16px; display: flex; flex-direction: column; gap: 18px; }
 .afe-row2 { display: flex; gap: 12px; }
 .afe-col { flex: 1; min-width: 0; }
-.afe-col.narrow { flex: 0 0 150px; }
+.afe-instruction-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.afe-instruction-actions:first-child { margin-top: 0; }
+.afe-output { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(160px, 1.5fr); align-items: center; gap: 12px; min-width: 0; width: 100%; }
+.afe-output .afe-l { margin-bottom: 0; font-weight: 600; color: var(--st-text-1); }
+.afe-output .afe-sel { width: 100%; }
+.afe-preview-heading { flex-wrap: wrap; }
+.afe-preview-heading .afe-instruction-preview { margin-left: auto; flex: none; }
 .afe-l { display: flex; align-items: center; gap: 8px; font-size: var(--st-font-size); font-weight: 600; color: var(--st-text-1); margin-bottom: 8px; }
 .afe-hint { font-size: var(--st-font-size); font-weight: 400; color: #A8ADB5; }
 .afe-sel { width: 100%; }
@@ -459,11 +511,9 @@ function run(scope) { moreOpen.value = false; emit('run', { scope }) }
 .afe-link.off { color: var(--st-text-3); cursor: default; text-decoration: none; }
 .afe-link .spin { animation: afe-rot .8s linear infinite; }
 .afe-prompt { position: relative; background: #F5F6F7; border-radius: 8px; padding: 10px 14px; font-size: var(--st-font-size); line-height: 1.75;
-              color: var(--st-text-2); white-space: pre-wrap; cursor: pointer; }
-.afe-prompt.folded { max-height: 70px; overflow: hidden; }
-.afe-prompt.folded::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 28px; border-radius: 0 0 8px 8px;
-                            background: linear-gradient(rgba(245, 246, 247, 0), #F5F6F7 80%); }
-.afe-prompt-more { position: absolute; right: 12px; bottom: 6px; z-index: 1; font-size: var(--st-font-size); color: var(--st-primary); }
+              color: var(--st-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.afe-prompt-input :deep(.el-textarea__inner) { padding: 10px 14px; font-family: inherit; font-size: var(--st-font-size); line-height: 1.75; color: var(--st-text-2); background: #F5F6F7; border-radius: 8px; resize: none; box-shadow: none; }
+.afe-prompt-input :deep(.el-textarea__inner:not([readonly]):focus) { box-shadow: 0 0 0 1px var(--st-primary) inset; }
 .afe-prompt.muted { color: var(--st-text-3); cursor: default; }
 .afe-tip { color: var(--st-text-3); cursor: help; }
 .afe-l :deep(.el-checkbox__label) { font-weight: 400; color: var(--st-text-2); font-size: var(--st-font-size); }
@@ -482,14 +532,14 @@ function run(scope) { moreOpen.value = false; emit('run', { scope }) }
 .afe-auto { display: flex; align-items: center; gap: 8px; }
 .afe-auto :deep(.el-checkbox__label) { font-size: var(--st-font-size); color: var(--st-text-2); }
 .afe-ai { min-width: 0; }
-.afe-field-hint { margin-top: 8px; font-size: var(--st-font-size); color: var(--st-text-3); }
-.afe-head { padding-bottom: 16px; }
-.afe-instructions { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--st-border); border-radius: 6px; }
-.afe-instructions > summary { cursor: pointer; color: var(--st-text-2); font-size: var(--st-font-size); }
-.afe-instruction-help { margin: 10px 0; color: var(--st-text-3); font-size: 12px; line-height: 1.6; }
+.afe-ai :deep(.aic-editor) { min-height: calc(4em + 4px); padding: 2px 0; box-sizing: border-box; flex-shrink: 0; }
+.afe-head { padding-bottom: 12px; }
+.afe-instructions { margin-top: 16px; }
+.afe-instructions:first-child { margin-top: 0; }
 .afe-instructions > .afe-sec { margin-top: 10px; }
+.afe-instructions > .afe-sec:first-child { margin-top: 0; }
 .afe-instructions .afe-l { justify-content: space-between; }
-.afe-instruction-preview { margin-top: 10px; }
+.afe-instruction-preview { margin-left: auto; flex-shrink: 0; }
 .afe-advanced { border-top: 1px solid #EBECEE; padding-top: 12px; }
 .afe-advanced > summary { cursor: pointer; color: var(--st-text-2); font-size: var(--st-font-size); }
 .afe-advanced > summary .afe-hint { margin-left: 12px; }
@@ -501,8 +551,6 @@ function run(scope) { moreOpen.value = false; emit('run', { scope }) }
 @keyframes afe-rot { to { transform: rotate(360deg); } }
 .afe-stop { margin-left: auto; width: 36px; height: 36px; border-radius: 8px; background: #F2F3F5; display: inline-flex; align-items: center;
             justify-content: center; cursor: pointer; }
-.afe-banner { display: flex; align-items: center; gap: 6px; margin: 8px 4px 0; font-size: var(--st-font-size); color: #2BA471; }
-.afe-banner .afe-link { margin-left: auto; }
 .afe-error { display: flex; align-items: center; gap: 6px; margin: 8px 4px 0; font-size: var(--st-font-size); color: var(--el-color-danger); }
 .afe-foot { display: flex; align-items: center; gap: 10px; padding: 12px 20px 16px; }
 .afe-genall { display: inline-flex; align-items: center; gap: 6px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; }
@@ -522,7 +570,7 @@ function run(scope) { moreOpen.value = false; emit('run', { scope }) }
   .afe-card { padding: 14px 12px; }
   .afe-row2 { flex-direction: column; }
   .afe-col.narrow { flex: auto; }
-  .afe-l, .afe-auto, .afe-banner { flex-wrap: wrap; }
+  .afe-l, .afe-auto { flex-wrap: wrap; }
   .afe-foot { padding: 12px; gap: 8px; }
   .afe-btn { padding: 0 12px; }
 }

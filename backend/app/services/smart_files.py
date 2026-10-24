@@ -89,3 +89,31 @@ def pdf_text(file_id: str, max_chars: int = 20000) -> str:
         if total >= max_chars:
             break
     return "\n".join(parts).strip()[:max_chars]
+
+
+def document_text(file_id: str, max_chars: int = 20000) -> str:
+    """Extract text from PDF, DOCX or UTF-8/GB18030 text without executing document content."""
+    from zipfile import ZipFile
+    from xml.etree import ElementTree
+    path, meta = locate(file_id)
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        return pdf_text(file_id, max_chars)
+    if suffix == ".docx":
+        with ZipFile(path) as archive:
+            members = [i for i in archive.infolist() if i.filename == "word/document.xml" or re.fullmatch(r"word/(header|footer)\d+\.xml", i.filename)]
+            if sum(i.file_size for i in members) > 20 * 1024 * 1024:
+                raise SmartFileError("DOCX 解压后文本过大")
+            parts = []
+            ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+            for item in members:
+                root = ElementTree.fromstring(archive.read(item))
+                parts.extend("".join(t.text or "" for t in p.iter(ns + "t")) for p in root.iter(ns + "p"))
+            return "\n".join(parts)[:max_chars]
+    if suffix in (".txt", ".csv", ".md", ".json", ".log"):
+        data = path.read_bytes()
+        try:
+            return data.decode("utf-8-sig")[:max_chars]
+        except UnicodeDecodeError:
+            return data.decode("gb18030")[:max_chars]
+    raise SmartFileError(f"暂不支持解析「{meta['filename']}」，请选择 PDF、DOCX 或文本文件")

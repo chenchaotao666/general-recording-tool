@@ -8,7 +8,7 @@ import re
 import secrets
 import string
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
 from dateutil import parser as date_parser
 
@@ -89,8 +89,8 @@ def rmb_upper(v) -> str | None:
 
 
 def luhn_ok(v) -> bool:
-    digits = re.sub(r"\D", "", str(v or ""))
-    if len(digits) < 12:
+    digits = re.sub(r"[\s-]", "", str(v or ""))
+    if not re.fullmatch(r"\d{12,19}", digits) or len(set(digits)) == 1:
         return False
     total = 0
     for i, ch in enumerate(reversed(digits)):
@@ -122,7 +122,7 @@ def _hex_rgb(v):
 
 def _b64dec(v):
     try:
-        return base64.b64decode(str(v).strip(), validate=False).decode("utf-8")
+        return base64.b64decode(str(v).strip(), validate=True).decode("utf-8")
     except Exception:  # noqa: BLE001
         return None
 
@@ -139,6 +139,8 @@ def _month_days(v):
 
 def _unix(v):
     d = _date(v)
+    if d is not None and d.tzinfo is None:
+        d = d.replace(tzinfo=timezone(timedelta(hours=8)))
     return None if d is None else int(d.timestamp())
 
 
@@ -148,7 +150,7 @@ def _from_unix(v):
         return None
     if n > 1e11:   # 毫秒
         n /= 1000
-    return datetime.fromtimestamp(n).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.fromtimestamp(n, timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
 
 
 # 场景 key → (函数, 是否需要输入值)

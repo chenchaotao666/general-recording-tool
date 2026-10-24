@@ -125,3 +125,26 @@ test.each([['url', LinkCellPanel], ['file', FileCellPanel], ['image', ImageCellP
     expect(wrapper.findComponent(component).props('readonly')).toBe(true)
   } finally { wrapper.unmount() }
 })
+
+test('hidden view fields are excluded from details and title choices, including live changes', async () => {
+  const fields = ['hidden', 'shown'].map(field_name => ({ field_name, label: field_name, field_type: 'text' }))
+  const wrapper = mount(RecordDetailContent, {
+    props: { record: { id: 1, hidden: 'Secret', shown: 'Visible title' }, fields, titleField: 'hidden', canSetTitle: true,
+      canCreate: false, canDelete: false, view: { config: { fieldVisibility: { hidden: false } } },
+      columnGroups: [{ id: 1, name: 'Hidden group', field_names: ['hidden'] }] },
+    global: { plugins: [ElementPlus], stubs: { teleport: true, ElPopover: { template: '<div><slot name="reference"/><slot/></div>' } } },
+  })
+  try {
+    expect(wrapper.findAll('.rd-label > span:last-child').map(el => el.text())).toEqual(['shown'])
+    expect(wrapper.find('.rd-title-trigger').text()).toContain('Visible title')
+    expect(wrapper.find('.rd-group').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'FieldPickList' }).props('fields').map(f => f.field_name)).toEqual(['shown'])
+    await wrapper.setProps({ view: { config: { fieldVisibility: { shown: false } } } })
+    expect(wrapper.findAll('.rd-label > span:last-child').map(el => el.text())).toEqual(['hidden'])
+    expect(wrapper.find('.rd-title-trigger').text()).toContain('Secret')
+    expect(wrapper.findComponent({ name: 'FieldPickList' }).props('fields').map(f => f.field_name)).toEqual(['hidden'])
+    await wrapper.setProps({ view: { config: { fieldVisibility: { shown: false, hidden: false } } } })
+    expect(wrapper.findAll('.rd-row')).toHaveLength(0)
+    expect(wrapper.findComponent({ name: 'FieldPickList' }).props('fields')).toEqual([])
+  } finally { wrapper.unmount() }
+})

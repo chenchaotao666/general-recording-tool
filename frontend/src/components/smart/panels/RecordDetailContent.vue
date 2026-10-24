@@ -36,7 +36,7 @@
           </div>
           <template v-if="!row.group || !collapsed.has(row.group.id)">
             <div v-for="f in row.fields" :key="f.field_name" class="rd-row" :class="{ member: !!row.group }" @click.capture="$emit('field-click', f)">
-              <div class="rd-label"><StIcon :name="fieldIconName(f)" :size="16" class="rd-icon" /><span>{{ f.label }}</span></div>
+              <div class="rd-label"><StIcon :name="fieldIconName(f)" :size="16" class="rd-icon" /><span>{{ f.label }}<AiBadge v-if="f.field_type === 'ai'" class="rd-ai-badge" /></span></div>
               <component :is="['member', 'image', 'file', 'url', 'relation'].includes(typeOf(f)) ? DetailSelectBox : 'div'" class="rd-value" :class="[`v-${typeOf(f)}`, { editable: canEdit(f), editing: editing === f.field_name, 'keep-pad': !!inlineKind(f) || isEnum(f) || ['member', 'progress', 'image', 'file', 'url', 'relation'].includes(typeOf(f)) }]"
                    :data-field="f.field_name" @click="(e) => onValueClick(f, e)">
                 <!-- 文本/数字/日期：面板内联编辑，内边距/字号/行高与展示态一致，边框用内阴影——进出编辑不位移 -->
@@ -116,6 +116,7 @@ import FileCellPanel from '../grid/FileCellPanel.vue'
 import LinkCellPanel from '../grid/LinkCellPanel.vue'
 import RelationCellPanel from '../grid/RelationCellPanel.vue'
 import StIcon from '../icons/StIcon.vue'
+import AiBadge from '../ai/AiBadge.vue'
 import { dayjsDateFormat, formatCurrency, formatDate, formatNumber } from '../../../smart/utils/format.js'
 import { BLOCKED_CONFIGURABLE, BLOCKED_EDIT_TEXT, optionColor, regOf } from '../../../smart/registry/fieldRegistry.js'
 
@@ -161,10 +162,11 @@ function closeMedia(f) { if (editing.value === f.field_name) editing.value = nul
 const editing = ref(null)   // 正在编辑的 field_name
 watch(() => props.record?.id, () => { editing.value = null })
 
-// 字段顺序 = 视图 fieldOrder（与表格设置同源；隐藏字段在详情里照常展示）
+// 字段顺序和可见性与当前视图保持一致，标题候选也使用此列表
 const orderedFields = computed(() => {
   const order = props.view?.config?.fieldOrder
-  const fs = [...props.fields]
+  const visibility = props.view?.config?.fieldVisibility || {}
+  const fs = props.fields.filter(f => visibility[f.field_name] !== false)
   if (order?.length) {
     const idx = new Map(order.map((n, i) => [n, i]))
     fs.sort((a, b) => (idx.get(a.field_name) ?? 999) - (idx.get(b.field_name) ?? 999))
@@ -393,6 +395,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMousedown, 
             font-size: var(--st-font-size); line-height: 22px; color: var(--st-text-2); word-break: break-all; }
 .rd-row.member .rd-label { width: 168px; }
 /* 图标/名称样式与表格设置面板一致（图标 16px 灰、名称 15px 深色、间距 8px） */
+.rd-ai-badge { display: inline-flex; vertical-align: 1px; margin-left: 4px; }
 .rd-icon { color: var(--st-text-2); flex: none; margin-top: 3px; }
 .rd-value { position: relative; flex: 1; min-width: 0; min-height: 36px; padding: 7px 8px; margin-left: -8px; box-sizing: border-box;
             border-radius: 6px; font-size: var(--st-font-size); line-height: 22px; color: var(--st-text-2); word-break: break-all; }

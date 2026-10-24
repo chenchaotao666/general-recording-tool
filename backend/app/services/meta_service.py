@@ -147,11 +147,11 @@ def unique_physical_name(db: Session, base: str) -> str:
     return name
 
 
-def validate_fields(fields) -> None:
+def validate_fields(fields, max_fields=100) -> None:
     if not fields:
         raise MetaError("至少需要一个字段")
-    if len(fields) > 100:
-        raise MetaError("单表字段数不能超过 100")
+    if len(fields) > max_fields:
+        raise MetaError(f"单表字段数不能超过 {max_fields}")
     seen = set()
     for f in fields:
         if f.field_name in RESERVED_NAMES:
@@ -163,7 +163,7 @@ def validate_fields(fields) -> None:
 
 def create_business_table(db: Session, payload: TableCreate, owner_id: int,
                           tenant_id: int | None = None) -> MetaTable:
-    validate_fields(payload.fields)
+    validate_fields(payload.fields, max_fields=500 if payload.storage_mode == "json" else 100)
     new_names = {f.field_name for f in payload.fields}
     for f in payload.fields:
         validate_field_options(db, f.data_type, f.widget, f.options, new_names, f.label,
@@ -267,8 +267,9 @@ def alter_business_table(db: Session, mt: MetaTable, ops: list[dict]) -> dict:
                 raise MetaError(f"第 {i + 1} 项新字段定义无效：{e}")
             if fin.field_name in by_name or fin.field_name in RESERVED_NAMES:
                 raise MetaError(f"字段名已存在或为保留字：{fin.field_name}")
-            if len(fields) + 1 > 100:
-                raise MetaError("单表字段数不能超过 100")
+            max_fields = 500 if is_json else 100
+            if len(fields) + 1 > max_fields:
+                raise MetaError(f"单表字段数不能超过 {max_fields}")
             widget = fin.widget or default_widget(fin.data_type)
             opts = dict(fin.options or {})
             if fin.data_type == "subform":

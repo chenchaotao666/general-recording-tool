@@ -3,7 +3,7 @@
 一个场景 = 说明（desc，{input} 处渲染为输入字段 chip）+ 默认提示词（你是… / 任务… / 输入…）
 + 输出类型 + 输入类型（text 任意列 / multi 多列 / image 图片列 / file 文件列）。
 - local=True：本地确定性计算，不调用大模型、不计配额；
-- disabled=True：需要工具调用（联网查询 / 图像编辑等），市场里展示为「即将上线」；
+- disabled=True：需要尚未接入的服务，目录展示具体不可用原因；
 - sample：详情卡「效果」示例表（参照图同款示例数据）。
 """
 from __future__ import annotations
@@ -183,7 +183,7 @@ for k, lb, out, inp, task, extra in [
     ("hrSeniority", "计算员工工龄", "number", "text", "根据入职日期与今天（{today}）计算工龄（年，保留一位小数）。", {}),
     ("hrHistory", "提取工作履历", "text", "multi", "提取工作履历，按「时间 公司 职位」逐行输出。", {}),
     ("hrBankCard", "识别银行卡信息", "text", "image", "识别银行卡，输出「发卡行 / 卡号」。", {}),
-    ("hrIdCard", "提取身份证信息", "text", "text", "从身份证号或文本中提取「出生日期 / 性别 / 籍贯地区」。", {}),
+    ("hrIdCard", "提取身份证信息", "text", "text", "从身份证图片或文本中提取「姓名 / 出生日期 / 性别 / 地址」，仅返回输入明确提供的信息，不根据姓名猜测性别，不将地址推断为籍贯。", {}),
     ("hrGender", "判断性别", "singleSelect", "text", "根据姓名或身份证号判断性别。", {"defaultOptions": ["男", "女"]}),
     ("hrMatch", "评估岗位匹配度", "singleSelect", "multi", "根据候选人信息与岗位要求评估匹配度。",
      {"defaultOptions": ["高", "中", "低"]}),
@@ -208,7 +208,7 @@ for k, lb, out, inp, task, extra in [
     ("mkComments", "提取评论量", "number", "text", "提取评论量（如 1.2w 换算为 12000），只返回数字。", {}),
     ("mkFansShot", "截图识别粉丝量", "number", "image", "从主页截图中识别粉丝数量，只返回数字。", {}),
     ("mkShares", "提取转发分享量", "number", "text", "提取转发/分享量（如 1.2w 换算为 12000），只返回数字。", {}),
-    ("mkCompliance", "检测文案合规性", "singleSelect", "text", "按广告法检测文案是否含绝对化用语、虚假宣传等风险。",
+    ("mkCompliance", "检测文案合规性", "singleSelect", "text", "按照输入明确提供的检查规则检测文案：明确触犯规则返回「违规」，疑似风险但证据不足返回「存在风险」，未发现问题返回「合规」。缺少检查规则返回空，不猜测适用法规。",
      {"defaultOptions": ["合规", "存在风险", "违规"]}),
     ("mkIdea", "生成创意文案", "text", "multi", "根据主题生成 3 条不同风格的创意标题，用换行分隔。", {}),
 ]:
@@ -219,7 +219,7 @@ for k, lb, out, inp, task, extra in [
     ("pdBom", "提取BOM物料清单", "text", "multi", "提取物料清单，按「物料 规格 数量」逐行输出。", {}),
     ("pdDefect", "计算批次不良率", "number", "multi", "根据不良数与批次总数计算不良率（百分比数字，保留两位小数）。", {}),
     ("pdOrder", "提取订单信息", "text", "text", "提取「订单号 / 产品 / 数量 / 交期」。", {}),
-    ("pdInspect", "巡检现场描述", "text", "image", "描述巡检现场情况，并指出可见的安全或质量隐患。", {}),
+    ("pdInspect", "巡检现场描述", "text", "image", "描述图中直接可见的巡检现场事实，再单独列出潜在隐患并使用可能、建议核实等措辞。不得把普通通道推定为消防疏散通道，不猜测尺寸、重量、堆叠稳定性或看不见的设施；不能确定的内容明确说明无法判断。", {}),
     ("pdImprove", "问题改进措施", "text", "multi", "针对问题描述给出 2-3 条具体的改进措施。", {}),
     ("pdBatch", "提取生产批号", "text", "text", "从文本中提取生产批号。", {}),
     ("pdHours", "计算生产总工时", "number", "multi", "根据人数与时长计算总工时（小时），只返回数字。", {}),
@@ -274,4 +274,7 @@ S("custom", "自定义 AI 字段", "custom", "text", "multi", "按用户描述�
   desc="描述数据处理规则，AI 帮你完成提取和计算。",
   prompt="你是一个嵌入在智能表格中的 AI 助手。\n任务：按用户描述的规则处理本行数据，结果简洁准确。\n输入：本行相关字段的内容。")
 
+from .ai_template_catalog import enrich
+
+enrich(SCENES, S)
 SCENE_BY_KEY = {s["key"]: s for s in SCENES}

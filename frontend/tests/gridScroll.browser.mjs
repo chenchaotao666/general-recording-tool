@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
-import { WIDE_COLUMN_BUFFER } from '../src/smart/utils/adaptiveColumnBuffer.js'
+import { WIDE_COLUMN_BUFFER, NARROW_COLUMN_BUFFER } from '../src/smart/utils/adaptiveColumnBuffer.js'
 
 const fixture = `import {createApp,h} from 'vue';import EP from 'element-plus';import VXE from 'vxe-table';
 import 'element-plus/dist/index.css';import 'vxe-table/lib/style.css';import '/src/smart/tokens.css';
@@ -60,7 +60,7 @@ try {
   for (let step = 1; step <= 20; step++) {
     await page.mouse.move(box.x - 100, box.y + box.height / 2 + step * 3)
     await page.waitForTimeout(30)
-    reduced ||= await page.evaluate(() => window.__scrollTable.internalData.scrollXStore.preloadSize === 3)
+    reduced ||= await page.evaluate(size => window.__scrollTable.internalData.scrollXStore.preloadSize === size, NARROW_COLUMN_BUFFER)
   }
   assert.ok(reduced, scenario + ': sustained vertical drag should narrow buffer')
   await page.mouse.up()

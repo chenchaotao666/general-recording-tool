@@ -17,6 +17,7 @@
       show-overflow
       :row-config="{ height: rowHeightPx, isHover: true, keyField: '__key' }"
       :column-config="{ resizable: true }"
+      :resizable-config="{ showDragTip: false }"
       :virtual-y-config="virtualYConfig"
       :virtual-x-config="virtualXConfig"
       :show-footer="true"
@@ -198,6 +199,23 @@ const editingCell = ref(null)   // {key, fieldName}
 const viewConfig = computed(() => props.view?.config || {})
 // 行高：档位或自定义行数（数字 N = 可容纳 N 行文字）
 const rowHeightPx = computed(() => rowHeightPixels(viewConfig.value.rowHeight))
+// Row-height changes need to invalidate VXE's virtual viewport measurements.
+let rowHeightLayoutVersion = 0
+watch(rowHeightPx, async (height, previousHeight) => {
+  const version = ++rowHeightLayoutVersion
+  const table = gridRef.value
+  if (!table) return
+  const { scrollLeft = 0, scrollTop = 0 } = table.getScroll()
+  const top = Math.floor(scrollTop / previousHeight) * height
+  await nextTick()
+  if (version !== rowHeightLayoutVersion || gridRef.value !== table) return
+  await table.recalculate(true)
+  if (version !== rowHeightLayoutVersion || gridRef.value !== table) return
+  await table.scrollTo(scrollLeft, top)
+  await table.refreshScroll()
+  scheduleExpandLocate()
+})
+
 // 行高能容纳的文本行数（行高 = 22px/行 + 上下留白）：默认 1 行、中 2、高 3、超高 4、自定义 N 行
 const rowLines = computed(() => Math.max(1, Math.floor((rowHeightPx.value - 8) / 22)))
 provide('smartCellTagHeight', computed(() => Math.max(24, rowHeightPx.value - 12)))
@@ -367,7 +385,7 @@ const GridAiButton = {
   name: 'GridAiButton',
   setup: () => () => {
     const b = aiBtn.value
-    return b && !props.readonly ? h(AiRunButton, { x: b.x, y: b.y, mode: b.mode, onRun: onAiBtnRun }) : null
+    return b && !props.readonly ? h(AiRunButton, { x: b.x, y: b.y, anchorRect: b.anchorRect, mode: b.mode, onRun: onAiBtnRun }) : null
   },
 }
 function locateAiBtn() {
@@ -379,7 +397,7 @@ function locateAiBtn() {
     const th = [...document.querySelectorAll('.smart-vxe th.th-col-selected')].find(isDisplayCell)
     if (!th) return
     const r = th.getBoundingClientRect()
-    aiBtn.value = { x: r.right + 6, y: r.top + 8, mode: 'col', field: f, row: null }
+    aiBtn.value = { x: r.right + 6, y: r.top + 8, anchorRect: { left: r.left, top: r.top, bottom: r.bottom }, mode: 'col', field: f, row: null }
     return
   }
   const sc = selectedCell.value
@@ -390,7 +408,7 @@ function locateAiBtn() {
   const td = [...document.querySelectorAll('.smart-vxe td.cell-selected, .smart-vxe td.cell-selected-enum')].find(isDisplayCell)
   if (!td || !row) return
   const r = td.getBoundingClientRect()
-  aiBtn.value = { x: r.right + 6, y: r.top + (r.height - 32) / 2, mode: 'cell', field: f, row }
+  aiBtn.value = { x: r.right + 6, y: r.top + (r.height - 32) / 2, anchorRect: { left: r.left, top: r.top, bottom: r.bottom }, mode: 'cell', field: f, row }
 }
 let locateRaf = 0
 function scheduleLocate() {
@@ -430,7 +448,8 @@ const RowExpandBtn = {
     const b = expandBtn.value
     if (!b) return null
     return h(Teleport, { to: 'body' }, h('span', {
-      class: 'st-row-expand', 'aria-label': '展开记录',
+      class: 'st-row-expand', 'aria-label': props.activeRowId === b.row.id ? '收起记录' : '展开记录',
+      'aria-expanded': props.activeRowId === b.row.id,
       style: { left: `${b.x}px`, top: `${b.y}px` },
       onMouseenter: cancelExpandHide, onMouseleave: scheduleExpandHide,
       onMousedown: (e) => e.stopPropagation(),
@@ -557,8 +576,10 @@ function snapToRow() {
 function suppressDragHover(event) {
   if (scrollPointerDown) event.stopPropagation()
 }
+let pointerStartScrollTop = 0
 function onScrollPointerDown(event) {
   if (gridRef.value?.$el?.contains(event.target)) {
+    pointerStartScrollTop = lastScrollTop
     const scrollbar = event.target.closest?.('.vxe-table--scroll-x-wrapper, .vxe-table--scroll-y-wrapper')
     scrollbarEditingCell = scrollbar && editingCell.value ? { ...editingCell.value } : null
     if (scrollbar) {
@@ -578,7 +599,7 @@ function onScrollPointerUp() {
   scrollPointerDown = false
   if (scrollActive) scheduleScrollIdle()
   if (!scrollIdleTimer) layoutQueue.resume()
-  scheduleRowSnap()
+  if (lastScrollTop !== pointerStartScrollTop) scheduleRowSnap()
   scheduleExpandLocate()
   scheduleLocate()
 }
@@ -1109,7 +1130,7 @@ function onTextCellMouseDown(event) {
   const row = table.getRowNode(td.closest('tr'))?.item
   const column = table.getColumnNode(td)?.item
   const field = fieldsByName.value.get(column?.field)
-  if (!row || row.__rowType || typeOf(field) !== 'text') return
+  if (!row || row.__rowType || !['text', 'formula'].includes(typeOf(field))) return
   if (editingCell.value?.key === row.__key && editingCell.value.fieldName === field.field_name) return
   if (lastClick.key !== row.__key || lastClick.fieldName !== field.field_name
       || (event.detail < 2 && Date.now() - lastClick.t >= 500)) return
@@ -1592,6 +1613,9 @@ defineExpose({
 /* 显示态内容整体上移 1px：13px CJK 文字在 36px 行高内半行距分布偏下，光学居中补偿。
    只作用非编辑态——编辑边框画在 .vxe-cell 上、编辑器严格填满单元格，不能跟着移 */
 .smart-vxe :deep(.vxe-body--column:not(.cell-editing) .vxe-cell--wrapper) { transform: translateY(-2px); }
+/* Move the checkbox wrapper together with its clipping box. */
+.smart-vxe :deep(.vxe-body--column:not(.cell-editing) .vxe-cell--wrapper:has(> .smart-cell.cell-checkbox)) { transform: translateY(-1px) !important; }
+.smart-vxe.rh-tall :deep(.vxe-body--column:not(.cell-editing) .vxe-cell--wrapper:has(> .smart-cell.cell-checkbox)) { transform: none !important; }
 .smart-vxe :deep(.vxe-body--column.cell-image) { vertical-align: middle; }
 .smart-vxe :deep(.vxe-body--column.cell-image .vxe-cell) { height: var(--image-cell-height); width: 100% !important; padding-top: 0; padding-bottom: 0; align-items: center; }
 /* 下拉按钮超出内容区 2px、仍在单元格留白内；内部省略容器不能裁掉按钮右沿。 */

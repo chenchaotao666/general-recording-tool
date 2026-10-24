@@ -92,6 +92,10 @@ def _excelize(src: str) -> str:
             out.append(c)
             i += 1
             continue
+        if c == "^":
+            out.append("**")
+            i += 1
+            continue
         if c == "!" and src[i:i + 3] == "!==":
             out.append("!=")
             i += 3
@@ -203,7 +207,7 @@ def _check(node, allow_fields: set[str] | None) -> None:
         if not isinstance(node.value, (int, float, str, bool, type(None))):
             raise ExprError("不支持的常量类型")
         return
-    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.BitAnd, ast.Mod, ast.BitXor)):
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.BitAnd, ast.Mod, ast.BitXor, ast.Pow)):
         _check(node.left, allow_fields)
         _check(node.right, allow_fields)
         return
@@ -278,7 +282,7 @@ def _truth(v) -> bool:
     return bool(v)
 
 
-_OP_SYMBOL = {ast.Add: "+", ast.Sub: "-", ast.Mult: "*", ast.Div: "/", ast.Mod: "%", ast.BitXor: "^"}
+_OP_SYMBOL = {ast.Add: "+", ast.Sub: "-", ast.Mult: "*", ast.Div: "/", ast.Mod: "%", ast.BitXor: "^", ast.Pow: "^"}
 
 
 def _arith(op, l, r, strict: bool):
@@ -303,7 +307,7 @@ def _arith(op, l, r, strict: bool):
             return r + timedelta(days=to_number(l, sym, 1))
         raise FormulaError("类型转换错误", f"“{sym}”运算不能用于日期。")
     a, b = to_number(l, sym, 1), to_number(r, sym, 2)
-    if isinstance(op, ast.BitXor):
+    if isinstance(op, (ast.BitXor, ast.Pow)):
         return a ** b
     if isinstance(op, ast.Add):
         return a + b
@@ -568,7 +572,7 @@ def to_sql(node, resolve, dialect: str = "sqlite"):
             return l.op("||")(r) if dialect == "sqlite" else func.concat(l, r)
         if isinstance(node.op, ast.Mod):
             return l % r
-        if isinstance(node.op, ast.BitXor):
+        if isinstance(node.op, (ast.BitXor, ast.Pow)):
             return func.power(l, r)
         if isinstance(node.op, ast.Add):
             return l + r

@@ -11,12 +11,13 @@ import FieldConfigDialog from '/src/components/smart/panels/FieldConfigDialog.vu
 import { anchoredDialogAttrs, useButtonAnchoredDialog } from '/src/smart/utils/anchorDialog.js'
 import { vPanelDrag } from '/src/smart/utils/panelDrag.js'
 createApp({setup() {
-  const visible=ref(false), kind=ref('field'), body=ref(null), name=ref('编组'), at=ref(null)
-  const place=useButtonAnchoredDialog(()=>body.value,()=>at.value,()=>visible.value && kind.value==='group')
-  window.openPanel=(value)=>{visible.value=false;kind.value=value;at.value={x:900,y:680};setTimeout(()=>visible.value=true,0)}
+  const openKey=ref(0), visible=ref(false), kind=ref('field'), body=ref(null), name=ref('编组'), at=ref(null)
+  const place=useButtonAnchoredDialog(()=>body.value,()=>at.value,()=>visible.value && kind.value==='group',()=>openKey.value)
+  window.openPanel=(value,point={x:900,y:680})=>{openKey.value++;kind.value=value;at.value=point;visible.value=true}
+  window.moveAnchor=point=>{at.value=point}
   return ()=>kind.value==='field'
-    ? h(FieldConfigDialog,{visible:visible.value,at:at.value,field:{label:'字段',field_type:'text',options:{}},onClose:()=>visible.value=false})
-    : h(ElDialog,{...anchoredDialogAttrs(at.value,320,250),modelValue:visible.value,width:320,title:'修改编组',onOpened:place},
+    ? h(FieldConfigDialog,{openKey:openKey.value,visible:visible.value,at:at.value,field:{label:'字段',field_type:'text',options:{}},onClose:()=>visible.value=false})
+    : h(ElDialog,{transition:{css:false},...anchoredDialogAttrs(at.value,320,250),modelValue:visible.value,width:320,title:'修改编组',onOpened:place},
       {default:()=>withDirectives(h('div',{ref:body},[
         h('div',{'data-panel-drag-handle':'',style:'height:20px'},'拖动'),
         h('input',{value:name.value,onInput:e=>name.value=e.target.value}),
@@ -62,6 +63,22 @@ try {
     await input.fill('拖动后编辑')
     await page.waitForTimeout(100)
     assert.equal((await panel.boundingBox()).x,dragged.x,kind+' preserves drag after edit')
+    await page.evaluate(()=>window.moveAnchor({x:140,y:100}))
+    await page.waitForTimeout(100)
+    assert.equal((await panel.boundingBox()).x,144,kind+' new anchor clears dragged position')
+    await input.fill('切换后编辑')
+    await page.waitForTimeout(100)
+    assert.equal((await panel.boundingBox()).x,144,kind+' old directive position does not return')
+    const nextHandle=await handle.boundingBox()
+    await page.mouse.move(nextHandle.x+20,nextHandle.y+5)
+    await page.mouse.down()
+    await page.mouse.move(nextHandle.x+120,nextHandle.y+45,{steps:5})
+    await page.mouse.up()
+    await input.evaluate(el=>{window.__previousPanelInput=el})
+    await page.evaluate(kind=>window.openPanel(kind,{x:200,y:120}),kind)
+    await page.waitForTimeout(450)
+    assert.equal((await panel.boundingBox()).x,204,kind+' reopening resets dragged position')
+    assert.ok(await input.evaluate(el=>el===window.__previousPanelInput),kind+' reuses controls on reopen')
   }
   console.log('Field and group dialogs stay fixed on input and handle clicks, and still drag correctly.')
 } finally {await browser.close();await server.close()}

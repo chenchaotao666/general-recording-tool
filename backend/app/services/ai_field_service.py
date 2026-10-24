@@ -146,6 +146,8 @@ def coerce_basic(out_type: str, value):
     """非选项类输出的类型归一（数字 / 复选框 / 文本）。"""
     if value in (None, "", []):
         return None
+    if out_type == "file":
+        return value if isinstance(value, list) and all(isinstance(v, dict) and v.get("id") and v.get("name") for v in value) else None
     if out_type in ("percent", "progress"):
         if isinstance(value, bool):
             return None
@@ -167,12 +169,13 @@ def coerce_basic(out_type: str, value):
         if isinstance(value, bool):
             return None
         if isinstance(value, (int, float)):
-            return value
+            return value if math.isfinite(value) else None
         try:
-            return float(str(value).replace(",", "").strip())
+            number = float(str(value).replace(",", "").strip())
         except ValueError:
             m = re.search(r"-?\d+(\.\d+)?", str(value))
-            return float(m.group(0)) if m else None
+            number = float(m.group(0)) if m else None
+        return number if number is not None and math.isfinite(number) else None
     if out_type == "checkbox":
         return value is True or str(value).strip().lower() in ("true", "1", "是", "yes", "√", "✓")
     if isinstance(value, (dict, list)):
@@ -214,52 +217,98 @@ def _file_text(record: dict, inputs: list[str], max_chars: int = 12000) -> str:
     for fn in inputs:
         for v in record.get(fn) or []:
             fid = v.get("id") if isinstance(v, dict) else v
-            texts.append(smart_files.pdf_text(str(fid)))
+            texts.append(smart_files.document_text(str(fid), max_chars))
     return "\n\n".join(t for t in texts if t)[:max_chars]
 
 
 def compute_raw(db: Session, cfg: dict, fields: list, record: dict, labels: list[str], all_records=None) -> tuple:
     """按配置计算单元格原始结果 → (raw, billable, tokens)。选项类返回标签名（尚未落成 optionId）。"""
     from .ai_local import LOCAL
+    from .ai_template_compute import SCALARS, ROW_SCENES, compute, scalar
+    from .ai_template_files import ASSETS, transform
     from .llm import get_default_provider
     scene_key = cfg.get("scene") or "custom"
     scene = SCENE_BY_KEY.get(scene_key, SCENE_BY_KEY["custom"])
     if scene.get("disabled"):
-        raise ValueError(f"「{scene['label']}」需要工具调用能力，即将上线")
+        raise ValueError(scene.get("disabledReason") or f"「{scene['label']}」暂不可用")
+    validate_template_config(cfg, fields)
     inputs = [x for x in cfg.get("inputFields") or [] if _field_by(fields, x)]
     first = record.get(inputs[0]) if inputs else None
-    if scene_key == "markDuplicate":
+    if scene.get("formula"):
+        from .ai_template_formulas import calculate
+        values = dict(record)
+        for f in fields:
+            if f.field_type == 'singleSelect':
+                values[f.field_name] = display(db, f, record.get(f.field_name), {})
+        return calculate(scene_key, cfg, values, scene), False, 0
+    if scene_key in ("markDuplicate", "duplicatePhone"):
         if not inputs:
             raise ValueError("请选择要查重的字段")
         if first in (None, "", []):
             return False, False, 0
-        key = json.dumps(first, sort_keys=True, default=str, ensure_ascii=False)
-        cnt = sum(1 for r in all_records or [] if json.dumps(r.get(inputs[0]), sort_keys=True, default=str,
-                                                             ensure_ascii=False) == key)
+        def norm(value):
+            if scene_key == "duplicatePhone":
+                value = re.sub(r"[\s()-]", "", str(value or ""))
+                return re.sub(r"^(?:\+86|0086)(?=1\d{10}$)", "", value)
+            return json.dumps(value, sort_keys=True, default=str, ensure_ascii=False)
+        cnt = sum(1 for r in all_records or [] if norm(r.get(inputs[0])) == norm(first))
         return cnt > 1, False, 0
+    if scene_key in ASSETS:
+        return transform(db, scene_key, cfg, fields, record), False, 0
+    if scene_key in SCALARS:
+        return (scalar(scene_key, first) if first not in (None, "", []) else None), False, 0
+    if scene_key in ROW_SCENES:
+        # Resolve select option IDs before comparing status or gender; preserve member IDs for grouping.
+        def values(row):
+            result = dict(row)
+            for f in fields:
+                if f.field_type == "singleSelect":
+                    result[f.field_name] = display(db, f, row.get(f.field_name), {})
+            return result
+        return compute(scene_key, cfg, values(record), [values(r) for r in all_records] if all_records is not None else None), False, 0
     if scene_key == "pdfToText":
         if not inputs:
             raise ValueError("请选择 PDF 所在的文件字段")
+        from .ai_template_files import source_files
+        list(source_files(db, fields, record, inputs))  # Enforce ownership before reading.
         return _file_text(record, inputs, 20000) or None, False, 0
     if scene_key in LOCAL:
         fn, needs_input = LOCAL[scene_key]
         if needs_input and first in (None, "", []):
             return None, False, 0
         return fn(first), False, 0
-    provider = get_default_provider(db)
     system, user = build_prompt_cfg(db, cfg, fields, record, labels)
-    if scene["input"] == "image":
-        imgs = []
-        for fn in inputs:
-            imgs += _image_bytes(db, record.get(fn))
-        if not imgs:
-            return None, False, 0
+    selected = [f for f in fields if f.field_name in inputs]
+    if not any(record.get(fn) not in (None, "", []) for fn in inputs) and scene_key != "custom":
+        return None, False, 0
+    imgs = []
+    file_fields = []
+    from .ai_template_files import source_files, input_type
+    for path, name in source_files(db, fields, record, inputs):
+        if path.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".bmp") or not path.suffix:
+            imgs.append(path.read_bytes())
+    file_fields = [f.field_name for f in selected if input_type(f) == "file"]
+    if file_fields:
+        from . import smart_files
+        texts = []
+        for fn in file_fields:
+            for item in (record.get(fn) or [])[:4]:
+                fid = str(item.get("id") if isinstance(item, dict) else item)
+                path, _ = smart_files.locate(fid)
+                if path.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".bmp"):
+                    continue
+                content = smart_files.document_text(fid, 12000)
+                if not content.strip():
+                    raise ValueError("文件没有可提取的文字，扫描版 PDF 请先使用“PDF 转图片”再识别")
+                texts.append(content)
+        if texts:
+            user += "\n\n文件内容：\n" + "\n\n".join(texts)[:20000]
+    provider = get_default_provider(db)
+    if imgs:
+        if len(imgs) > 4:
+            raise ValueError("单次最多识别 4 张图片，请减少输入图片")
         text = provider.recognize(imgs, user, system=system)
     else:
-        if not any(record.get(fn) not in (None, "", []) for fn in inputs) and scene_key != "custom":
-            return None, False, 0   # 输入全空不调用模型（不计配额）
-        if scene["input"] == "file":
-            user += "\n\n文件内容：\n" + (_file_text(record, inputs) or "（无可识别文字）")
         text = provider.complete(user, system=system)
     usage = provider.last_usage or {}
     tokens = int(usage.get("prompt_tokens") or 0) + int(usage.get("completion_tokens") or 0)
@@ -291,7 +340,7 @@ def process(db: Session, table_id: int, field_name: str, record_ids: list[int], 
     if field is None or field.field_type != "ai":
         return
     all_recs = None
-    if (field.options or {}).get("scene") == "markDuplicate":
+    if SCENE_BY_KEY.get((field.options or {}).get("scene"), {}).get("scope") == "table":
         all_recs = json_store.all_dicts(db, table_id, fields)
     for rid in record_ids:
         run = _run_row(db, table_id, field_name, rid)
@@ -353,14 +402,16 @@ def handle_event(db: Session, event: dict) -> None:
         cfg = f.options or {}
         if not cfg.get("autoUpdate", True):
             continue
+        if event["type"] == "recordDeleted" and SCENE_BY_KEY.get(cfg.get("scene"), {}).get("scope") != "table":
+            continue
         inputs = set(cfg.get("inputFields") or [])
         if event["type"] == "recordUpdated" and not inputs & set(event.get("changed") or []):
             continue
         if event["type"] == "recordCreated":
             after = event.get("after") or {}
-            if not any(after.get(x) not in (None, "", []) for x in inputs):
+            if not any(after.get(x) not in (None, "", []) for x in inputs) and cfg.get("scene") not in ("cvRandom", "cvUuid", "cvPassword"):
                 continue
-        if cfg.get("scene") == "markDuplicate":
+        if SCENE_BY_KEY.get(cfg.get("scene"), {}).get("scope") == "table":
             ids = [r.id for r in db.query(Record.id).filter_by(table_id=event["table_id"]).all()]
         else:
             ids = [event["record_id"]]
@@ -498,6 +549,38 @@ def _is_local(scene: dict) -> bool:
     return bool(scene.get("local")) or scene["key"] in LOCAL
 
 
+def validate_template_config(cfg: dict, fields: list) -> None:
+    """Validate input roles at the same boundary used by preview and execution."""
+    from .ai_template_files import input_type
+    scene = SCENE_BY_KEY.get(cfg.get("scene") or "custom")
+    if not scene:
+        raise ValueError("未知的 AI 模板")
+    if cfg.get("outputType") == "file" and not scene.get("asset"):
+        raise ValueError("只有文件处理模板支持附件输出")
+    bindings = cfg.get("inputBindings") or {}
+    if not isinstance(bindings, dict):
+        raise ValueError("输入角色映射格式不正确")
+    inputs = cfg.get("inputFields") or []
+    if not isinstance(inputs, list):
+        raise ValueError("输入字段格式不正确")
+    for index, role in enumerate(scene.get("inputRoles", [])):
+        name = bindings.get(role["key"]) or (inputs[index] if not bindings and index < len(inputs) else None)
+        f = _field_by(fields, name)
+        if role.get("required") and not f:
+            raise ValueError(f"请选择「{role['label']}」对应的字段")
+        if f and (name not in inputs or input_type(f) not in role["types"]):
+            raise ValueError(f"「{role['label']}」的字段类型或映射不正确")
+    accepted = scene.get("acceptedInputs")
+    for name in inputs:
+        f = _field_by(fields, name)
+        if not f:
+            raise ValueError("输入字段已删除，请重新选择")
+        if accepted and input_type(f) not in accepted:
+            raise ValueError(f"该模板不支持「{f.label}」的字段类型")
+        if not accepted and scene["input"] in ("image", "file") and input_type(f) != scene["input"]:
+            raise ValueError(f"请选择{ '图片' if scene['input'] == 'image' else '文件' }字段")
+
+
 def _config_system() -> str:
     return ("你是智能表格「AI 字段」的配置助手。用户选了一个场景、输入字段，并可能补充了描述或修改要求。"
             "请据此生成该 AI 字段的配置。\n"
@@ -572,6 +655,8 @@ def preview_rows(db: Session, mt: MetaTable, cfg: dict, fields: list, limit: int
     for r in sample:
         item = {"record_id": r["id"], "inputs": {fn: r.get(fn) for fn in inputs}, "output": None, "error": None}
         try:
+            if not _is_local(scene) and not _quota_ok(db, mt.tenant_id):
+                raise ValueError("本月 AI 调用次数已用完，请升级套餐")
             labels = [o.get("label") for o in cfg.get("options") or []]
             raw, billable, tokens = compute_raw(db, cfg, fields, r, labels, recs)
             if out_type in ("singleSelect", "multiSelect"):
@@ -612,6 +697,8 @@ def configure(db: Session, mt: MetaTable, payload: dict) -> dict:
         except Exception as e:  # noqa: BLE001 — 模型不可用：回落到场景模板，仍可保存
             log.warning("AI 字段配置生成失败，使用场景模板：%s", e)
             warning = f"AI 配置生成失败，已使用场景默认配置（{str(e)[:80]}）"
+            if instruction:
+                gen["prompt"] += "\n用户补充要求：" + instruction
     if not inputs:   # 未选字段：用模型挑的（标签 → 字段名）
         by_label = {f.label: f for f in fields if f.field_type != "ai"}
         inputs = [by_label[x] for x in gen.get("inputs") or [] if x in by_label]
@@ -624,6 +711,9 @@ def configure(db: Session, mt: MetaTable, payload: dict) -> dict:
         out_type = "text"
     cfg = {
         "scene": scene["key"], "inputFields": [f.field_name for f in inputs],
+        "templateVersion": 2,
+        "inputBindings": dict(payload.get("input_bindings") or base.get("inputBindings") or {}),
+        "parameters": dict(base.get("parameters") or {}),
         "title": str(gen.get("title") or scene["label"])[:20], "desc": str(gen.get("desc") or ""),
         "inputLabel": str(gen.get("inputLabel") or "")[:30],
         "systemPrompt": "" if _is_local(scene) else str(gen.get("prompt") or scene.get("prompt") or ""),
@@ -632,13 +722,28 @@ def configure(db: Session, mt: MetaTable, payload: dict) -> dict:
         "allowNewOptions": base.get("allowNewOptions", True),
         "options": [dict(o) for o in base.get("options") or []],
     }
+    try:
+        validate_template_config(cfg, fields)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     if out_type in ("singleSelect", "multiSelect") and not cfg["options"]:
         seeds = scene.get("defaultOptions") or [str(x) for x in gen.get("options") or []][:8]
         for lb in seeds:
             _assign_options(cfg, lb)
-    rows = preview_rows(db, mt, cfg, get_meta_fields(db, mt.id))
+    rows = preview_rows(db, mt, cfg, get_meta_fields(db, mt.id)) if payload.get("include_preview", True) else []
     return {"config": cfg, "preview": rows, "warning": warning, "quota": quota_status(db, mt.tenant_id)}
 
 
 def scene_catalog() -> dict:
-    return {"categories": CATEGORIES, "scenes": SCENES}
+    from importlib.util import find_spec
+    dependencies = {"qrcode": ["qrcode"], "fiPdfImage": ["pypdfium2"], "fiPdfWatermark": ["pypdf", "reportlab"],
+                    "pdfToText": ["pypdf"], "cvHoliday": ["chinese_calendar"], "hrHolidayQuery": ["chinese_calendar"],
+                    "workdays": ["chinese_calendar"], "cvLunar": ["lunardate"], "cvPinyin": ["pypinyin"]}
+    scenes = []
+    for scene in SCENES:
+        item = dict(scene)
+        missing = [name for name in dependencies.get(scene["key"], []) if find_spec(name) is None]
+        if missing:
+            item.update(disabled=True, disabledReason="服务器缺少依赖：" + "、".join(missing) + "，请安装 backend/requirements.txt。")
+        scenes.append(item)
+    return {"categories": CATEGORIES, "scenes": scenes}

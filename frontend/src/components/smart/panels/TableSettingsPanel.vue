@@ -34,22 +34,19 @@
                   @click.stop="$emit('toggle-visible', row.field, isHidden(row.field))">
               <StIcon :name="isHidden(row.field) ? 'eye-off' : 'eye'" :size="20" :stroke-width="1.2" />
             </span>
-            <el-dropdown :hide-after="0" trigger="click" @command="(cmd) => $emit('field-action', cmd, row.field)">
-              <span class="f-more st-icon-action" @click.stop><StIcon name="more-h" :size="18" /></span>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="edit">修改字段</el-dropdown-item>
-                  <el-dropdown-item command="duplicate">创建副本</el-dropdown-item>
-                  <el-dropdown-item command="newGroup">新建编组</el-dropdown-item>
-                  <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+            <button class="f-more st-icon-action" aria-label="字段操作" :aria-expanded="menuVisible && menuField === row.field"
+                    @click.stop="openFieldMenu(row.field, $event)"><StIcon name="more-h" :size="18" /></button>
           </SmartListItem>
         </template>
       </div>
       <SmartListItem class="add-field" @click="(e) => $emit('add-field', e)"><StIcon name="plus" :size="16" />新增字段</SmartListItem>
     </div>
+  </el-popover>
+  <!-- One shared menu, rather than a Popper/Teleport/focus scope for every column. -->
+  <el-popover v-model:visible="menuVisible" :virtual-ref="menuAnchor" virtual-triggering trigger="click"
+              :hide-after="0" placement="right-start" :width="160" popper-class="ts-field-menu">
+    <SmartListItem v-for="action in fieldActions" :key="action.command" tag="button"
+                   :class="{ 'ts-delete': action.command === 'delete' }" @click="runFieldAction(action.command)">{{ action.label }}</SmartListItem>
   </el-popover>
 </template>
 
@@ -57,7 +54,7 @@
 import { vReorderFeedback } from '../../../smart/utils/reorderFeedback.js'
 import SmartListItem from '../common/SmartListItem.vue'
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import StIcon from '../icons/StIcon.vue'
 
 const props = defineProps({
@@ -69,6 +66,25 @@ const props = defineProps({
 const emit = defineEmits(['close', 'update:visible', 'toggle-visible', 'reorder', 'field-action',
                           'add-field', 'set-field-group'])
 const visibleModel = computed({ get: () => props.visible, set: (v) => emit('update:visible', v) })
+const menuAnchor = shallowRef(null)
+const menuField = shallowRef(null)
+const menuVisible = ref(false)
+const fieldActions = [
+  { command: 'edit', label: '修改字段' }, { command: 'duplicate', label: '创建副本' },
+  { command: 'newGroup', label: '新建编组' }, { command: 'delete', label: '删除' },
+]
+function openFieldMenu(field, event) {
+  const same = menuAnchor.value === event.currentTarget
+  menuAnchor.value = event.currentTarget
+  menuField.value = field
+  menuVisible.value = !same || !menuVisible.value
+}
+function runFieldAction(command) {
+  const field = menuField.value
+  menuVisible.value = false
+  if (field) emit('field-action', command, field)
+}
+watch(() => props.visible, (visible) => { if (!visible) menuVisible.value = false })
 // 按工具栏下方实际可用空间限制整个面板，标题和新增入口不参与列表滚动。
 const popperOptions = {
   modifiers: [
@@ -276,7 +292,7 @@ function dndIndicator(row) {
          flex: none; width: 32px; height: 32px; border-radius: 6px; }
 .f-eye:hover { color: var(--st-primary); background: var(--st-bg-active); }
 .f-more { cursor: pointer; color: var(--st-text-2); display: inline-flex; align-items: center; justify-content: center;
-          flex: none; width: 32px; height: 32px; border-radius: 6px; }
+          flex: none; width: 32px; height: 32px; border-radius: 6px; border: 0; padding: 0; background: transparent; }
 .f-more:hover { color: var(--st-primary); background: var(--st-bg-active); }
 .f-more-ph { cursor: default; }
 .f-more-ph:hover { background: transparent; }
@@ -288,6 +304,9 @@ function dndIndicator(row) {
 /* 底部新增字段：不随长字段列表滚动 */
 .add-field { display: flex; align-items: center; flex: none; margin-top: 4px; padding: 0 2px;
              cursor: pointer; }
+.ts-field-menu .st-list-item { width: 100%; border: 0; background: transparent; text-align: left; }
+.ts-field-menu .st-list-item:hover { background: var(--st-bg-hover); }
+.ts-delete { margin-top: 4px; border-top: 1px solid var(--st-border) !important; }
 </style>
 
 <style>

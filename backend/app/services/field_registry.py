@@ -348,7 +348,7 @@ SYSTEM_TYPES = {ft for ft, reg in FIELD_TYPES.items() if reg.get("system")}
 COMPUTED_TYPES = {"formula", "lookup"}
 
 # AI 字段输出类型（V3）
-AI_OUTPUT_TYPES = {"text", "number", "percent", "progress", "date", "singleSelect", "multiSelect", "checkbox"}
+AI_OUTPUT_TYPES = {"text", "number", "percent", "progress", "date", "singleSelect", "multiSelect", "checkbox", "file"}
 
 # 查找引用统计方式（设计文档 §8.2）
 LOOKUP_AGGS = {"raw", "rawDistinct", "sum", "count", "countDistinct", "avg", "max", "min"}

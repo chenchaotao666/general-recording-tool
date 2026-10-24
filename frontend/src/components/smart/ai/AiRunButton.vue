@@ -25,6 +25,7 @@ import StIcon from '../icons/StIcon.vue'
 const props = defineProps({
   x: { type: Number, required: true },
   y: { type: Number, required: true },
+  anchorRect: { type: Object, default: null },
   mode: { type: String, default: 'col' },   // col | cell
 })
 const emit = defineEmits(['run'])
@@ -39,8 +40,19 @@ function place() {
   if (!panel) return
   const width = window.innerWidth, height = window.innerHeight
   const rect = panel.getBoundingClientRect()
-  const left = clamp(props.x + rect.width > width - 12 ? props.x - rect.width : props.x, rect.width, width)
-  const top = clamp(props.y + rect.height > height - 12 ? props.y - rect.height : props.y, rect.height, height)
+  let x = props.x
+  let y = props.y - 2
+  if (x + rect.width > width - 12) {
+    // Flip around the entire cell, not around the right-edge button anchor.
+    x = props.anchorRect ? props.anchorRect.left - 6 - rect.width : props.x - rect.width
+    if (x < 12 && props.anchorRect) {
+      // A cell spanning nearly the whole viewport has no room on either side.
+      y = props.anchorRect.top - rect.height - 8
+      if (y < 12) y = props.anchorRect.bottom + 4
+    }
+  }
+  const left = clamp(x, rect.width, width)
+  const top = clamp(y, rect.height, height)
   Object.assign(panel.style, { left: `${left}px`, top: `${top}px` })
   const dropdown = menuRef.value
   if (!dropdown) return
@@ -48,12 +60,12 @@ function place() {
   dropdown.style.maxWidth = `${Math.max(0, width - 24)}px`
   dropdown.style.maxHeight = `${Math.max(0, height - 24)}px`
   const box = dropdown.getBoundingClientRect()
-  const x = left + box.width > width - 12 ? left + rect.width - box.width : left
+  const menuX = left + box.width > width - 12 ? left + rect.width - box.width : left
   const below = top + rect.height + 6
-  const y = below + box.height > height - 12 ? top - box.height - 6 : below
-  Object.assign(dropdown.style, { left: `${clamp(x, box.width, width)}px`, top: `${clamp(y, box.height, height)}px` })
+  const menuY = below + box.height > height - 12 ? top - box.height - 6 : below
+  Object.assign(dropdown.style, { left: `${clamp(menuX, box.width, width)}px`, top: `${clamp(menuY, box.height, height)}px` })
 }
-watch(() => [props.x, props.y], () => nextTick(place), { flush: 'post' })
+watch(() => [props.x, props.y, props.anchorRect], () => nextTick(place), { flush: 'post' })
 watch(menu, async (open) => { await nextTick(); if (open) await refreshMenu(); place() })
 onMounted(() => {
   nextTick(place)

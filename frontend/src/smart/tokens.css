@@ -76,6 +76,15 @@ body:has(.smart-home, .st-page, .dash-page) .el-popper {
   max-height: calc(100dvh - 24px);
   overflow-y: auto;
 }
+/* Keep the calendar arrow outside the scrolling content, especially above the input. */
+body:has(.smart-home, .st-page, .dash-page) .el-picker__popper {
+  overflow: visible;
+}
+body:has(.smart-home, .st-page, .dash-page) .el-picker__popper .el-picker-panel {
+  box-sizing: border-box;
+  max-height: calc(100dvh - 26px);
+  overflow-y: auto;
+}
 body:has(.smart-home, .st-page, .dash-page) .el-dialog {
   max-width: calc(100vw - 24px);
   max-height: calc(100dvh - var(--el-dialog-margin-top, 15vh) - 12px);

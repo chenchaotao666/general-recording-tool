@@ -47,9 +47,12 @@ async function measure() {
   await nextTick()
   if (!box.value || current !== revision) return
   if (layoutQueue.paused) { layoutQueue.enqueue(measure); return }
-  const tags = [...box.value.querySelectorAll('.compact-tag')]
   if (!box.value.clientWidth) return
   knownWidth = box.value.clientWidth
+  // Other cells in this batch may have measured the same tags while we awaited
+  // the full-label render. Reuse that result before reading each tag's geometry.
+  if (restoreLayout(knownWidth)) return
+  const tags = [...box.value.querySelectorAll('.compact-tag')]
   layout.value = fitTagRows(tags.map(tag => tag.getBoundingClientRect().width), knownWidth, props.expanded ? Math.max(24, tags.length * 28) : availableHeight.value,
     { stacked: props.stacked, badgeWidth: ghost.value?.offsetWidth || 28 })
   layoutQueue.setTagLayout(cacheKey(knownWidth), layout.value)

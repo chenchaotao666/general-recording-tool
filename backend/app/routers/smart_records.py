@@ -508,6 +508,7 @@ def delete_record(table_id: int, record_id: int, db: Session = Depends(get_db),
     fields = get_meta_fields(db, table_id)
     json_store.delete_record(db, table_id, record_id, fields, user=access.ctx.user.username)
     smart_events.table_changed(db, access.table)
+    smart_events.records_deleted(db, access.table)
     return {"ok": True, "orphans_lifted": len(children)}
 
 
@@ -539,6 +540,7 @@ def batch_delete(table_id: int, payload: dict, db: Session = Depends(get_db),
     db.commit()
     if deleted:
         smart_events.table_changed(db, access.table)
+        smart_events.records_deleted(db, access.table)
     return {"deleted": deleted}
 
 

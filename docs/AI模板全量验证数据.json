@@ -1,0 +1,7324 @@
+{
+  "created_at": "2026-10-24T02:03:24.654544",
+  "table_id": 81,
+  "tenant_id": 2,
+  "owner_id": 2,
+  "url": "http://localhost:5173/smart/table/81",
+  "cases": [
+    {
+      "key": "classify",
+      "label": "分类",
+      "category": "recommend",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1857,
+      "field": "ai_classify",
+      "config": {
+        "scene": "classify",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "水果",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "办公用品",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "001 分类",
+        "scene_key": "classify",
+        "category": "推荐",
+        "mode": "使用模型生成",
+        "input_text": "苹果、香蕉；分类规则：水果或办公用品",
+        "expected": "\"水果\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "水果",
+      "status": "通过",
+      "note": "",
+      "tokens": 323,
+      "billable": true,
+      "actual": "opt_0",
+      "display": "水果",
+      "seconds": 1.69
+    },
+    {
+      "key": "summary",
+      "label": "总结",
+      "category": "recommend",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1858,
+      "field": "ai_summary",
+      "config": {
+        "scene": "summary",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "002 总结",
+        "scene_key": "summary",
+        "category": "推荐",
+        "mode": "使用模型生成",
+        "input_text": "项目完成需求评审，登录功能已开发完成，下周开展接口联调。",
+        "expected": "依据输入核对结果，不要求逐字一致",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": null,
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：保留需求评审、登录功能完成、下周联调三项事实。",
+      "tokens": 267,
+      "billable": true,
+      "actual": "项目已完成需求评审，登录功能开发完成，下周将开展接口联调。",
+      "display": "项目已完成需求评审，登录功能开发完成，下周将开展接口联调。",
+      "seconds": 1.5,
+      "review": "保留需求评审、登录功能完成、下周联调三项事实。"
+    },
+    {
+      "key": "tagMatch",
+      "label": "标签匹配",
+      "category": "recommend",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1859,
+      "field": "ai_tagmatch",
+      "config": {
+        "scene": "tagMatch",
+        "outputType": "multiSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "自然风光",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "人文景观",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "003 标签匹配",
+        "scene_key": "tagMatch",
+        "category": "推荐",
+        "mode": "使用模型生成",
+        "input_text": "翠林晨曦：阳光如碎金洒落林间",
+        "expected": "\"自然风光\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "自然风光",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：树林和晨光文本匹配自然风光，未生成无关标签。",
+      "tokens": 506,
+      "billable": true,
+      "actual": [
+        "opt_0"
+      ],
+      "display": "自然风光",
+      "seconds": 2.95,
+      "review": "树林和晨光文本匹配自然风光，未生成无关标签。"
+    },
+    {
+      "key": "extract",
+      "label": "信息提取",
+      "category": "recommend",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1860,
+      "field": "ai_extract",
+      "config": {
+        "scene": "extract",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "004 信息提取",
+        "scene_key": "extract",
+        "category": "推荐",
+        "mode": "使用模型生成",
+        "input_text": "2026年10月24日，示例项目已完成需求评审，负责人测试员甲，下周联调。",
+        "expected": "依据输入核对结果，不要求逐字一致",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": null,
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：提取了日期、项目状态、负责人和下一步，未增加事实。",
+      "tokens": 378,
+      "billable": true,
+      "actual": "2026年10月24日，示例项目已完成需求评审，负责人测试员甲，下周联调。",
+      "display": "2026年10月24日，示例项目已完成需求评审，负责人测试员甲，下周联调。",
+      "seconds": 2.58,
+      "review": "提取了日期、项目状态、负责人和下一步，未增加事实。"
+    },
+    {
+      "key": "imageUnderstand",
+      "label": "图片理解",
+      "category": "recommend",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1861,
+      "field": "ai_imageunderstand",
+      "config": {
+        "scene": "imageUnderstand",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "005 图片理解",
+        "scene_key": "imageUnderstand",
+        "category": "推荐",
+        "mode": "使用模型生成",
+        "input_text": "合成测试图：白底蓝色方框，文字 AI TEST 2026",
+        "expected": "依据输入核对结果，不要求逐字一致",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "a12013ee7b2241c386ec799c46bd33ba",
+            "name": "imageUnderstand-test.png",
+            "size": 21247
+          }
+        ]
+      },
+      "expected": null,
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：白底、蓝框、文字内容与合成图一致。",
+      "tokens": 769,
+      "billable": true,
+      "actual": "图片为白底，四周有蓝色矩形边框。左上角有两行黑色文字：第一行为“合成测试样例（非真实证件）”，第二行为“合成测试图：白底蓝色方框，文字 AI TEST 2026”。其余区域为空白。",
+      "display": "图片为白底，四周有蓝色矩形边框。左上角有两行黑色文字：第一行为“合成测试样例（非真实证件）”，第二行为“合成测试图：白底蓝色方框，文字 AI TEST 2026”。其余区域为空白。",
+      "seconds": 2.28,
+      "review": "白底、蓝框、文字内容与合成图一致。"
+    },
+    {
+      "key": "translate",
+      "label": "翻译为中文",
+      "category": "recommend",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1862,
+      "field": "ai_translate",
+      "config": {
+        "scene": "translate",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "006 翻译为中文",
+        "scene_key": "translate",
+        "category": "推荐",
+        "mode": "使用模型生成",
+        "input_text": "This is an English paragraph",
+        "expected": "\"这是一个英文段落\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "这是一个英文段落",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：英文段落翻译为这是一个英文段落。",
+      "tokens": 274,
+      "billable": true,
+      "actual": "这是一个英文段落",
+      "display": "这是一个英文段落",
+      "seconds": 1.92,
+      "review": "英文段落翻译为这是一个英文段落。"
+    },
+    {
+      "key": "markDuplicate",
+      "label": "标记重复值",
+      "category": "recommend",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1863,
+      "field": "ai_markduplicate",
+      "config": {
+        "scene": "markDuplicate",
+        "outputType": "checkbox",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_markduplicate"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "007 标记重复值",
+        "scene_key": "markDuplicate",
+        "category": "推荐",
+        "mode": "本地计算",
+        "input_text": "13800000001",
+        "expected": "true",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "in_markduplicate": "13800000001"
+      },
+      "expected": true,
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": true,
+      "display": "是",
+      "seconds": 0.09
+    },
+    {
+      "key": "qrcode",
+      "label": "生成二维码图片",
+      "category": "recommend",
+      "execution": "asset",
+      "disabled": false,
+      "record_id": 1865,
+      "field": "ai_qrcode",
+      "config": {
+        "scene": "qrcode",
+        "outputType": "file",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "008 生成二维码图片",
+        "scene_key": "qrcode",
+        "category": "推荐",
+        "mode": "文件处理",
+        "input_text": "https://example.com",
+        "expected": "\"二维码.png（可下载附件）\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "二维码.png（可下载附件）",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": [
+        {
+          "id": "9c19e817421e4f7fbcfed5729dca3c8e",
+          "name": "二维码.png",
+          "size": 587
+        }
+      ],
+      "display": "二维码.png",
+      "seconds": 0.14
+    },
+    {
+      "key": "fxLive",
+      "label": "查询实时汇率",
+      "category": "recommend",
+      "execution": "model",
+      "disabled": true,
+      "record_id": 1866,
+      "field": null,
+      "config": {
+        "scene": "fxLive",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "009 查询实时汇率",
+        "scene_key": "fxLive",
+        "category": "推荐",
+        "mode": "使用模型生成",
+        "input_text": "USD/CNY，待接入汇率服务",
+        "expected": "依据输入核对结果，不要求逐字一致",
+        "verdict": "未接入",
+        "note": "尚未接入汇率数据服务；不能用语言模型猜测实时或历史汇率。",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": null,
+      "status": "未接入",
+      "note": "尚未接入汇率数据服务；不能用语言模型猜测实时或历史汇率。"
+    },
+    {
+      "key": "fxHistory",
+      "label": "查询历史汇率",
+      "category": "recommend",
+      "execution": "model",
+      "disabled": true,
+      "record_id": 1867,
+      "field": null,
+      "config": {
+        "scene": "fxHistory",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "010 查询历史汇率",
+        "scene_key": "fxHistory",
+        "category": "推荐",
+        "mode": "使用模型生成",
+        "input_text": "USD/CNY，2026-01-01，待接入历史汇率服务",
+        "expected": "依据输入核对结果，不要求逐字一致",
+        "verdict": "未接入",
+        "note": "尚未接入汇率数据服务；不能用语言模型猜测实时或历史汇率。",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": null,
+      "status": "未接入",
+      "note": "尚未接入汇率数据服务；不能用语言模型猜测实时或历史汇率。"
+    },
+    {
+      "key": "writeFormula",
+      "label": "写公式",
+      "category": "recommend",
+      "execution": "formula",
+      "disabled": false,
+      "record_id": 1868,
+      "field": null,
+      "config": {
+        "scene": "writeFormula",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "011 写公式",
+        "scene_key": "writeFormula",
+        "category": "推荐",
+        "mode": "生成公式",
+        "input_text": "金额乘以数量",
+        "expected": "\"[金额] * [数量]\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "[金额] * [数量]",
+      "status": "通过",
+      "note": "",
+      "generated_formula": {
+        "formula": "[amount]*[quantity]",
+        "display": "[金额]*[数量]",
+        "returnType": "number",
+        "explanation": "将金额字段与数量字段相乘，返回乘积。"
+      },
+      "actual": 300,
+      "display": "[金额]*[数量]；100 × 3 = 300",
+      "seconds": 1.28
+    },
+    {
+      "key": "pdfToText",
+      "label": "PDF 转文本",
+      "category": "recommend",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1869,
+      "field": "ai_pdftotext",
+      "config": {
+        "scene": "pdfToText",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "012 PDF 转文本",
+        "scene_key": "pdfToText",
+        "category": "推荐",
+        "mode": "本地计算",
+        "input_text": "Contract HT-2026-001. Valid until 2026-12-31.",
+        "expected": "\"Contract HT-2026-001\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "84afcff01d3143648306fc7182b73fbc",
+            "name": "pdfToText-test.pdf",
+            "size": 1421
+          }
+        ]
+      },
+      "expected": "Contract HT-2026-001",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "SYNTHETIC TEST DOCUMENT\nContract HT-2026-001. Valid until 2026-12-31.",
+      "display": "SYNTHETIC TEST DOCUMENT\nContract HT-2026-001. Valid until 2026-12-31.",
+      "seconds": 0.08
+    },
+    {
+      "key": "workdays",
+      "label": "计算工作日天数",
+      "category": "project",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1870,
+      "field": "ai_workdays",
+      "config": {
+        "scene": "workdays",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_workdays_start",
+          "in_workdays_end"
+        ],
+        "options": [],
+        "inputBindings": {
+          "start": "in_workdays_start",
+          "end": "in_workdays_end"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "013 计算工作日天数",
+        "scene_key": "workdays",
+        "category": "项目管理",
+        "mode": "使用公式计算",
+        "input_text": "2026-10-12 / 2026-10-16",
+        "expected": "5",
+        "verdict": "通过",
+        "note": "根据开始和结束日期计算中国工作日天数（含首尾），考虑法定节假日与调休补班。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_workdays_start": "2026-10-12",
+        "in_workdays_end": "2026-10-16",
+        "ai_workdays": 5,
+        "actual": "5",
+        "generated_formula": 300
+      },
+      "expected": 5,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 5,
+      "display": "5",
+      "seconds": 0.09,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "projectProgress",
+      "label": "总结项目进度",
+      "category": "project",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1871,
+      "field": "ai_projectprogress",
+      "config": {
+        "scene": "projectProgress",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "014 总结项目进度",
+        "scene_key": "projectProgress",
+        "category": "项目管理",
+        "mode": "使用模型生成",
+        "input_text": "需求已确认，开发完成80%，接口联调延期",
+        "expected": "\"开发完成80%，当前风险为接口联调延期。\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "开发完成80%，当前风险为接口联调延期。",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：80%与接口联调延期均保留。",
+      "tokens": 432,
+      "billable": true,
+      "actual": "项目需求已确认且开发完成80%，主要风险是接口联调延期。",
+      "display": "项目需求已确认且开发完成80%，主要风险是接口联调延期。",
+      "seconds": 2.45,
+      "review": "80%与接口联调延期均保留。"
+    },
+    {
+      "key": "taskStatus",
+      "label": "判断任务状态",
+      "category": "project",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1872,
+      "field": "ai_taskstatus",
+      "config": {
+        "scene": "taskStatus",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_taskstatus_start",
+          "in_taskstatus_end",
+          "in_taskstatus_done"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "未开始",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "进行中",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "已完成",
+            "color": "blue"
+          },
+          {
+            "id": "opt_3",
+            "label": "已延期",
+            "color": "blue"
+          }
+        ],
+        "inputBindings": {
+          "start": "in_taskstatus_start",
+          "end": "in_taskstatus_end",
+          "done": "in_taskstatus_done"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "015 判断任务状态",
+        "scene_key": "taskStatus",
+        "category": "项目管理",
+        "mode": "使用公式计算",
+        "input_text": "2026-01-01 / 2026-01-10 / 2026-01-09",
+        "expected": "\"已完成\"",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，根据任务信息判断其当前状态。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_taskstatus_start": "2026-01-01",
+        "in_taskstatus_end": "2026-01-10",
+        "in_taskstatus_done": "2026-01-09",
+        "ai_taskstatus": "opt_2",
+        "actual": "已完成",
+        "generated_formula": 300
+      },
+      "expected": "已完成",
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": "opt_2",
+      "display": "已完成",
+      "seconds": 0.11,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "deadlineCountdown",
+      "label": "任务截止倒计时",
+      "category": "project",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1873,
+      "field": "ai_deadlinecountdown",
+      "config": {
+        "scene": "deadlineCountdown",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_deadlinecountdown_end"
+        ],
+        "options": [],
+        "inputBindings": {
+          "end": "in_deadlinecountdown_end"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "016 任务截止倒计时",
+        "scene_key": "deadlineCountdown",
+        "category": "项目管理",
+        "mode": "使用公式计算",
+        "input_text": "2026-10-27 / 2026-10-24",
+        "expected": "3",
+        "verdict": "通过",
+        "note": "计算距计划完成日期的自然日天数；日期为空、到期当天或已过期时返回空值。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_deadlinecountdown_end": "2026-10-27",
+        "ai_deadlinecountdown": "剩余 3 天",
+        "actual": "剩余 3 天",
+        "generated_formula": 300
+      },
+      "expected": 3,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 3,
+      "display": "3",
+      "seconds": 0.09,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "memberTaskCount",
+      "label": "计算成员任务数",
+      "category": "project",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1874,
+      "field": "ai_membertaskcount",
+      "config": {
+        "scene": "memberTaskCount",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_membertaskcount_group"
+        ],
+        "options": [],
+        "inputBindings": {
+          "group": "in_membertaskcount_group"
+        }
+      },
+      "input": {
+        "case_name": "017 计算成员任务数",
+        "scene_key": "memberTaskCount",
+        "category": "项目管理",
+        "mode": "本地计算",
+        "input_text": "张三 / 李四 / 张三",
+        "expected": "2",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "in_membertaskcount_group": "memberTaskCount-甲"
+      },
+      "expected": 2,
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": 2,
+      "display": "2",
+      "seconds": 0.09
+    },
+    {
+      "key": "memberWorkload",
+      "label": "汇总成员工作量",
+      "category": "project",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1876,
+      "field": "ai_memberworkload",
+      "config": {
+        "scene": "memberWorkload",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_memberworkload_group",
+          "in_memberworkload_value"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "饱和",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "适中",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "空闲",
+            "color": "blue"
+          }
+        ],
+        "inputBindings": {
+          "group": "in_memberworkload_group",
+          "value": "in_memberworkload_value"
+        }
+      },
+      "input": {
+        "case_name": "018 汇总成员工作量",
+        "scene_key": "memberWorkload",
+        "category": "项目管理",
+        "mode": "本地计算",
+        "input_text": "张三: 3；张三: 5",
+        "expected": "8",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "in_memberworkload_group": "memberWorkload-甲",
+        "in_memberworkload_value": 3
+      },
+      "expected": 8,
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": 8.0,
+      "display": "8",
+      "seconds": 0.11
+    },
+    {
+      "key": "riskLevel",
+      "label": "评估项目风险",
+      "category": "project",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1878,
+      "field": "ai_risklevel",
+      "config": {
+        "scene": "riskLevel",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "高风险",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "中风险",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "低风险",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "019 评估项目风险",
+        "scene_key": "riskLevel",
+        "category": "项目管理",
+        "mode": "使用模型生成",
+        "input_text": "交付前两天，核心功能尚未完成",
+        "expected": "\"高风险\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "高风险",
+      "status": "通过",
+      "note": "",
+      "tokens": 273,
+      "billable": true,
+      "actual": "opt_0",
+      "display": "高风险",
+      "seconds": 1.7
+    },
+    {
+      "key": "weeklyReport",
+      "label": "生成周报摘要",
+      "category": "project",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1879,
+      "field": "ai_weeklyreport",
+      "config": {
+        "scene": "weeklyReport",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "020 生成周报摘要",
+        "scene_key": "weeklyReport",
+        "category": "项目管理",
+        "mode": "使用模型生成",
+        "input_text": "完成需求评审；开发登录功能；下周联调",
+        "expected": "\"本周完成需求评审及登录开发，下周开展联调。\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "本周完成需求评审及登录开发，下周开展联调。",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：本周工作和下周计划区分正确。",
+      "tokens": 365,
+      "billable": true,
+      "actual": "本周完成需求评审并开发登录功能，计划下周进行联调。",
+      "display": "本周完成需求评审并开发登录功能，计划下周进行联调。",
+      "seconds": 1.75,
+      "review": "本周工作和下周计划区分正确。"
+    },
+    {
+      "key": "customerIntent",
+      "label": "判断客户意向",
+      "category": "customer",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1880,
+      "field": "ai_customerintent",
+      "config": {
+        "scene": "customerIntent",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "高意向",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "中意向",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "低意向",
+            "color": "blue"
+          },
+          {
+            "id": "opt_3",
+            "label": "无意向",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "021 判断客户意向",
+        "scene_key": "customerIntent",
+        "category": "客户管理",
+        "mode": "使用模型生成",
+        "input_text": "客户已确认预算，要求本周发送合同",
+        "expected": "\"高意向\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "高意向",
+      "status": "通过",
+      "note": "",
+      "tokens": 278,
+      "billable": true,
+      "actual": "opt_0",
+      "display": "高意向",
+      "seconds": 1.25
+    },
+    {
+      "key": "followSummary",
+      "label": "总结跟进记录",
+      "category": "customer",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1881,
+      "field": "ai_followsummary",
+      "config": {
+        "scene": "followSummary",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "022 总结跟进记录",
+        "scene_key": "followSummary",
+        "category": "客户管理",
+        "mode": "使用模型生成",
+        "input_text": "预算已确认，客户要求补充部署方案",
+        "expected": "\"预算已确认；下一步补充并发送部署方案。\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "预算已确认；下一步补充并发送部署方案。",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：保留已确认预算和补充部署方案的要求。",
+      "tokens": 408,
+      "billable": true,
+      "actual": "预算已确认，客户要求补充部署方案；下一步应尽快准备并提交针对性部署方案。",
+      "display": "预算已确认，客户要求补充部署方案；下一步应尽快准备并提交针对性部署方案。",
+      "seconds": 2.23,
+      "review": "保留已确认预算和补充部署方案的要求。"
+    },
+    {
+      "key": "customerProfile",
+      "label": "生成客户画像",
+      "category": "customer",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1882,
+      "field": "ai_customerprofile",
+      "config": {
+        "scene": "customerProfile",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "023 生成客户画像",
+        "scene_key": "customerProfile",
+        "category": "客户管理",
+        "mode": "使用模型生成",
+        "input_text": "零售企业，20家门店，需要统一库存",
+        "expected": "\"多门店零售客户，核心诉求是统一库存管理。\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "多门店零售客户，核心诉求是统一库存管理。",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：零售、20家门店、统一库存诉求均准确。",
+      "tokens": 315,
+      "billable": true,
+      "actual": "零售企业，拥有20家门店，核心需求为统一库存管理。",
+      "display": "零售企业，拥有20家门店，核心需求为统一库存管理。",
+      "seconds": 1.91,
+      "review": "零售、20家门店、统一库存诉求均准确。"
+    },
+    {
+      "key": "customerLevel",
+      "label": "客户分级",
+      "category": "customer",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1883,
+      "field": "ai_customerlevel",
+      "config": {
+        "scene": "customerLevel",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "A 类",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "B 类",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "C 类",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "024 客户分级",
+        "scene_key": "customerLevel",
+        "category": "客户管理",
+        "mode": "使用模型生成",
+        "input_text": "年采购100万；规则：超过80万为A类",
+        "expected": "\"A 类\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "A 类",
+      "status": "通过",
+      "note": "",
+      "tokens": 334,
+      "billable": true,
+      "actual": "opt_0",
+      "display": "A 类",
+      "seconds": 1.44
+    },
+    {
+      "key": "followReminder",
+      "label": "生成跟进话术",
+      "category": "customer",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1884,
+      "field": "ai_followreminder",
+      "config": {
+        "scene": "followReminder",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "025 生成跟进话术",
+        "scene_key": "followReminder",
+        "category": "客户管理",
+        "mode": "使用模型生成",
+        "input_text": "张先生，已沟通库存方案，希望安排演示",
+        "expected": "\"张先生您好，库存方案已准备好，方便约个时间为您演示吗？\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "张先生您好，库存方案已准备好，方便约个时间为您演示吗？",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：询问演示时间，没有承诺额外优惠。",
+      "tokens": 341,
+      "billable": true,
+      "actual": "张先生您好，感谢您此前沟通库存方案。您提到希望安排演示，我这边可以协助安排，请问您方便的时间？",
+      "display": "张先生您好，感谢您此前沟通库存方案。您提到希望安排演示，我这边可以协助安排，请问您方便的时间？",
+      "seconds": 2.12,
+      "review": "询问演示时间，没有承诺额外优惠。"
+    },
+    {
+      "key": "churnRisk",
+      "label": "判断流失风险",
+      "category": "customer",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1885,
+      "field": "ai_churnrisk",
+      "config": {
+        "scene": "churnRisk",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "高",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "中",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "低",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "026 判断流失风险",
+        "scene_key": "churnRisk",
+        "category": "客户管理",
+        "mode": "使用模型生成",
+        "input_text": "客户已明确表示终止续约",
+        "expected": "\"高\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "高",
+      "status": "通过",
+      "note": "",
+      "tokens": 260,
+      "billable": true,
+      "actual": "opt_0",
+      "display": "高",
+      "seconds": 1.64
+    },
+    {
+      "key": "exCity",
+      "label": "提取城市",
+      "category": "extract",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1886,
+      "field": "ai_excity",
+      "config": {
+        "scene": "exCity",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "027 提取城市",
+        "scene_key": "exCity",
+        "category": "信息提取",
+        "mode": "使用模型生成",
+        "input_text": "广东省广州市海珠区新港中路",
+        "expected": "\"广州市\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "广州市",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：准确提取广州市。",
+      "tokens": 221,
+      "billable": true,
+      "actual": "广州市",
+      "display": "广州市",
+      "seconds": 1.47,
+      "review": "准确提取广州市。"
+    },
+    {
+      "key": "exEmail",
+      "label": "提取邮箱",
+      "category": "extract",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1887,
+      "field": "ai_exemail",
+      "config": {
+        "scene": "exEmail",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "028 提取邮箱",
+        "scene_key": "exEmail",
+        "category": "信息提取",
+        "mode": "本地计算",
+        "input_text": "联系：sales@example.com",
+        "expected": "\"sales@example.com\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "sales@example.com",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "sales@example.com",
+      "display": "sales@example.com",
+      "seconds": 0.06
+    },
+    {
+      "key": "exLink",
+      "label": "提取链接",
+      "category": "extract",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1888,
+      "field": "ai_exlink",
+      "config": {
+        "scene": "exLink",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "029 提取链接",
+        "scene_key": "exLink",
+        "category": "信息提取",
+        "mode": "本地计算",
+        "input_text": "访问 https://example.com",
+        "expected": "\"https://example.com\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "https://example.com",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "https://example.com",
+      "display": "https://example.com",
+      "seconds": 0.08
+    },
+    {
+      "key": "exImageText",
+      "label": "提取图片中的文字",
+      "category": "extract",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1889,
+      "field": "ai_eximagetext",
+      "config": {
+        "scene": "exImageText",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "030 提取图片中的文字",
+        "scene_key": "exImageText",
+        "category": "信息提取",
+        "mode": "使用模型生成",
+        "input_text": "会议通知截图：周五14:00会议室A",
+        "expected": "\"周五14:00会议室A\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "532ae9e19f284978afc92ddadc347ad2",
+            "name": "exImageText-test.png",
+            "size": 18551
+          }
+        ]
+      },
+      "expected": "周五14:00会议室A",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：图中标题及周五14:00会议室A均识别正确。",
+      "tokens": 579,
+      "billable": true,
+      "actual": "合成测试样例（非真实证件）\n会议通知截图：周五14:00会议室A",
+      "display": "合成测试样例（非真实证件）\n会议通知截图：周五14:00会议室A",
+      "seconds": 1.47,
+      "review": "图中标题及周五14:00会议室A均识别正确。"
+    },
+    {
+      "key": "exJson",
+      "label": "提取 JSON 中的值",
+      "category": "extract",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1890,
+      "field": "ai_exjson",
+      "config": {
+        "scene": "exJson",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "031 提取 JSON 中的值",
+        "scene_key": "exJson",
+        "category": "信息提取",
+        "mode": "本地计算",
+        "input_text": "{\"user\":{\"name\":\"张三\"}}",
+        "expected": "\"user.name: 张三\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "user.name: 张三",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "user.name: 张三",
+      "display": "user.name: 张三",
+      "seconds": 0.06
+    },
+    {
+      "key": "exAddress",
+      "label": "提取地址",
+      "category": "extract",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1891,
+      "field": "ai_exaddress",
+      "config": {
+        "scene": "exAddress",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "032 提取地址",
+        "scene_key": "exAddress",
+        "category": "信息提取",
+        "mode": "使用模型生成",
+        "input_text": "张三，13800000001，北京市海淀区中关村大街1号",
+        "expected": "\"北京市海淀区中关村大街1号\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "北京市海淀区中关村大街1号",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：地址完整且排除了姓名与电话。",
+      "tokens": 250,
+      "billable": true,
+      "actual": "北京市海淀区中关村大街1号",
+      "display": "北京市海淀区中关村大街1号",
+      "seconds": 1.44,
+      "review": "地址完整且排除了姓名与电话。"
+    },
+    {
+      "key": "exAmount",
+      "label": "提取金额",
+      "category": "extract",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1892,
+      "field": "ai_examount",
+      "config": {
+        "scene": "exAmount",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "033 提取金额",
+        "scene_key": "exAmount",
+        "category": "信息提取",
+        "mode": "使用模型生成",
+        "input_text": "实付款 ¥2,999.90",
+        "expected": "2999.9",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": 2999.9,
+      "status": "通过",
+      "note": "",
+      "tokens": 256,
+      "billable": true,
+      "actual": 2999.9,
+      "display": "2999.9",
+      "seconds": 1.16
+    },
+    {
+      "key": "exFirstNumber",
+      "label": "提取首个数字",
+      "category": "extract",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1893,
+      "field": "ai_exfirstnumber",
+      "config": {
+        "scene": "exFirstNumber",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "034 提取首个数字",
+        "scene_key": "exFirstNumber",
+        "category": "信息提取",
+        "mode": "本地计算",
+        "input_text": "计划 10 天完成",
+        "expected": "10",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": 10,
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": 10.0,
+      "display": "10",
+      "seconds": 0.06
+    },
+    {
+      "key": "exName",
+      "label": "提取姓名",
+      "category": "extract",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1894,
+      "field": "ai_exname",
+      "config": {
+        "scene": "exName",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "035 提取姓名",
+        "scene_key": "exName",
+        "category": "信息提取",
+        "mode": "使用模型生成",
+        "input_text": "联系人：张三，电话13800000001",
+        "expected": "\"张三\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "张三",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：正确提取张三。",
+      "tokens": 237,
+      "billable": true,
+      "actual": "张三",
+      "display": "张三",
+      "seconds": 1.7,
+      "review": "正确提取张三。"
+    },
+    {
+      "key": "exDate",
+      "label": "提取日期",
+      "category": "extract",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1895,
+      "field": "ai_exdate",
+      "config": {
+        "scene": "exDate",
+        "outputType": "date",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "036 提取日期",
+        "scene_key": "exDate",
+        "category": "信息提取",
+        "mode": "本地计算",
+        "input_text": "项目于2026年3月20日启动",
+        "expected": "\"2026-03-20\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "2026-03-20",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "2026-03-20",
+      "display": "2026-03-20",
+      "seconds": 0.06
+    },
+    {
+      "key": "cardRecognize",
+      "label": "名片识别",
+      "category": "extract",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1896,
+      "field": "ai_cardrecognize",
+      "config": {
+        "scene": "cardRecognize",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "037 名片识别",
+        "scene_key": "cardRecognize",
+        "category": "信息提取",
+        "mode": "使用模型生成",
+        "input_text": "张三 / 示例公司 / 销售经理 / 13800000001",
+        "expected": "\"姓名：张三；公司：示例公司；职位：销售经理；电话：13800000001\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "aa9f937c962a4c9890a16b7a24a62e28",
+            "name": "cardRecognize-test.png",
+            "size": 18843
+          }
+        ]
+      },
+      "expected": "姓名：张三；公司：示例公司；职位：销售经理；电话：13800000001",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：姓名、公司、职位、电话正确，缺失邮箱保持空。",
+      "tokens": 687,
+      "billable": true,
+      "actual": "姓名：张三\n公司：示例公司\n职位：销售经理\n电话：13800000001\n邮箱：",
+      "display": "姓名：张三\n公司：示例公司\n职位：销售经理\n电话：13800000001\n邮箱：",
+      "seconds": 1.77,
+      "review": "姓名、公司、职位、电话正确，缺失邮箱保持空。"
+    },
+    {
+      "key": "addressParse",
+      "label": "地址拆分",
+      "category": "extract",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1897,
+      "field": "ai_addressparse",
+      "config": {
+        "scene": "addressParse",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "038 地址拆分",
+        "scene_key": "addressParse",
+        "category": "信息提取",
+        "mode": "使用模型生成",
+        "input_text": "广东省广州市海珠区新港中路1号",
+        "expected": "\"广东省 / 广州市 / 海珠区 / 新港中路1号\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "广东省 / 广州市 / 海珠区 / 新港中路1号",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：省、市、区与街道四段正确。",
+      "tokens": 356,
+      "billable": true,
+      "actual": "广东省/广州市/海珠区/新港中路1号",
+      "display": "广东省/广州市/海珠区/新港中路1号",
+      "seconds": 1.91,
+      "review": "省、市、区与街道四段正确。"
+    },
+    {
+      "key": "contactExtract",
+      "label": "提取联系方式",
+      "category": "extract",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1898,
+      "field": "ai_contactextract",
+      "config": {
+        "scene": "contactExtract",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "039 提取联系方式",
+        "scene_key": "contactExtract",
+        "category": "信息提取",
+        "mode": "使用模型生成",
+        "input_text": "13800000001；a@example.com",
+        "expected": "\"13800000001, a@example.com\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "13800000001, a@example.com",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：手机号与邮箱完整，无多余联系人。",
+      "tokens": 298,
+      "billable": true,
+      "actual": "13800000001,a@example.com",
+      "display": "13800000001,a@example.com",
+      "seconds": 1.75,
+      "review": "手机号与邮箱完整，无多余联系人。"
+    },
+    {
+      "key": "cvHoliday",
+      "label": "判断是否节假日",
+      "category": "convert",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1899,
+      "field": "ai_cvholiday",
+      "config": {
+        "scene": "cvHoliday",
+        "outputType": "checkbox",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "040 判断是否节假日",
+        "scene_key": "cvHoliday",
+        "category": "数据转换",
+        "mode": "本地计算",
+        "input_text": "2026-01-01",
+        "expected": "true",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": true,
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": true,
+      "display": "是",
+      "seconds": 0.06
+    },
+    {
+      "key": "cvMonthEnd",
+      "label": "判断是否月末",
+      "category": "convert",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1900,
+      "field": "ai_cvmonthend",
+      "config": {
+        "scene": "cvMonthEnd",
+        "outputType": "checkbox",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_cvmonthend_date"
+        ],
+        "options": [],
+        "inputBindings": {
+          "date": "in_cvmonthend_date"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "041 判断是否月末",
+        "scene_key": "cvMonthEnd",
+        "category": "数据转换",
+        "mode": "使用公式计算",
+        "input_text": "2024-02-29",
+        "expected": "true",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，判断日期是否为当月最后一天。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "ai_cvmonthend": true,
+        "actual": "是",
+        "generated_formula": 300,
+        "in_cvmonthend_date": "2024-02-29"
+      },
+      "expected": true,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": true,
+      "display": "是",
+      "seconds": 0.06,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "cvRandom",
+      "label": "生成随机数(1-100)",
+      "category": "convert",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1901,
+      "field": "ai_cvrandom",
+      "config": {
+        "scene": "cvRandom",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [],
+        "options": [],
+        "inputBindings": {},
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "042 生成随机数(1-100)",
+        "scene_key": "cvRandom",
+        "category": "数据转换",
+        "mode": "使用公式计算",
+        "input_text": "无需输入",
+        "expected": "42",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，为每行生成一个 1 到 100 之间的随机整数。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "ai_cvrandom": 25,
+        "actual": "25",
+        "generated_formula": 300
+      },
+      "expected": 42,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 4,
+      "display": "4",
+      "seconds": 0.05,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "cvMileKm",
+      "label": "英里转换公里",
+      "category": "convert",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1902,
+      "field": "ai_cvmilekm",
+      "config": {
+        "scene": "cvMileKm",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_cvmilekm_value"
+        ],
+        "options": [],
+        "inputBindings": {
+          "value": "in_cvmilekm_value"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "043 英里转换公里",
+        "scene_key": "cvMileKm",
+        "category": "数据转换",
+        "mode": "使用公式计算",
+        "input_text": "10",
+        "expected": "16.09",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，把英里数换算为公里（1 英里 = 1.609344 公里），保留两位小数。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "ai_cvmilekm": 16.09,
+        "actual": "16.09",
+        "generated_formula": 300,
+        "in_cvmilekm_value": 10
+      },
+      "expected": 16.09,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 16.09,
+      "display": "16.09",
+      "seconds": 0.06,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "cvRmbUpper",
+      "label": "转人民币大写金额",
+      "category": "convert",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1903,
+      "field": "ai_cvrmbupper",
+      "config": {
+        "scene": "cvRmbUpper",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "044 转人民币大写金额",
+        "scene_key": "cvRmbUpper",
+        "category": "数据转换",
+        "mode": "本地计算",
+        "input_text": "1234.56",
+        "expected": "\"壹仟贰佰叁拾肆元伍角陆分\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "壹仟贰佰叁拾肆元伍角陆分",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "壹仟贰佰叁拾肆元伍角陆分",
+      "display": "壹仟贰佰叁拾肆元伍角陆分",
+      "seconds": 0.08
+    },
+    {
+      "key": "cvBmi",
+      "label": "计算 BMI",
+      "category": "convert",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1904,
+      "field": "ai_cvbmi",
+      "config": {
+        "scene": "cvBmi",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_cvbmi_height",
+          "in_cvbmi_weight"
+        ],
+        "options": [],
+        "inputBindings": {
+          "height": "in_cvbmi_height",
+          "weight": "in_cvbmi_weight"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "045 计算 BMI",
+        "scene_key": "cvBmi",
+        "category": "数据转换",
+        "mode": "使用公式计算",
+        "input_text": "175 cm / 70 kg",
+        "expected": "22.9",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，根据身高与体重计算 BMI（体重kg / 身高m²），保留一位小数。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_cvbmi_height": 175,
+        "in_cvbmi_weight": 70,
+        "ai_cvbmi": 22.9,
+        "actual": "22.9",
+        "generated_formula": 300
+      },
+      "expected": 22.9,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 22.9,
+      "display": "22.9",
+      "seconds": 0.08,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "cvBmr",
+      "label": "计算基础代谢率",
+      "category": "convert",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1905,
+      "field": "ai_cvbmr",
+      "config": {
+        "scene": "cvBmr",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_cvbmr_height",
+          "in_cvbmr_weight",
+          "in_cvbmr_age",
+          "in_cvbmr_gender"
+        ],
+        "options": [],
+        "inputBindings": {
+          "height": "in_cvbmr_height",
+          "weight": "in_cvbmr_weight",
+          "age": "in_cvbmr_age",
+          "gender": "in_cvbmr_gender"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "046 计算基础代谢率",
+        "scene_key": "cvBmr",
+        "category": "数据转换",
+        "mode": "使用公式计算",
+        "input_text": "175 / 70 / 30 / 男",
+        "expected": "1649",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，根据性别、年龄、身高、体重按 Mifflin-St Jeor 公式计算基础代谢率（千卡）。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_cvbmr_height": 175,
+        "in_cvbmr_weight": 70,
+        "in_cvbmr_age": 30,
+        "in_cvbmr_gender": "男",
+        "ai_cvbmr": 1649,
+        "actual": "1649",
+        "generated_formula": 300
+      },
+      "expected": 1649,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 1649,
+      "display": "1649",
+      "seconds": 0.09,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "cvUuid",
+      "label": "生成随机 UUID",
+      "category": "convert",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1906,
+      "field": "ai_cvuuid",
+      "config": {
+        "scene": "cvUuid",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [],
+        "options": []
+      },
+      "input": {
+        "case_name": "047 生成随机 UUID",
+        "scene_key": "cvUuid",
+        "category": "数据转换",
+        "mode": "本地计算",
+        "input_text": "无需输入",
+        "expected": "\"2c20dbce-7730-43c5-92d9-ef936e04f38b\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "2c20dbce-7730-43c5-92d9-ef936e04f38b",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "d5d79bb5-fc99-4e21-b651-55f21c5cea2f",
+      "display": "d5d79bb5-fc99-4e21-b651-55f21c5cea2f",
+      "seconds": 0.08
+    },
+    {
+      "key": "cvPassword",
+      "label": "生成高强度密码",
+      "category": "convert",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1907,
+      "field": "ai_cvpassword",
+      "config": {
+        "scene": "cvPassword",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [],
+        "options": []
+      },
+      "input": {
+        "case_name": "048 生成高强度密码",
+        "scene_key": "cvPassword",
+        "category": "数据转换",
+        "mode": "本地计算",
+        "input_text": "无需输入（每次重新生成）",
+        "expected": "\"aB7!cD8@eF9#gH2$\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "aB7!cD8@eF9#gH2$",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "cml_!3P0_WksmGYY",
+      "display": "cml_!3P0_WksmGYY",
+      "seconds": 0.08
+    },
+    {
+      "key": "cvHexRgb",
+      "label": "HEX 颜色转 RGB",
+      "category": "convert",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1908,
+      "field": "ai_cvhexrgb",
+      "config": {
+        "scene": "cvHexRgb",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "049 HEX 颜色转 RGB",
+        "scene_key": "cvHexRgb",
+        "category": "数据转换",
+        "mode": "本地计算",
+        "input_text": "#FF5733",
+        "expected": "\"rgb(255, 87, 51)\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "rgb(255, 87, 51)",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "rgb(255, 87, 51)",
+      "display": "rgb(255, 87, 51)",
+      "seconds": 0.06
+    },
+    {
+      "key": "cvMonthDays",
+      "label": "计算当月天数",
+      "category": "convert",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1909,
+      "field": "ai_cvmonthdays",
+      "config": {
+        "scene": "cvMonthDays",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_cvmonthdays_date"
+        ],
+        "options": [],
+        "inputBindings": {
+          "date": "in_cvmonthdays_date"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "050 计算当月天数",
+        "scene_key": "cvMonthDays",
+        "category": "数据转换",
+        "mode": "使用公式计算",
+        "input_text": "2024-02-10",
+        "expected": "29",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，计算日期所在月份的天数。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "ai_cvmonthdays": 29,
+        "actual": "29",
+        "generated_formula": 300,
+        "in_cvmonthdays_date": "2024-02-10"
+      },
+      "expected": 29,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 29,
+      "display": "29",
+      "seconds": 0.08,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "cvWordCount",
+      "label": "计算文本字数",
+      "category": "convert",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1910,
+      "field": "ai_cvwordcount",
+      "config": {
+        "scene": "cvWordCount",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_cvwordcount_text"
+        ],
+        "options": [],
+        "inputBindings": {
+          "text": "in_cvwordcount_text"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "051 计算文本字数",
+        "scene_key": "cvWordCount",
+        "category": "数据转换",
+        "mode": "使用公式计算",
+        "input_text": "Hello 世界",
+        "expected": "7",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，统计文本的字符数（不含空白）。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "ai_cvwordcount": 7,
+        "actual": "7",
+        "generated_formula": 300,
+        "in_cvwordcount_text": "Hello 世界"
+      },
+      "expected": 7,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 7,
+      "display": "7",
+      "seconds": 0.08,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "cvB64Enc",
+      "label": "Base64 编码",
+      "category": "convert",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1911,
+      "field": "ai_cvb64enc",
+      "config": {
+        "scene": "cvB64Enc",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "052 Base64 编码",
+        "scene_key": "cvB64Enc",
+        "category": "数据转换",
+        "mode": "本地计算",
+        "input_text": "你好",
+        "expected": "\"5L2g5aW9\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "5L2g5aW9",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "5L2g5aW9",
+      "display": "5L2g5aW9",
+      "seconds": 0.06
+    },
+    {
+      "key": "cvB64Dec",
+      "label": "Base64 解码",
+      "category": "convert",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1912,
+      "field": "ai_cvb64dec",
+      "config": {
+        "scene": "cvB64Dec",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "053 Base64 解码",
+        "scene_key": "cvB64Dec",
+        "category": "数据转换",
+        "mode": "本地计算",
+        "input_text": "5L2g5aW9",
+        "expected": "\"你好\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "你好",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "你好",
+      "display": "你好",
+      "seconds": 0.06
+    },
+    {
+      "key": "cvDateUnix",
+      "label": "日期转UNIX时间戳",
+      "category": "convert",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1913,
+      "field": "ai_cvdateunix",
+      "config": {
+        "scene": "cvDateUnix",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "054 日期转UNIX时间戳",
+        "scene_key": "cvDateUnix",
+        "category": "数据转换",
+        "mode": "本地计算",
+        "input_text": "1970-01-01 08:00:00",
+        "expected": "0",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": 0,
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": 0,
+      "display": "0",
+      "seconds": 0.06
+    },
+    {
+      "key": "cvUnixDate",
+      "label": "UNIX时间戳转日期",
+      "category": "convert",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1914,
+      "field": "ai_cvunixdate",
+      "config": {
+        "scene": "cvUnixDate",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "055 UNIX时间戳转日期",
+        "scene_key": "cvUnixDate",
+        "category": "数据转换",
+        "mode": "本地计算",
+        "input_text": "0",
+        "expected": "\"1970-01-01 08:00:00\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "1970-01-01 08:00:00",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "1970-01-01 08:00:00",
+      "display": "1970-01-01 08:00:00",
+      "seconds": 0.06
+    },
+    {
+      "key": "cvLunar",
+      "label": "公历转农历",
+      "category": "convert",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1915,
+      "field": "ai_cvlunar",
+      "config": {
+        "scene": "cvLunar",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "056 公历转农历",
+        "scene_key": "cvLunar",
+        "category": "数据转换",
+        "mode": "本地计算",
+        "input_text": "2024-02-10",
+        "expected": "\"2024-01-01\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "2024-01-01",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "2024-01-01",
+      "display": "2024-01-01",
+      "seconds": 0.08
+    },
+    {
+      "key": "cvPinyin",
+      "label": "汉字转拼音",
+      "category": "convert",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1916,
+      "field": "ai_cvpinyin",
+      "config": {
+        "scene": "cvPinyin",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "057 汉字转拼音",
+        "scene_key": "cvPinyin",
+        "category": "数据转换",
+        "mode": "本地计算",
+        "input_text": "张三",
+        "expected": "\"zhangsan\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "zhangsan",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "zhangsan",
+      "display": "zhangsan",
+      "seconds": 0.06
+    },
+    {
+      "key": "fiInvoice",
+      "label": "识别发票信息",
+      "category": "file",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1917,
+      "field": "ai_fiinvoice",
+      "config": {
+        "scene": "fiInvoice",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "058 识别发票信息",
+        "scene_key": "fiInvoice",
+        "category": "文件解析",
+        "mode": "使用模型生成",
+        "input_text": "号码123456；日期2026-10-01；价税合计1130元",
+        "expected": "\"发票号码：123456；开票日期：2026-10-01；价税合计：1130元\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "5c8aff3d4175495391b71aa7f382e34f",
+            "name": "fiInvoice-test.txt",
+            "size": 53
+          }
+        ]
+      },
+      "expected": "发票号码：123456；开票日期：2026-10-01；价税合计：1130元",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：号码、日期、合计金额正确，缺失购买方和销售方保持空。",
+      "tokens": 330,
+      "billable": true,
+      "actual": "发票号码：123456；开票日期：2026-10-01；购买方：；销售方：；价税合计：1130元",
+      "display": "发票号码：123456；开票日期：2026-10-01；购买方：；销售方：；价税合计：1130元",
+      "seconds": 1.8,
+      "review": "号码、日期、合计金额正确，缺失购买方和销售方保持空。"
+    },
+    {
+      "key": "fiContractDue",
+      "label": "提取合同到期时间",
+      "category": "file",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1918,
+      "field": "ai_ficontractdue",
+      "config": {
+        "scene": "fiContractDue",
+        "outputType": "date",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "059 提取合同到期时间",
+        "scene_key": "fiContractDue",
+        "category": "文件解析",
+        "mode": "使用模型生成",
+        "input_text": "合同有效期至2026年12月31日",
+        "expected": "\"2026-12-31\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "31e89c61dbd248a18285e33281130863",
+            "name": "fiContractDue-test.txt",
+            "size": 35
+          }
+        ]
+      },
+      "expected": "2026-12-31",
+      "status": "通过",
+      "note": "",
+      "tokens": 224,
+      "billable": true,
+      "actual": "2026-12-31",
+      "display": "2026-12-31",
+      "seconds": 1.52
+    },
+    {
+      "key": "fiResume",
+      "label": "生成简历摘要",
+      "category": "file",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1919,
+      "field": "ai_firesume",
+      "config": {
+        "scene": "fiResume",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "060 生成简历摘要",
+        "scene_key": "fiResume",
+        "category": "文件解析",
+        "mode": "使用模型生成",
+        "input_text": "张三，5年Java开发经验，负责支付系统",
+        "expected": "\"张三，5年Java开发经验，具备支付系统开发经历。\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "ddee4119b13d4f959360caf5ae193308",
+            "name": "fiResume-test.txt",
+            "size": 50
+          }
+        ]
+      },
+      "expected": "张三，5年Java开发经验，具备支付系统开发经历。",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：保留5年Java及支付系统经验，无新增履历。",
+      "tokens": 281,
+      "billable": true,
+      "actual": "张三具有5年Java开发经验，曾负责支付系统开发工作。",
+      "display": "张三具有5年Java开发经验，曾负责支付系统开发工作。",
+      "seconds": 1.73,
+      "review": "保留5年Java及支付系统经验，无新增履历。"
+    },
+    {
+      "key": "fiEducation",
+      "label": "提取最高学历",
+      "category": "file",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1920,
+      "field": "ai_fieducation",
+      "config": {
+        "scene": "fiEducation",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "博士",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "硕士",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "本科",
+            "color": "blue"
+          },
+          {
+            "id": "opt_3",
+            "label": "大专",
+            "color": "blue"
+          },
+          {
+            "id": "opt_4",
+            "label": "其他",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "061 提取最高学历",
+        "scene_key": "fiEducation",
+        "category": "文件解析",
+        "mode": "使用模型生成",
+        "input_text": "2018—2022 本科；2022—2025 硕士",
+        "expected": "\"硕士\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "8bfed5c3ca6048e0b0eb57ecfa34f30c",
+            "name": "fiEducation-test.txt",
+            "size": 39
+          }
+        ]
+      },
+      "expected": "硕士",
+      "status": "通过",
+      "note": "",
+      "tokens": 262,
+      "billable": true,
+      "actual": "opt_1",
+      "display": "硕士",
+      "seconds": 1.53
+    },
+    {
+      "key": "fiPdfImage",
+      "label": "PDF 转图片",
+      "category": "file",
+      "execution": "asset",
+      "disabled": false,
+      "record_id": 1921,
+      "field": "ai_fipdfimage",
+      "config": {
+        "scene": "fiPdfImage",
+        "outputType": "file",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "062 PDF 转图片",
+        "scene_key": "fiPdfImage",
+        "category": "文件解析",
+        "mode": "文件处理",
+        "input_text": "两页合同.pdf",
+        "expected": "\"第1页.png、第2页.png\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "0f5cd9d6aa284fb3a826b0bdd45b4784",
+            "name": "fiPdfImage-test.pdf",
+            "size": 1421
+          }
+        ]
+      },
+      "expected": "第1页.png、第2页.png",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": [
+        {
+          "id": "bae8db44f384490b91d83b1058f666cc",
+          "name": "fiPdfImage-test.pdf-第1页.png",
+          "size": 14952
+        }
+      ],
+      "display": "fiPdfImage-test.pdf-第1页.png",
+      "seconds": 0.11
+    },
+    {
+      "key": "fiPdfWatermark",
+      "label": "PDF 加水印",
+      "category": "file",
+      "execution": "asset",
+      "disabled": false,
+      "record_id": 1922,
+      "field": "ai_fipdfwatermark",
+      "config": {
+        "scene": "fiPdfWatermark",
+        "outputType": "file",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "063 PDF 加水印",
+        "scene_key": "fiPdfWatermark",
+        "category": "文件解析",
+        "mode": "文件处理",
+        "input_text": "合同.pdf / 仅供内部使用",
+        "expected": "\"水印-合同.pdf\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "4b23f7f293104834ba60dc4001679604",
+            "name": "fiPdfWatermark-test.pdf",
+            "size": 1421
+          }
+        ]
+      },
+      "expected": "水印-合同.pdf",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": [
+        {
+          "id": "ee1c1b38a0454605a58451f968828a08",
+          "name": "水印-fiPdfWatermark-test.pdf",
+          "size": 2416
+        }
+      ],
+      "display": "水印-fiPdfWatermark-test.pdf",
+      "seconds": 0.12
+    },
+    {
+      "key": "fiImagePdf",
+      "label": "图片转 PDF",
+      "category": "file",
+      "execution": "asset",
+      "disabled": false,
+      "record_id": 1923,
+      "field": "ai_fiimagepdf",
+      "config": {
+        "scene": "fiImagePdf",
+        "outputType": "file",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "064 图片转 PDF",
+        "scene_key": "fiImagePdf",
+        "category": "文件解析",
+        "mode": "文件处理",
+        "input_text": "图片1.png、图片2.png",
+        "expected": "\"图片合并.pdf（两页）\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "f8480ccbf8d341ebac9593b4a76f0d43",
+            "name": "fiImagePdf-test.png",
+            "size": 13894
+          }
+        ]
+      },
+      "expected": "图片合并.pdf（两页）",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": [
+        {
+          "id": "990a593039824d47963e4c4d8cb7ef8b",
+          "name": "图片合并.pdf",
+          "size": 25166
+        }
+      ],
+      "display": "图片合并.pdf",
+      "seconds": 0.11
+    },
+    {
+      "key": "fiDocxImage",
+      "label": "DOCX 转图片",
+      "category": "file",
+      "execution": "model",
+      "disabled": true,
+      "record_id": 1924,
+      "field": null,
+      "config": {
+        "scene": "fiDocxImage",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "065 DOCX 转图片",
+        "scene_key": "fiDocxImage",
+        "category": "文件解析",
+        "mode": "使用模型生成",
+        "input_text": "DOCX 转图片：合成验证数据",
+        "expected": "依据输入核对结果，不要求逐字一致",
+        "verdict": "未接入",
+        "note": "需要部署文档排版渲染服务；当前支持 DOCX 文本解析。",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "5c208012f3b84d788bd1541d6b70ae1c",
+            "name": "DOCX渲染验证.docx",
+            "size": 1113
+          }
+        ]
+      },
+      "expected": null,
+      "status": "未接入",
+      "note": "需要部署文档排版渲染服务；当前支持 DOCX 文本解析。"
+    },
+    {
+      "key": "imWatermarkDel",
+      "label": "去除图片水印",
+      "category": "image",
+      "execution": "model",
+      "disabled": true,
+      "record_id": 1925,
+      "field": null,
+      "config": {
+        "scene": "imWatermarkDel",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "066 去除图片水印",
+        "scene_key": "imWatermarkDel",
+        "category": "图像处理",
+        "mode": "使用模型生成",
+        "input_text": "去除图片水印：合成验证数据",
+        "expected": "依据输入核对结果，不要求逐字一致",
+        "verdict": "未接入",
+        "note": "需要接入图像编辑或抠图服务，当前没有可执行的服务配置。",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "3e8b526b356b4479a96067e6a1f6a18b",
+            "name": "imWatermarkDel-test.png",
+            "size": 19221
+          }
+        ]
+      },
+      "expected": null,
+      "status": "未接入",
+      "note": "需要接入图像编辑或抠图服务，当前没有可执行的服务配置。"
+    },
+    {
+      "key": "imWatermarkAdd",
+      "label": "添加图片水印",
+      "category": "image",
+      "execution": "asset",
+      "disabled": false,
+      "record_id": 1926,
+      "field": "ai_imwatermarkadd",
+      "config": {
+        "scene": "imWatermarkAdd",
+        "outputType": "file",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "067 添加图片水印",
+        "scene_key": "imWatermarkAdd",
+        "category": "图像处理",
+        "mode": "文件处理",
+        "input_text": "产品.png / 示例品牌",
+        "expected": "\"处理-产品.png（带文字水印）\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "7ea6f6b8400945f0ab3472010d89d3f5",
+            "name": "imWatermarkAdd-test.png",
+            "size": 14920
+          }
+        ]
+      },
+      "expected": "处理-产品.png（带文字水印）",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": [
+        {
+          "id": "32f5b15d170c4cf6a4fee5106bfb39ca",
+          "name": "处理-imWatermarkAdd-test.png",
+          "size": 20457
+        }
+      ],
+      "display": "处理-imWatermarkAdd-test.png",
+      "seconds": 0.23
+    },
+    {
+      "key": "imSolidBg",
+      "label": "替换为纯色背景",
+      "category": "image",
+      "execution": "model",
+      "disabled": true,
+      "record_id": 1927,
+      "field": null,
+      "config": {
+        "scene": "imSolidBg",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "068 替换为纯色背景",
+        "scene_key": "imSolidBg",
+        "category": "图像处理",
+        "mode": "使用模型生成",
+        "input_text": "替换为纯色背景：合成验证数据",
+        "expected": "依据输入核对结果，不要求逐字一致",
+        "verdict": "未接入",
+        "note": "需要接入图像编辑或抠图服务，当前没有可执行的服务配置。",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "23a2a989857e4072b0172521ef904a62",
+            "name": "imSolidBg-test.png",
+            "size": 20046
+          }
+        ]
+      },
+      "expected": null,
+      "status": "未接入",
+      "note": "需要接入图像编辑或抠图服务，当前没有可执行的服务配置。"
+    },
+    {
+      "key": "imRemoveBg",
+      "label": "移除图片背景",
+      "category": "image",
+      "execution": "model",
+      "disabled": true,
+      "record_id": 1928,
+      "field": null,
+      "config": {
+        "scene": "imRemoveBg",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "069 移除图片背景",
+        "scene_key": "imRemoveBg",
+        "category": "图像处理",
+        "mode": "使用模型生成",
+        "input_text": "移除图片背景：合成验证数据",
+        "expected": "依据输入核对结果，不要求逐字一致",
+        "verdict": "未接入",
+        "note": "需要接入图像编辑或抠图服务，当前没有可执行的服务配置。",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "0bc30704d63d4c0b84af2ca96386a9a3",
+            "name": "imRemoveBg-test.png",
+            "size": 19715
+          }
+        ]
+      },
+      "expected": null,
+      "status": "未接入",
+      "note": "需要接入图像编辑或抠图服务，当前没有可执行的服务配置。"
+    },
+    {
+      "key": "imSharpen",
+      "label": "提升清晰度",
+      "category": "image",
+      "execution": "asset",
+      "disabled": false,
+      "record_id": 1929,
+      "field": "ai_imsharpen",
+      "config": {
+        "scene": "imSharpen",
+        "outputType": "file",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "070 提升清晰度",
+        "scene_key": "imSharpen",
+        "category": "图像处理",
+        "mode": "文件处理",
+        "input_text": "产品照片.png",
+        "expected": "\"处理-产品照片.png（边缘增强）\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "decadc08e7894191a0b534576405504b",
+            "name": "imSharpen-test.png",
+            "size": 13675
+          }
+        ]
+      },
+      "expected": "处理-产品照片.png（边缘增强）",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": [
+        {
+          "id": "962fb9d2853247e1a61ef2bc5902e514",
+          "name": "处理-imSharpen-test.png",
+          "size": 12011
+        }
+      ],
+      "display": "处理-imSharpen-test.png",
+      "seconds": 0.08
+    },
+    {
+      "key": "imIdPhoto",
+      "label": "生成白底证件照",
+      "category": "image",
+      "execution": "model",
+      "disabled": true,
+      "record_id": 1930,
+      "field": null,
+      "config": {
+        "scene": "imIdPhoto",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "071 生成白底证件照",
+        "scene_key": "imIdPhoto",
+        "category": "图像处理",
+        "mode": "使用模型生成",
+        "input_text": "生成白底证件照：合成验证数据",
+        "expected": "依据输入核对结果，不要求逐字一致",
+        "verdict": "未接入",
+        "note": "需要接入图像编辑或抠图服务，当前没有可执行的服务配置。",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "71351f55ca524589b1682f877bdbe2cb",
+            "name": "imIdPhoto-test.png",
+            "size": 18296
+          }
+        ]
+      },
+      "expected": null,
+      "status": "未接入",
+      "note": "需要接入图像编辑或抠图服务，当前没有可执行的服务配置。"
+    },
+    {
+      "key": "hrAge",
+      "label": "计算人员当前年龄",
+      "category": "hr",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1931,
+      "field": "ai_hrage",
+      "config": {
+        "scene": "hrAge",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_hrage_start"
+        ],
+        "options": [],
+        "inputBindings": {
+          "start": "in_hrage_start"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "072 计算人员当前年龄",
+        "scene_key": "hrAge",
+        "category": "人事行政",
+        "mode": "使用公式计算",
+        "input_text": "2000-10-25 / 2026-10-24",
+        "expected": "25",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，根据出生日期与今天（{today}）计算周岁年龄，只返回数字。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_hrage_start": "2000-10-25",
+        "ai_hrage": 25,
+        "actual": "25",
+        "generated_formula": 300
+      },
+      "expected": 25,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 25,
+      "display": "25",
+      "seconds": 0.09,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "hrSeniority",
+      "label": "计算员工工龄",
+      "category": "hr",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1932,
+      "field": "ai_hrseniority",
+      "config": {
+        "scene": "hrSeniority",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_hrseniority_start"
+        ],
+        "options": [],
+        "inputBindings": {
+          "start": "in_hrseniority_start"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "073 计算员工工龄",
+        "scene_key": "hrSeniority",
+        "category": "人事行政",
+        "mode": "使用公式计算",
+        "input_text": "2020-10-24 / 2026-10-24",
+        "expected": "6.0",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，根据入职日期与今天（{today}）计算工龄（年，保留一位小数）。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_hrseniority_start": "2020-10-24",
+        "ai_hrseniority": 6.0,
+        "actual": "6",
+        "generated_formula": 300
+      },
+      "expected": 6.0,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 6.0,
+      "display": "6",
+      "seconds": 0.09,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "hrHistory",
+      "label": "提取工作履历",
+      "category": "hr",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1933,
+      "field": "ai_hrhistory",
+      "config": {
+        "scene": "hrHistory",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "074 提取工作履历",
+        "scene_key": "hrHistory",
+        "category": "人事行政",
+        "mode": "使用模型生成",
+        "input_text": "2020—2023 示例公司 后端工程师",
+        "expected": "\"2020—2023 示例公司 后端工程师\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "2020—2023 示例公司 后端工程师",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：时间区间、公司和职位准确。",
+      "tokens": 1575,
+      "billable": true,
+      "actual": "2020—2023 示例公司 后端工程师",
+      "display": "2020—2023 示例公司 后端工程师",
+      "seconds": 8.33,
+      "review": "时间区间、公司和职位准确。"
+    },
+    {
+      "key": "hrBankCard",
+      "label": "识别银行卡信息",
+      "category": "hr",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1934,
+      "field": "ai_hrbankcard",
+      "config": {
+        "scene": "hrBankCard",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "075 识别银行卡信息",
+        "scene_key": "hrBankCard",
+        "category": "人事行政",
+        "mode": "使用模型生成",
+        "input_text": "示例银行 6222 **** **** 1234",
+        "expected": "\"发卡行：示例银行；卡号：6222 **** **** 1234\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "fea49aab30634106b522a447d392babd",
+            "name": "hrBankCard-test.png",
+            "size": 15827
+          }
+        ]
+      },
+      "expected": "发卡行：示例银行；卡号：6222 **** **** 1234",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：保留卡号遮蔽字符，没有补造完整卡号。",
+      "tokens": 882,
+      "billable": true,
+      "actual": "发卡行：示例银行；卡号：6222 **** **** 1234（图片标注为“合成测试样例（非真实证件）”，并非真实银行卡）",
+      "display": "发卡行：示例银行；卡号：6222 **** **** 1234（图片标注为“合成测试样例（非真实证件）”，并非真实银行卡）",
+      "seconds": 3.48,
+      "review": "保留卡号遮蔽字符，没有补造完整卡号。"
+    },
+    {
+      "key": "hrIdCard",
+      "label": "提取身份证信息",
+      "category": "hr",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1935,
+      "field": "ai_hridcard",
+      "config": {
+        "scene": "hrIdCard",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "076 提取身份证信息",
+        "scene_key": "hrIdCard",
+        "category": "人事行政",
+        "mode": "使用模型生成",
+        "input_text": "姓名张三，出生日期1990年1月1日",
+        "expected": "\"姓名：张三；出生日期：1990-01-01\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "姓名：张三；出生日期：1990-01-01",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：修复后保留姓名与出生日期，未猜测缺失性别和地址。",
+      "tokens": 484,
+      "billable": true,
+      "actual": "姓名：张三；出生日期：1990年1月1日；性别：；地址：",
+      "display": "姓名：张三；出生日期：1990年1月1日；性别：；地址：",
+      "seconds": 2.36,
+      "review": "修复后保留姓名与出生日期，未猜测缺失性别和地址。"
+    },
+    {
+      "key": "hrGender",
+      "label": "判断性别",
+      "category": "hr",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1936,
+      "field": "ai_hrgender",
+      "config": {
+        "scene": "hrGender",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "男",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "女",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "077 判断性别",
+        "scene_key": "hrGender",
+        "category": "人事行政",
+        "mode": "本地计算",
+        "input_text": "11010519491231002X",
+        "expected": "\"女\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "女",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "opt_1",
+      "display": "女",
+      "seconds": 0.08
+    },
+    {
+      "key": "hrMatch",
+      "label": "评估岗位匹配度",
+      "category": "hr",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1937,
+      "field": "ai_hrmatch",
+      "config": {
+        "scene": "hrMatch",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "高",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "中",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "低",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "078 评估岗位匹配度",
+        "scene_key": "hrMatch",
+        "category": "人事行政",
+        "mode": "使用模型生成",
+        "input_text": "5年Java开发 / 要求3年Java经验",
+        "expected": "\"高\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "高",
+      "status": "通过",
+      "note": "",
+      "tokens": 323,
+      "billable": true,
+      "actual": "opt_0",
+      "display": "高",
+      "seconds": 1.73
+    },
+    {
+      "key": "hrLeave",
+      "label": "计算年假额度",
+      "category": "hr",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1938,
+      "field": "ai_hrleave",
+      "config": {
+        "scene": "hrLeave",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_hrleave_years"
+        ],
+        "options": [],
+        "inputBindings": {
+          "years": "in_hrleave_years"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "079 计算年假额度",
+        "scene_key": "hrLeave",
+        "category": "人事行政",
+        "mode": "使用公式计算",
+        "input_text": "6",
+        "expected": "5",
+        "verdict": "通过",
+        "note": "按累计工作年限计算标准全年年休假天数：不足1年0天，满1年5天，满10年10天，满20年15天。不包含入离职折算、已休抵扣及不享受年休假的特殊情形。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "ai_hrleave": 5,
+        "actual": "5",
+        "generated_formula": 300,
+        "in_hrleave_years": 6
+      },
+      "expected": 5,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 5,
+      "display": "5",
+      "seconds": 1.91,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "hrContract",
+      "label": "判断合同状态",
+      "category": "hr",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1939,
+      "field": "ai_hrcontract",
+      "config": {
+        "scene": "hrContract",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_hrcontract_end"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "生效中",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "即将到期",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "已到期",
+            "color": "blue"
+          }
+        ],
+        "inputBindings": {
+          "end": "in_hrcontract_end"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "080 判断合同状态",
+        "scene_key": "hrContract",
+        "category": "人事行政",
+        "mode": "使用公式计算",
+        "input_text": "2026-11-01 / 2026-10-24",
+        "expected": "\"即将到期\"",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，根据合同到期日与今天（{today}）判断合同状态（30 天内到期为即将到期）。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_hrcontract_end": "2026-11-01",
+        "ai_hrcontract": "opt_1",
+        "actual": "即将到期",
+        "generated_formula": 300
+      },
+      "expected": "即将到期",
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": "opt_1",
+      "display": "即将到期",
+      "seconds": 0.09,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "hrHolidayQuery",
+      "label": "查询节假日",
+      "category": "hr",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1940,
+      "field": "ai_hrholidayquery",
+      "config": {
+        "scene": "hrHolidayQuery",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "081 查询节假日",
+        "scene_key": "hrHolidayQuery",
+        "category": "人事行政",
+        "mode": "本地计算",
+        "input_text": "2026-01-01",
+        "expected": "\"元旦\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "元旦",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "元旦",
+      "display": "元旦",
+      "seconds": 0.09
+    },
+    {
+      "key": "mkRank",
+      "label": "计算排名",
+      "category": "marketing",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1941,
+      "field": "ai_mkrank",
+      "config": {
+        "scene": "mkRank",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_mkrank_value"
+        ],
+        "options": [],
+        "inputBindings": {
+          "value": "in_mkrank_value"
+        }
+      },
+      "input": {
+        "case_name": "082 计算排名",
+        "scene_key": "mkRank",
+        "category": "市场营销",
+        "mode": "本地计算",
+        "input_text": "34 / 3 / 4",
+        "expected": "1",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "in_mkrank_value": 34
+      },
+      "expected": 1,
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": 1,
+      "display": "1",
+      "seconds": 0.12
+    },
+    {
+      "key": "mkFans",
+      "label": "判断粉丝区间",
+      "category": "marketing",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1944,
+      "field": "ai_mkfans",
+      "config": {
+        "scene": "mkFans",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "头部(100万+)",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "腰部(10-100万)",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "尾部(1-10万)",
+            "color": "blue"
+          },
+          {
+            "id": "opt_3",
+            "label": "素人(<1万)",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "083 判断粉丝区间",
+        "scene_key": "mkFans",
+        "category": "市场营销",
+        "mode": "本地计算",
+        "input_text": "38.7K",
+        "expected": "\"尾部(1-10万)\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "尾部(1-10万)",
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": "opt_2",
+      "display": "尾部(1-10万)",
+      "seconds": 0.08
+    },
+    {
+      "key": "mkScore",
+      "label": "给文案打分",
+      "category": "marketing",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1945,
+      "field": "ai_mkscore",
+      "config": {
+        "scene": "mkScore",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "084 给文案打分",
+        "scene_key": "mkScore",
+        "category": "市场营销",
+        "mode": "使用模型生成",
+        "input_text": "轻盈随行，装下每一天的灵感",
+        "expected": "0—100 分，主观评分不要求等于目录示例 85",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": 85,
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：72处于0—100范围；评分属主观输出，不要求等于目录示例85。",
+      "tokens": 299,
+      "billable": true,
+      "actual": 72,
+      "display": "72",
+      "seconds": 1.97,
+      "review": "72处于0—100范围；评分属主观输出，不要求等于目录示例85。"
+    },
+    {
+      "key": "mkCopy",
+      "label": "生成营销文案",
+      "category": "marketing",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1946,
+      "field": "ai_mkcopy",
+      "config": {
+        "scene": "mkCopy",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "085 生成营销文案",
+        "scene_key": "mkCopy",
+        "category": "市场营销",
+        "mode": "使用模型生成",
+        "input_text": "轻量保温杯，便携，保温6小时",
+        "expected": "\"轻装出发，温暖随行。便携保温杯，让每一口暖意陪伴你。\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "轻装出发，温暖随行。便携保温杯，让每一口暖意陪伴你。",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：围绕轻量、便携、保温6小时生成文案，未增加新的量化参数。",
+      "tokens": 530,
+      "billable": true,
+      "actual": "轻量随行保温杯，便携不占包，6小时长效保温，随时喝上暖饮。",
+      "display": "轻量随行保温杯，便携不占包，6小时长效保温，随时喝上暖饮。",
+      "seconds": 2.7,
+      "review": "围绕轻量、便携、保温6小时生成文案，未增加新的量化参数。"
+    },
+    {
+      "key": "mkAccount",
+      "label": "识别达人账号",
+      "category": "marketing",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1947,
+      "field": "ai_mkaccount",
+      "config": {
+        "scene": "mkAccount",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "086 识别达人账号",
+        "scene_key": "mkAccount",
+        "category": "市场营销",
+        "mode": "使用模型生成",
+        "input_text": "昵称：美妆小林；平台：抖音",
+        "expected": "\"抖音：美妆小林\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "抖音：美妆小林",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：达人昵称与平台均正确。",
+      "tokens": 340,
+      "billable": true,
+      "actual": "美妆小林（抖音）",
+      "display": "美妆小林（抖音）",
+      "seconds": 2.05,
+      "review": "达人昵称与平台均正确。"
+    },
+    {
+      "key": "mkVideoTitle",
+      "label": "提取视频标题",
+      "category": "marketing",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1948,
+      "field": "ai_mkvideotitle",
+      "config": {
+        "scene": "mkVideoTitle",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "087 提取视频标题",
+        "scene_key": "mkVideoTitle",
+        "category": "市场营销",
+        "mode": "使用模型生成",
+        "input_text": "标题：三步整理你的桌面",
+        "expected": "\"三步整理你的桌面\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "三步整理你的桌面",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：标题提取完整。",
+      "tokens": 234,
+      "billable": true,
+      "actual": "三步整理你的桌面",
+      "display": "三步整理你的桌面",
+      "seconds": 1.42,
+      "review": "标题提取完整。"
+    },
+    {
+      "key": "mkLikes",
+      "label": "提取点赞量",
+      "category": "marketing",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1949,
+      "field": "ai_mklikes",
+      "config": {
+        "scene": "mkLikes",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "088 提取点赞量",
+        "scene_key": "mkLikes",
+        "category": "市场营销",
+        "mode": "使用模型生成",
+        "input_text": "点赞1.2万",
+        "expected": "12000",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": 12000,
+      "status": "通过",
+      "note": "",
+      "tokens": 249,
+      "billable": true,
+      "actual": 12000,
+      "display": "12000",
+      "seconds": 1.78
+    },
+    {
+      "key": "mkFavs",
+      "label": "提取收藏量",
+      "category": "marketing",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1950,
+      "field": "ai_mkfavs",
+      "config": {
+        "scene": "mkFavs",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "089 提取收藏量",
+        "scene_key": "mkFavs",
+        "category": "市场营销",
+        "mode": "使用模型生成",
+        "input_text": "收藏256",
+        "expected": "256",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": 256,
+      "status": "通过",
+      "note": "",
+      "tokens": 223,
+      "billable": true,
+      "actual": 256,
+      "display": "256",
+      "seconds": 1.23
+    },
+    {
+      "key": "mkComments",
+      "label": "提取评论量",
+      "category": "marketing",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1951,
+      "field": "ai_mkcomments",
+      "config": {
+        "scene": "mkComments",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "090 提取评论量",
+        "scene_key": "mkComments",
+        "category": "市场营销",
+        "mode": "使用模型生成",
+        "input_text": "评论89",
+        "expected": "89",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": 89,
+      "status": "通过",
+      "note": "",
+      "tokens": 223,
+      "billable": true,
+      "actual": 89,
+      "display": "89",
+      "seconds": 1.47
+    },
+    {
+      "key": "mkFansShot",
+      "label": "截图识别粉丝量",
+      "category": "marketing",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1952,
+      "field": "ai_mkfansshot",
+      "config": {
+        "scene": "mkFansShot",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "091 截图识别粉丝量",
+        "scene_key": "mkFansShot",
+        "category": "市场营销",
+        "mode": "使用模型生成",
+        "input_text": "粉丝58万",
+        "expected": "580000",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "00fd35a5e7de49a0b7ea3be0ec10fbd3",
+            "name": "mkFansShot-test.png",
+            "size": 14364
+          }
+        ]
+      },
+      "expected": 580000,
+      "status": "通过",
+      "note": "",
+      "tokens": 628,
+      "billable": true,
+      "actual": 580000,
+      "display": "580000",
+      "seconds": 1.92
+    },
+    {
+      "key": "mkShares",
+      "label": "提取转发分享量",
+      "category": "marketing",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1953,
+      "field": "ai_mkshares",
+      "config": {
+        "scene": "mkShares",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "092 提取转发分享量",
+        "scene_key": "mkShares",
+        "category": "市场营销",
+        "mode": "使用模型生成",
+        "input_text": "分享1.2万",
+        "expected": "12000",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": 12000,
+      "status": "通过",
+      "note": "",
+      "tokens": 250,
+      "billable": true,
+      "actual": 12000,
+      "display": "12000",
+      "seconds": 1.52
+    },
+    {
+      "key": "mkCompliance",
+      "label": "检测文案合规性",
+      "category": "marketing",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1954,
+      "field": "ai_mkcompliance",
+      "config": {
+        "scene": "mkCompliance",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "合规",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "存在风险",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "违规",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "093 检测文案合规性",
+        "scene_key": "mkCompliance",
+        "category": "市场营销",
+        "mode": "使用模型生成",
+        "input_text": "提供的检查规则禁止绝对化用语；文案：全网最强",
+        "expected": "\"存在风险\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "违规",
+      "status": "通过",
+      "note": "",
+      "tokens": 283,
+      "billable": true,
+      "actual": "opt_2",
+      "display": "违规",
+      "seconds": 1.67,
+      "fixture_revision": "明确违反给定规则，统一判为违规；原目录示例风险标签不明确。"
+    },
+    {
+      "key": "mkIdea",
+      "label": "生成创意文案",
+      "category": "marketing",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1955,
+      "field": "ai_mkidea",
+      "config": {
+        "scene": "mkIdea",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "094 生成创意文案",
+        "scene_key": "mkIdea",
+        "category": "市场营销",
+        "mode": "使用模型生成",
+        "input_text": "春日露营 / 轻松自然",
+        "expected": "\"把春天装进行囊\\n去山野，给生活放个假\\n今天的天花板，是天空\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "把春天装进行囊\n去山野，给生活放个假\n今天的天花板，是天空",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：三条文案都符合春日露营、轻松自然主题。",
+      "tokens": 506,
+      "billable": true,
+      "actual": "春日露营，把周末交给风和草地\n轻装出发去露营，和春天慢慢待一会儿\n不负春光：一场松弛感满满的春日露营",
+      "display": "春日露营，把周末交给风和草地\n轻装出发去露营，和春天慢慢待一会儿\n不负春光：一场松弛感满满的春日露营",
+      "seconds": 2.97,
+      "review": "三条文案都符合春日露营、轻松自然主题。"
+    },
+    {
+      "key": "pdBom",
+      "label": "提取BOM物料清单",
+      "category": "production",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1956,
+      "field": "ai_pdbom",
+      "config": {
+        "scene": "pdBom",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "095 提取BOM物料清单",
+        "scene_key": "pdBom",
+        "category": "生产制造",
+        "mode": "使用模型生成",
+        "input_text": "螺丝 M6 100个；垫片 M6 100个",
+        "expected": "\"螺丝 M6 100个\\n垫片 M6 100个\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "螺丝 M6 100个\n垫片 M6 100个",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：两种M6物料及各100个的数量正确。",
+      "tokens": 404,
+      "billable": true,
+      "actual": "螺丝 M6 100个\n垫片 M6 100个",
+      "display": "螺丝 M6 100个\n垫片 M6 100个",
+      "seconds": 2.12,
+      "review": "两种M6物料及各100个的数量正确。"
+    },
+    {
+      "key": "pdDefect",
+      "label": "计算批次不良率",
+      "category": "production",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1957,
+      "field": "ai_pddefect",
+      "config": {
+        "scene": "pdDefect",
+        "outputType": "percent",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_pddefect_value",
+          "in_pddefect_total"
+        ],
+        "options": [],
+        "inputBindings": {
+          "value": "in_pddefect_value",
+          "total": "in_pddefect_total"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "096 计算批次不良率",
+        "scene_key": "pdDefect",
+        "category": "生产制造",
+        "mode": "使用公式计算",
+        "input_text": "3 / 200",
+        "expected": "1.5",
+        "verdict": "通过",
+        "note": "不良数量 ÷ 批次总数 × 100；总数为零或不良数量超出总数时提示错误。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_pddefect_value": 3,
+        "in_pddefect_total": 200,
+        "ai_pddefect": 1.5,
+        "actual": "1.5",
+        "generated_formula": 300
+      },
+      "expected": 1.5,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 1.5,
+      "display": "1.5",
+      "seconds": 0.11,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "pdOrder",
+      "label": "提取订单信息",
+      "category": "production",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1958,
+      "field": "ai_pdorder",
+      "config": {
+        "scene": "pdOrder",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "097 提取订单信息",
+        "scene_key": "pdOrder",
+        "category": "生产制造",
+        "mode": "使用模型生成",
+        "input_text": "SO-001，零件A，100件，2026-11-01交付",
+        "expected": "\"订单号：SO-001；产品：零件A；数量：100；交期：2026-11-01\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "订单号：SO-001；产品：零件A；数量：100；交期：2026-11-01",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：订单号、产品、数量和交期准确。",
+      "tokens": 333,
+      "billable": true,
+      "actual": "订单号：SO-001；产品：零件A；数量：100件；交期：2026-11-01",
+      "display": "订单号：SO-001；产品：零件A；数量：100件；交期：2026-11-01",
+      "seconds": 2.22,
+      "review": "订单号、产品、数量和交期准确。"
+    },
+    {
+      "key": "pdInspect",
+      "label": "巡检现场描述",
+      "category": "production",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1959,
+      "field": "ai_pdinspect",
+      "config": {
+        "scene": "pdInspect",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "098 巡检现场描述",
+        "scene_key": "pdInspect",
+        "category": "生产制造",
+        "mode": "使用模型生成",
+        "input_text": "通道堆放纸箱",
+        "expected": "\"发现通道被纸箱占用，需清理以保持通行畅通。\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "c1efe04fae4b475baad3f83e706c8707",
+            "name": "pdInspect-scene.png",
+            "size": 26903
+          }
+        ]
+      },
+      "expected": null,
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：修复后分开描述可见事实与待核实风险，不再断言普通通道为消防通道。",
+      "tokens": 1284,
+      "billable": true,
+      "actual": "一、图中直接可见的事实\n1. 图片顶部标注“合成场景示意图·仅供功能验证”，说明这是示意图，而不是现场实拍照片；因此，无法据此判断真实现场的实际状况。\n2. 图中显示两处标注为“货架”的矩形区域，一左一右。\n3. 两处货架之间有一块标注为“通道”的区域，两侧各画有一条黄色竖线，作为边界标记。\n4. 在“通道”区域内画有三个标注为“纸箱”的矩形，这三个矩形彼此错开，其中一个靠近右侧黄色边界线。\n5. 图中没有看到其他设施、人员、标识或设备的信息。\n\n二、潜在隐患（仅为推测，需现场核实）\n1. 纸箱被放置在标注为“通道”的区域内，可能占用该通道的部分通行空间；建议核实该通道的实际用途（人员通行或搬运通道等）以及剩余可通行宽度是否符合现场管理要求。\n2. 图中黄色边线内的纸箱靠近边界，可能使通道局部变窄；建议现场核实是否存在影响通行、搬运作业的情况。\n3. 纸箱集中或交错摆放，可能影响通行路线的连续性；建议核实是否按定置管理要求存放，以及该区域是否允许临时存放物品。\n4. 由于这是示意图，无法判断纸箱的尺寸、重量、堆叠层数、稳定性、是否为空箱，也无法判断黄色标线的实际含义及是否为消防疏散通道；这些均需现场核实确认。\n5. 建议核实该通道是否被纳入日常巡检和畅通性检查范围，并确认现场是否有明确的通道禁止堆放标识。",
+      "display": "一、图中直接可见的事实\n1. 图片顶部标注“合成场景示意图·仅供功能验证”，说明这是示意图，而不是现场实拍照片；因此，无法据此判断真实现场的实际状况。\n2. 图中显示两处标注为“货架”的矩形区域，一左一右。\n3. 两处货架之间有一块标注为“通道”的区域，两侧各画有一条黄色竖线，作为边界标记。\n4. 在“通道”区域内画有三个标注为“纸箱”的矩形，这三个矩形彼此错开，其中一个靠近右侧黄色边界线。\n5. 图中没有看到其他设施、人员、标识或设备的信息。\n\n二、潜在隐患（仅为推测，需现场核实）\n1. 纸箱被放置在标注为“通道”的区域内，可能占用该通道的部分通行空间；建议核实该通道的实际用途（人员通行或搬运通道等）以及剩余可通行宽度是否符合现场管理要求。\n2. 图中黄色边线内的纸箱靠近边界，可能使通道局部变窄；建议现场核实是否存在影响通行、搬运作业的情况。\n3. 纸箱集中或交错摆放，可能影响通行路线的连续性；建议核实是否按定置管理要求存放，以及该区域是否允许临时存放物品。\n4. 由于这是示意图，无法判断纸箱的尺寸、重量、堆叠层数、稳定性、是否为空箱，也无法判断黄色标线的实际含义及是否为消防疏散通道；这些均需现场核实确认。\n5. 建议核实该通道是否被纳入日常巡检和畅通性检查范围，并确认现场是否有明确的通道禁止堆放标识。",
+      "seconds": 5.36,
+      "fixture_revision": "原样例为文字截图，不足以验证现场图像判断；改为带可见场景要素的合成示意图。",
+      "history": [
+        {
+          "status": "待语义复核",
+          "actual": "现场情况：该图为合成场景示意图（标注“仅供功能验证”），非真实巡检照片。画面中央为通道，两侧各设一处货架；通道两侧有黄色标线标识边界；通道内放置三个纸箱，呈交错摆放，其中上方纸箱与右侧纸箱斜向相邻，下方另有一个纸箱，纸箱明显侵入通道通行区域。\n\n可见隐患：\n1. 通道占用：纸箱堆放于通道内，压缩通行宽度，影响人员与搬运设备通行效率。\n2. 绊倒/碰撞风险：纸箱位置交错、未靠边整齐码放，行人经过易发生磕碰或绊倒。\n3. 消防疏散隐患：通道属于疏散路径，堆放物品可能影响紧急情况下疏散与救援。\n4. 堆放规范性：纸箱未见托盘或定位摆放，缺乏定置管理，存在倒塌或二次散落风险。\n\n说明：图为功能验证用示意图，无法据此判断通道实际宽度、纸箱重量与堆叠高度、消防通道性质等信息，上述隐患仅基于图中可见的占道与摆放状态提出。",
+          "display": "现场情况：该图为合成场景示意图（标注“仅供功能验证”），非真实巡检照片。画面中央为通道，两侧各设一处货架；通道两侧有黄色标线标识边界；通道内放置三个纸箱，呈交错摆放，其中上方纸箱与右侧纸箱斜向相邻，下方另有一个纸箱，纸箱明显侵入通道通行区域。\n\n可见隐患：\n1. 通道占用：纸箱堆放于通道内，压缩通行宽度，影响人员与搬运设备通行效率。\n2. 绊倒/碰撞风险：纸箱位置交错、未靠边整齐码放，行人经过易发生磕碰或绊倒。\n3. 消防疏散隐患：通道属于疏散路径，堆放物品可能影响紧急情况下疏散与救援。\n4. 堆放规范性：纸箱未见托盘或定位摆放，缺乏定置管理，存在倒塌或二次散落风险。\n\n说明：图为功能验证用示意图，无法据此判断通道实际宽度、纸箱重量与堆叠高度、消防通道性质等信息，上述隐患仅基于图中可见的占道与摆放状态提出。",
+          "note": "",
+          "seconds": 4.34
+        }
+      ],
+      "review": "修复后分开描述可见事实与待核实风险，不再断言普通通道为消防通道。"
+    },
+    {
+      "key": "pdImprove",
+      "label": "问题改进措施",
+      "category": "production",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1960,
+      "field": "ai_pdimprove",
+      "config": {
+        "scene": "pdImprove",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "099 问题改进措施",
+        "scene_key": "pdImprove",
+        "category": "生产制造",
+        "mode": "使用模型生成",
+        "input_text": "通道被纸箱占用",
+        "expected": "\"1. 清理通道。2. 设置临时存放区。3. 将通道检查纳入巡检。\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "1. 清理通道。2. 设置临时存放区。3. 将通道检查纳入巡检。",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：三条措施针对纸箱占道，涉及定置、巡查和清理责任。",
+      "tokens": 619,
+      "billable": true,
+      "actual": "1. 在通道两侧划设醒目的禁放/通行标识，并设置纸箱临时存放区，明确纸箱不得放入通道。\n2. 建立定时清理与交接班检查机制，由当班负责人每班巡查通道，发现纸箱占用立即清理并记录。\n3. 对纸箱产生工位实行“谁产生、谁清理”责任管理，将通道占用情况纳入日常5S检查与考核。",
+      "display": "1. 在通道两侧划设醒目的禁放/通行标识，并设置纸箱临时存放区，明确纸箱不得放入通道。\n2. 建立定时清理与交接班检查机制，由当班负责人每班巡查通道，发现纸箱占用立即清理并记录。\n3. 对纸箱产生工位实行“谁产生、谁清理”责任管理，将通道占用情况纳入日常5S检查与考核。",
+      "seconds": 3.61,
+      "review": "三条措施针对纸箱占道，涉及定置、巡查和清理责任。"
+    },
+    {
+      "key": "pdBatch",
+      "label": "提取生产批号",
+      "category": "production",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1961,
+      "field": "ai_pdbatch",
+      "config": {
+        "scene": "pdBatch",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "100 提取生产批号",
+        "scene_key": "pdBatch",
+        "category": "生产制造",
+        "mode": "使用模型生成",
+        "input_text": "生产批号：PC-2026-001",
+        "expected": "\"PC-2026-001\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "PC-2026-001",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：批号PC-2026-001完整。",
+      "tokens": 227,
+      "billable": true,
+      "actual": "PC-2026-001",
+      "display": "PC-2026-001",
+      "seconds": 1.33,
+      "review": "批号PC-2026-001完整。"
+    },
+    {
+      "key": "pdHours",
+      "label": "计算生产总工时",
+      "category": "production",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1962,
+      "field": "ai_pdhours",
+      "config": {
+        "scene": "pdHours",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_pdhours_value",
+          "in_pdhours_total"
+        ],
+        "options": [],
+        "inputBindings": {
+          "value": "in_pdhours_value",
+          "total": "in_pdhours_total"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "101 计算生产总工时",
+        "scene_key": "pdHours",
+        "category": "生产制造",
+        "mode": "使用公式计算",
+        "input_text": "5 / 8",
+        "expected": "40",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，根据人数与时长计算总工时（小时），只返回数字。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_pdhours_value": 5,
+        "in_pdhours_total": 8,
+        "ai_pdhours": 40.0,
+        "actual": "40",
+        "generated_formula": 300
+      },
+      "expected": 40,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 40.0,
+      "display": "40",
+      "seconds": 0.09,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "pdStock",
+      "label": "计算当前库存",
+      "category": "production",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1963,
+      "field": "ai_pdstock",
+      "config": {
+        "scene": "pdStock",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_pdstock_opening",
+          "in_pdstock_incoming",
+          "in_pdstock_outgoing"
+        ],
+        "options": [],
+        "inputBindings": {
+          "opening": "in_pdstock_opening",
+          "incoming": "in_pdstock_incoming",
+          "outgoing": "in_pdstock_outgoing"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "102 计算当前库存",
+        "scene_key": "pdStock",
+        "category": "生产制造",
+        "mode": "使用公式计算",
+        "input_text": "100 / 20 / 15",
+        "expected": "105",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，根据期初、入库、出库数量计算当前库存，只返回数字。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_pdstock_opening": 100,
+        "in_pdstock_incoming": 20,
+        "in_pdstock_outgoing": 15,
+        "ai_pdstock": 105.0,
+        "actual": "105",
+        "generated_formula": 300
+      },
+      "expected": 105,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 105.0,
+      "display": "105",
+      "seconds": 0.09,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "pdTicketTime",
+      "label": "工单处理时长",
+      "category": "production",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1964,
+      "field": "ai_pdtickettime",
+      "config": {
+        "scene": "pdTicketTime",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_pdtickettime_start",
+          "in_pdtickettime_end"
+        ],
+        "options": [],
+        "inputBindings": {
+          "start": "in_pdtickettime_start",
+          "end": "in_pdtickettime_end"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "103 工单处理时长",
+        "scene_key": "pdTicketTime",
+        "category": "生产制造",
+        "mode": "使用公式计算",
+        "input_text": "2026-01-01 09:00 / 2026-01-01 11:30",
+        "expected": "2.5",
+        "verdict": "通过",
+        "note": "根据开始与结束时间计算处理时长，单位小时，保留两位小数。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_pdtickettime_start": "2026-01-01 09:00:00",
+        "in_pdtickettime_end": "2026-01-01 11:30:00",
+        "ai_pdtickettime": 2.5,
+        "actual": "2.5",
+        "generated_formula": 300
+      },
+      "expected": 2.5,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 2.5,
+      "display": "2.5",
+      "seconds": 0.09,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "pdReview",
+      "label": "工单复盘总结",
+      "category": "production",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1965,
+      "field": "ai_pdreview",
+      "config": {
+        "scene": "pdReview",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "104 工单复盘总结",
+        "scene_key": "pdReview",
+        "category": "生产制造",
+        "mode": "使用模型生成",
+        "input_text": "因松动停机，已紧固恢复，计划每周检查",
+        "expected": "\"原因：连接松动。处理：紧固恢复。预防：每周检查。\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "原因：连接松动。处理：紧固恢复。预防：每周检查。",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：原因、处理、预防分别对应输入事实。",
+      "tokens": 377,
+      "billable": true,
+      "actual": "原因：因松动导致停机。处理：已紧固并恢复。预防：计划每周检查。",
+      "display": "原因：因松动导致停机。处理：已紧固并恢复。预防：计划每周检查。",
+      "seconds": 2.0,
+      "review": "原因、处理、预防分别对应输入事实。"
+    },
+    {
+      "key": "pdStockAlert",
+      "label": "库存状态预警",
+      "category": "production",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1966,
+      "field": "ai_pdstockalert",
+      "config": {
+        "scene": "pdStockAlert",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_pdstockalert_stock",
+          "in_pdstockalert_minimum"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "充足",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "偏低",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "缺货",
+            "color": "blue"
+          }
+        ],
+        "inputBindings": {
+          "stock": "in_pdstockalert_stock",
+          "minimum": "in_pdstockalert_minimum"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "105 库存状态预警",
+        "scene_key": "pdStockAlert",
+        "category": "生产制造",
+        "mode": "使用公式计算",
+        "input_text": "8 / 10",
+        "expected": "\"偏低\"",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，根据库存与安全库存判断库存状态。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_pdstockalert_stock": 8,
+        "in_pdstockalert_minimum": 10,
+        "ai_pdstockalert": "opt_1",
+        "actual": "偏低",
+        "generated_formula": 300
+      },
+      "expected": "偏低",
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": "opt_1",
+      "display": "偏低",
+      "seconds": 0.08,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "stClose",
+      "label": "关店审核",
+      "category": "store",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1967,
+      "field": "ai_stclose",
+      "config": {
+        "scene": "stClose",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "合格",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "不合格",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "106 关店审核",
+        "scene_key": "stClose",
+        "category": "门店管理",
+        "mode": "使用模型生成",
+        "input_text": "合成关店示意图：门敞开、照明亮着、地面散落纸屑。",
+        "expected": "\"合格\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "c8386a654b4e48a08c032bdd79a196e0",
+            "name": "stClose-scene.png",
+            "size": 34350
+          }
+        ]
+      },
+      "expected": "不合格",
+      "status": "通过",
+      "note": "",
+      "tokens": 720,
+      "billable": true,
+      "actual": "opt_1",
+      "display": "不合格",
+      "seconds": 1.36,
+      "fixture_revision": "原样例为文字截图，不足以验证现场图像判断；改为带可见场景要素的合成示意图。"
+    },
+    {
+      "key": "stDisplay",
+      "label": "陈列审核",
+      "category": "store",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1968,
+      "field": "ai_stdisplay",
+      "config": {
+        "scene": "stDisplay",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "合格",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "需整改",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "107 陈列审核",
+        "scene_key": "stDisplay",
+        "category": "门店管理",
+        "mode": "使用模型生成",
+        "input_text": "合成陈列示意图：商品倾斜、横放，价签空白。",
+        "expected": "\"需整改\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "fb9a8b39b2104386b797ecc9243bc378",
+            "name": "stDisplay-scene.png",
+            "size": 24459
+          }
+        ]
+      },
+      "expected": "需整改",
+      "status": "通过",
+      "note": "",
+      "tokens": 698,
+      "billable": true,
+      "actual": "opt_1",
+      "display": "需整改",
+      "seconds": 1.47,
+      "fixture_revision": "原样例为文字截图，不足以验证现场图像判断；改为带可见场景要素的合成示意图。"
+    },
+    {
+      "key": "stLicense",
+      "label": "识别营业执照",
+      "category": "store",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1969,
+      "field": "ai_stlicense",
+      "config": {
+        "scene": "stLicense",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "108 识别营业执照",
+        "scene_key": "stLicense",
+        "category": "门店管理",
+        "mode": "使用模型生成",
+        "input_text": "名称：示例商店；法定代表人：张三",
+        "expected": "\"名称：示例商店；法定代表人：张三\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "1529fdb222bd454f9c76d61ca5987262",
+            "name": "stLicense-test.png",
+            "size": 19041
+          }
+        ]
+      },
+      "expected": "名称：示例商店；法定代表人：张三",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：名称和法人准确，缺失统一代码和日期保持空。",
+      "tokens": 610,
+      "billable": true,
+      "actual": "名称：示例商店\n统一社会信用代码：\n法定代表人：张三\n成立日期：",
+      "display": "名称：示例商店\n统一社会信用代码：\n法定代表人：张三\n成立日期：",
+      "seconds": 1.83,
+      "review": "名称和法人准确，缺失统一代码和日期保持空。"
+    },
+    {
+      "key": "stName",
+      "label": "识别门店名称",
+      "category": "store",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1970,
+      "field": "ai_stname",
+      "config": {
+        "scene": "stName",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "109 识别门店名称",
+        "scene_key": "stName",
+        "category": "门店管理",
+        "mode": "使用模型生成",
+        "input_text": "示例便利店",
+        "expected": "\"示例便利店\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "a58bd4748a2f4c9f985e8756670d3ce2",
+            "name": "stName-test.png",
+            "size": 13848
+          }
+        ]
+      },
+      "expected": "示例便利店",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：正确识别示例便利店。",
+      "tokens": 639,
+      "billable": true,
+      "actual": "示例便利店",
+      "display": "示例便利店",
+      "seconds": 2.02,
+      "review": "正确识别示例便利店。"
+    },
+    {
+      "key": "stAttendance",
+      "label": "判断出勤是否达标",
+      "category": "store",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1971,
+      "field": "ai_stattendance",
+      "config": {
+        "scene": "stAttendance",
+        "outputType": "checkbox",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_stattendance_value",
+          "in_stattendance_total"
+        ],
+        "options": [],
+        "inputBindings": {
+          "value": "in_stattendance_value",
+          "total": "in_stattendance_total"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "110 判断出勤是否达标",
+        "scene_key": "stAttendance",
+        "category": "门店管理",
+        "mode": "使用公式计算",
+        "input_text": "19 / 20",
+        "expected": "true",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，根据出勤天数与应出勤天数判断是否达标（≥95%）。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_stattendance_value": 19,
+        "in_stattendance_total": 20,
+        "ai_stattendance": true,
+        "actual": "是",
+        "generated_formula": 300
+      },
+      "expected": true,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": true,
+      "display": "是",
+      "seconds": 0.09,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "stHours",
+      "label": "计算员工工时",
+      "category": "store",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1972,
+      "field": "ai_sthours",
+      "config": {
+        "scene": "stHours",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_sthours_start",
+          "in_sthours_end"
+        ],
+        "options": [],
+        "inputBindings": {
+          "start": "in_sthours_start",
+          "end": "in_sthours_end"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "111 计算员工工时",
+        "scene_key": "stHours",
+        "category": "门店管理",
+        "mode": "使用公式计算",
+        "input_text": "2026-01-01 09:00 / 2026-01-01 18:00",
+        "expected": "9",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，根据上下班时间计算工时（小时，保留一位小数）。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_sthours_start": "2026-01-01 09:00:00",
+        "in_sthours_end": "2026-01-01 18:00:00",
+        "ai_sthours": 9.0,
+        "actual": "9",
+        "generated_formula": 300
+      },
+      "expected": 9,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 9.0,
+      "display": "9",
+      "seconds": 0.11,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "stHealthDate",
+      "label": "提取健康证日期",
+      "category": "store",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1973,
+      "field": "ai_sthealthdate",
+      "config": {
+        "scene": "stHealthDate",
+        "outputType": "date",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "112 提取健康证日期",
+        "scene_key": "stHealthDate",
+        "category": "门店管理",
+        "mode": "使用模型生成",
+        "input_text": "有效期至2027年3月15日",
+        "expected": "\"2027-03-15\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "1ac028411d5a47e4b744a3607b0d55f5",
+            "name": "stHealthDate-test.png",
+            "size": 16707
+          }
+        ]
+      },
+      "expected": "2027-03-15",
+      "status": "通过",
+      "note": "",
+      "tokens": 591,
+      "billable": true,
+      "actual": "2027-03-15",
+      "display": "2027-03-15",
+      "seconds": 1.61
+    },
+    {
+      "key": "stHealthDays",
+      "label": "计算健康证到期天数",
+      "category": "store",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1974,
+      "field": "ai_sthealthdays",
+      "config": {
+        "scene": "stHealthDays",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_sthealthdays_end"
+        ],
+        "options": [],
+        "inputBindings": {
+          "end": "in_sthealthdays_end"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "113 计算健康证到期天数",
+        "scene_key": "stHealthDays",
+        "category": "门店管理",
+        "mode": "使用公式计算",
+        "input_text": "2026-10-27 / 2026-10-24",
+        "expected": "3",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，计算健康证有效期距今天（{today}）还有多少天，已过期为负数。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_sthealthdays_end": "2026-10-27",
+        "ai_sthealthdays": 3,
+        "actual": "3",
+        "generated_formula": 300
+      },
+      "expected": 3,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 3,
+      "display": "3",
+      "seconds": 0.09,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "lgTracking",
+      "label": "识别物流单号",
+      "category": "logistics",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1975,
+      "field": "ai_lgtracking",
+      "config": {
+        "scene": "lgTracking",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "114 识别物流单号",
+        "scene_key": "lgTracking",
+        "category": "订单物流",
+        "mode": "使用模型生成",
+        "input_text": "运单号：SF1680230001",
+        "expected": "\"SF1680230001\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "SF1680230001",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：物流单号SF1680230001准确。",
+      "tokens": 241,
+      "billable": true,
+      "actual": "SF1680230001",
+      "display": "SF1680230001",
+      "seconds": 1.48,
+      "review": "物流单号SF1680230001准确。"
+    },
+    {
+      "key": "lgCity",
+      "label": "判断收货城市",
+      "category": "logistics",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1976,
+      "field": "ai_lgcity",
+      "config": {
+        "scene": "lgCity",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "115 判断收货城市",
+        "scene_key": "lgCity",
+        "category": "订单物流",
+        "mode": "使用模型生成",
+        "input_text": "上海市浦东新区示例路1号",
+        "expected": "\"上海市\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "上海市",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：准确提取上海市。",
+      "tokens": 227,
+      "billable": true,
+      "actual": "上海市",
+      "display": "上海市",
+      "seconds": 1.39,
+      "review": "准确提取上海市。"
+    },
+    {
+      "key": "lgStatus",
+      "label": "识别订单状态",
+      "category": "logistics",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1977,
+      "field": "ai_lgstatus",
+      "config": {
+        "scene": "lgStatus",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "待发货",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "运输中",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "已签收",
+            "color": "blue"
+          },
+          {
+            "id": "opt_3",
+            "label": "异常",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "116 识别订单状态",
+        "scene_key": "lgStatus",
+        "category": "订单物流",
+        "mode": "使用模型生成",
+        "input_text": "快件已由本人签收",
+        "expected": "\"已签收\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "已签收",
+      "status": "通过",
+      "note": "",
+      "tokens": 244,
+      "billable": true,
+      "actual": "opt_2",
+      "display": "已签收",
+      "seconds": 1.55
+    },
+    {
+      "key": "lgPlate",
+      "label": "识别车牌号",
+      "category": "logistics",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1978,
+      "field": "ai_lgplate",
+      "config": {
+        "scene": "lgPlate",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_file"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "117 识别车牌号",
+        "scene_key": "lgPlate",
+        "category": "订单物流",
+        "mode": "使用模型生成",
+        "input_text": "京A12345",
+        "expected": "\"京A12345\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "input_file": [
+          {
+            "id": "3220d21c0c1f4291afe392e015ed1586",
+            "name": "lgPlate-test.png",
+            "size": 13670
+          }
+        ]
+      },
+      "expected": "京A12345",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：合成车牌文本京A12345识别正确。",
+      "tokens": 695,
+      "billable": true,
+      "actual": "京A12345",
+      "display": "京A12345",
+      "seconds": 2.19,
+      "review": "合成车牌文本京A12345识别正确。"
+    },
+    {
+      "key": "lgReceiver",
+      "label": "识别收件人",
+      "category": "logistics",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1979,
+      "field": "ai_lgreceiver",
+      "config": {
+        "scene": "lgReceiver",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "118 识别收件人",
+        "scene_key": "lgReceiver",
+        "category": "订单物流",
+        "mode": "使用模型生成",
+        "input_text": "收件人：张三",
+        "expected": "\"张三\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "张三",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：准确提取张三。",
+      "tokens": 217,
+      "billable": true,
+      "actual": "张三",
+      "display": "张三",
+      "seconds": 1.42,
+      "review": "准确提取张三。"
+    },
+    {
+      "key": "lgAddress",
+      "label": "识别收货地址",
+      "category": "logistics",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1980,
+      "field": "ai_lgaddress",
+      "config": {
+        "scene": "lgAddress",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "119 识别收货地址",
+        "scene_key": "lgAddress",
+        "category": "订单物流",
+        "mode": "使用模型生成",
+        "input_text": "收件地址：上海市浦东新区示例路1号",
+        "expected": "\"上海市浦东新区示例路1号\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "上海市浦东新区示例路1号",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：保留完整收件地址。",
+      "tokens": 232,
+      "billable": true,
+      "actual": "上海市浦东新区示例路1号",
+      "display": "上海市浦东新区示例路1号",
+      "seconds": 1.31,
+      "review": "保留完整收件地址。"
+    },
+    {
+      "key": "lgZip",
+      "label": "提取邮政编码",
+      "category": "logistics",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1981,
+      "field": "ai_lgzip",
+      "config": {
+        "scene": "lgZip",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "120 提取邮政编码",
+        "scene_key": "lgZip",
+        "category": "订单物流",
+        "mode": "使用模型生成",
+        "input_text": "邮编：100080，北京市海淀区",
+        "expected": "\"100080\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "100080",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：邮政编码100080正确。",
+      "tokens": 262,
+      "billable": true,
+      "actual": "100080",
+      "display": "100080",
+      "seconds": 1.52,
+      "review": "邮政编码100080正确。"
+    },
+    {
+      "key": "lgRegion",
+      "label": "提取省市区",
+      "category": "logistics",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1982,
+      "field": "ai_lgregion",
+      "config": {
+        "scene": "lgRegion",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "121 提取省市区",
+        "scene_key": "lgRegion",
+        "category": "订单物流",
+        "mode": "使用模型生成",
+        "input_text": "广东省广州市海珠区新港中路",
+        "expected": "\"广东省 / 广州市 / 海珠区\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "广东省 / 广州市 / 海珠区",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：省市区三级拆分正确。",
+      "tokens": 260,
+      "billable": true,
+      "actual": "广东省/广州市/海珠区",
+      "display": "广东省/广州市/海珠区",
+      "seconds": 1.61,
+      "review": "省市区三级拆分正确。"
+    },
+    {
+      "key": "fnIit",
+      "label": "计算个人所得税",
+      "category": "finance",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1983,
+      "field": "ai_fniit",
+      "config": {
+        "scene": "fnIit",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_fniit_taxable"
+        ],
+        "options": [],
+        "inputBindings": {
+          "taxable": "in_fniit_taxable"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "122 计算个人所得税",
+        "scene_key": "fnIit",
+        "category": "财务会计",
+        "mode": "使用公式计算",
+        "input_text": "9200",
+        "expected": "710",
+        "verdict": "通过",
+        "note": "按月度换算税率表计算参考税额，输入为已扣除费用的月度应纳税所得额；不是居民工资累计预扣或年度汇算税额。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "ai_fniit": 710.0,
+        "actual": "710",
+        "generated_formula": 300,
+        "in_fniit_taxable": 9200
+      },
+      "expected": 710,
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": 710.0,
+      "display": "710",
+      "seconds": 1.83,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "fnIitLevel",
+      "label": "计算个税档位",
+      "category": "finance",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1984,
+      "field": "ai_fniitlevel",
+      "config": {
+        "scene": "fnIitLevel",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_fniitlevel_taxable"
+        ],
+        "options": [],
+        "inputBindings": {
+          "taxable": "in_fniitlevel_taxable"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "123 计算个税档位",
+        "scene_key": "fnIitLevel",
+        "category": "财务会计",
+        "mode": "使用公式计算",
+        "input_text": "14200",
+        "expected": "\"20%\"",
+        "verdict": "通过",
+        "note": "按月度换算税率表返回适用税率档位；输入是应纳税所得额，不是税前工资。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "ai_fniitlevel": "20%",
+        "actual": "20%",
+        "generated_formula": 300,
+        "in_fniitlevel_taxable": 14200
+      },
+      "expected": "20%",
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": "20%",
+      "display": "20%",
+      "seconds": 1.47,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "fnBonusSeparate",
+      "label": "计算年终奖单独税率",
+      "category": "finance",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1985,
+      "field": "ai_fnbonusseparate",
+      "config": {
+        "scene": "fnBonusSeparate",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_fnbonusseparate_bonus"
+        ],
+        "options": [],
+        "inputBindings": {
+          "bonus": "in_fnbonusseparate_bonus"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "124 计算年终奖单独税率",
+        "scene_key": "fnBonusSeparate",
+        "category": "财务会计",
+        "mode": "使用公式计算",
+        "input_text": "60000",
+        "expected": "\"10%\"",
+        "verdict": "通过",
+        "note": "全年一次性奖金除以 12 后，按月度换算税率表返回单独计税税率；输出税率而非税额。政策适用至 2027-12-31。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "ai_fnbonusseparate": "10%",
+        "actual": "10%",
+        "generated_formula": 300,
+        "in_fnbonusseparate_bonus": 60000
+      },
+      "expected": "10%",
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": "10%",
+      "display": "10%",
+      "seconds": 3.49,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "fnBonusMerge",
+      "label": "计算年终合并税率",
+      "category": "finance",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1986,
+      "field": "ai_fnbonusmerge",
+      "config": {
+        "scene": "fnBonusMerge",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_fnbonusmerge_taxable",
+          "in_fnbonusmerge_bonus"
+        ],
+        "options": [],
+        "inputBindings": {
+          "taxable": "in_fnbonusmerge_taxable",
+          "bonus": "in_fnbonusmerge_bonus"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "125 计算年终合并税率",
+        "scene_key": "fnBonusMerge",
+        "category": "财务会计",
+        "mode": "使用公式计算",
+        "input_text": "120000 / 60000",
+        "expected": "\"20%\"",
+        "verdict": "通过",
+        "note": "将奖金加到全年应纳税所得额后，按年度综合所得税率表返回边际税率；不是有效税率，也不代表奖金最终税额。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "ai_fnbonusmerge": "20%",
+        "actual": "20%",
+        "generated_formula": 300,
+        "in_fnbonusmerge_taxable": 120000,
+        "in_fnbonusmerge_bonus": 60000
+      },
+      "expected": "20%",
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": "20%",
+      "display": "20%",
+      "seconds": 1.78,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "fnCardCheck",
+      "label": "银行卡号校验",
+      "category": "finance",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1987,
+      "field": "ai_fncardcheck",
+      "config": {
+        "scene": "fnCardCheck",
+        "outputType": "checkbox",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "126 银行卡号校验",
+        "scene_key": "fnCardCheck",
+        "category": "财务会计",
+        "mode": "本地计算",
+        "input_text": "4532015112830366",
+        "expected": "true",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": true,
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": true,
+      "display": "是",
+      "seconds": 0.06
+    },
+    {
+      "key": "fnVat",
+      "label": "计算增值税申报截止日",
+      "category": "finance",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 1988,
+      "field": "ai_fnvat",
+      "config": {
+        "scene": "fnVat",
+        "outputType": "date",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_fnvat_date"
+        ],
+        "options": [],
+        "inputBindings": {
+          "date": "in_fnvat_date"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "127 计算增值税申报",
+        "scene_key": "fnVat",
+        "category": "财务会计",
+        "mode": "使用公式计算",
+        "input_text": "2026-10-15",
+        "expected": "\"2026-11-16\"",
+        "verdict": "通过",
+        "note": "所属期次月15日，遇周末顺延至周一。仅为申报截止日参考，法定节假日及税务机关公布的延期需另行核对。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "ai_fnvat": "2026-11-16",
+        "actual": "2026-11-16",
+        "generated_formula": 300,
+        "in_fnvat_date": "2026-10-15"
+      },
+      "expected": "2026-11-16",
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": "2026-11-16",
+      "display": "2026-11-16",
+      "seconds": 1.74,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "custom",
+      "label": "自定义 AI 字段",
+      "category": "custom",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1989,
+      "field": "ai_custom",
+      "config": {
+        "scene": "custom",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "prompt": "将输入翻译为英文，只返回翻译。",
+        "options": []
+      },
+      "input": {
+        "case_name": "128 自定义 AI 字段",
+        "scene_key": "custom",
+        "category": "自定义",
+        "mode": "使用模型生成",
+        "input_text": "你好",
+        "expected": "\"Hello\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "Hello",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：自定义翻译指令输出Hello。",
+      "tokens": 205,
+      "billable": true,
+      "actual": "Hello",
+      "display": "Hello",
+      "seconds": 1.69,
+      "review": "自定义翻译指令输出Hello。"
+    },
+    {
+      "key": "taskPriority",
+      "label": "判断任务优先级",
+      "category": "project",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1990,
+      "field": "ai_taskpriority",
+      "config": {
+        "scene": "taskPriority",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "P0",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "P1",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "P2",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "129 判断任务优先级",
+        "scene_key": "taskPriority",
+        "category": "项目管理",
+        "mode": "使用模型生成",
+        "input_text": "今天到期，核心支付故障影响所有用户",
+        "expected": "\"P0\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "P0",
+      "status": "通过",
+      "note": "",
+      "tokens": 270,
+      "billable": true,
+      "actual": "opt_0",
+      "display": "P0",
+      "seconds": 1.41
+    },
+    {
+      "key": "taskCompletion",
+      "label": "计算子任务完成率",
+      "category": "project",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 1991,
+      "field": "ai_taskcompletion",
+      "config": {
+        "scene": "taskCompletion",
+        "outputType": "percent",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_taskcompletion_group",
+          "in_taskcompletion_status"
+        ],
+        "options": [],
+        "inputBindings": {
+          "group": "in_taskcompletion_group",
+          "status": "in_taskcompletion_status"
+        }
+      },
+      "input": {
+        "case_name": "130 计算子任务完成率",
+        "scene_key": "taskCompletion",
+        "category": "项目管理",
+        "mode": "本地计算",
+        "input_text": "3 条任务，2 条已完成",
+        "expected": "66.67",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "in_taskcompletion_group": "taskCompletion-项目甲",
+        "in_taskcompletion_status": "已完成"
+      },
+      "expected": 66.67,
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": 66.67,
+      "display": "66.67",
+      "seconds": 0.11
+    },
+    {
+      "key": "customerStage",
+      "label": "判断客户阶段",
+      "category": "customer",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1994,
+      "field": "ai_customerstage",
+      "config": {
+        "scene": "customerStage",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "已沟通",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "了解中",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "已下单",
+            "color": "blue"
+          },
+          {
+            "id": "opt_3",
+            "label": "已成交",
+            "color": "blue"
+          },
+          {
+            "id": "opt_4",
+            "label": "已流失",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "131 判断客户阶段",
+        "scene_key": "customerStage",
+        "category": "客户管理",
+        "mode": "使用模型生成",
+        "input_text": "客户已签约并完成付款",
+        "expected": "\"已成交\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "已成交",
+      "status": "通过",
+      "note": "",
+      "tokens": 267,
+      "billable": true,
+      "actual": "opt_3",
+      "display": "已成交",
+      "seconds": 1.14
+    },
+    {
+      "key": "customerReplied",
+      "label": "判断是否回复",
+      "category": "customer",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1995,
+      "field": "ai_customerreplied",
+      "config": {
+        "scene": "customerReplied",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "是",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "否",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "132 判断是否回复",
+        "scene_key": "customerReplied",
+        "category": "客户管理",
+        "mode": "使用模型生成",
+        "input_text": "已发送方案，等待回复",
+        "expected": "\"否\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "否",
+      "status": "通过",
+      "note": "",
+      "tokens": 289,
+      "billable": true,
+      "actual": "opt_1",
+      "display": "否",
+      "seconds": 1.45
+    },
+    {
+      "key": "nextFollowDate",
+      "label": "提取下次跟进时间",
+      "category": "customer",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1996,
+      "field": "ai_nextfollowdate",
+      "config": {
+        "scene": "nextFollowDate",
+        "outputType": "date",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "133 提取下次跟进时间",
+        "scene_key": "nextFollowDate",
+        "category": "客户管理",
+        "mode": "使用模型生成",
+        "input_text": "约定2026年11月3日回访",
+        "expected": "\"2026-11-03\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "2026-11-03",
+      "status": "通过",
+      "note": "",
+      "tokens": 294,
+      "billable": true,
+      "actual": "2026-11-03",
+      "display": "2026-11-03",
+      "seconds": 1.36
+    },
+    {
+      "key": "serviceIssues",
+      "label": "分析服务问题",
+      "category": "customer",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1997,
+      "field": "ai_serviceissues",
+      "config": {
+        "scene": "serviceIssues",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "134 分析服务问题",
+        "scene_key": "serviceIssues",
+        "category": "客户管理",
+        "mode": "使用模型生成",
+        "input_text": "回复慢，问题两天没有处理",
+        "expected": "\"问题：响应不及时；建议：明确响应时限并跟踪处理。\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "问题：响应不及时；建议：明确响应时限并跟踪处理。",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：问题与原文一致，建议是建议而非已发生事实。",
+      "tokens": 616,
+      "billable": true,
+      "actual": "主要问题：\n1. 响应速度慢。\n2. 问题处理时效过长，出现两天未处理的情况。\n\n原文依据：\n- “回复慢”\n- “问题两天没有处理”\n\n可执行改进建议：\n1. 明确首次响应时限，并在收到客户反馈后及时确认已受理。\n2. 建立工单分级与超时提醒机制，对临近或超过处理时限的工单自动提醒责任人。\n3. 对两天未处理的问题设置升级路径，由主管介入跟进并反馈处理进展。\n4. 在处理期间主动向客户同步当前状态、预计下一步和责任人，减少因等待产生的不满。\n5. 记录响应与处理时效数据，定期复盘超时原因并优化流程。",
+      "display": "主要问题：\n1. 响应速度慢。\n2. 问题处理时效过长，出现两天未处理的情况。\n\n原文依据：\n- “回复慢”\n- “问题两天没有处理”\n\n可执行改进建议：\n1. 明确首次响应时限，并在收到客户反馈后及时确认已受理。\n2. 建立工单分级与超时提醒机制，对临近或超过处理时限的工单自动提醒责任人。\n3. 对两天未处理的问题设置升级路径，由主管介入跟进并反馈处理进展。\n4. 在处理期间主动向客户同步当前状态、预计下一步和责任人，减少因等待产生的不满。\n5. 记录响应与处理时效数据，定期复盘超时原因并优化流程。",
+      "seconds": 4.02,
+      "review": "问题与原文一致，建议是建议而非已发生事实。"
+    },
+    {
+      "key": "nextFollowAdvice",
+      "label": "下一步跟进建议",
+      "category": "customer",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1998,
+      "field": "ai_nextfollowadvice",
+      "config": {
+        "scene": "nextFollowAdvice",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "135 下一步跟进建议",
+        "scene_key": "nextFollowAdvice",
+        "category": "客户管理",
+        "mode": "使用模型生成",
+        "input_text": "希望了解部署周期",
+        "expected": "\"1. 确认环境。2. 提供部署计划。3. 约定方案确认时间。\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "1. 确认环境。2. 提供部署计划。3. 约定方案确认时间。",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：三条行动各有目标，未编造具体部署周期。",
+      "tokens": 635,
+      "billable": true,
+      "actual": "1. 行动：向客户确认其部署场景、现有环境和期望上线时间，并记录待澄清信息；目标：准确识别客户了解部署周期的具体关注点，为后续提供有依据的说明做准备。\n2. 行动：安排实施或技术同事参与一次需求澄清沟通，介绍部署阶段和客户需配合的事项；目标：基于客户实际情况解释影响部署周期的因素，不对具体周期作未确认承诺。\n3. 行动：会后发送待确认问题清单和所需资料清单，并约定下次沟通时间；目标：推动客户补充环境信息，持续跟进部署周期评估进展。",
+      "display": "1. 行动：向客户确认其部署场景、现有环境和期望上线时间，并记录待澄清信息；目标：准确识别客户了解部署周期的具体关注点，为后续提供有依据的说明做准备。\n2. 行动：安排实施或技术同事参与一次需求澄清沟通，介绍部署阶段和客户需配合的事项；目标：基于客户实际情况解释影响部署周期的因素，不对具体周期作未确认承诺。\n3. 行动：会后发送待确认问题清单和所需资料清单，并约定下次沟通时间；目标：推动客户补充环境信息，持续跟进部署周期评估进展。",
+      "seconds": 4.77,
+      "review": "三条行动各有目标，未编造具体部署周期。"
+    },
+    {
+      "key": "customerInterests",
+      "label": "提取客户兴趣点",
+      "category": "customer",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 1999,
+      "field": "ai_customerinterests",
+      "config": {
+        "scene": "customerInterests",
+        "outputType": "text",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "136 提取客户兴趣点",
+        "scene_key": "customerInterests",
+        "category": "客户管理",
+        "mode": "使用模型生成",
+        "input_text": "客户主要关心库存同步和报表",
+        "expected": "\"1. 库存同步\\n2. 报表分析\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "1. 库存同步\n2. 报表分析",
+      "status": "通过（样例语义复核）",
+      "note": "Codex 对照输入与实际输出复核：仅提取库存同步和报表两项兴趣。",
+      "tokens": 325,
+      "billable": true,
+      "actual": "1、库存同步\n2、报表",
+      "display": "1、库存同步\n2、报表",
+      "seconds": 1.91,
+      "review": "仅提取库存同步和报表两项兴趣。"
+    },
+    {
+      "key": "customerIssueClass",
+      "label": "客户问题分类",
+      "category": "customer",
+      "execution": "model",
+      "disabled": false,
+      "record_id": 2000,
+      "field": "ai_customerissueclass",
+      "config": {
+        "scene": "customerIssueClass",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "input_text"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "产品质量",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "服务体验",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "价格费用",
+            "color": "blue"
+          },
+          {
+            "id": "opt_3",
+            "label": "交付物流",
+            "color": "blue"
+          },
+          {
+            "id": "opt_4",
+            "label": "其他",
+            "color": "blue"
+          }
+        ]
+      },
+      "input": {
+        "case_name": "137 客户问题分类",
+        "scene_key": "customerIssueClass",
+        "category": "客户管理",
+        "mode": "使用模型生成",
+        "input_text": "收到的商品有破损",
+        "expected": "\"产品质量\"",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3
+      },
+      "expected": "产品质量",
+      "status": "通过",
+      "note": "",
+      "tokens": 290,
+      "billable": true,
+      "actual": "opt_0",
+      "display": "产品质量",
+      "seconds": 1.5
+    },
+    {
+      "key": "duplicatePhone",
+      "label": "检查重复手机号",
+      "category": "customer",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 2001,
+      "field": "ai_duplicatephone",
+      "config": {
+        "scene": "duplicatePhone",
+        "outputType": "checkbox",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_duplicatephone"
+        ],
+        "options": []
+      },
+      "input": {
+        "case_name": "138 检查重复手机号",
+        "scene_key": "duplicatePhone",
+        "category": "客户管理",
+        "mode": "本地计算",
+        "input_text": "13800000001",
+        "expected": "true",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "in_duplicatephone": "13800000001"
+      },
+      "expected": true,
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": true,
+      "display": "是",
+      "seconds": 0.11
+    },
+    {
+      "key": "hrLeaveUsed",
+      "label": "计算今年休假天数",
+      "category": "hr",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 2003,
+      "field": "ai_hrleaveused",
+      "config": {
+        "scene": "hrLeaveUsed",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_hrleaveused_group",
+          "in_hrleaveused_value",
+          "in_hrleaveused_date"
+        ],
+        "options": [],
+        "inputBindings": {
+          "group": "in_hrleaveused_group",
+          "value": "in_hrleaveused_value",
+          "date": "in_hrleaveused_date"
+        }
+      },
+      "input": {
+        "case_name": "139 计算今年休假天数",
+        "scene_key": "hrLeaveUsed",
+        "category": "人事行政",
+        "mode": "本地计算",
+        "input_text": "张三：2天；张三：3天",
+        "expected": "5",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "in_hrleaveused_group": "hrLeaveUsed-甲",
+        "in_hrleaveused_value": 2,
+        "in_hrleaveused_date": "2026-10-24"
+      },
+      "expected": 5,
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": 5.0,
+      "display": "5",
+      "seconds": 0.09
+    },
+    {
+      "key": "stTotalHours",
+      "label": "汇总员工工时",
+      "category": "store",
+      "execution": "local",
+      "disabled": false,
+      "record_id": 2005,
+      "field": "ai_sttotalhours",
+      "config": {
+        "scene": "stTotalHours",
+        "outputType": "number",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_sttotalhours_group",
+          "in_sttotalhours_value"
+        ],
+        "options": [],
+        "inputBindings": {
+          "group": "in_sttotalhours_group",
+          "value": "in_sttotalhours_value"
+        }
+      },
+      "input": {
+        "case_name": "140 汇总员工工时",
+        "scene_key": "stTotalHours",
+        "category": "门店管理",
+        "mode": "本地计算",
+        "input_text": "张三：8小时；张三：7小时",
+        "expected": "15",
+        "verdict": "待验证",
+        "note": "",
+        "amount": 100,
+        "quantity": 3,
+        "in_sttotalhours_group": "stTotalHours-甲",
+        "in_sttotalhours_value": 8
+      },
+      "expected": 15,
+      "status": "通过",
+      "note": "",
+      "tokens": 0,
+      "billable": false,
+      "actual": 15.0,
+      "display": "15",
+      "seconds": 0.09
+    },
+    {
+      "key": "stHealthExpiry",
+      "label": "计算健康证到期日期",
+      "category": "store",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 2007,
+      "field": "ai_sthealthexpiry",
+      "config": {
+        "scene": "stHealthExpiry",
+        "outputType": "date",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_sthealthexpiry_start"
+        ],
+        "options": [],
+        "inputBindings": {
+          "start": "in_sthealthexpiry_start"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "141 计算健康证到期日期",
+        "scene_key": "stHealthExpiry",
+        "category": "门店管理",
+        "mode": "使用公式计算",
+        "input_text": "2024-02-29",
+        "expected": "\"2025-02-28\"",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，按体检日期加一年估算到期日，闰日顺延至次年二月末；以证件实际有效期为准。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_sthealthexpiry_start": "2024-02-29",
+        "ai_sthealthexpiry": "2025-02-28",
+        "actual": "2025-02-28",
+        "generated_formula": 300
+      },
+      "expected": "2025-02-28",
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": "2025-02-28",
+      "display": "2025-02-28",
+      "seconds": 0.08,
+      "review": "公式精确断言通过"
+    },
+    {
+      "key": "orderShippingStatus",
+      "label": "判断发货时效",
+      "category": "logistics",
+      "execution": "calculation",
+      "disabled": false,
+      "record_id": 2008,
+      "field": "ai_ordershippingstatus",
+      "config": {
+        "scene": "orderShippingStatus",
+        "outputType": "singleSelect",
+        "autoUpdate": false,
+        "allowNewOptions": true,
+        "inputFields": [
+          "in_ordershippingstatus_start",
+          "in_ordershippingstatus_end"
+        ],
+        "options": [
+          {
+            "id": "opt_0",
+            "label": "待发货",
+            "color": "blue"
+          },
+          {
+            "id": "opt_1",
+            "label": "已发货",
+            "color": "blue"
+          },
+          {
+            "id": "opt_2",
+            "label": "延迟发货",
+            "color": "blue"
+          }
+        ],
+        "inputBindings": {
+          "start": "in_ordershippingstatus_start",
+          "end": "in_ordershippingstatus_end"
+        },
+        "formulaVersion": 1
+      },
+      "input": {
+        "case_name": "142 判断发货时效",
+        "scene_key": "orderShippingStatus",
+        "category": "订单物流",
+        "mode": "使用公式计算",
+        "input_text": "2026-10-01 / 2026-10-04",
+        "expected": "\"延迟发货\"",
+        "verdict": "通过",
+        "note": "根据 {input} 的内容，未发货为待发货，发货日期晚于下单日期超过一天为延迟发货。",
+        "amount": 100.0,
+        "quantity": 3.0,
+        "in_ordershippingstatus_start": "2026-10-01",
+        "in_ordershippingstatus_end": "2026-10-04",
+        "ai_ordershippingstatus": "opt_2",
+        "actual": "延迟发货",
+        "generated_formula": 300
+      },
+      "expected": "延迟发货",
+      "status": "通过",
+      "note": "执行已展示公式；真实落库复验通过",
+      "tokens": 0,
+      "billable": false,
+      "actual": "opt_2",
+      "display": "延迟发货",
+      "seconds": 0.09,
+      "review": "公式精确断言通过"
+    }
+  ],
+  "http_checks": [
+    {
+      "name": "用户空间目录可见",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "真实网格读取",
+      "passed": true,
+      "detail": "157 行，194 个字段"
+    },
+    {
+      "name": "分类视图有效且可读取",
+      "passed": true,
+      "detail": "15 个视图"
+    },
+    {
+      "name": "本地配置生成接口",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "模型配置生成接口",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "预览接口",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "手动刷新排队接口",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "编辑样例输入接口",
+      "passed": true,
+      "detail": "200"
+    },
+    {
+      "name": "输入修改自动重算",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "自动重算恢复原始样例",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "6种生成附件可通过权限接口下载",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "普通选项列AI批量匹配标签",
+      "passed": true,
+      "detail": "200"
+    },
+    {
+      "name": "标签匹配仅空值跳过已有结果",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "填写输入后仅重试失败行",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "公式生成HTTP接口与实际计算",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "AI生成公式字段在网格返回300",
+      "passed": true,
+      "detail": ""
+    }
+  ],
+  "empty_checks": [
+    {
+      "key": "classify",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "summary",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "tagMatch",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "extract",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "imageUnderstand",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "translate",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "markDuplicate",
+      "passed": true,
+      "value": false
+    },
+    {
+      "key": "qrcode",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "pdfToText",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "workdays",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "projectProgress",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "taskStatus",
+      "passed": true,
+      "value": "未开始"
+    },
+    {
+      "key": "deadlineCountdown",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "memberTaskCount",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "memberWorkload",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "riskLevel",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "weeklyReport",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "customerIntent",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "followSummary",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "customerProfile",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "customerLevel",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "followReminder",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "churnRisk",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "exCity",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "exEmail",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "exLink",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "exImageText",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "exJson",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "exAddress",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "exAmount",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "exFirstNumber",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "exName",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "exDate",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cardRecognize",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "addressParse",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "contactExtract",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvHoliday",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvMonthEnd",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvRandom",
+      "passed": true,
+      "value": 87
+    },
+    {
+      "key": "cvMileKm",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvRmbUpper",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvBmi",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvBmr",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvUuid",
+      "passed": true,
+      "value": "985108a1-22bb-4646-9515-07f13fc8f7b5"
+    },
+    {
+      "key": "cvPassword",
+      "passed": true,
+      "value": "VNhVhs6kwx@*V4QL"
+    },
+    {
+      "key": "cvHexRgb",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvMonthDays",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvWordCount",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvB64Enc",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvB64Dec",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvDateUnix",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvUnixDate",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvLunar",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "cvPinyin",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "fiInvoice",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "fiContractDue",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "fiResume",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "fiEducation",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "fiPdfImage",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "fiPdfWatermark",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "fiImagePdf",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "imWatermarkAdd",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "imSharpen",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "hrAge",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "hrSeniority",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "hrHistory",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "hrBankCard",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "hrIdCard",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "hrGender",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "hrMatch",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "hrLeave",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "hrContract",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "hrHolidayQuery",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "mkRank",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "mkFans",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "mkScore",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "mkCopy",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "mkAccount",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "mkVideoTitle",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "mkLikes",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "mkFavs",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "mkComments",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "mkFansShot",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "mkShares",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "mkCompliance",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "mkIdea",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "pdBom",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "pdDefect",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "pdOrder",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "pdInspect",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "pdImprove",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "pdBatch",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "pdHours",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "pdStock",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "pdTicketTime",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "pdReview",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "pdStockAlert",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "stClose",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "stDisplay",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "stLicense",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "stName",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "stAttendance",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "stHours",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "stHealthDate",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "stHealthDays",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "lgTracking",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "lgCity",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "lgStatus",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "lgPlate",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "lgReceiver",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "lgAddress",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "lgZip",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "lgRegion",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "fnIit",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "fnIitLevel",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "fnBonusSeparate",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "fnBonusMerge",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "fnCardCheck",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "fnVat",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "taskPriority",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "taskCompletion",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "customerStage",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "customerReplied",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "nextFollowDate",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "serviceIssues",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "nextFollowAdvice",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "customerInterests",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "customerIssueClass",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "duplicatePhone",
+      "passed": true,
+      "value": false
+    },
+    {
+      "key": "hrLeaveUsed",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "stTotalHours",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "stHealthExpiry",
+      "passed": true,
+      "value": null
+    },
+    {
+      "key": "orderShippingStatus",
+      "passed": true,
+      "value": "待发货"
+    }
+  ],
+  "edge_checks": [
+    {
+      "name": "空输入拒绝生成",
+      "passed": true,
+      "actual": "本行输入为空，请先填写「样例输入」后重新生成",
+      "record_id": 2009
+    },
+    {
+      "name": "零分母拒绝计算",
+      "passed": true,
+      "actual": "数量不能为负，作为分母的总数必须大于 0",
+      "record_id": 2010
+    },
+    {
+      "name": "发货早于下单拒绝计算",
+      "passed": true,
+      "actual": "发货日期不能早于下单日期",
+      "record_id": 2011
+    },
+    {
+      "name": "超过4附件明确提示",
+      "passed": true,
+      "actual": "单次最多处理 4 个图片或文件，请减少输入附件",
+      "record_id": 2012
+    },
+    {
+      "name": "输入内指令不覆盖分类任务",
+      "passed": true,
+      "actual": "水果",
+      "record_id": 2013
+    }
+  ],
+  "review_method": "Codex逐项对照已保存输入与实际输出进行样例语义复核；不是独立人工验收，也不代表全场景准确率。",
+  "row_usage_accounted": 157,
+  "table_stats": {
+    "rows": 157,
+    "fields": 207,
+    "ai_fields": 134,
+    "views": 15
+  }
+}

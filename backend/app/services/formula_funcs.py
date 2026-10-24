@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import calendar
 import math
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from dateutil import parser as date_parser
@@ -361,8 +361,15 @@ def f_datedif(start, end, unit="D"):
     a, b = to_date(start, "DATEDIF", 1), to_date(end, "DATEDIF", 2)
     if a is None or b is None:
         return None
-    a, b = _as_date(a), _as_date(b)
     u = to_text(unit).upper()
+    if u == 'S':
+        zone = timezone(timedelta(hours=8))
+        a = a if isinstance(a, datetime) else datetime.combine(a, datetime.min.time())
+        b = b if isinstance(b, datetime) else datetime.combine(b, datetime.min.time())
+        a = a.replace(tzinfo=zone) if a.tzinfo is None else a
+        b = b.replace(tzinfo=zone) if b.tzinfo is None else b
+        return (b - a).total_seconds()
+    a, b = _as_date(a), _as_date(b)
     if u == "D":
         return (b - a).days
     months = (b.year - a.year) * 12 + (b.month - a.month) - (1 if b.day < a.day else 0)
@@ -370,7 +377,21 @@ def f_datedif(start, end, unit="D"):
         return months
     if u == "Y":
         return months // 12
-    raise FormulaError("参数错误", f"“DATEDIF”函数的单位只支持 \"D\" / \"M\" / \"Y\"，收到“{show(unit)}”。")
+    raise FormulaError("参数错误", f"“DATEDIF”函数的单位只支持 \"D\" / \"M\" / \"Y\" / \"S\"，收到“{show(unit)}”。")
+
+
+def f_networkdays_cn(start, end):
+    a, b = to_date(start, 'NETWORKDAYS_CN', 1), to_date(end, 'NETWORKDAYS_CN', 2)
+    if a is None or b is None:
+        return None
+    a, b = _as_date(a), _as_date(b)
+    if b < a or (b-a).days > 3660:
+        raise FormulaError('日期错误', '结束日期不能早于开始日期，区间不能超过3660天')
+    from chinese_calendar import is_workday
+    try:
+        return sum(is_workday(a+timedelta(days=i)) for i in range((b-a).days+1))
+    except NotImplementedError:
+        raise FormulaError('日期错误', '计算区间包含尚未收录节假日安排的年份') from None
 
 
 def _add_months(d, n):
@@ -1088,7 +1109,7 @@ _CATALOG = [
     ("VALUE", T, 1, 1, f_value, "VALUE(文本)", "将数字样式的文本转为数字。", "number", [('VALUE("12.5")', "= 12.5")]),
     # 日期与时间
     ("DATE", D, 3, 3, f_date, "DATE(年, 月, 日)", "由年、月、日生成日期。", "date", [("DATE(2024, 9, 14)", "= 2024-09-14")]),
-    ("DATEDIF", D, 2, 3, f_datedif, "DATEDIF(开始日期, 结束日期, [单位])", "计算两个日期的间隔，单位 \"D\" 天 / \"M\" 月 / \"Y\" 年。", "number",
+    ("DATEDIF", D, 2, 3, f_datedif, "DATEDIF(开始日期, 结束日期, [单位])", "计算间隔：D为自然日、M为整月、Y为整年、S为精确秒数（无时区按北京时间）。", "number",
      [('DATEDIF("2024-01-01", "2024-09-14", "D")', "= 257"), ('DATEDIF([入职日期], TODAY(), "Y")', "司龄（年）")]),
     ("DATEVALUE", D, 1, 1, f_datevalue, "DATEVALUE(文本)", "将日期文本转为日期。", "date", [('DATEVALUE("2024/9/14")', "= 2024-09-14")]),
     ("DAY", D, 1, 1, _date_part("DAY", "day"), "DAY(日期)", "返回日期是当月第几天。", "number", [('DAY("2024-09-14")', "= 14")]),
@@ -1104,6 +1125,7 @@ _CATALOG = [
     ("MONTH", D, 1, 1, _date_part("MONTH", "month"), "MONTH(日期)", "返回日期的月份。", "number", [('MONTH("2024-09-14")', "= 9")]),
     ("NETWORKDAYS", D, 2, 2, f_networkdays, "NETWORKDAYS(开始日期, 结束日期)", "返回两个日期之间（含首尾）的工作日天数。", "number",
      [('NETWORKDAYS("2024-09-09", "2024-09-15")', "= 5")]),
+    ("NETWORKDAYS_CN", D, 2, 2, f_networkdays_cn, "NETWORKDAYS_CN(开始日期, 结束日期)", "按中国节假日及调休安排计算工作日，含首尾；区间不超过3660天，未收录年份报错。", "number", [('NETWORKDAYS_CN("2026-10-12", "2026-10-16")', '= 5')]),
     ("NOW", D, 0, 0, f_now, "NOW()", "返回当前的日期和时间。", "date", [("NOW()", "= 2026-10-16 22:11")]),
     ("SECOND", D, 1, 1, _date_part("SECOND", "second"), "SECOND(日期)", "返回秒数。", "number", [('SECOND("2024-09-14 18:30:15")', "= 15")]),
     ("TIME", D, 2, 3, f_time, "TIME(时, 分, [秒])", "由时、分、秒生成时间。", "text", [("TIME(9, 30)", "= 09:30:00")]),

@@ -4,24 +4,24 @@
        下（主体）：当前函数签名条 → 三栏：字段（搜索 + 第 1 行取值）｜ 函数（搜索 + 分类）｜ 说明（签名 / 示例，可一键插入）
        输入框内打字时在光标处弹出联想（函数 + 字段），↑↓ 选择，Tab / ⏎ 插入 -->
   <teleport to="body">
-    <div v-if="visible" v-show="!aiVisible" ref="layerRef" class="fxe-mask" @click.self="emit('close')">
+    <div v-if="visible" ref="layerRef" class="fxe-mask" @click.self="emit('close')">
       <div ref="panelRef" v-panel-drag="{ handle: '.fxe-head' }" class="fxe">
         <div class="fxe-top">
           <div class="fxe-head">
             <span class="fxe-title">{{ title || '公式' }}</span>
-            <span class="fxe-tool" role="button" @click="format"><StIcon name="brush" :size="15" />格式优化</span>
+            <button type="button" class="fxe-tool" @click="format"><StIcon name="brush" :size="15" />格式优化</button>
             <span class="fxe-vsep" />
             <el-tooltip :hide-after="0" content="用一句话描述，AI 帮你写公式" placement="bottom">
-              <span class="fxe-tool" role="button" @click="aiVisible = true"><StIcon name="bulb" :size="16" />AI 写公式</span>
+              <button type="button" class="fxe-tool"  :class="{ active: aiVisible }" :aria-pressed="aiVisible" @click="aiVisible = !aiVisible"><StIcon name="bulb" :size="16" />AI 写公式</button>
             </el-tooltip>
-            <span class="fxe-ico st-icon-action" @click="emit('close')"><StIcon name="close" :size="18" /></span>
+            <button type="button" aria-label="关闭公式编辑器" class="fxe-ico st-icon-action" @click="emit('close')"><StIcon name="close" :size="18" /></button>
           </div>
-          <div ref="editorRef" class="fxe-editor" contenteditable="true" spellcheck="false"
+          <div ref="editorRef" class="fxe-editor st-field-rich-editor" contenteditable="true" spellcheck="false"
                data-placeholder="从下方点选字段和函数，或直接输入，如 IF([状态]=&quot;完成&quot;, 1, 0)"
-               @input="onInput" @keydown="onKeydown" @keyup="onKeyup" @mousedown="onEditorMouseDown" @mouseup="onCaretMove" @blur="onBlur"
+               @focus="fieldTarget = 'formula'" @input="onInput" @keydown="onKeydown" @keyup="onKeyup" @mousedown="onEditorMouseDown" @mouseup="onCaretMove" @blur="onBlur"
                @paste="onPaste" />
           <div class="fxe-ops">
-            <span v-for="op in OPS" :key="op.v" class="fxe-op" :data-smart-tip="op.tip" @mousedown.prevent @click="insertText(op.v, op.back)">{{ op.label }}</span>
+            <button type="button" v-for="op in OPS" :key="op.v" class="fxe-op" :data-smart-tip="op.tip" :aria-label="op.tip" @mousedown.prevent @click="insertText(op.v, op.back)">{{ op.label }}</button>
             <span class="fxe-ops-hint">输入字母或字段名可联想，Tab 补全</span>
           </div>
           <div class="fxe-result">
@@ -38,30 +38,29 @@
                 <span class="fxe-res-val">{{ result.display === '' ? '（空）' : result.display }}</span>
               </template>
             </div>
-            <el-button type="primary" class="st-button st-button--large st-button--primary fxe-ok" :disabled="!canSave" @click="save">确定</el-button>
+            <el-button type="primary" class="st-button st-button--primary fxe-ok" :disabled="!canSave" @click="save">确定</el-button>
           </div>
         </div>
 
-        <div class="fxe-sig">
+        <div v-if="sigView" class="fxe-sig">
           <template v-if="sigView">
             <span v-if="sigView.prefix" class="fxe-sig-dim">{{ sigView.prefix }}.</span>{{ sigView.head }}<template
               v-for="(a, i) in sigView.args" :key="i"><span :class="{ 'fxe-sig-cur': i === sigView.cur }">{{ a }}</span><span
               v-if="i < sigView.args.length - 1">, </span></template>{{ sigView.tail }}
           </template>
-          <span v-else class="fxe-sig-dim">光标放在函数括号内时，这里会提示该函数的参数</span>
         </div>
 
         <div class="fxe-panes">
           <!-- 字段：本表字段 | 整表引用 -->
           <div class="fxe-col fxe-col-fields">
             <div class="fxe-col-head">
-              <span>本表字段</span>
+              <span>表字段</span>
               <span class="fxe-col-sub">第 {{ result?.row_no || 1 }} 行取值</span>
             </div>
             <el-input v-model="fieldKw" size="small" placeholder="搜索字段" clearable class="st-control st-control--small fxe-search" />
             <div class="fxe-col-list">
               <div v-for="f in fieldList" :key="f.field_name" class="fxe-item" :class="{ on: hover?.key === `f:${f.field_name}` }"
-                   @mouseenter="hover = fieldItem(f)" @mousedown.prevent @click="insertItem(fieldItem(f))">
+                   @mouseenter="hover = fieldItem(f)" @mousedown.prevent @click="insertSelectedField(f)">
                 <StIcon :name="fieldIconName(f)" :size="14" class="fxe-item-ico" />
                 <span class="fxe-item-name">{{ f.label }}</span>
                 <span class="fxe-item-val">{{ rowValues[f.field_name] || '' }}</span>
@@ -75,8 +74,8 @@
             <div v-if="catalogError" class="fxe-none">函数加载失败，<button class="st-button" @click="loadCatalog">重新加载</button></div>
             <el-input v-model="fnKw" size="small" placeholder="搜索函数，如 日期 / 拼接 / IF" clearable class="st-control st-control--small fxe-search" />
             <div v-if="!fnKw" class="fxe-cats">
-              <span v-for="c in ['全部', ...catalog.categories, '运算符']" :key="c" class="fxe-cat" :class="{ on: fnCat === c }"
-                    @click="fnCat = c">{{ c.replace('与时间函数', '').replace('函数', '') }}</span>
+              <button type="button" v-for="c in ['全部', ...catalog.categories, '运算符']" :key="c" class="fxe-cat" :class="{ on: fnCat === c }" :aria-pressed="fnCat === c"
+                    @click="fnCat = c">{{ c.replace('与时间函数', '').replace('函数', '') }}</button>
             </div>
             <div class="fxe-col-list">
               <template v-for="g in fnGroups" :key="g.title">
@@ -85,14 +84,12 @@
                   <div v-for="o in g.items" :key="o.op" class="fxe-item" :class="{ on: hover?.key === `op:${o.op}` }"
                        @mouseenter="hover = opItem(o)" @mousedown.prevent @click="insertText(` ${o.op} `)">
                     <span class="fxe-item-name fxe-mono fxe-op-name">{{ o.op }}</span>
-                    <span class="fxe-item-val">{{ o.desc }}</span>
                   </div>
                 </template>
                 <template v-else>
                   <div v-for="fn in g.items" :key="`${g.title}:${fn.name}`" class="fxe-item" :class="{ on: hover?.key === `fn:${fn.name}` }"
                        @mouseenter="hover = fnItem(fn)" @mousedown.prevent @click="insertItem(fnItem(fn))">
                     <span class="fxe-item-name fxe-mono">{{ fn.name }}</span>
-                    <span class="fxe-item-val">{{ shortDesc(fn) }}</span>
                   </div>
                 </template>
               </template>
@@ -148,8 +145,14 @@
         </div>
       </div>
 
+      <section v-show="aiVisible" class="fxe-ai" :style="aiPosition" role="dialog" aria-label="AI 写公式" @keydown.esc.stop.prevent="aiVisible = false">
+        <div class="fxe-ai-heading"><strong>AI 写公式</strong><button type="button" class="fxe-ico st-icon-action" aria-label="关闭 AI 写公式" @click="aiVisible = false"><StIcon name="close" :size="16" /></button></div>
+        <label class="fxe-ai-hint" for="formula-ai-request">描述你想计算的结果，可以点击选择左侧的“表字段”</label>
+        <AiFormulaAssistant ref="aiAssistantRef" :active="aiVisible" :table-id="tableId" @focus="fieldTarget = 'ai'" @apply="onAiApply" />
+      </section>
+
       <!-- 光标处联想 -->
-      <div v-if="acItems.length && !aiVisible" ref="acRef" class="fxe-ac" @mousedown.prevent>
+      <div v-if="acItems.length" ref="acRef" class="fxe-ac" @mousedown.prevent>
         <div v-for="(it, i) in acItems" :key="it.key" class="fxe-ac-item" :class="{ on: i === ac.index }"
              @mouseenter="ac.index = i" @click="insertItem(it)">
           <StIcon v-if="it.kind === 'field'" :name="fieldIconName(it.field)" :size="14" class="fxe-item-ico" />
@@ -160,18 +163,18 @@
           <span v-if="i === ac.index" class="fxe-tab">Tab</span>
         </div>
       </div>
-      <AiFormulaDialog :visible="aiVisible" :table-id="tableId" :fields="fields" @close="aiVisible = false" @apply="onAiApply" />
     </div>
   </teleport>
 </template>
 
 <script setup>
+import '../../../smart/fieldRichText.css'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { updateFormulaSelection } from '../../../smart/utils/formulaSelection.js'
 import { vPanelDrag } from '../../../smart/utils/panelDrag.js'
 import { useFloatingPanel } from '../../../smart/utils/floatingPanel.js'
 import StIcon from '../icons/StIcon.vue'
-import AiFormulaDialog from '../ai/AiFormulaDialog.vue'
+import AiFormulaAssistant from '../ai/AiFormulaAssistant.vue'
 import { FIELD_REGISTRY } from '../../../smart/registry/fieldRegistry.js'
 import { fieldTypeIconSvg, fieldIconName } from '../../../smart/registry/fieldIcons.js'
 import { callContext, formatFormula, functionInsertion, referencedTableIds, splitSignature, tokenize } from '../../../smart/utils/formula.js'
@@ -221,6 +224,39 @@ const fnCat = ref('全部')
 const preview = reactive({ loading: false, data: null })
 const rowValues = ref({})        // 第 1 行各字段展示值（字段栏右侧灰字）
 const aiVisible = ref(false)
+const aiPosition = ref({})
+let aiAnchorObserver
+function positionAi() {
+  const rect = panelRef.value?.getBoundingClientRect()
+  if (!rect || !aiVisible.value) return
+  const width = Math.min(520, window.innerWidth - 24)
+  const top = Math.max(12, Math.min(rect.top, window.innerHeight - 200))
+  aiPosition.value = {
+    left: `${Math.max(12, Math.min(rect.right + 12, window.innerWidth - width - 12))}px`,
+    top: `${top}px`,
+    maxHeight: `${window.innerHeight - top - 12}px`,
+  }
+}
+watch(aiVisible, async active => {
+  aiAnchorObserver?.disconnect()
+  window.removeEventListener('resize', positionAi)
+  if (!active) return
+  await nextTick()
+  positionAi()
+  aiAnchorObserver = new MutationObserver(positionAi)
+  if (panelRef.value) aiAnchorObserver.observe(panelRef.value, { attributes: true, attributeFilter: ['style'] })
+  window.addEventListener('resize', positionAi)
+})
+onBeforeUnmount(() => {
+  aiAnchorObserver?.disconnect()
+  window.removeEventListener('resize', positionAi)
+})
+const aiAssistantRef = ref(null)
+const fieldTarget = ref('formula')
+function insertSelectedField(field) {
+  if (aiVisible.value && fieldTarget.value === 'ai') aiAssistantRef.value?.insertField(field)
+  else insertItem(fieldItem(field))
+}
 const srcText = ref('')
 const ac = reactive({ x: 0, y: 0, index: 0 })
 let savedRange = null
@@ -330,8 +366,8 @@ watch(acItems, async () => {
   if (acItems.value.length) { placeAc(); await refreshAc() }
 })
 watch(() => ac.index, () => nextTick(() => acRef.value?.querySelector('.on')?.scrollIntoView({ block: 'nearest' })))
-watch(() => [props.visible, aiVisible.value], async ([visible, ai]) => {
-  if (visible && !ai) { await nextTick(); await refreshPanel(); if (acItems.value.length) await refreshAc() }
+watch(() => [props.visible, aiVisible.value], async ([visible]) => {
+  if (visible) { await nextTick(); await refreshPanel(); if (acItems.value.length) await refreshAc() }
 })
 
 // 说明栏：联想高亮项（正在输入时）> 悬停项 > 光标所在函数 > IF
@@ -356,7 +392,7 @@ const sigView = computed(() => {
 // ---------- 编辑区：渲染 / 序列化 ----------
 function chipEl(f) {
   const el = document.createElement('span')
-  el.className = 'fxe-chip'
+  el.className = 'fxe-chip st-field-rich-chip'
   el.contentEditable = 'false'
   el.dataset.field = f.field_name
   el.innerHTML = `${fieldTypeIconSvg(fieldIconName(f), 13)}<span>${escapeHtml(f.label)}</span>`
@@ -365,7 +401,7 @@ function chipEl(f) {
 // 整表 [#id] / 整列 [#id.字段] 胶囊（绿色系，与本行字段区分）
 function tableChipEl(t, f = null) {
   const el = document.createElement('span')
-  el.className = 'fxe-chip fxe-chip-t'
+  el.className = 'fxe-chip st-field-rich-chip fxe-chip-t'
   el.contentEditable = 'false'
   el.dataset.tref = f ? `#${t.id}.${f.field_name}` : `#${t.id}`
   const icon = f ? fieldTypeIconSvg(fieldIconName(f), 13) : fieldTypeIconSvg('text', 0)
@@ -617,7 +653,6 @@ function format() {
   schedulePreview()
 }
 function onAiApply(r) {
-  aiVisible.value = false
   render(r.formula)
   placeCaretEnd()
   runPreview()
@@ -650,6 +685,7 @@ function fieldHint(f) {
 
 watch(() => props.visible, async (v) => {
   if (!v) return
+  aiVisible.value = false
   if (!catalog.value.functions.length) void loadCatalog()
   Object.assign(preview, { loading: false, data: null })
   rowValues.value = {}
@@ -673,51 +709,55 @@ watch(() => props.visible, async (v) => {
 
 <style scoped>
 .fxe-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, .25); display: flex; align-items: center; justify-content: center; --el-color-primary: var(--st-primary); }
-.fxe { width: 1000px; max-width: calc(100vw - 24px); height: 820px; max-height: calc(100vh - 24px); background: #F5F6F7; border-radius: 12px; overflow: auto;
+.fxe { width: 900px; max-width: calc(100vw - 24px); height: 680px; max-height: calc(100vh - 24px); background: #fff; border-radius: 12px; overflow: auto;
        display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0, 0, 0, .18); }
 /* ---- 上：紧凑输入区 ---- */
 .fxe-top { background: #fff; flex: none; border-bottom: 1px solid var(--st-border); }
-.fxe-head { display: flex; align-items: center; gap: 8px; padding: 16px 20px 4px; cursor: move; touch-action: none; }
+.fxe-head { display: flex; align-items: center; gap: 8px; padding: 12px 20px 8px; cursor: move; touch-action: none; }
 .fxe-title { font-size: var(--st-font-size-title); font-weight: 700; color: var(--st-text-1); margin-right: auto; }
-.fxe-tool { display: inline-flex; align-items: center; gap: 5px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.fxe-tool { display: inline-flex; align-items: center; gap: 5px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; height: 28px; box-sizing: border-box; padding: 0 8px; border: 0; background: transparent; font-family: inherit; border-radius: 4px; }
 .fxe-tool:hover, .fxe-ico:hover { background: var(--st-bg-hover); }
+.fxe-tool.active { color: var(--st-primary); background: var(--st-primary-weak); }
 .fxe-vsep { width: 1px; height: 16px; background: var(--st-border); }
-.fxe-ico { display: inline-flex; cursor: pointer; padding: 4px; border-radius: 6px; color: var(--st-text-2); margin-left: 4px; }
-.fxe-editor { min-height: 64px; max-height: 150px; overflow: auto; margin: 6px 20px 0; padding: 8px 12px; border: 1px solid var(--st-border); border-radius: 8px;
-              outline: none; font-family: Menlo, Consolas, "SF Mono", monospace; font-size: var(--st-font-size); line-height: 2; color: var(--st-text-2);
-              white-space: pre-wrap; word-break: break-all; }
+.fxe-ico { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; background: transparent; cursor: pointer; padding: 0; border-radius: 6px; color: var(--st-text-2); margin-left: 4px; }
+.fxe-editor { min-height: 76px; max-height: 140px; box-sizing: border-box; overflow: auto; margin: 0 20px; padding: 8px 12px; border: 1px solid var(--st-border); border-radius: 8px;
+              outline: none; color: var(--st-text-2); }
 .fxe-editor:focus { border-color: var(--st-primary); box-shadow: 0 0 0 2px rgba(46, 107, 230, .12); }
 .fxe-editor:empty::before { content: attr(data-placeholder); color: var(--st-text-4); font-family: var(--el-font-family); }
-.fxe-editor :deep(.fxe-chip) { display: inline-flex; align-items: center; gap: 3px; padding: 0 8px; margin: 0 1px; height: 24px; vertical-align: middle;
-  border: 1px solid #3D7BF2; border-radius: 12px; background: #EAF1FE; color: var(--st-text-2); font-family: var(--el-font-family); font-size: var(--st-font-size); user-select: none; }
 .fxe-editor :deep(.fxe-chip-t) { border-color: #2BB3A3; background: #E3F7F3; }
 .fxe-editor :deep(.fxe-chip) { cursor: pointer; }
 .fxe-editor :deep(.fxe-chip.is-selected) { background: #DCE9FF; outline: 2px solid #83ACFF; outline-offset: 1px; }
 :global(::highlight(formula-brackets)) { background: #FFE6A3; color: #20242B; }
 .fxe-ops { display: flex; align-items: center; gap: 4px; padding: 8px 20px 0; flex-wrap: wrap; }
-.fxe-op { min-width: 30px; height: 26px; padding: 0 6px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+.fxe-op { min-width: 28px; height: 28px; padding: 0 6px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
           border: 1px solid var(--st-border); border-radius: 5px; font-size: var(--st-font-size); color: var(--st-text-2); cursor: pointer; background: #fff; font-family: Menlo, Consolas, monospace; }
 .fxe-op:hover { border-color: var(--st-primary); color: var(--st-primary); }
-.fxe-ops-hint { margin-left: auto; font-size: var(--st-font-size); color: var(--st-text-4); }
+.fxe-ops-hint { margin-left: auto; font-size: 12px; color: var(--st-text-3); }
 .fxe-result { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 20px 12px; }
-.fxe-res-main { display: flex; align-items: flex-start; gap: 8px; min-height: 26px; font-size: var(--st-font-size); color: var(--st-text-2); min-width: 0; }
-.fxe-res-dim { color: var(--st-text-4); font-size: var(--st-font-size); line-height: 26px; }
+.fxe-res-main { display: flex; align-items: flex-start; gap: 8px; min-height: 28px; font-size: var(--st-font-size); color: var(--st-text-2); min-width: 0; }
+.fxe-res-dim { color: var(--st-text-3); font-size: var(--st-font-size); line-height: 26px; }
 .fxe-res-label { white-space: nowrap; line-height: 24px; color: var(--st-text-2); }
 .fxe-res-val { line-height: 24px; word-break: break-all; font-weight: 500; }
 .fxe-err-t { color: #F54A45; font-weight: 700; line-height: 24px; }
 .fxe-err-m { font-size: var(--st-font-size); color: var(--st-text-2); }
-.fxe-ok { min-width: 80px; height: 34px; flex: none; }
+.fxe-ok { min-width: 64px; height: 28px; flex: none; }
 /* ---- 签名条 ---- */
-.fxe-sig { flex: none; padding: 10px 20px; font-size: var(--st-font-size); color: var(--st-text-2); border-bottom: 1px solid var(--st-border); font-family: Menlo, Consolas, monospace; min-height: 40px; box-sizing: border-box; }
-.fxe-sig-dim { color: var(--st-text-4); font-family: var(--el-font-family); font-size: var(--st-font-size); }
+.fxe-sig { flex: none; padding: 8px 20px; line-height: 20px; background: #F7F8FA; font-size: var(--st-font-size); color: var(--st-text-2); border-bottom: 1px solid var(--st-border); font-family: Menlo, Consolas, monospace; min-height: 36px; box-sizing: border-box; }
+.fxe-sig-dim { color: var(--st-text-3); font-family: var(--el-font-family); font-size: var(--st-font-size); }
 .fxe-sig-cur { background: #FDE6A3; border-radius: 3px; }
 /* ---- 下：三栏 ---- */
-.fxe-panes { flex: 1 0 240px; display: flex; min-height: 240px; overflow-x: auto; }
+.fxe-ai { position: fixed; z-index: 1; width: 520px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); box-sizing: border-box; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; padding: 16px; border: 1px solid var(--st-border); border-radius: 12px; background: #F7F8FA; box-shadow: 0 8px 32px rgba(0, 0, 0, .18); }
+.fxe-ai::-webkit-scrollbar { display: none; }
+.fxe-ai-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: var(--st-text-1); }
+.fxe-ai-hint { color: var(--st-text-3); font-size: 12px; font-weight: 400; }
+.fxe-ai :deep(.afa) { margin-top: 6px; }
+.fxe-panes { flex: 1 1 240px; display: flex; min-height: 240px; overflow-x: auto; }
 .fxe-col { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--st-border); }
-.fxe-col-fields { width: 270px; flex: none; }
-.fxe-col-funcs { width: 310px; flex: none; }
-.fxe-col-head { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 16px 8px; font-size: var(--st-font-size); font-weight: 600; color: var(--st-text-1); }
-.fxe-col-sub { font-size: var(--st-font-size); font-weight: 400; color: var(--st-text-4); }
+.fxe-col-fields { width: 28%; min-width: 220px; flex: none; }
+.fxe-col-funcs { width: 220px; flex: none; }
+.fxe-col-funcs .fxe-item-name { max-width: 100%; }
+.fxe-col-head { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 16px 10px; font-size: var(--st-font-size); font-weight: 600; color: var(--st-text-1); }
+.fxe-col-sub { font-size: var(--st-font-size); font-weight: 400; color: var(--st-text-3); }
 .fxe-tabs { display: inline-flex; gap: 14px; }
 .fxe-tab-btn { cursor: pointer; color: var(--st-text-3); font-weight: 500; padding-bottom: 3px; border-bottom: 2px solid transparent; }
 .fxe-tab-btn.on { color: var(--st-text-1); border-bottom-color: var(--st-primary); font-weight: 600; }
@@ -731,28 +771,28 @@ watch(() => props.visible, async (v) => {
 .fxe-doc-pm-t { font-size: var(--st-font-size); font-weight: 700; color: var(--st-text-1); margin: 10px 0 6px; }
 .fxe-doc-pm { background: #fff; border-radius: 8px; padding: 10px 14px; font-size: var(--st-font-size); color: var(--st-text-2); line-height: 1.7; }
 .fxe-doc-tag { font-size: 11px; font-weight: 400; font-family: var(--el-font-family); color: #0F7B6C; background: #D6F4EE; border-radius: 3px; padding: 1px 6px; margin-left: 4px; }
-.fxe-search { padding: 0 12px 8px; box-sizing: border-box; }
-.fxe-cats { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 12px 8px; }
-.fxe-cat { font-size: var(--st-font-size); padding: 2px 8px; border-radius: 10px; background: #E9EAEC; color: var(--st-text-2); cursor: pointer; }
+.fxe-search { --st-control-size: 28px; width: calc(100% - 32px); margin: 0 16px 8px; box-sizing: border-box; flex: none; }
+.fxe-cats { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 16px 8px; }
+.fxe-cat { height: 28px; box-sizing: border-box; border: 0; font-family: inherit; font-size: 12px; padding: 0 8px; border-radius: 4px; background: #F2F3F5; color: var(--st-text-2); cursor: pointer; }
 .fxe-cat.on { background: var(--st-primary); color: #fff; }
-.fxe-col-list { flex: 1; overflow: auto; padding: 0 8px 12px; }
+.fxe-col-list { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 8px 12px; }
 .fxe-group { font-size: var(--st-font-size); color: var(--st-text-3); padding: 10px 10px 4px; }
 .fxe-item { display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 6px; cursor: pointer; font-size: var(--st-font-size); color: var(--st-text-2);  height: var(--st-list-item-height); box-sizing: border-box; }
-.fxe-item.on { background: #E6E8EB; }
+.fxe-item.on { background: var(--st-primary-weak, #EAF1FE); }
 .fxe-item-ico { color: var(--st-text-2); flex: none; }
 .fxe-item-name { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fxe-item-val { flex: 1; min-width: 0; text-align: right; font-size: var(--st-font-size); color: var(--st-text-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fxe-item-val { flex: 1; min-width: 0; text-align: right; font-size: var(--st-font-size); color: var(--st-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fxe-mono { font-family: Menlo, Consolas, monospace; font-size: var(--st-font-size); }
 .fxe-none { padding: 20px 10px; color: var(--st-text-4); font-size: var(--st-font-size); }
-.fxe-doc { flex: 1 0 320px; overflow: auto; padding: 16px 22px; min-width: 320px; box-sizing: border-box; }
+.fxe-doc { flex: 1 0 280px; overflow: auto; overscroll-behavior: contain; background: #F7F8FA; padding: 16px 20px; min-width: 280px; box-sizing: border-box; }
 .fxe-doc-sig { font-size: var(--st-font-size-title); font-weight: 700; color: var(--st-text-1); line-height: 1.5; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: Menlo, Consolas, monospace; }
-.fxe-doc-desc { font-size: var(--st-font-size); color: var(--st-text-2); margin: 10px 0 14px; line-height: 1.7; }
+.fxe-doc-desc { overflow-wrap: anywhere; font-size: var(--st-font-size); color: var(--st-text-2); margin: 10px 0 14px; line-height: 1.7; }
 .fxe-doc-ex-t { font-size: var(--st-font-size); font-weight: 700; color: var(--st-text-1); margin-bottom: 8px; }
-.fxe-doc-ex-tip { font-size: var(--st-font-size); font-weight: 400; color: var(--st-text-4); margin-left: 6px; }
+.fxe-doc-ex-tip { font-size: var(--st-font-size); font-weight: 400; color: var(--st-text-3); margin-left: 6px; }
 .fxe-doc-ex { position: relative; background: #fff; border: 1px solid transparent; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; font-size: var(--st-font-size);
               color: var(--st-text-2); line-height: 1.8; cursor: pointer; }
 .fxe-doc-ex:hover { border-color: var(--st-primary); }
-.fxe-doc-ex code { font-family: Menlo, Consolas, monospace; color: var(--st-text-2); }
+.fxe-doc-ex code { overflow-wrap: anywhere; font-family: Menlo, Consolas, monospace; color: var(--st-text-2); }
 .fxe-doc-ex code :deep(b) { color: var(--st-text-2); }
 .fxe-doc-ex-r { color: var(--st-text-3); }
 .fxe-doc-ex-r.block { display: block; }
@@ -770,6 +810,8 @@ watch(() => props.visible, async (v) => {
 .fxe-tab { font-size: 11px; color: var(--st-text-2); background: #D9DBDE; border-radius: 3px; padding: 0 5px; flex: none; }
 .fxe-ac-name { max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fxe-sig, .fxe-err-m { overflow-wrap: anywhere; }
+.fxe-tool:focus-visible, .fxe-ico:focus-visible, .fxe-op:focus-visible, .fxe-cat:focus-visible { outline: 2px solid var(--st-primary); outline-offset: 2px; }
+.fxe-cat:hover:not(.on) { background: var(--st-bg-hover); }
 @media (max-width: 540px) {
   .fxe-head { flex-wrap: wrap; padding: 12px 12px 4px; gap: 4px; }
   .fxe-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }

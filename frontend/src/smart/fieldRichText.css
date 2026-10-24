@@ -1,0 +1,27 @@
+/* Shared inline layout for formula and AI requirement editors. Keep the editor
+   line box and atomic field baseline identical, including field-only lines. */
+.st-field-rich-editor {
+  font-family: Menlo, Consolas, "SF Mono", monospace;
+  font-size: var(--st-font-size, 14px);
+  line-height: 2;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.st-field-rich-editor .st-field-rich-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 8px;
+  margin: 0 1px;
+  height: 24px;
+  vertical-align: middle;
+  border: 1px solid #3D7BF2;
+  border-radius: 12px;
+  background: #EAF1FE;
+  color: var(--st-text-2);
+  font-family: var(--el-font-family);
+  font-size: var(--st-font-size, 14px);
+  line-height: inherit;
+  user-select: none;
+  cursor: pointer;
+}

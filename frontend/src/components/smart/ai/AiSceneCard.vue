@@ -10,26 +10,26 @@
     </div>
 
     <div v-if="prompt && promptMode === 'box'" class="asc-prompt">
-      <div class="asc-prompt-t">使用模型生成</div>
+      <div class="asc-prompt-t">{{ executionLabel }}</div>
       <div class="asc-prompt-b">{{ prompt }}</div>
     </div>
     <div v-else-if="prompt || promptMode === 'collapse'" class="asc-pfold" :class="{ open: promptOpen }">
       <div class="asc-pfold-h" @click="promptOpen = !promptOpen">
-        <span>使用模型生成</span><StIcon name="chevron-down" :size="16" class="asc-pfold-caret" />
+        <span>{{ executionLabel }}</span><StIcon name="chevron-down" :size="16" class="asc-pfold-caret" />
       </div>
       <div v-if="promptOpen" class="asc-pfold-b">{{ prompt || '本地计算，不调用大模型' }}</div>
     </div>
 
     <template v-if="table">
       <div v-if="!bare" class="asc-eff">效果：</div>
-      <div class="asc-table">
+      <div class="asc-table" :style="{ '--asc-columns': inputColumns.length + 1 }">
         <div class="asc-tr asc-th">
-          <div class="asc-td"><StIcon :name="table.inIcon" :size="15" class="asc-hico" /><span class="asc-ell">{{ table.inLabel }}</span></div>
+          <div v-for="column in inputColumns" :key="column.key" class="asc-td asc-in"><StIcon :name="column.icon" :size="15" class="asc-hico" /><span class="asc-ell">{{ column.label }}</span></div>
           <div class="asc-td"><StIcon :name="table.outIcon" :size="15" class="asc-hico" /><span class="asc-ell">{{ table.outLabel }}</span><AiBadge /></div>
         </div>
         <div v-for="(r, i) in table.rows" :key="i" class="asc-tr">
-          <div class="asc-td asc-in">
-            <SmartCell v-if="r.inField" :field="r.inField" :record="r.inRecord" />
+          <div v-for="column in inputColumns" :key="column.key" class="asc-td asc-in">
+            <SmartCell v-if="column.field" :field="column.field" :record="r.inRecord" />
             <span v-else-if="r.image" class="asc-img"><StIcon name="image" :size="14" /></span>
             <span v-else class="asc-ell">{{ r.inText }}</span>
           </div>
@@ -40,7 +40,7 @@
             <span v-else class="asc-ell">{{ r.outText }}</span>
           </div>
         </div>
-        <div v-if="!table.rows.length" class="asc-empty">表格里还没有可试算的数据，保存后新增记录会自动生成</div>
+        <div v-if="!table.rows.length" class="asc-empty">表格里还没有可试算的数据</div>
       </div>
     </template>
 
@@ -60,6 +60,7 @@ const props = defineProps({
   inputField: { type: Object, default: null },  // {input} 占位的字段（缺省显示「文本」）
   fields: { type: Array, default: () => [] },
   prompt: { type: String, default: '' },
+  executionLabel: { type: String, default: '使用模型生成' },
   promptMode: { type: String, default: 'box' }, // box | collapse
   sample: { type: Object, default: null },      // 场景示例 {in, inType, out, rows:[[in, out]]}
   outputType: { type: String, default: 'text' },
@@ -106,11 +107,13 @@ const table = computed(() => {
     const cfg = props.preview.config || {}
     const inFn = (cfg.inputFields || [])[0]
     const inField = props.fields.find(f => f.field_name === inFn)
+    const inFields = (cfg.inputFields || []).map(fn => props.fields.find(f => f.field_name === fn)).filter(Boolean)
     const outField = { field_name: '__out', field_type: outType, options: { options: cfg.options || [] } }
     return {
-      inLabel: inField?.label || '输入', inIcon: iconOf(inField), outLabel: props.outLabel || cfg.title || '结果', outIcon,
+      inFields,
+      inLabel: inFields.length > 1 ? '输入字段' : inField?.label || '输入', inIcon: iconOf(inField), outLabel: props.outLabel || cfg.title || '结果', outIcon,
       rows: (props.preview.rows || []).map(r => ({
-        inField, inRecord: { ...(r.inputs || {}) },
+        inField, inFields, inRecord: { ...(r.inputs || {}) },
         outField, outRecord: { __out: r.output }, error: r.error, loading: r.loading,
       })),
     }
@@ -129,13 +132,16 @@ const table = computed(() => {
     })),
   }
 })
+const inputColumns = computed(() => table.value?.inFields?.length
+  ? table.value.inFields.map(field => ({ key: field.field_name, label: field.label, icon: iconOf(field), field }))
+  : [{ key: '__input', label: table.value?.inLabel, icon: table.value?.inIcon }])
 </script>
 
 <style scoped>
 .asc { background: #fff; border-radius: 16px; padding: 22px 22px 20px; transition: opacity .2s; }
 .asc.dim > :not(.asc-keep) { opacity: .45; }
 .asc.bare { padding: 0; background: none; border-radius: 0; }
-.asc.bare .asc-tr { min-height: 36px; }
+.asc.bare .asc-tr { min-height: 32px; }
 .asc.bare .asc-td { font-size: var(--st-font-size); }
 .asc-desc { font-size: var(--st-font-size); line-height: 30px; color: var(--st-text-2); }
 .asc-chip { display: inline-flex; align-items: center; gap: 4px; height: 26px; line-height: 26px; padding: 0 8px; margin: 0 4px;
@@ -151,15 +157,18 @@ const table = computed(() => {
 .asc-pfold.open .asc-pfold-caret { transform: rotate(180deg); }
 .asc-pfold-b { padding: 0 18px 14px; font-size: var(--st-font-size); line-height: 1.75; color: var(--st-text-2); white-space: pre-wrap; }
 .asc-eff { font-size: var(--st-font-size); color: var(--st-text-2); margin: 4px 0 10px; }
-.asc-table { border: 1px solid #E5E6E8; border-radius: 8px; overflow: hidden; }
-.asc-tr { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #E5E6E8; min-height: 54px; }
+.asc-table { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #E5E6E8; border-radius: 8px; overflow: hidden; }
+.asc-tr { display: grid; grid-template-columns: repeat(var(--asc-columns, 2), minmax(0, 1fr)); min-width: 0; border-top: 1px solid #E5E6E8; min-height: 54px; }
 .asc-tr:first-child { border-top: none; }
-.asc-td { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 12px; font-size: var(--st-font-size); color: var(--st-text-2); }
+.asc-td { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 8px; font-size: var(--st-font-size); color: var(--st-text-2); overflow-wrap: anywhere; }
 .asc-td + .asc-td { border-left: 1px solid #E5E6E8; }
 .asc-th .asc-td { color: var(--st-text-2); }
 .asc-hico { color: var(--st-text-3); flex: none; }
 .asc-in { background: #F8F9FA; }
 .asc-td :deep(.smart-cell) { min-width: 0; overflow: hidden; font-size: var(--st-font-size); }
+.asc-td :deep(.opt-tag) { box-sizing: border-box; height: 24px; padding: 0 8px; line-height: 24px; }
+.asc-td :deep(.opt-tag.raw) { line-height: 22px; }
+.asc-tr:not(.asc-th) :deep(.smart-cell), .asc-tr:not(.asc-th) :deep(.txt), .asc-tr:not(.asc-th) > .asc-td > .asc-ell { white-space: normal; overflow-wrap: anywhere; }
 .asc-ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .asc-img { width: 30px; height: 30px; border-radius: 4px; background: #EDEEF0; color: #B5B9C0; display: inline-flex; align-items: center; justify-content: center; }
 .asc-gen { color: var(--st-text-3); background: linear-gradient(90deg, #C9CDD4 0%, #8F959E 40%, #C9CDD4 80%); background-size: 200% 100%;

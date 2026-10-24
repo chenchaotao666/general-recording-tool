@@ -14,6 +14,7 @@ test('lookup uses smart tables and refreshes tables and source fields on reopeni
   try {
     await wrapper.setProps({ visible: true })
     await flushPromises()
+    expect(sourceFieldsOf).toHaveBeenCalledTimes(1)
     const picker = wrapper.findAllComponents(ElSelect).find(c => c.props('placeholder') === '选择表')
     expect(picker.findAllComponents(ElOption).map(c => c.props('label'))).toEqual(['Smart table'])
     const previousCalls = sourceFieldsOf.mock.calls.length
@@ -23,5 +24,9 @@ test('lookup uses smart tables and refreshes tables and source fields on reopeni
     expect(sourceFieldsOf.mock.calls.length).toBeGreaterThan(previousCalls)
     await wrapper.setProps({ lookupTables: [{ id: 2, label: 'Smart table' }, { id: 3, label: 'New smart table' }] })
     expect(picker.findAllComponents(ElOption).map(c => c.props('label'))).toContain('New smart table')
+    sourceFieldsOf.mockClear()
+    await wrapper.setProps({ openKey: 1 })
+    await flushPromises()
+    expect(sourceFieldsOf).toHaveBeenCalledTimes(1)
   } finally { wrapper.unmount(); vi.unstubAllGlobals() }
 })

@@ -141,6 +141,7 @@ describe('useButtonAnchoredDialog', () => {
   test.each([null, { x: 100, y: 100 }, { x: 100, top: 50, bottom: 80, placement: 'button' }])(
     'dragged panels keep their actual position and only clamp overflow: %j', async at => {
       const { panel, dimensions, opened } = dialog(at)
+      await opened()
       panel.dataset.panelDragged = 'true'
       panel.style.left = '500px'
       panel.style.top = '400px'

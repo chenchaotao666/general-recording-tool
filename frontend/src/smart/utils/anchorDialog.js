@@ -1,4 +1,5 @@
 import { nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
+import { resetPanelDrag } from './panelDrag.js'
 
 const margin = 12
 const maxWidth = 'calc(100vw - 24px)'
@@ -33,15 +34,16 @@ export function anchoredDialogAttrs(at, width = 480, estHeight = 460) {
 }
 
 // 打开、内容变化和窗口缩放时按实际尺寸避让边界；拖动后只修正越界位置。
-export function useButtonAnchoredDialog(getBody, getAt, isOpen) {
+export function useButtonAnchoredDialog(getBody, getAt, isOpen, getSession = () => null) {
   let observer
   let observation = 0
   let positionedPanel
   let positionedAt
+  let positionedSession
   function place() {
     const at = getAt()
     const panel = getBody()?.closest('.el-dialog')
-    if (!isOpen() || !panel) return
+    if (!isOpen() || !panel || panel.dataset.panelDragging) return
     const dragged = !!panel.dataset.panelDragged
     panel.style.maxWidth = maxWidth
     panel.style.overflowY = 'auto'
@@ -65,20 +67,37 @@ export function useButtonAnchoredDialog(getBody, getAt, isOpen) {
   }
   async function observe() {
     const current = ++observation
-    observer?.disconnect()
+    if (!isOpen()) {
+      observer?.disconnect()
+      observer = null
+      resetPanelDrag(getBody())
+      positionedPanel = null
+      positionedAt = null
+      return
+    }
     await nextTick()
     const body = getBody()
     const panel = body?.closest('.el-dialog')
     if (current !== observation) return
     if (!isOpen() || !panel) { positionedPanel = null; return }
     const at = getAt()
-    if (panel !== positionedPanel || at !== positionedAt) {
-      if (!panel.dataset.panelDragged) {
-        panel.style.removeProperty('left')
-        panel.style.removeProperty('top')
+    const session = getSession()
+    if (panel === positionedPanel && at === positionedAt && session === positionedSession && observer) return
+    observer?.disconnect()
+    if (panel !== positionedPanel || at !== positionedAt || session !== positionedSession) {
+      resetPanelDrag(body)
+      delete panel.dataset.panelDragged
+      panel.style.removeProperty('left')
+      panel.style.removeProperty('top')
+      if (at && at.placement !== 'button') {
+        // Every opening starts from this mouse event, never the previous offset
+        // or the height estimate used while the dialog was still mounting.
+        panel.style.left = `${at.x + 4}px`
+        panel.style.top = `${at.y + 4}px`
       }
       positionedPanel = panel
       positionedAt = at
+      positionedSession = session
     }
     place()
     if (typeof ResizeObserver !== 'undefined') {
@@ -87,7 +106,7 @@ export function useButtonAnchoredDialog(getBody, getAt, isOpen) {
       if (panel !== body) observer.observe(panel)
     }
   }
-  watch([isOpen, getAt], observe, { flush: 'post' })
+  watch([isOpen, getAt, getSession], observe, { flush: 'post' })
   onMounted(() => window.addEventListener('resize', place))
   onBeforeUnmount(() => {
     ++observation

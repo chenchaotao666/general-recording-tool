@@ -1,5 +1,5 @@
 export const WIDE_COLUMN_BUFFER = 35
-export const NARROW_COLUMN_BUFFER = 1
+export const NARROW_COLUMN_BUFFER = 0
 const RESTORE_IDLE_MS = 1500
 
 // VXE 4.22 keeps virtual bounds outside the reactive config. Update the actual

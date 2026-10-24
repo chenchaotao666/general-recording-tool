@@ -68,3 +68,30 @@ test('virtual remount reuses layout during scrolling; content and width changes 
     wrapper.unmount(); queue.dispose(); widthSpy.mockRestore(); bounds.mockRestore(); vi.unstubAllGlobals()
   }
 })
+
+
+test('cells resized together measure identical tag content only once per width', async () => {
+  let notifyWidth, width = 100, frame
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback) { notifyWidth = callback }
+    observe() {} unobserve() {} disconnect() {}
+  })
+  vi.stubGlobal('requestAnimationFrame', callback => { frame = callback; return 1 })
+  vi.stubGlobal('cancelAnimationFrame', () => {})
+  const widthSpy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width)
+  const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 50 })
+  const queue = createGridLayoutQueue()
+  const tags = [{key:'a',label:'Alpha'},{key:'b',label:'Beta'},{key:'c',label:'Gamma'}]
+  const cells = Array.from({length:20},()=>mount(CompactCellTags,{props:{tags},global:{provide:{smartGridLayoutQueue:queue}}}))
+  try {
+    frame(); await flushPromises()
+    expect(bounds).toHaveBeenCalledTimes(3)
+    width = 180
+    notifyWidth(cells.map(cell=>({target:cell.element,contentRect:{width}})))
+    frame(); await flushPromises()
+    expect(bounds).toHaveBeenCalledTimes(6)
+    expect(cells.every(cell=>cell.findAll('.compact-tag').length===3)).toBe(true)
+  } finally {
+    cells.forEach(cell=>cell.unmount());queue.dispose();widthSpy.mockRestore();bounds.mockRestore();vi.unstubAllGlobals()
+  }
+})

@@ -3,11 +3,11 @@
        字段名称 → 字段类型（带图标）→ [类型说明] → 分隔线 → 类型专属设置（灰色小标题分区）→
        底部：左侧 AI 入口（使用 AI 生成/计算/判断/匹配标签/生成公式），右侧 确定 / 取消。
        无标题栏；所有入口均非模态，at 存在时锚定在打开位置（anchoredDialogAttrs），点击外部收起 -->
-  <el-dialog :model-value="visible" :width="`${panelWidth}px`" :show-close="false" class="st-fcd" :class="{ 'st-fcd-number': isNumberFamily, 'st-fcd-compact': form.field_type !== 'ai', 'st-fcd-options': isSelect && !isRef }" append-to-body
-             v-bind="anchoredDialogAttrs(at, panelWidth, 560)" :close-on-press-escape="!fxEditor && !aiFormula" @opened="placeEditor" @update:model-value="$emit('close')" destroy-on-close>
+  <el-dialog :transition="{ css: false }" :model-value="visible" :width="`${panelWidth}px`" :show-close="false" class="st-fcd" :class="{ 'st-fcd-number': isNumberFamily, 'st-fcd-compact': form.field_type !== 'ai', 'st-fcd-options': isSelect && !isRef }" append-to-body
+             v-bind="anchoredDialogAttrs(at, panelWidth, 560)" :close-on-press-escape="!fxEditor && !aiFormula" @open-auto-focus.prevent @opened="placeEditor" @update:model-value="$emit('close')">
     <div ref="editorBody" class="fcd" v-panel-drag="{ panel: '.el-dialog' }">
       <div class="fcd-move" data-panel-drag-handle />
-      <input ref="nameRef" v-model="form.label" class="st-control st-control--native fcd-input fcd-name" placeholder="字段名称" maxlength="100"
+      <input v-model="form.label" class="st-control st-control--native fcd-input fcd-name" placeholder="字段名称" maxlength="100"
              @keydown.enter="save" @keydown.esc="$emit('close')" />
       <el-select v-model="form.field_type" class="st-control fcd-select fcd-type" popper-class="fcd-pop" :disabled="!!field && isSystemLike"
                  @change="onTypeChange">
@@ -21,7 +21,7 @@
       <div v-if="typeHint" class="fcd-hint">{{ typeHint }}</div>
 
       <template v-if="hasBody">
-        <div class="fcd-sep" />
+        <div class="fcd-sep" :class="{ 'fcd-sep-compact': form.field_type === 'member' }" />
 
         <!-- ========== 单选 / 多选 ========== -->
         <template v-if="isSelect">
@@ -182,8 +182,7 @@
 
         <!-- ========== 人员 ========== -->
         <template v-if="form.field_type === 'member'">
-          <div class="fcd-switch"><span>允许添加多个人员</span><el-switch v-model="form.config.multiple" /></div>
-          <div class="fcd-switch"><span>添加人员时通知他</span><el-switch v-model="form.config.notifyOnAdd" /></div>
+          <div class="fcd-switch fcd-member-switch"><span>允许添加多个人员</span><el-switch v-model="form.config.multiple" /></div>
         </template>
 
         <!-- ========== 图片 ========== -->
@@ -277,7 +276,6 @@
             </span>
             <span class="fx-caret" />
           </div>
-          <div v-if="form.config.formula" class="fcd-hint">结果类型：{{ { number: '数字', date: '日期' }[form.config.returnType] || '文本' }}（按第 1 行试算结果自动识别）</div>
         </template>
 
         <!-- ========== 查找引用 ========== -->
@@ -350,7 +348,7 @@
 import { vReorderFeedback } from '../../../smart/utils/reorderFeedback.js'
 import SmartListItem from '../common/SmartListItem.vue'
 import { fieldIconName } from '../../../smart/registry/fieldIcons.js'
-import { computed, defineComponent, h, nextTick, reactive, ref, watch } from 'vue'
+import { computed, defineComponent, h, reactive, ref, watch } from 'vue'
 import { ElDropdown, ElDropdownItem, ElDropdownMenu, ElMessage, ElOption, ElSelect } from 'element-plus'
 import StIcon from '../icons/StIcon.vue'
 import AiFormulaDialog from '../ai/AiFormulaDialog.vue'
@@ -363,6 +361,7 @@ import { smartListViews } from '../../../api/index.js'
 
 const props = defineProps({
   visible: Boolean,
+  openKey: { type: Number, default: 0 },
   field: Object,          // 编辑态传入现有字段；新增为 null
   preset: { type: Object, default: null },   // 新增预设 {field_type, label}（AddFieldPop 类型网格跳入）
   fields: { type: Array, default: () => [] },   // 本表字段（lookup 条件右值用）
@@ -375,13 +374,12 @@ const props = defineProps({
 })
 const emit = defineEmits(['close', 'save', 'ai-tags', 'ai-field', 'refresh-lookup-tables'])
 const editorBody = ref(null)
-const placeEditor = useButtonAnchoredDialog(() => editorBody.value, () => props.at, () => props.visible)
+const placeEditor = useButtonAnchoredDialog(() => editorBody.value, () => props.at, () => props.visible, () => props.openKey)
 const aiFormula = ref(false)
 const fxEditor = ref(false)
 // The formula editor is teleported outside this dialog. Its interactions and
 // dismissal belong to the child, not to the field configuration underneath it.
 useNonModalOutsideClose(() => props.visible && !fxEditor.value && !aiFormula.value, () => emit('close'))
-const nameRef = ref(null)
 
 // ---------- 常量（对齐参照） ----------
 // 类型下拉：分组顺序同「添加列」类型网格（组间分隔线）
@@ -447,9 +445,13 @@ const MatchSwitch = defineComponent({
 
 // ---------- 表单 ----------
 const form = reactive({ label: '', field_type: 'text', config: {} })
-const panelWidth = computed(() => form.field_type === 'ai' ? 470 : 320)
+const panelWidth = computed(() => {
+  if (form.field_type === 'ai') return 470
+  if (['lookup', 'relation'].includes(form.field_type)) return 480
+  return 320
+})
 let lastSelectCfg = null
-watch(() => props.visible, async (v) => {
+watch([() => props.visible, () => props.openKey], ([v]) => {
   if (!v) return
   lastSelectCfg = null
   if (props.field) {
@@ -462,9 +464,12 @@ watch(() => props.visible, async (v) => {
     form.config = FIELD_REGISTRY[form.field_type].defaultConfig()
     if (!form.label && props.preset?.field_type) form.label = FIELD_REGISTRY[form.field_type].label
   }
+  if (props.preset?.config) {
+    form.label = props.preset.label || form.label
+    form.field_type = props.preset.field_type || form.field_type
+    form.config = JSON.parse(JSON.stringify(props.preset.config))
+  }
   normalizeConfig()
-  await nextTick()
-  setTimeout(() => { nameRef.value?.focus(); nameRef.value?.select() }, 50)   // 名称默认全选（参照）
 })
 
 const isSystemLike = computed(() => ['createdBy', 'lastModifiedBy', 'createdTime', 'lastModifiedTime'].includes(props.field?.field_type))
@@ -472,7 +477,7 @@ const isSelect = computed(() => ['singleSelect', 'multiSelect'].includes(form.fi
 const isNumberFamily = computed(() => ['number', 'percent', 'currency', 'progress'].includes(form.field_type))
 const isDateFamily = computed(() => ['date', 'createdTime', 'lastModifiedTime'].includes(form.field_type))
 const typeHint = computed(() => HINTS[form.field_type] || '')
-const hasBody = computed(() => !['text', 'file', 'createdBy', 'lastModifiedBy'].includes(form.field_type))
+const hasBody = computed(() => !['text', 'image', 'file', 'createdBy', 'lastModifiedBy'].includes(form.field_type))
 // AI 入口：公式/单选多选沿用原能力；其余类型 → 改用 AI 字段生成该列（AI 场景市场）
 const aiAction = computed(() => {
   const a = AI_ACTIONS[form.field_type]
@@ -613,9 +618,11 @@ function refreshLookupOptions() {
   emit('refresh-lookup-tables')
   refreshSourceFields()
 }
-watch(() => form.config?.sourceTableId, refreshSourceFields)
-watch(() => [props.visible, form.field_type], ([visible, type]) => {
-  if (visible && type === 'lookup') refreshLookupOptions()
+watch([() => props.visible, () => props.openKey, () => form.field_type, () => form.config?.sourceTableId], ([visible, , type]) => {
+  if (visible && type === 'lookup') refreshSourceFields()
+}, { flush: 'post' })
+watch([() => props.visible, () => props.openKey, () => form.field_type], ([visible, , type]) => {
+  if (visible && type === 'lookup') emit('refresh-lookup-tables')
 }, { flush: 'post' })
 const lookupMode = ref('cond')
 const lookupMatch = computed({ get: () => (form.config.conditionLogic === 'or' ? 'any' : 'all'), set: (v) => { form.config.conditionLogic = v === 'any' ? 'or' : 'and' } })
@@ -683,6 +690,7 @@ function save() {
 .fcd-sub { color: var(--st-text-3); font-size: var(--st-font-size); margin-right: 6px; }
 .fcd-hint { font-size: var(--st-font-size); color: var(--st-text-3); margin-top: 10px; }
 .fcd-sep { height: 1px; background: #EBECEE; margin: 16px -24px 16px; }
+.fcd-sep.fcd-sep-compact { margin-bottom: 8px; }
 /* 分区小标题：上方 16px 与上一分区隔开；紧跟分隔线的第一个分区不加 */
 .fcd-label { font-size: var(--st-font-size); color: var(--st-text-3); margin: 16px 0 8px; }
 .fcd-sep + .fcd-label, .fcd-sep + .fcd-head { margin-top: 0; }
@@ -758,6 +766,7 @@ function save() {
 /* 人员：开关行 */
 .fcd-switch { display: flex; align-items: center; justify-content: space-between; font-size: var(--st-font-size); color: var(--st-text-2); height: 40px; }
 .fcd-switch + .fcd-switch { margin-top: 16px; }
+.fcd-member-switch { height: 32px; }
 .fcd-lrow { display: flex; align-items: center; justify-content: space-between; font-size: var(--st-font-size); color: var(--st-text-2); }
 .fcd-w200 { width: 224px; }
 .fcd-cks { display: flex; flex-direction: column; align-items: flex-start; margin-top: 18px; }
@@ -806,14 +815,14 @@ function save() {
 .el-dialog.st-fcd { padding: 0; border-radius: 8px; box-shadow: 0 8px 32px rgba(0, 0, 0, .14); }
 .el-dialog.st-fcd .el-dialog__header { display: none; }
 .el-dialog.st-fcd .el-dialog__body { padding: 24px; }
-.el-dialog.st-fcd-compact .el-dialog__body { padding: 16px; }
+.el-dialog.st-fcd-compact .el-dialog__body { padding: 24px 16px 16px 16px }
 /* 单选/多选只让选项列表收缩滚动，名称、类型与底部操作留在面板内。 */
 .el-dialog.st-fcd-options { display: flex; flex-direction: column; overflow: hidden !important; }
 .el-dialog.st-fcd-options .el-dialog__body { display: flex; flex-direction: column; min-height: 0; }
 .el-dialog.st-fcd-options .fcd { min-height: 0; }
 .el-dialog.st-fcd-options .fcd > * { flex-shrink: 0; }
 .el-dialog.st-fcd-options .fcd-optbox { flex-shrink: 1; min-height: 0; max-height: 380px; overflow-y: auto; overscroll-behavior: contain; }
-.el-dialog.st-fcd .fcd-move { height: 16px; margin: -16px -16px 0; cursor: move; touch-action: none; user-select: none; }
+.el-dialog.st-fcd .fcd-move { height: 24px; margin: -24px -16px 0; cursor: move; touch-action: none; user-select: none; }
 .el-dialog.st-fcd-number .fcd-qt { height: 56px; }
 .el-dialog.st-fcd-compact .fcd-sep { margin-left: -16px; margin-right: -16px; }
 .el-dialog.st-fcd-compact .fcd-foot.sep { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }

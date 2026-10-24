@@ -148,7 +148,7 @@
       :menu-field="fieldMenu.visible ? fieldMenu.field?.field_name : null"
       :active-row-id="detail.visible ? detailRecord?.id : null"
       :search-matches="findHighlight.matches" :search-current-index="findHighlight.currentIndex"
-      @expand-row="(r) => openDetail(r)"
+      @expand-row="toggleDetail"
       @row-activate="syncDetailRow"
       :can-create="perms.can_create" :can-delete="perms.can_delete"
       @cell-commit="onCellCommit" @add-row="addRow" @cell-menu="onCellMenu" @field-menu="onFieldMenu" @ai-run="runAiField" @field-edit="(f, at) => openFieldConfig(f, null, at)"
@@ -185,7 +185,7 @@
                        @close="detail.visible = false" @nav="navDetail" @cell-commit="onCellCommit"
                        @add-option="onAddOption" @open-config="openFieldConfig" @record-action="onDetailAction" />
     <!-- 面板与弹窗 -->
-    <FieldConfigDialog :visible="fieldDialog.visible" :field="fieldDialog.field" :preset="fieldDialog.preset" :fields="fields" :at="fieldDialog.at"
+    <FieldConfigDialog :open-key="fieldDialog.openKey" :visible="fieldDialog.visible" :field="fieldDialog.field" :preset="fieldDialog.preset" :fields="fields" :at="fieldDialog.at"
                        :table-id="tableId" :sample-record-id="dataRows[0]?.id || null"
                        :tables="allTables" :lookup-tables="lookupTables" :source-fields-of="loadFieldsOf" @refresh-lookup-tables="loadDocEntries"
                        @close="fieldDialog.visible = false" @save="onFieldSave"
@@ -197,10 +197,10 @@
 
     <!-- 新建/修改编组弹窗（设计文档 §6.1：编组名称 + 包含字段，默认含当前列） -->
     <!-- 非模态（同字段编辑框）：双击编组表头时在鼠标位置弹出，点外部收起 -->
-    <el-dialog :model-value="groupDialog.visible" :title="groupDialog.id ? '修改编组' : '新建编组'"
-               width="320px" class="st-fcd st-fcd-compact" :show-close="false" append-to-body destroy-on-close
+    <el-dialog :transition="{ css: false }" :model-value="groupDialog.visible" :title="groupDialog.id ? '修改编组' : '新建编组'"
+               width="320px" class="st-fcd st-fcd-compact" :show-close="false" append-to-body
                v-bind="anchoredDialogAttrs(groupDialog.at, 320, 250)"
-               @opened="placeGroupDialog(); focusGroupName()" @close="groupDialog.visible = false; groupFieldsOpen = false">
+               @open-auto-focus.prevent @opened="placeGroupDialog" @close="groupDialog.visible = false; groupFieldsOpen = false">
       <div class="gd-form" v-panel-drag="{ panel: '.el-dialog' }">
         <div class="fcd-move" data-panel-drag-handle />
         <input ref="groupNameRef" v-model="groupDialog.name" class="st-control st-control--native gd-name" placeholder="编组名称" aria-label="编组名称" maxlength="100"
@@ -369,6 +369,7 @@
                     :rows="dataRows" :total-rows="total"
                     :preset-label="aiPanel.label" @close="aiPanel.visible = false" @save="onAiSave"
                     @run="({ scope }) => runAiField(aiPanel.field, scope)"
+                    @edit-formula="onAiEditFormula"
                     @write-formula="() => { aiPanel.visible = false; aiFormulaDlg.visible = true }" />
     </teleport>
 
@@ -1190,6 +1191,10 @@ const detail = reactive({ visible: false, record: null })
 // 详情记录按 id 跟随最新数据（表格重查后行对象会被替换）
 const detailRecord = computed(() => dataRows.value.find(r => r.id === detail.record?.id) || detail.record)
 const detailIdx = computed(() => dataRows.value.findIndex(r => r.id === detail.record?.id))
+function toggleDetail(r) {
+  if (detail.visible && detail.record?.id === r.id) detail.visible = false
+  else openDetail(r)
+}
 function openDetail(r) {
   automation.visible = false
   detail.record = dataRows.value.find(x => x.id === r.id) || r
@@ -1305,14 +1310,19 @@ function navDetail(step) {
 }
 
 // ---------- 字段操作 ----------
-const fieldDialog = reactive({ visible: false, field: null, insertCtx: null, preset: null, addAgain: false, at: null })   // at：双击表头的鼠标位置，编辑框在此弹出
+const fieldDialog = reactive({ openKey: 0, visible: false, field: null, insertCtx: null, preset: null, addAgain: false, at: null })   // at：双击表头的鼠标位置，编辑框在此弹出
 const allTables = ref([])
 
+function onAiEditFormula(preset) {
+  Object.assign(fieldDialog, { openKey: fieldDialog.openKey + 1, field: aiPanel.field || null, preset, insertCtx: null, scrollToEnd: false, addAgain: false, at: aiPanel.at, visible: true })
+  aiPanel.visible = false
+}
 function openFieldConfig(f, insertCtx = null, at = null) {
   if (f?.field_type === 'ai') {   // AI 字段：场景市场面板编辑
     Object.assign(aiPanel, { visible: true, field: f, label: f.label, at, x: window.innerWidth - 40, y: 90 })
     return
   }
+  fieldDialog.openKey++
   fieldDialog.field = f
   fieldDialog.insertCtx = insertCtx
   fieldDialog.scrollToEnd = false
@@ -1337,6 +1347,7 @@ function onAddFieldAt(e) {
 }
 function onTypePick({ field_type, label }, again = false) {
   addFieldPop.visible = false
+  fieldDialog.openKey++
   fieldDialog.field = null
   fieldDialog.insertCtx = null
   fieldDialog.scrollToEnd = !!addFieldPop.scrollToEnd
@@ -1807,20 +1818,17 @@ async function copyStats() {
 }
 
 // ---------- 列编组（设计文档 §6.3：新建/修改弹窗 + 移入移出；字段最多属于一个编组） ----------
-const groupDialog = reactive({ visible: false, id: null, name: '', members: [], at: null })
+const groupDialog = reactive({ openKey: 0, visible: false, id: null, name: '', members: [], at: null })
 const groupNameRef = ref(null)
-const placeGroupDialog = useButtonAnchoredDialog(() => groupNameRef.value?.parentElement, () => groupDialog.at, () => groupDialog.visible)
+const placeGroupDialog = useButtonAnchoredDialog(() => groupNameRef.value?.parentElement, () => groupDialog.at, () => groupDialog.visible, () => groupDialog.openKey)
 const groupFieldsOpen = ref(false)
 function toggleGroupField(field) {
   const name = field.field_name
   groupDialog.members = groupDialog.members.includes(name)
     ? groupDialog.members.filter(n => n !== name) : [...groupDialog.members, name]
 }
-function focusGroupName() {
-  groupNameRef.value?.focus()
-  groupNameRef.value?.select()
-}
 function openGroupDialog(field, group = null, at = null) {
+  groupDialog.openKey++
   groupFieldsOpen.value = false
   fieldMenu.visible = false
   Object.assign(groupDialog, group

@@ -60,6 +60,12 @@ def table_changed(db: Session, mt) -> None:
     submit(formula_tables.refresh_dependents, mt.id)
 
 
+def records_deleted(db: Session, mt) -> None:
+    """Recompute whole-table AI aggregates after a deletion, without regenerating row templates."""
+    from . import ai_field_service
+    submit(ai_field_service.handle_event, {"type": "recordDeleted", "table_id": mt.id})
+
+
 def record_updated(db: Session, mt, before: dict, after: dict, changed: list[str] | None,
                    actor_id: int | None = None, actor_type: str = "user", depth: int = 0) -> None:
     if depth > MAX_DEPTH:
